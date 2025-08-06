@@ -186,31 +186,44 @@
 
   <!-- SCRIPT -->
   <script>
-    const usdInput = document.getElementById('usdInput');
+  async function fetchXRPPrice() {
+    try {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const data = await res.json();
+      return data.ripple.usd;
+    } catch (e) {
+      console.error('Price fetch error:', e);
+      return null;
+    }
+  }
+
+  document.getElementById('usdInput').addEventListener('input', async () => {
+    const usd = parseFloat(document.getElementById('usdInput').value);
     const xrpConversion = document.getElementById('xrpConversion');
     const bagAmount = document.getElementById('bagAmount');
+    xrpConversion.innerHTML = '';
+    bagAmount.innerHTML = '';
 
-    const usdPerXRP = 0.60; // Simulated exchange rate
-    const bagPerUSD = 1000000; // 1M $BAG per $1
+    if (isNaN(usd) || usd < 1) {
+      xrpConversion.innerHTML = usd > 0 ? '❌ Minimum $1' : '🔁 XRP Required: 0';
+      bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
+      return;
+    }
 
-    usdInput.addEventListener('input', () => {
-      const usd = parseFloat(usdInput.value);
+    const livePrice = await fetchXRPPrice();
+    if (!livePrice) {
+      xrpConversion.innerHTML = '⚠️ Could not fetch XRP price';
+      bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
+      return;
+    }
 
-      if (!isNaN(usd) && usd >= 1) {
-        const xrp = usd / usdPerXRP;
-        const bag = usd * bagPerUSD;
+    const xrpNeeded = (usd / livePrice).toFixed(2);
+    const bag = (usd * 1000000).toLocaleString();
 
-        xrpConversion.innerHTML = `🔁 XRP Required: ${xrp.toFixed(2)} $XRP`;
-        bagAmount.innerHTML = `🪙 You’ll receive: ${bag.toLocaleString()} $BAG`;
-      } else if (usd < 1 && usd > 0) {
-        xrpConversion.innerHTML = `❌ Minimum buy is $1`;
-        bagAmount.innerHTML = `🪙 You’ll receive: 0 $BAG`;
-      } else {
-        xrpConversion.innerHTML = `🔁 XRP Required: 0`;
-        bagAmount.innerHTML = `🪙 You’ll receive: 0 $BAG`;
-      }
-    });
-  </script>
-
+    xrpConversion.innerHTML = `🔁 XRP Required: ${xrpNeeded} $XRP`;
+    bagAmount.innerHTML = `🪙 You’ll receive: ${bag} $BAG`;
+  });
+</script>
 </body>
 </html>
+
