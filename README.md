@@ -82,3 +82,7 @@ This site is auto-deployed from GitHub → Vercel.
 ```bash
 git commit -m "update site"
 git push origin main
+
+| Platform     | Status          |
+| ------------ | --------------- |
+| 𝕏 / Twitter | `@getthebag_io` |
