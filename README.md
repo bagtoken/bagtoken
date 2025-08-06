@@ -52,3 +52,33 @@ No empty promises. Just:
 
 ## 📁 Project Structure
 
+
+---
+
+## 📦 Features (In Progress)
+
+- OTC sale form + processing  
+- XRPL token trustline + explorer links  
+- Visual branding (BAG stack, coin assets, loading indicator)  
+- Meme-forward mobile layout  
+- Social meta tags + share preview  
+- Redirects from www + legacy domains
+
+---
+
+## 🧠 Dev Notes
+
+- Primary domain: `getthebag.io`  
+- All other domains (e.g. `bagtoken.net`) are unlinked  
+- No crossover with any other project  
+- No roadmap. No promises. Just presence.
+
+---
+
+## 🔒 Deployment
+
+This site is auto-deployed from GitHub → Vercel.
+
+```bash
+git commit -m "update site"
+git push origin main
