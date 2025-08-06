@@ -1,16 +1,49 @@
-## Hi there 👋
+# 👜 GET THE $BAG
 
-<!--
-**bagtoken/bagtoken** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+**Official site:** [getthebag.io](https://getthebag.io)
 
-Here are some ideas to get you started:
+**XRPL’s Heaviest Meme.**  
+1 Trillion Supply. Meme-Built. Max Flex.  
+Backed by $XRP Utility. Wrapped in meme skin.
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+---
+
+## 🔗 Live Deployment
+- Production: [https://getthebag.io](https://getthebag.io)
+- Hosted on: [Vercel](https://vercel.com)
+
+---
+
+## 💼 Project Structure
+This is a minimal, bold one-page site for the $BAG token, powered by the XRPL.
+
+### Features:
+- 🔒 Self-custodied token setup
+- ⚡ Instant peer-to-peer transfer
+- 💸 OTC sale integration (coming soon)
+- 🎨 Meme-forward, protocol-aware design
+
+---
+
+## 🛠️ Tech Stack
+- Frontend: HTML / CSS / JS
+- Hosting: Vercel
+- Domain: Namecheap (`getthebag.io`)
+
+---
+
+## 📦 To Do
+- [ ] Add OTC buy section
+- [ ] Integrate trustline info
+- [ ] Add image assets to `/public`
+- [ ] Finish disclaimer and legal section
+
+---
+
+## 📣 Social
+_TBD_
+
+---
+
+Built for max flex.  
+_Meme responsibly._
