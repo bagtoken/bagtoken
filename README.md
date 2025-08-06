@@ -1,49 +1,54 @@
 # 👜 GET THE $BAG
 
-**Official site:** [getthebag.io](https://getthebag.io)
+**Official Site:** [https://getthebag.io](https://getthebag.io)  
+**Token Name:** $BAG  
+**Chain:** XRP Ledger (XRPL)  
+**Supply:** 1,000,000,000,000  
+**Decimals:** 6  
+**Status:** Live
 
-**XRPL’s Heaviest Meme.**  
-1 Trillion Supply. Meme-Built. Max Flex.  
-Backed by $XRP Utility. Wrapped in meme skin.
+> 💼 XRPL’s heaviest meme — Official $BAG Token.  
+> 1T supply. Built to flex. Powered by $XRP.
 
 ---
 
 ## 🔗 Live Deployment
-- Production: [https://getthebag.io](https://getthebag.io)
-- Hosted on: [Vercel](https://vercel.com)
+
+| Item          | Link                              |
+|---------------|-----------------------------------|
+| Website       | [getthebag.io](https://getthebag.io) |
+| Host          | [Vercel](https://vercel.com)      |
+| Domain        | [Namecheap](https://namecheap.com) |
+| DNS           | Vercel DNS (ns1 / ns2.vercel-dns.com) |
 
 ---
 
-## 💼 Project Structure
-This is a minimal, bold one-page site for the $BAG token, powered by the XRPL.
+## 💼 About the Project
 
-### Features:
-- 🔒 Self-custodied token setup
-- ⚡ Instant peer-to-peer transfer
-- 💸 OTC sale integration (coming soon)
-- 🎨 Meme-forward, protocol-aware design
+**$BAG** is XRPL’s loudest meme — not because it promises utility, but because it already has it.  
+It rides the $XRP rails. Fast, cheap, and built to move.  
 
----
+The site exists to:
+- Serve as the official launchpad for the token  
+- Host OTC sales and drops  
+- Broadcast $BAG’s identity to the chain
 
-## 🛠️ Tech Stack
-- Frontend: HTML / CSS / JS
-- Hosting: Vercel
-- Domain: Namecheap (`getthebag.io`)
+No empty promises. Just:  
+**Built to flex. Powered by $XRP.**
 
 ---
 
-## 📦 To Do
-- [ ] Add OTC buy section
-- [ ] Integrate trustline info
-- [ ] Add image assets to `/public`
-- [ ] Finish disclaimer and legal section
+## 🧱 Stack
+
+| Layer     | Tech           |
+|-----------|----------------|
+| Frontend  | HTML / CSS / JS |
+| Hosting   | Vercel         |
+| DNS       | Vercel DNS     |
+| Registry  | Namecheap      |
+| Chain     | XRPL           |
 
 ---
 
-## 📣 Social
-_TBD_
+## 📁 Project Structure
 
----
-
-Built for max flex.  
-_Meme responsibly._
