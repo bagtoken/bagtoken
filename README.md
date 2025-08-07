@@ -7,7 +7,7 @@
 **Decimals:** 6  
 **Status:** Live
 
-> 💼 XRPL’s heaviest meme — Official $BAG Token.  
+> Utility on Chain. Culture on Brand. 💼 XRPL’s heaviest meme — Official $BAG Token.  
 > 1T supply. Built to flex. Powered by $XRP.
 
 ---
