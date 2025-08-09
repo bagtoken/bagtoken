@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://getthebag.io/logo.png" alt="$BAG Logo" width="200" />
+</p>
+
 # 👜 GET THE $BAG
 
 **Official Site:** [https://getthebag.io](https://getthebag.io)  
@@ -82,7 +86,3 @@ This site is auto-deployed from GitHub → Vercel.
 ```bash
 git commit -m "update site"
 git push origin main
-
-| Platform     | Status          |
-| ------------ | --------------- |
-| 𝕏 / Twitter | `@getthebag_io` |
