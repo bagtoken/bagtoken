@@ -9,7 +9,9 @@
 **Chain:** XRP Ledger (XRPL)  
 **Supply:** 1,000,000,000,000  
 **Decimals:** 6  
-**Status:** Live
+**Status:** Live  
+**𝕏:** [https://x.com/getthebag_io](https://x.com/getthebag_io)  
+**Telegram:** [https://t.me/getthebag_io](https://t.me/getthebag_io)
 
 > Utility on Chain. Culture on Brand. 💼 XRPL’s heaviest meme — Official $BAG Token.  
 > 1T supply. Built to flex. Powered by $XRP.
