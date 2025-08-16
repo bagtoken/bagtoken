@@ -95,15 +95,13 @@
     }
     .price-line .sep{ opacity:.75 }
 
-    /* Faux toast */
+    /* Toast */
     .toast {
       position: fixed; left: 50%; transform: translateX(-50%);
       bottom: 26px; background: #111; color: #ffd700; border: 2px solid #e0c66f;
       padding: 12px 16px; border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.28);
       font-weight: 700; z-index: 9999; display: none;
     }
-    .wallet-state { font-size:.9rem; color:#333; margin-top:10px; }
-    .wallet-state b { color:#0a7a41; }
   </style>
 </head>
 <body>
@@ -149,21 +147,18 @@
   <div class="otc-section">
     <div class="otc-wrap">
 
-      <!-- Notice above title -->
       <p style="margin-bottom: 14px; font-size: 0.95rem; color: #555; font-weight: bold;">
         🚧 OTC sales not live yet. Follow us on <strong style="color:#000;">𝕏</strong> for the drop.
       </p>
 
       <div class="otc-head">
         <h2>GET THE $BAG — OTC PRE-SALE</h2>
-        <!-- LIVE Status Badge -->
         <div id="liveStatus" class="status-badge down" title="OTC + CoinGecko connectivity">
           <span class="status-dot"></span>
           <span id="liveText">OFFLINE</span>
         </div>
       </div>
 
-      <!-- High-contrast price banner -->
       <div class="price-line">
         <span>1M $BAG = $1 USD</span>
         <span class="sep">·</span>
@@ -176,15 +171,14 @@
         box-shadow: 0 6px 20px rgba(0,0,0,0.1); padding: 20px; text-align: center; color: #111;
       ">
 
-        <!-- CONNECT only on top row -->
-        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:12px;">
-          <button id="btnConnect" class="btn btn-secondary" aria-label="Connect wallet (visual only)">
+        <!-- CONNECT (warning only) -->
+        <div style="display:flex; justify-content:center; margin-bottom:12px;">
+          <button id="btnConnect" class="btn btn-secondary" aria-label="Connect wallet">
             🔗 CONNECT
           </button>
         </div>
-        <div id="walletState" class="wallet-state">Wallet state: <b>Disconnected</b></div>
 
-        <!-- TRUSTLINE BUTTON -->
+        <!-- TRUSTLINE -->
         <a
           class="btn-trustline"
           href="https://xrpl.services/?issuer=rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr&currency=BAG&limit=1000000000000"
@@ -208,14 +202,14 @@
           🪙 You’ll receive: 0 $BAG
         </div>
 
-        <!-- BUY button moved directly under “You’ll receive” -->
+        <!-- BUY button (warning only) -->
         <div style="margin-top:14px;">
-          <button id="btnBuy" class="btn btn-primary" aria-label="Buy $BAG (visual only)" disabled>
+          <button id="btnBuy" class="btn btn-primary" aria-label="Buy $BAG" disabled>
             🛒 BUY
           </button>
         </div>
 
-        <!-- TOKENOMICS CARD — 3× VALUE -->
+        <!-- TOKENOMICS -->
         <div style="
           margin-top: 30px; font-size: 0.95rem; color: #333;
           background: #fdf8e7; border: 2px solid #e0c66f; padding: 16px;
@@ -252,7 +246,7 @@
     <a href="https://t.me/getthebag_io" target="_blank" style="color:#e0c66f; text-decoration:none; font-weight:bold;">Telegram @getthebag_io</a>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <!-- SCRIPT -->
   <script>
@@ -261,7 +255,7 @@
     const CG_HEADERS = COINGECKO_API_KEY ? { "x-cg-pro-api-key": COINGECKO_API_KEY } : {};
     const CG_BASE = "https://api.coingecko.com/api/v3";
 
-    // --- LIVE badge helpers
+    // --- LIVE badge (kept simple: OTC stays OFFLINE)
     function setBadge(state, text) {
       const el = document.getElementById("liveStatus");
       const tx = document.getElementById("liveText");
@@ -270,30 +264,16 @@
       el.classList.add(state);
       tx.textContent = text;
     }
+    setBadge("down", "OFFLINE");
 
-    async function checkCoinGecko() {
-      try {
-        const r = await fetch(`${CG_BASE}/ping`, { headers: CG_HEADERS, cache: "no-store" });
-        return r.ok;
-      } catch { return false; }
+    // --- Toast helper
+    const toast = document.getElementById('toast');
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.style.display = 'none', 2200);
     }
-
-    // Replace this with your real OTC connectivity signal when you wire it
-    async function checkOTC() {
-      try {
-        if (typeof window !== "undefined" && window.OTC_CONNECTED === true) return true;
-        return false;
-      } catch { return false; }
-    }
-
-    async function updateLiveBadge() {
-      const [otcOK, cgOK] = await Promise.all([checkOTC(), checkCoinGecko()]);
-      if (otcOK && cgOK) setBadge("live", "LIVE");
-      else if (otcOK && !cgOK) setBadge("warn", "OTC LIVE • CG Pending");
-      else setBadge("down", "OFFLINE");
-    }
-
-    window.__setOtcConnected = function(v=true){ window.OTC_CONNECTED = !!v; updateLiveBadge(); };
 
     // --- Pricing: XRP fetch for conversion
     async function fetchXRPPrice() {
@@ -301,8 +281,7 @@
         const res = await fetch(`${CG_BASE}/simple/price?ids=ripple&vs_currencies=usd`, { headers: CG_HEADERS, cache: "no-store" });
         const data = await res.json();
         return data && data.ripple && data.ripple.usd ? Number(data.ripple.usd) : null;
-      } catch (e) {
-        console.error('Price fetch error:', e);
+      } catch {
         return null;
       }
     }
@@ -312,97 +291,52 @@
     const bagAmount = document.getElementById('bagAmount');
     const btnConnect = document.getElementById('btnConnect');
     const btnBuy = document.getElementById('btnBuy');
-    const walletState = document.getElementById('walletState');
-    const toast = document.getElementById('toast');
 
-    let isConnected = false;
     let lastPrice = null;
 
-    function showToast(msg) {
-      toast.textContent = msg;
-      toast.style.display = 'block';
-      clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => toast.style.display = 'none', 2600);
-    }
-
-    function setConnected(v) {
-      isConnected = !!v;
-      walletState.innerHTML = 'Wallet state: ' + (isConnected ? '<b>Connected</b>' : '<b>Disconnected</b>');
-      btnConnect.textContent = isConnected ? '✅ CONNECTED' : '🔗 CONNECT';
-      btnConnect.classList.toggle('btn-ghost', isConnected);
-      btnConnect.classList.toggle('btn-secondary', !isConnected);
-      window.__setOtcConnected(isConnected);
-      refreshBuyEnabled();
-    }
-
-    // Demo connect toggler
+    // CONNECT → warning only
     btnConnect.addEventListener('click', () => {
-      setConnected(!isConnected);
-      showToast(isConnected ? 'Connected. Demo state enabled.' : 'Disconnected. Demo state cleared.');
+      showToast('⚠️ OTC OPENS SOON');
     });
 
+    // BUY → warning only (but still enable based on USD + price)
+    btnBuy.addEventListener('click', () => {
+      showToast('⚠️ OTC OPENS SOON');
+    });
+
+    // Handle input & enable BUY without any wallet dependency
     async function handleUSDInput() {
       const usd = parseFloat(usdInput.value);
-      xrpConversion.innerHTML = '';
-      bagAmount.innerHTML = '';
+      xrpConversion.textContent = '';
+      bagAmount.textContent = '';
 
       if (isNaN(usd) || usd < 1) {
-        xrpConversion.innerHTML = usd > 0 ? '❌ Minimum $1' : '🔁 XRP Required: 0';
-        bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
-        refreshBuyEnabled();
+        xrpConversion.textContent = usd > 0 ? '❌ Minimum $1' : '🔁 XRP Required: 0';
+        bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
+        btnBuy.disabled = true;
         return;
       }
 
-      const livePrice = await fetchXRPPrice();
+      const livePrice = lastPrice ?? await fetchXRPPrice();
       lastPrice = livePrice;
+
       if (!livePrice) {
-        xrpConversion.innerHTML = '⚠️ Could not fetch XRP price';
-        bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
-        refreshBuyEnabled();
+        xrpConversion.textContent = '⚠️ Could not fetch XRP price';
+        bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
+        btnBuy.disabled = true;
         return;
       }
 
       const xrpNeeded = (usd / livePrice).toFixed(2);
       const bag = (usd * 1000000).toLocaleString();
 
-      xrpConversion.innerHTML = `🔁 XRP Required: ${xrpNeeded} $XRP`;
-      bagAmount.innerHTML = `🪙 You’ll receive: ${bag} $BAG`;
+      xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} $XRP`;
+      bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
 
-      refreshBuyEnabled();
+      btnBuy.disabled = false; // enable once amount valid + price available
     }
-
-    function refreshBuyEnabled() {
-      const usd = parseFloat(usdInput.value);
-      const meetsMin = !isNaN(usd) && usd >= 1;
-      const priceOk = lastPrice && lastPrice > 0;
-      btnBuy.disabled = !(isConnected && meetsMin && priceOk);
-    }
-
-    btnBuy.addEventListener('click', async () => {
-      const usd = parseFloat(usdInput.value) || 0;
-      const price = lastPrice || await fetchXRPPrice();
-      if (!price) {
-        showToast('Price fetch unavailable. Try again.');
-        return;
-      }
-      const xrpNeeded = (usd / price).toFixed(2);
-      const bag = (usd * 1000000).toLocaleString();
-
-      // Visual-only receipt
-      const receipt =
-        `OTC Preview.\n` +
-        `USD: $${usd.toFixed(2)}\n` +
-        `XRP Required: ${xrpNeeded}\n` +
-        `You Receive: ${bag} $BAG\n` +
-        `Set the trustline before settlement.`;
-      alert(receipt);
-      showToast('BUY flow is visual only. OTC not live.');
-    });
 
     usdInput.addEventListener('input', handleUSDInput);
-
-    updateLiveBadge();
-    setInterval(updateLiveBadge, 30000);
     handleUSDInput();
   </script>
 
