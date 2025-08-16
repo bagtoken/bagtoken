@@ -45,6 +45,23 @@
     .status-badge.down  { color:#ffd8d8; border-color:#402020; background:#221010; }
     .status-badge.down .status-dot  { background:#ff3b30; box-shadow:0 0 8px #ff3b3088; }
 
+    /* Buttons */
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:.5rem; padding:12px 18px; border-radius:10px; text-decoration:none;
+      font:600 16px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      box-shadow:0 6px 20px rgba(0,0,0,.25);
+      transform:translateY(0); transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+      cursor:pointer; user-select:none; border:none;
+    }
+    .btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(0,0,0,.28); }
+    .btn:active{ transform:translateY(0); box-shadow:0 4px 14px rgba(0,0,0,.22); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; transform:none; box-shadow:0 4px 14px rgba(0,0,0,.12); }
+
+    .btn-primary { background:#1f8b4c; color:#fff; }
+    .btn-secondary { background:#111; color:#ffd700; border:2px solid #e0c66f; }
+    .btn-ghost { background:#fffef4; color:#111; border:2px dashed #e0c66f; }
+
     /* Trustline button */
     .btn-trustline{
       display:inline-block;
@@ -70,17 +87,23 @@
       display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
       padding:10px 14px;
       border-radius:14px;
-      background:#111;                 /* dark capsule for contrast */
-      color:#ffd700;                    /* strong gold text */
-      border:2px solid #e0c66f;        /* gold border */
-      font-weight:800;
-      font-size: clamp(1rem, 3.6vw, 1.2rem);
+      background:#111; color:#ffd700; border:2px solid #e0c66f;
+      font-weight:800; font-size: clamp(1rem, 3.6vw, 1.2rem);
       letter-spacing:.2px;
       box-shadow: 0 0 0 2px #000 inset, 0 10px 22px rgba(0,0,0,.28);
-      margin: 6px 0 18px;
-      white-space: nowrap;
+      margin: 6px 0 18px; white-space: nowrap;
     }
     .price-line .sep{ opacity:.75 }
+
+    /* Faux toast */
+    .toast {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 26px; background: #111; color: #ffd700; border: 2px solid #e0c66f;
+      padding: 12px 16px; border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.28);
+      font-weight: 700; z-index: 9999; display: none;
+    }
+    .wallet-state { font-size:.9rem; color:#333; margin-top:10px; }
+    .wallet-state b { color:#0a7a41; }
   </style>
 </head>
 <body>
@@ -148,18 +171,29 @@
       </div>
 
       <div style="
-        width: 100%; max-width: 500px; margin: 0 auto;
+        width: 100%; max-width: 520px; margin: 0 auto;
         background: #fffef4; border: 3px solid #e0c66f; border-radius: 12px;
         box-shadow: 0 6px 20px rgba(0,0,0,0.1); padding: 20px; text-align: center; color: #111;
       ">
 
-        <!-- TRUSTLINE BUTTON (in OTC) -->
+        <!-- CONNECT + BUY row -->
+        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:12px;">
+          <button id="btnConnect" class="btn btn-secondary" aria-label="Connect wallet (visual only)">
+            🔗 CONNECT
+          </button>
+          <button id="btnBuy" class="btn btn-primary" aria-label="Buy $BAG (visual only)" disabled>
+            🛒 BUY
+          </button>
+        </div>
+        <div id="walletState" class="wallet-state">Wallet state: <b>Disconnected</b></div>
+
+        <!-- TRUSTLINE BUTTON -->
         <a
           class="btn-trustline"
           href="https://xrpl.services/?issuer=rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr&currency=BAG&limit=1000000000000"
           target="_blank" rel="noopener"
           aria-label="Set the $BAG trustline in Xaman"
-          style="margin-bottom: 16px; display:inline-block;"
+          style="margin: 12px 0 16px; display:inline-block;"
         >
           Set $BAG Trustline
         </a>
@@ -168,7 +202,7 @@
           Enter amount in USD:
         </label>
         <input id="usdInput" type="number" min="1" step="0.01" placeholder="1.00 USD"
-          style="padding: 10px; font-size: 1rem; width: 100%; max-width: 300px; border: 2px solid #ccc; border-radius: 8px;" />
+          style="padding: 10px; font-size: 1rem; width: 100%; max-width: 320px; border: 2px solid #ccc; border-radius: 8px;" />
 
         <div id="xrpConversion" style="margin-top: 20px; font-size: 1rem;">
           🔁 XRP Required: 0
@@ -213,6 +247,8 @@
     <a href="https://x.com/getthebag_io" target="_blank" style="color:#e0c66f; text-decoration:none; font-weight:bold;">𝕏 @getthebag_io</a> |
     <a href="https://t.me/getthebag_io" target="_blank" style="color:#e0c66f; text-decoration:none; font-weight:bold;">Telegram @getthebag_io</a>
   </div>
+
+  <div id="toast" class="toast"></div>
 
   <!-- SCRIPT -->
   <script>
@@ -270,6 +306,36 @@
     const usdInput = document.getElementById('usdInput');
     const xrpConversion = document.getElementById('xrpConversion');
     const bagAmount = document.getElementById('bagAmount');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnBuy = document.getElementById('btnBuy');
+    const walletState = document.getElementById('walletState');
+    const toast = document.getElementById('toast');
+
+    let isConnected = false;
+    let lastPrice = null;
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.style.display = 'none', 2600);
+    }
+
+    function setConnected(v) {
+      isConnected = !!v;
+      walletState.innerHTML = 'Wallet state: ' + (isConnected ? '<b>Connected</b>' : '<b>Disconnected</b>');
+      btnConnect.textContent = isConnected ? '✅ CONNECTED' : '🔗 CONNECT';
+      btnConnect.classList.toggle('btn-ghost', isConnected);
+      btnConnect.classList.toggle('btn-secondary', !isConnected);
+      window.__setOtcConnected(isConnected);
+      refreshBuyEnabled();
+    }
+
+    // Demo connect toggler
+    btnConnect.addEventListener('click', () => {
+      setConnected(!isConnected);
+      showToast(isConnected ? 'Connected. Demo state enabled.' : 'Disconnected. Demo state cleared.');
+    });
 
     async function handleUSDInput() {
       const usd = parseFloat(usdInput.value);
@@ -279,13 +345,16 @@
       if (isNaN(usd) || usd < 1) {
         xrpConversion.innerHTML = usd > 0 ? '❌ Minimum $1' : '🔁 XRP Required: 0';
         bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
+        refreshBuyEnabled();
         return;
       }
 
       const livePrice = await fetchXRPPrice();
+      lastPrice = livePrice;
       if (!livePrice) {
         xrpConversion.innerHTML = '⚠️ Could not fetch XRP price';
         bagAmount.innerHTML = '🪙 You’ll receive: 0 $BAG';
+        refreshBuyEnabled();
         return;
       }
 
@@ -294,7 +363,38 @@
 
       xrpConversion.innerHTML = `🔁 XRP Required: ${xrpNeeded} $XRP`;
       bagAmount.innerHTML = `🪙 You’ll receive: ${bag} $BAG`;
+
+      refreshBuyEnabled();
     }
+
+    function refreshBuyEnabled() {
+      const usd = parseFloat(usdInput.value);
+      const meetsMin = !isNaN(usd) && usd >= 1;
+      const priceOk = lastPrice && lastPrice > 0;
+      btnBuy.disabled = !(isConnected && meetsMin && priceOk);
+    }
+
+    btnBuy.addEventListener('click', async () => {
+      const usd = parseFloat(usdInput.value) || 0;
+      const price = lastPrice || await fetchXRPPrice();
+      if (!price) {
+        showToast('Price fetch unavailable. Try again.');
+        return;
+      }
+      const xrpNeeded = (usd / price).toFixed(2);
+      const bag = (usd * 1000000).toLocaleString();
+
+      // Visual-only receipt
+      const receipt =
+        `OTC Preview.\n` +
+        `USD: $${usd.toFixed(2)}\n` +
+        `XRP Required: ${xrpNeeded}\n` +
+        `You Receive: ${bag} $BAG\n` +
+        `Set the trustline before settlement.`;
+      // Use alert for simple demo
+      alert(receipt);
+      showToast('BUY flow is visual only. OTC not live.');
+    });
 
     usdInput.addEventListener('input', handleUSDInput);
 
