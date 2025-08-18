@@ -68,15 +68,3 @@ The $BAG project provides this self-assessment publicly to ensure transparency w
 While $BAG is meme-branded and carries no “formal” utility, it **inherits the underlying utility of XRPL** (instant payments, low fees, decentralized exchange trading).  
 
 ---
-
-## 🔗 How to Publish
-1. Save this file as `self-assessment.md` or export as PDF.  
-2. Host at: `https://getthebag.io/.well-known/self-assessment.pdf`  
-3. Add to TOML:  
-
-```toml
-[[DOCUMENTS]]
-type = "Self-Assessment Questionnaire"
-url  = "https://getthebag.io/.well-known/self-assessment.pdf"
-```
-
