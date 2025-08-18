@@ -6,8 +6,8 @@
 **Issuer Type:** Meme Token (non-redeemable, non-stablecoin)  
 **Website:** [https://getthebag.io](https://getthebag.io)  
 **Socials:**  
-- X: [x.com/bagtoken](https://x.com/getthebag_io)  
-- Telegram: [t.me/bagtoken](https://t.me/getthebag_io)  
+- X: [x.com/getthebag_io](https://x.com/getthebag_io)  
+- Telegram: [t.me/getthebag_io](https://t.me/getthebag_io)  
 
 ---
 
