@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://getthebag.io/logo.png" alt="$BAG Logo" width="160"/>
+</p>
+
 # $BAG — XRPL’s Heaviest Meme
 
 ## Overview
@@ -43,5 +47,3 @@ It’s not about whitepapers and suits — it’s about flexing, trading, and bu
 - 🌐 Website: [getthebag.io](https://getthebag.io)  
 - 𝕏: [x.com/getthebag_io](https://x.com/getthebag_io)  
 - Telegram: [t.me/getthebag_io](https://t.me/getthebag_io)  
-
----
