@@ -303,111 +303,122 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- SCRIPT -->
-  <script>
-    // === CONFIG ===
-    const API = "https://api.getthebag.io"; // point to deployed API origin
+<!-- === SCRIPT (replace your SCRIPT block with this) === -->
+<script>
+  // === CONFIG ===
+  const API = "https://api.getthebag.io"; // LIVE API
 
-    // === LIVE badge based on backend status ===
-    function setBadge(state, text) {
-      const el = document.getElementById("liveStatus");
-      const tx = document.getElementById("liveText");
-      if (!el || !tx) return;
-      el.classList.remove("live","warn","down");
-      el.classList.add(state);
-      tx.textContent = text;
+  // === LIVE badge ===
+  function setBadge(state, text) {
+    const el = document.getElementById("liveStatus");
+    const tx = document.getElementById("liveText");
+    if (!el || !tx) return;
+    el.classList.remove("live","warn","down");
+    el.classList.add(state);
+    tx.textContent = text;
+  }
+
+  async function refreshStatus() {
+    try {
+      const h = await fetch(`${API}/api/health`, { cache: "no-store" });
+      const ok = h.ok && (await h.json()).ok === true;
+      if (!ok) { setBadge("down", "OFFLINE"); return; }
+      const r = await fetch(`${API}/api/status`, { cache: "no-store" });
+      const j = r.ok ? await r.json() : {};
+      // Treat cached price as LIVE; only fallback shows DEGRADED
+      if (j.rate_source === "fallback") setBadge("warn", "DEGRADED");
+      else setBadge("live", "LIVE");
+    } catch {
+      setBadge("down", "OFFLINE");
+    }
+  }
+  refreshStatus();
+  setInterval(refreshStatus, 10000);
+
+  // === Toast & CONNECT (informational) ===
+  const toast = document.getElementById('toast');
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.style.display = 'none', 2200);
+  }
+  const btnConnect = document.getElementById('btnConnect');
+  if (btnConnect) btnConnect.addEventListener('click', () => {
+    showToast('🔗 Use the BUY button to open Xaman and complete your purchase.');
+  });
+
+  // === Elements ===
+  const usdInput = document.getElementById('usdInput');
+  const xrpConversion = document.getElementById('xrpConversion');
+  const bagAmount = document.getElementById('bagAmount');
+  const btnBuy = document.getElementById('btnBuy');
+
+  // === Helpers for BUY anchor ===
+  function disableBuy() {
+    btnBuy.setAttribute("aria-disabled", "true");
+    btnBuy.removeAttribute("href");
+  }
+  function enableBuy(link) {
+    btnBuy.setAttribute("aria-disabled", "false");
+    btnBuy.href = link;
+  }
+  function extractDeeplink(resp) {
+    // Support both shapes:
+    // 1) {"deeplink": "https://xumm.app/..."}
+    // 2) {"deeplink": {"deeplink": "https://xumm.app/...", ...}}
+    if (!resp) return null;
+    if (typeof resp.deeplink === "string") return resp.deeplink;
+    if (resp.deeplink && typeof resp.deeplink.deeplink === "string") return resp.deeplink.deeplink;
+    return null;
+  }
+
+  disableBuy(); // initial
+
+  // === USD input -> quote + deeplink ===
+  async function handleUSDInput() {
+    const raw = usdInput.value;
+    const usd = Number.parseFloat(raw);
+
+    xrpConversion.textContent = '🔁 XRP Required: 0';
+    bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
+    disableBuy();
+
+    if (!Number.isFinite(usd) || usd < 1) {
+      if (usd > 0) xrpConversion.textContent = '❌ Minimum $1';
+      return;
     }
 
-    async function refreshStatus() {
-      try {
-        const r = await fetch(`${API}/api/status`, { cache: "no-store" });
-        const j = await r.json();
-        if (j.running && j.connected) setBadge("live", "LIVE");
-        else if (j.running && !j.connected) setBadge("warn", "DEGRADED");
-        else setBadge("down", "OFFLINE");
-      } catch {
-        setBadge("down", "OFFLINE");
-      }
-    }
-    refreshStatus();
-    setInterval(refreshStatus, 10000);
+    try {
+      const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store" });
+      if (!r.ok) throw new Error("bad quote");
+      const j = await r.json();
 
-    // === Toast helper & CONNECT (informational) ===
-    const toast = document.getElementById('toast');
-    function showToast(msg) {
-      toast.textContent = msg;
-      toast.style.display = 'block';
-      clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => toast.style.display = 'none', 2200);
-    }
-    const btnConnect = document.getElementById('btnConnect');
-    if (btnConnect) btnConnect.addEventListener('click', () => {
-      showToast('🔗 Use the BUY button to open Xaman and complete your purchase.');
-    });
+      // Response can be either a combined object or nested quote
+      const xrp = (j.xrp ?? j.quote?.xrp);
+      const dl = extractDeeplink(j);
 
-    // === Elements ===
-    const usdInput = document.getElementById('usdInput');
-    const xrpConversion = document.getElementById('xrpConversion');
-    const bagAmount = document.getElementById('bagAmount');
-    const btnBuy = document.getElementById('btnBuy');
+      const xrpNeeded = Number(xrp).toFixed(6);
+      const bag = (usd * 1_000_000).toLocaleString();
 
-    // === Button enable/disable helpers (anchor-safe) ===
-    function disableBuy() {
-      btnBuy.setAttribute("aria-disabled", "true");
-      btnBuy.href = "#";
-    }
-    function enableBuy(link) {
-      btnBuy.setAttribute("aria-disabled", "false");
-      btnBuy.href = link;
-    }
-    disableBuy(); // initial
+      xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} XRP`;
+      bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
 
-    // === Handle custom USD input -> fetch quote & link ===
-    async function handleUSDInput() {
-      const raw = usdInput.value;
-      const usd = Number.parseFloat(raw);
-
-      // Reset UI
-      xrpConversion.textContent = '🔁 XRP Required: 0';
+      if (dl) enableBuy(dl); else disableBuy();
+    } catch (e) {
+      xrpConversion.textContent = '⚠️ Could not fetch quote';
       bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
       disableBuy();
-
-      // Validate amount
-      if (!Number.isFinite(usd) || usd < 1) {
-        if (usd > 0) xrpConversion.textContent = '❌ Minimum $1';
-        return;
-      }
-
-      try {
-        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store" });
-        if (!r.ok) throw new Error("bad quote");
-        const j = await r.json();
-
-        const xrpNeeded = Number(j.xrp ?? j.quote?.xrp).toFixed(6);
-        const bag = (usd * 1_000_000).toLocaleString();
-
-        xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} XRP`;
-        bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
-
-        // Support both response shapes: string or object with { deeplink }
-        const link = typeof j.deeplink === 'string'
-          ? j.deeplink
-          : (j.deeplink && j.deeplink.deeplink) || null;
-
-        if (link) enableBuy(link);
-        else disableBuy();
-      } catch (e) {
-        xrpConversion.textContent = '⚠️ Could not fetch quote';
-        bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-        disableBuy();
-      }
     }
+  }
 
-    if (usdInput) {
-      usdInput.addEventListener('input', handleUSDInput);
-      // Optionally prefill: usdInput.value = "1.00"; handleUSDInput();
-    }
-  </script>
+  if (usdInput) {
+    usdInput.addEventListener('input', handleUSDInput);
+    // Optionally prefill:
+    // usdInput.value = "5.00"; handleUSDInput();
+  }
+</script>
 
 </body>
 </html>
+
