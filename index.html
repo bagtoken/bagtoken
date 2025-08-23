@@ -59,8 +59,11 @@
     }
     .btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(0,0,0,.28); }
     .btn:active{ transform:translateY(0); box-shadow:0 4px 14px rgba(0,0,0,.22); }
-    .btn:disabled{ opacity:.5; cursor:not-allowed; transform:none; box-shadow:0 4px 14px rgba(0,0,0,.12); }
-
+    .btn:disabled,
+    .btn[aria-disabled="true"]{
+      opacity:.5; cursor:not-allowed; transform:none; box-shadow:0 4px 14px rgba(0,0,0,.12);
+      pointer-events:none;
+    }
     .btn-primary { background:#1f8b4c; color:#fff; }
     .btn-secondary { background:#111; color:#ffd700; border:2px solid #e0c66f; }
     .btn-ghost { background:#fffef4; color:#111; border:2px dashed #e0c66f; }
@@ -170,13 +173,9 @@
   <div class="otc-section">
     <div class="otc-wrap">
 
-      <p style="margin-bottom: 14px; font-size: 0.95rem; color: #555; font-weight: bold;">
-        🚧 OTC sales not live yet. Follow us on <strong style="color:#000;">𝕏</strong> for the drop.
-      </p>
-
       <div class="otc-head">
-        <h2>GET THE $BAG — OTC PRE-SALE</h2>
-        <div id="liveStatus" class="status-badge down" title="OTC + CoinGecko connectivity">
+        <h2>GET THE $BAG — OTC</h2>
+        <div id="liveStatus" class="status-badge down" title="OTC + Backend connectivity">
           <span class="status-dot"></span>
           <span id="liveText">OFFLINE</span>
         </div>
@@ -194,7 +193,7 @@
         box-shadow: 0 6px 20px rgba(0,0,0,0.1); padding: 20px; text-align: center; color: #111;
       ">
 
-        <!-- CONNECT (warning only) -->
+        <!-- CONNECT -->
         <div style="display:flex; justify-content:center; margin-bottom:12px;">
           <button id="btnConnect" class="btn btn-secondary" aria-label="Connect wallet">
             🔗 CONNECT
@@ -225,28 +224,11 @@
           🪙 You’ll receive: 0 $BAG
         </div>
 
-        <!-- BUY button (warning only) -->
+        <!-- BUY button (disabled until valid) -->
         <div style="margin-top:14px;">
-          <button id="btnBuy" class="btn btn-primary" aria-label="Buy $BAG" disabled>
+          <a id="btnBuy" class="btn btn-primary" href="#" target="_blank" rel="noopener" aria-disabled="true">
             🛒 BUY
-          </button>
-        </div>
-
-        <!-- TOKENOMICS -->
-        <div style="
-          margin-top: 30px; font-size: 0.95rem; color: #333;
-          background: #fdf8e7; border: 2px solid #e0c66f; padding: 16px;
-          border-radius: 10px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-        ">
-          <p style="margin: 0 0 8px;">
-            🎯 <strong>OTC Rate:</strong> $0.000001 per $BAG
-          </p>
-          <p style="margin: 0 0 8px;">
-            🚀 <strong>Public Launch Price:</strong> $0.000003 per $BAG
-          </p>
-          <p style="margin: 0;">
-            ✅ OTC buyers are in early — 3× value on day one
-          </p>
+          </a>
         </div>
 
         <p style="margin-top: 12px; font-size: 0.82rem; color: #888;">
@@ -259,7 +241,7 @@
       </p>
 
       <p style="margin-top:12px; text-align:center; color:#222; font-size:0.9rem;">
-        Countdown to public launch begins once 500B $BAG are sold — early OTC holders lock in 3× value at launch.
+        ⏳ Countdown to public launch begins once <strong>500B $BAG</strong> are sold — early OTC holders lock in <strong>3×</strong> value at launch.
       </p>
 
     </div>
@@ -306,10 +288,10 @@
 
   <!-- SCRIPT -->
   <script>
-    // --- CoinGecko config
-    const CG_BASE = "https://api.coingecko.com/api/v3";
+    // === CONFIG ===
+    const API = "http://127.0.0.1:8080"; // change to your deployed API origin
 
-    // --- LIVE badge (kept simple: OTC stays OFFLINE)
+    // === LIVE badge based on backend status ===
     function setBadge(state, text) {
       const el = document.getElementById("liveStatus");
       const tx = document.getElementById("liveText");
@@ -318,9 +300,22 @@
       el.classList.add(state);
       tx.textContent = text;
     }
-    setBadge("down", "OFFLINE");
 
-    // --- Toast helper
+    async function refreshStatus() {
+      try {
+        const r = await fetch(`${API}/api/status`, { cache: "no-store" });
+        const j = await r.json();
+        if (j.running && j.connected) setBadge("live", "LIVE");
+        else if (j.running && !j.connected) setBadge("warn", "DEGRADED");
+        else setBadge("down", "OFFLINE");
+      } catch {
+        setBadge("down", "OFFLINE");
+      }
+    }
+    refreshStatus();
+    setInterval(refreshStatus, 10000);
+
+    // === Toast helper & CONNECT (informational) ===
     const toast = document.getElementById('toast');
     function showToast(msg) {
       toast.textContent = msg;
@@ -328,68 +323,67 @@
       clearTimeout(showToast._t);
       showToast._t = setTimeout(() => toast.style.display = 'none', 2200);
     }
+    const btnConnect = document.getElementById('btnConnect');
+    if (btnConnect) btnConnect.addEventListener('click', () => {
+      showToast('🔗 Use the BUY button to open Xaman and complete your purchase.');
+    });
 
-    // --- Pricing: XRP fetch for conversion
-    async function fetchXRPPrice() {
-      try {
-        const res = await fetch(`${CG_BASE}/simple/price?ids=ripple&vs_currencies=usd`, { cache: "no-store" });
-        const data = await res.json();
-        return data && data.ripple && data.ripple.usd ? Number(data.ripple.usd) : null;
-      } catch {
-        return null;
-      }
-    }
-
+    // === Elements ===
     const usdInput = document.getElementById('usdInput');
     const xrpConversion = document.getElementById('xrpConversion');
     const bagAmount = document.getElementById('bagAmount');
-    const btnConnect = document.getElementById('btnConnect');
     const btnBuy = document.getElementById('btnBuy');
 
-    // CONNECT → warning only
-    if (btnConnect) btnConnect.addEventListener('click', () => {
-      showToast('⚠️ OTC OPENS SOON');
-    });
+    // === Button enable/disable helpers (anchor-safe) ===
+    function disableBuy() {
+      btnBuy.setAttribute("aria-disabled", "true");
+      btnBuy.href = "#";
+    }
+    function enableBuy(link) {
+      btnBuy.setAttribute("aria-disabled", "false");
+      btnBuy.href = link;
+    }
+    disableBuy(); // initial
 
-    // BUY → warning only
-    if (btnBuy) btnBuy.addEventListener('click', () => {
-      showToast('⚠️ OTC OPENS SOON');
-    });
-
-    // Handle input & enable BUY without any wallet dependency
+    // === Handle custom USD input -> fetch quote & link ===
     async function handleUSDInput() {
-      const usd = parseFloat(usdInput.value);
-      xrpConversion.textContent = '';
-      bagAmount.textContent = '';
+      const raw = usdInput.value;
+      const usd = Number.parseFloat(raw);
 
-      if (isNaN(usd) || usd < 1) {
-        xrpConversion.textContent = usd > 0 ? '❌ Minimum $1' : '🔁 XRP Required: 0';
-        bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-        if (btnBuy) btnBuy.disabled = true;
+      // Reset UI
+      xrpConversion.textContent = '🔁 XRP Required: 0';
+      bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
+      disableBuy();
+
+      // Validate amount
+      if (!Number.isFinite(usd) || usd < 1) {
+        if (usd > 0) xrpConversion.textContent = '❌ Minimum $1';
         return;
       }
 
-      const livePrice = await fetchXRPPrice();
+      try {
+        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store" });
+        if (!r.ok) throw new Error("bad quote");
+        const j = await r.json();
 
-      if (!livePrice) {
-        xrpConversion.textContent = '⚠️ Could not fetch XRP price';
+        const xrpNeeded = Number(j.xrp).toFixed(6);
+        const bag = (usd * 1_000_000).toLocaleString();
+
+        xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} XRP`;
+        bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
+
+        if (j.deeplink) enableBuy(j.deeplink);
+        else disableBuy();
+      } catch (e) {
+        xrpConversion.textContent = '⚠️ Could not fetch quote';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-        if (btnBuy) btnBuy.disabled = true;
-        return;
+        disableBuy();
       }
-
-      const xrpNeeded = (usd / livePrice).toFixed(2);
-      const bag = (usd * 1000000).toLocaleString();
-
-      xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} $XRP`;
-      bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
-
-      if (btnBuy) btnBuy.disabled = false;
     }
 
     if (usdInput) {
       usdInput.addEventListener('input', handleUSDInput);
-      handleUSDInput();
+      // Optionally prefill: usdInput.value = "1.00"; handleUSDInput();
     }
   </script>
 
