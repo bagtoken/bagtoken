@@ -28,19 +28,8 @@
     .hero { text-align: center; padding: 6vh 5vw 2vh; }
 
     /* Updated BAG logo sizing to match RAD */
-    .hero-img {
-      width: 55%;
-      max-width: 320px;
-      height: auto;
-      margin: 0 auto 20px;
-      display: block;
-    }
-    @media (max-width: 480px) {
-      .hero-img {
-        width: 65%;
-        max-width: 220px;
-      }
-    }
+    .hero-img { width: 55%; max-width: 320px; height: auto; margin: 0 auto 20px; display: block; }
+    @media (max-width: 480px) { .hero-img { width: 65%; max-width: 220px; } }
 
     h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); margin-bottom: 10px; }
     .tagline { font-size: clamp(1rem, 4vw, 1.3rem); color: #bbb; margin-bottom: 4px; padding: 0 10px; }
@@ -98,11 +87,9 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon-180x180.png">
   <link rel="manifest" href="/assets/site.webmanifest">
   <meta name="theme-color" content="#006400">
-  <!-- iOS standalone label -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="$BAG">
-  
 </head>
 <body>
 
@@ -177,7 +164,7 @@
         <div id="bagAmount" style="margin-top:10px; font-size:1.1rem; font-weight:bold;">🪙 You’ll receive: 0 $BAG</div>
 
         <div style="margin-top:14px;">
-          <a id="btnBuy" class="btn btn-primary" href="#" target="_blank" rel="noopener" aria-disabled="true">🛒 BUY</a>
+          <a id="btnBuy" class="btn btn-primary" href="#" target="_blank" rel="noopener" aria-disabled="true" title="Enter an amount to enable">🛒 BUY</a>
         </div>
 
         <div style="margin-top:30px; font-size:.95rem; color:#333; background:#fdf8e7; border:2px solid #e0c66f; padding:16px; border-radius:10px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
@@ -236,7 +223,7 @@
 
     async function refreshStatus() {
       try {
-        const r = await fetch(`${API}/api/status`, { cache: "no-store" });
+        const r = await fetch(`${API}/api/status`, { cache: "no-store", mode: "cors", credentials: "omit" });
         const j = await r.json();
         if (j.running && j.connected) setBadge("live", "LIVE");
         else if (j.running && !j.connected) setBadge("warn", "DEGRADED");
@@ -253,17 +240,46 @@
     const bagAmount = document.getElementById('bagAmount');
     const btnBuy = document.getElementById('btnBuy');
 
-    function disableBuy(){ btnBuy.setAttribute("aria-disabled","true"); btnBuy.href="#"; }
-    function enableBuy(link){ btnBuy.setAttribute("aria-disabled","false"); btnBuy.href=link; }
-    disableBuy();
+    function disableBuy(msg){
+      btnBuy.setAttribute("aria-disabled","true");
+      btnBuy.href="#";
+      if (msg) btnBuy.title = msg;
+    }
+    function enableBuy(link){
+      btnBuy.setAttribute("aria-disabled","false");
+      btnBuy.href = link;
+      btnBuy.title = "Open in wallet";
+    }
+    disableBuy("Enter an amount to enable");
+
+    // Debounce helper
+    const debounce = (fn, ms=250) => {
+      let t; return (...args) => { clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+    };
+
+    async function fetchQuote(usd){
+      const res = await fetch(`${API}/api/quote?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "quote failed");
+      return data; // { ok, xrp_to_send, xrp_usd, ... }
+    }
+
+    async function tryDeeplink(usd){
+      // optional; backend may not implement
+      try {
+        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
+        if (!r.ok) return null;
+        const j = await r.json();
+        return j.deeplink?.deeplink || j.deeplink || null;
+      } catch { return null; }
+    }
 
     async function handleUSDInput() {
-      const raw = usdInput.value;
-      const usd = Number.parseFloat(raw);
-
+      const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
       bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-      disableBuy();
+      disableBuy("Enter an amount to enable");
 
       if (!Number.isFinite(usd) || usd < 1) {
         if (usd > 0) xrpConversion.textContent = '❌ Minimum $1';
@@ -271,28 +287,23 @@
       }
 
       try {
-        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store" });
-        if (!r.ok) throw new Error("bad quote");
-        const j = await r.json();
-
-        const xrpNeeded = Number(j.quote?.xrp ?? j.xrp ?? 0).toFixed(6);
+        const q = await fetchQuote(usd);
+        const xrpNeeded = Number(q.xrp_to_send ?? q.xrp ?? 0).toFixed(6);
         const bag = (usd * 1_000_000).toLocaleString();
-
-        xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} XRP`;
+        xrpConversion.textContent = `🔁 XRP Required: ${xrpNeeded} XRP (Rate: $${q.xrp_usd}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${bag} $BAG`;
 
-        const link = j.deeplink?.deeplink || j.deeplink;
-        if (link) enableBuy(link); else disableBuy();
-      } catch {
+        const link = await tryDeeplink(usd);
+        if (link) enableBuy(link); else disableBuy("Quote shown. Deeplink unavailable.");
+      } catch (e) {
+        console.error(e);
         xrpConversion.textContent = '⚠️ Could not fetch quote';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-        disableBuy();
+        disableBuy("Could not fetch quote");
       }
     }
 
-    if (usdInput) {
-      usdInput.addEventListener('input', handleUSDInput);
-    }
+    if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
   </script>
 </body>
 </html>
