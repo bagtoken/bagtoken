@@ -61,7 +61,7 @@
     .social a{ display:inline-block; margin:0 8px; text-decoration:none; line-height:0; }
     .social img{ width:28px; height:28px; vertical-align:middle; display:block; }
 
-    /* ---- price-line: wrap cleanly on mobile ---- */
+    /* price-line wraps on mobile */
     .price-line{
       display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
       gap:.5rem; padding:10px 14px; border-radius:14px; background:#111; color:#ffd700;
@@ -261,113 +261,96 @@
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // === PRICE SOURCES ===
-    async function fetchWithTimeout(url, ms=3000){
-      return Promise.race([ fetch(url, {cache:'no-store'}), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms)) ]);
-    }
+    // === COINGECKO-ONLY PRICE (cached 60s) ===
+    const PRICE_TTL_MS = 60_000;
+    const priceState = { usd: NaN, ts: 0 };
+
     function sane(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
-
-    async function coinbaseSpot(){
-      const r = await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot');
-      const j = await r.json();
-      const v = Number(j?.data?.amount);
-      if (!sane(v)) throw new Error('cb bad'); return v;
+    async function fetchGeckoXrpUsd(){
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&precision=full&_=${Date.now()}`;
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 4000);
+      try{
+        const r = await fetch(url, { cache: "no-store", mode: "cors", signal: ctrl.signal, headers:{'accept':'application/json'} });
+        const j = await r.json();
+        const v = Number(j?.ripple?.usd);
+        if (!sane(v)) throw new Error('gecko out of sane range');
+        priceState.usd = v;
+        priceState.ts  = Date.now();
+        return v;
+      } finally { clearTimeout(t); }
     }
-    async function geckoSpot(){
-      const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-      const j = await r.json();
-      const v = Number(j?.ripple?.usd);
-      if (!sane(v)) throw new Error('cg bad'); return v;
-    }
-    async function binanceSpot(){
-      const r = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT');
-      const j = await r.json();
-      const v = Number(j?.price);
-      if (!sane(v)) throw new Error('bn bad'); return v;
-    }
-    async function cryptocompareSpot(){
-      const r = await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD');
-      const j = await r.json();
-      const v = Number(j?.USD);
-      if (!sane(v)) throw new Error('cc bad'); return v;
+    async function getGeckoPriceCached(){
+      const age = Date.now() - priceState.ts;
+      if (age < PRICE_TTL_MS && sane(priceState.usd)) return priceState.usd;
+      return fetchGeckoXrpUsd();
     }
 
-    // Live price: prefer Coinbase, then Gecko, then Binance, then CryptoCompare
-    async function getLiveXrpUsd(){
-      try { return {usd: await coinbaseSpot(), source:'Coinbase'}; } catch {}
-      try { return {usd: await geckoSpot(),   source:'CoinGecko'}; } catch {}
-      try { return {usd: await binanceSpot(), source:'Binance'}; } catch {}
-      const usd = await cryptocompareSpot(); return {usd, source:'CryptoCompare'};
+    function updateSpotBar(rate){
+      if (!spotLine) return;
+      spotLine.innerHTML = `
+        <span>1M $BAG = $1 USD</span>
+        <span class="sep">·</span>
+        <span>Powered by $XRP</span>
+        <span class="sep">·</span>
+        <span>Live (CoinGecko): $${(rate||0).toFixed(4)}/XRP</span>
+      `;
     }
 
-    async function fetchQuote(usd){
-      const r = await fetch(`${API}/api/quote?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || "quote failed");
-      return j; // { ok, xrp_to_send, xrp_usd? }
+    // Refresh bar every 60s in background (no recalculation unless user edits)
+    async function refreshBarLoop(){
+      try{
+        const r = await getGeckoPriceCached();
+        updateSpotBar(r);
+      }catch{}
+      setTimeout(refreshBarLoop, PRICE_TTL_MS);
     }
 
+    // --- QUOTE (for deeplink only; amount uses Gecko) ---
     async function tryDeeplink(usd){
-      try{ const r=await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`,{cache:"no-store",mode:"cors",credentials:"omit"}); if(!r.ok) return null; const j=await r.json(); return j.deeplink?.deeplink || j.deeplink || null; }catch{ return null; }
+      try {
+        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
+        if (!r.ok) return null;
+        const j = await r.json();
+        return j.deeplink?.deeplink || j.deeplink || null;
+      } catch { return null; }
     }
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // --- MAIN INPUT HANDLER ---
+    // --- MAIN INPUT HANDLER (Gecko-only math) ---
     async function handleUSDInput(){
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
       bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
       disableBuy("Enter an amount to enable");
+
       if (!Number.isFinite(usd) || usd < 1){ if (usd>0) xrpConversion.textContent='❌ Minimum $1'; return; }
 
       try{
-        // Live price (display-only)
-        let live = null;
-        try { live = await getLiveXrpUsd(); } catch {}
+        const rateUSD = await getGeckoPriceCached();   // USD per 1 XRP from CoinGecko
+        updateSpotBar(rateUSD);
 
-        // Server quote (source of truth for amount)
-        let quote = null;
-        try { quote = await fetchQuote(usd); } catch {}
-
-        let xrpNeeded, rateUsedUSD, barParts = [
-          '<span>1M $BAG = $1 USD</span>',
-          '<span class="sep">·</span>',
-          '<span>Powered by $XRP</span>'
-        ];
-
-        // If server quote exists, use it for amount and derive its rate from amount.
-        if (quote && Number.isFinite(Number(quote.xrp_to_send ?? quote.xrp))){
-          xrpNeeded   = Number(quote.xrp_to_send ?? quote.xrp);
-          rateUsedUSD = Number(quote.xrp_usd);
-          if (!sane(rateUsedUSD)) rateUsedUSD = usd / xrpNeeded; // derive exact
-          barParts.push('<span class="sep">·</span><span>Quote XRP: $' + (rateUsedUSD||0).toFixed(4) + '/XRP</span>');
-        }
-
-        // Show live too (for transparency)
-        if (live && sane(live.usd)){
-          barParts.push('<span class="sep">·</span><span>Live (' + live.source + '): $' + live.usd.toFixed(4) + '/XRP</span>');
-          // If we had no server, use live for amount.
-          if (!Number.isFinite(xrpNeeded)){ xrpNeeded = usd / live.usd; rateUsedUSD = live.usd; }
-        }
-
-        if (!Number.isFinite(xrpNeeded)) throw new Error('no usable rate');
-
-        spotLine.innerHTML = barParts.join('');
-
-        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${(rateUsedUSD||0).toFixed(4)}/XRP)`;
+        const xrpNeeded = usd / rateUSD;               // amount users must send
+        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${rateUSD.toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
         const link = await tryDeeplink(usd);
         if (link) enableBuy(link, "Open in wallet"); else disableBuy("Quote shown. Deeplink unavailable.");
       }catch(e){
         console.error(e);
-        xrpConversion.textContent = '⚠️ Could not fetch price';
+        xrpConversion.textContent = '⚠️ Could not fetch CoinGecko price';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
         disableBuy("Could not fetch price");
       }
     }
+
+    // Init: prime bar and start refresh loop
+    (async function initPrice(){
+      try{ const r = await getGeckoPriceCached(); updateSpotBar(r); }catch{}
+      refreshBarLoop();
+    })();
+
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
   </script>
 
