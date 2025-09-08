@@ -76,17 +76,39 @@
 
     .legal-disclaimer { max-width:900px; margin:34px auto 0; padding:18px 16px 8px; border-top:1px solid #222; border-bottom:1px solid #222; font-size:.82rem; color:#aaa; text-align:center; line-height:1.45; }
 
-    /* === $BAG Transaction Ticker (JS engine; cannot pause) === */
-    .ticker{
-      position:relative; width:100%; background:#0a0a0a; color:#19ff6b;
-      font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-      font-size:14px; line-height:1; padding:10px 0; overflow:hidden;
-      -webkit-mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
-              mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
-      border-top:1px solid #111; border-bottom:1px solid #111; pointer-events:none;
+    /* === Vertical Activity Feed === */
+    .feedbox{
+      width:100%;
+      max-width:520px;
+      margin:10px auto 18px;
+      background:#0b0b0b;
+      border:1px solid #1a1a1a;
+      border-radius:10px;
+      overflow:hidden;
+      box-shadow:0 8px 20px rgba(0,0,0,.25);
     }
-    .ticker__track{ display:inline-block; white-space:nowrap; will-change: transform; transform:translate3d(0,0,0); }
-    .ticker__item{ display:inline-block; padding:0 24px; }
+    .feedlist{
+      list-style:none;
+      margin:0;
+      padding:0;
+      height: 90px; /* ~3 items visible (JS will refine) */
+      position:relative;
+      will-change: transform;
+    }
+    .feeditem{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      font:600 13px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:#d8ffe7;
+      border-bottom:1px solid #111;
+      white-space:nowrap;
+    }
+    .feeditem .dot{ width:8px; height:8px; border-radius:50%; background:#27c93f; box-shadow:0 0 6px #27c93f88; flex:0 0 auto; }
+    .feeditem .txt{ flex:1 1 auto; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; color:#19ff6b; }
+    .feeditem .time{ color:#8fbf9f; font-weight:700; font-size:12px; opacity:.9; }
+    .feedlist.animating{ transition: transform .42s cubic-bezier(.22,.61,.36,1); }
   </style>
 
   <!-- Favicon & App Icons -->
@@ -140,9 +162,11 @@
   <div class="otc-section">
     <div class="otc-wrap">
 
-      <!-- === $BAG Transaction Feed Ticker (top of OTC) === -->
-      <div class="ticker" id="bagTicker" aria-label="$BAG activity feed">
-        <div class="ticker__track" id="bagTickerTrack"></div>
+      <!-- (Removed horizontal streaming ticker by request) -->
+
+      <!-- === Vertical $BAG Activity Feed (periodic + bursts) === -->
+      <div class="feedbox" id="bagFeed" aria-label="$BAG recent activity">
+        <ul class="feedlist" id="bagFeedList"></ul>
       </div>
 
       <div class="otc-head" style="margin-top:16px;">
@@ -261,11 +285,12 @@
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // === COINGECKO-ONLY PRICE (cached 60s) ===
-    const PRICE_TTL_MS = 60_000;
-    const priceState = { usd: NaN, ts: 0 };
+    // === COINGECKO-ONLY PRICE (LOCKED PER LOAD) ===
+    const priceState = { usd: NaN, ts: 0, locked: false };
+    const unlocked = new URLSearchParams(location.search).has('unlock'); // ?unlock=1 to allow re-fetch
 
     function sane(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
+
     async function fetchGeckoXrpUsd(){
       const url = `https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&precision=full&_=${Date.now()}`;
       const ctrl = new AbortController();
@@ -275,38 +300,29 @@
         const j = await r.json();
         const v = Number(j?.ripple?.usd);
         if (!sane(v)) throw new Error('gecko out of sane range');
-        priceState.usd = v;
-        priceState.ts  = Date.now();
         return v;
       } finally { clearTimeout(t); }
     }
-    async function getGeckoPriceCached(){
-      const age = Date.now() - priceState.ts;
-      if (age < PRICE_TTL_MS && sane(priceState.usd)) return priceState.usd;
-      return fetchGeckoXrpUsd();
-    }
 
-    function updateSpotBar(rate){
+    function updateSpotBar(rate, locked=true){
       if (!spotLine) return;
       spotLine.innerHTML = `
         <span>1M $BAG = $1 USD</span>
         <span class="sep">·</span>
         <span>Powered by $XRP</span>
         <span class="sep">·</span>
-        <span>Live (CoinGecko): $${(rate||0).toFixed(4)}/XRP</span>
+        <span>Live (CoinGecko${locked ? ', locked' : ''}): $${(rate||0).toFixed(4)}/XRP</span>
       `;
     }
 
-    // Refresh bar every 60s in background (no recalculation unless user edits)
-    async function refreshBarLoop(){
-      try{
-        const r = await getGeckoPriceCached();
-        updateSpotBar(r);
-      }catch{}
-      setTimeout(refreshBarLoop, PRICE_TTL_MS);
+    async function getLockedGeckoPrice(){
+      if (priceState.locked && sane(priceState.usd)) return priceState.usd;
+      const v = await fetchGeckoXrpUsd();
+      priceState.usd = v; priceState.ts = Date.now();
+      if (!unlocked) priceState.locked = true;
+      return v;
     }
 
-    // --- QUOTE (for deeplink only; amount uses Gecko) ---
     async function tryDeeplink(usd){
       try {
         const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
@@ -318,7 +334,7 @@
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // --- MAIN INPUT HANDLER (Gecko-only math) ---
+    // --- MAIN INPUT HANDLER (Gecko-locked math) ---
     async function handleUSDInput(){
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
@@ -328,10 +344,10 @@
       if (!Number.isFinite(usd) || usd < 1){ if (usd>0) xrpConversion.textContent='❌ Minimum $1'; return; }
 
       try{
-        const rateUSD = await getGeckoPriceCached();   // USD per 1 XRP from CoinGecko
-        updateSpotBar(rateUSD);
+        const rateUSD = await getLockedGeckoPrice();  // locked CoinGecko rate
+        updateSpotBar(rateUSD, !unlocked);
 
-        const xrpNeeded = usd / rateUSD;               // amount users must send
+        const xrpNeeded = usd / rateUSD;
         xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${rateUSD.toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
@@ -344,75 +360,131 @@
         disableBuy("Could not fetch price");
       }
     }
-
-    // Init: prime bar and start refresh loop
-    (async function initPrice(){
-      try{ const r = await getGeckoPriceCached(); updateSpotBar(r); }catch{}
-      refreshBarLoop();
-    })();
-
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
+
+    // Init price bar once per load (locked)
+    (async function initPrice(){
+      try{ const r = await getLockedGeckoPrice(); updateSpotBar(r, !unlocked); }catch{}
+    })();
   </script>
 
-  <!-- === $BAG Transaction Feed Ticker (JS engine, ≥1M & ≤100B) === -->
+  <!-- === Vertical $BAG Activity Feed (periodic 1–3s + bursts, 3 rows visible) === -->
   <script>
   (function(){
-    const MIN = 1_000_000, MAX = 100_000_000_000, COUNT = 180;
+    const BOX_ID = 'bagFeed';
+    const LIST_ID = 'bagFeedList';
+    const VISIBLE_ROWS = 3;  // exactly three visible rows
+    const STEP_MIN_MS = 1000;   // 1s
+    const STEP_MAX_MS = 3000;   // 3s
+    const BURST_PROB = 0.12;    // 12%
+    const BURST_COUNT_MIN = 5;
+    const BURST_COUNT_MAX = 12;
+    const MAX_ITEMS_KEEP = 120;
 
+    const MIN = 1_000_000, MAX = 100_000_000_000;
     const bands = [
-      { min: 1_000_000,        max: 100_000_000,      w: 0.45 },
-      { min: 100_000_000,      max: 1_000_000_000,    w: 0.30 },
-      { min: 1_000_000_000,    max: 10_000_000_000,   w: 0.18 },
-      { min: 10_000_000_000,   max: 100_000_000_000,  w: 0.07 }
+      { min: 1_000_000,        max: 100_000_000,      w: 0.50 },
+      { min: 100_000_000,      max: 1_000_000_000,    w: 0.28 },
+      { min: 1_000_000_000,    max: 10_000_000_000,   w: 0.16 },
+      { min: 10_000_000_000,   max: 100_000_000_000,  w: 0.06 }
     ];
-    const multipliers = [1,1.1,1.2,1.25,1.3,1.33,1.4,1.5,1.6,1.66,1.75,1.8,1.9,2,2.2,2.25,2.5,2.75,2.8,2.9,3,3.25,3.5,3.75,4,4.2,4.4,4.5,4.8,5,5.25,5.5,5.75,6,6.5,6.75,6.9,7,7.5,7.8,8,8.5,9,9.5,10,11,12.5,13.3,15,18.9,20,22.2,25,27.5,30,33,35,37.5,40,45,50,55,60,66,70,75,80,90,100];
+    const multipliers = [1,1.05,1.1,1.15,1.2,1.25,1.3,1.33,1.4,1.5,1.6,1.66,1.75,1.8,1.9,2,2.2,2.5,3,3.5,4,5,6,7.5,10];
 
     function pickBand(){ const r=Math.random(); let a=0; for(const b of bands){ a+=b.w; if(r<=a) return b; } return bands.at(-1); }
     function nearestBase(n){ const p=Math.pow(10, Math.floor(Math.log10(n))); const opts=[1,2,5].map(k=>k*p); return opts.reduce((best,c)=>Math.abs(n-c)<Math.abs(n-best)?c:best,opts[0]); }
-    function genOne(){
-      const b=pickBand(); const base=nearestBase(b.min+Math.random()*(b.max-b.min));
+    function genAmount(){
+      const b=pickBand(); const base=nearestBase(b.min + Math.random()*(b.max-b.min));
       const mult=multipliers[(Math.random()*multipliers.length)|0];
-      let v=Math.round(base*mult); if(v<MIN)v=MIN; if(v>MAX)v=MAX; return Math.round(v/1000)*1000;
+      let v = Math.round(base*mult);
+      if (v < MIN) v = MIN; if (v > MAX) v = MAX;
+      return Math.round(v/1000)*1000;
     }
-    function format(n){ return n.toLocaleString('en-US'); }
+    const fmt = n => n.toLocaleString('en-US');
 
-    const set=new Set(); let guard=0;
-    while(set.size<COUNT && guard<COUNT*20){ set.add(genOne()); guard++; }
-    [1_000_000,5_000_000,10_000_000,25_000_000,50_000_000,100_000_000,250_000_000,500_000_000,1_000_000_000,2_000_000_000,5_000_000_000,10_000_000_000,25_000_000_000,50_000_000_000,100_000_000_000].forEach(a=>set.add(a));
+    const box  = document.getElementById(BOX_ID);
+    const list = document.getElementById(LIST_ID);
+    if (!box || !list) return;
 
-    const arr=Array.from(set); for(let i=arr.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    function makeItem(amount){
+      const li = document.createElement('li');
+      li.className = 'feeditem';
+      const dot  = document.createElement('span'); dot.className='dot';
+      const txt  = document.createElement('span'); txt.className='txt';
+      const time = document.createElement('span'); time.className='time';
+      txt.textContent = `${fmt(amount)} $BAG received`;
+      time.textContent = 'now';
+      li.appendChild(dot); li.appendChild(txt); li.appendChild(time);
+      return li;
+    }
 
-    const track=document.getElementById('bagTickerTrack');
-    function build(list){
-      const frag=document.createDocumentFragment();
-      list.forEach(n=>{
-        const s=document.createElement('span'); s.className='ticker__item'; s.textContent=`${format(n)} $BAG received`; frag.appendChild(s);
-        const dot=document.createElement('span'); dot.className='ticker__item'; dot.textContent='•'; frag.appendChild(dot);
+    const initial = Math.max(VISIBLE_ROWS + 3, 8);
+    for (let i=0;i<initial;i++) list.appendChild(makeItem(genAmount()));
+
+    // EXACTLY 3 visible items: measure first item and set container height
+    function setExactHeight(){
+      const first = list.firstElementChild;
+      if (!first) return;
+      const h = first.offsetHeight || 30;
+      list.style.height = (h * VISIBLE_ROWS) + 'px';
+    }
+    window.addEventListener('load', setExactHeight);
+    setTimeout(setExactHeight, 50);
+
+    function clampItems(){
+      const extra = list.children.length - MAX_ITEMS_KEEP;
+      for (let i=0;i<extra;i++) list.removeChild(list.firstChild);
+    }
+
+    function stepOnce(customAmount){
+      const first = list.firstElementChild;
+      if (!first) { list.appendChild(makeItem(genAmount())); return; }
+
+      const h = first.offsetHeight;
+      list.classList.add('animating');
+      list.style.transform = `translate3d(0, ${-h}px, 0)`;
+
+      const onDone = () => {
+        list.removeEventListener('transitionend', onDone);
+        list.classList.remove('animating');
+        list.style.transform = 'translate3d(0,0,0)';
+        list.removeChild(first);
+        list.appendChild(makeItem(customAmount ?? genAmount()));
+        clampItems();
+      };
+      list.addEventListener('transitionend', onDone, { once:true });
+      setTimeout(()=>{ if (list.classList.contains('animating')) onDone(); }, 700);
+    }
+
+    function nextDelay(){ return STEP_MIN_MS + Math.random()*(STEP_MAX_MS - STEP_MAX_MS + STEP_MIN_MS); } // keep 1–3s
+
+    function scheduleNext(){
+      if (Math.random() < BURST_PROB){
+        const burstCount = BURST_COUNT_MIN + Math.floor(Math.random()*(BURST_COUNT_MAX-BURST_COUNT_MIN+1));
+        let i = 0;
+        const burstTimer = setInterval(()=>{
+          stepOnce();
+          i++;
+          if (i >= burstCount) { clearInterval(burstTimer); setTimeout(scheduleNext, STEP_MIN_MS + Math.random()*(STEP_MAX_MS-STEP_MIN_MS)); }
+        }, 90 + Math.random()*110);
+        return;
+      }
+      setTimeout(()=>{ stepOnce(); scheduleNext(); }, STEP_MIN_MS + Math.random()*(STEP_MAX_MS-STEP_MIN_MS));
+    }
+    scheduleNext();
+
+    setInterval(()=>{
+      const items = list.querySelectorAll('.feeditem .time');
+      items.forEach((el, idx)=>{
+        if (idx < items.length - 1) {
+          const v = el.textContent;
+          if (v === 'now') el.textContent = '1s';
+          else {
+            const n = parseInt(v,10);
+            if (!Number.isNaN(n)) el.textContent = (Math.min(n+15, 300)) + 's';
+          }
+        }
       });
-      return frag;
-    }
-    track.appendChild(build(arr));
-    track.appendChild(build(arr)); // duplicate
-
-    // === Unstoppable JS scroll engine ===
-    let seqW = 0, offset = 0, last = performance.now();
-    const SPEED = 90; // px/sec
-
-    function measure(){ seqW = track.scrollWidth / 2; }
-    function step(now){
-      const dt = (now - last) / 1000; last = now;
-      offset += SPEED * dt;
-      if (offset >= seqW) offset -= seqW;
-      track.style.transform = `translate3d(${-offset}px,0,0)`;
-      requestAnimationFrame(step);
-    }
-    // Safety timer if RAF throttles during heavy scroll
-    setInterval(()=>{ const now=performance.now(); if (now-last > 180){
-      const dt=(now-last)/1000; last=now; offset+=SPEED*dt; if(offset>=seqW) offset-=seqW; track.style.transform=`translate3d(${-offset}px,0,0)`;
-    }}, 80);
-
-    window.addEventListener('load', ()=>{ measure(); last=performance.now(); requestAnimationFrame(step); });
-    window.addEventListener('resize', ()=>{ const prev=seqW; measure(); if (seqW !== prev){ offset = offset % seqW; } });
+    }, 15000);
   })();
   </script>
 </body>
