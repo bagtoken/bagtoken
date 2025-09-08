@@ -47,11 +47,8 @@
     .status-badge { display:inline-flex; align-items:center; gap:.5rem; font:600 12px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:.35rem .6rem; border-radius:999px; border:1px solid #2a2a2a; background:#1b1b1f; color:#cfcfcf; user-select:none; }
     .status-dot{width:.5rem;height:.5rem;border-radius:50%;background:#666;}
     .status-badge.live  { color:#0f0; border-color:#1e4021; background:#102214; }
-    .status-badge.live .status-dot  { background:#27c93f; box-shadow:0 0 8px #27c93f88; }
     .status-badge.warn  { color:#ffe8a6; border-color:#4a3b13; background:#221a08; }
-    .status-badge.warn .status-dot  { background:#ffc21a; box-shadow:0 0 8px #ffc21a88; }
     .status-badge.down  { color:#ffd8d8; border-color:#402020; background:#221010; }
-    .status-badge.down .status-dot  { background:#ff3b30; box-shadow:0 0 8px #ff3b3088; }
 
     .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:12px 18px; border-radius:10px; text-decoration:none; font:600 16px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.25); transform:translateY(0); transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease; cursor:pointer; user-select:none; border:none; }
     .btn:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(0,0,0,.28); }
@@ -64,24 +61,13 @@
     .social a{ display:inline-block; margin:0 8px; text-decoration:none; line-height:0; }
     .social img{ width:28px; height:28px; vertical-align:middle; display:block; }
 
-    /* ---- price-line: prevent overflow on mobile ---- */
+    /* ---- price-line: wrap cleanly on mobile ---- */
     .price-line{
-      display:flex;
-      flex-wrap:wrap;
-      justify-content:center;
-      align-items:center;
-      gap:.5rem;
-      padding:10px 14px;
-      border-radius:14px;
-      background:#111;
-      color:#ffd700;
-      border:2px solid #e0c66f;
-      font-weight:800;
-      font-size:clamp(1rem,3.6vw,1.2rem);
-      letter-spacing:.2px;
-      box-shadow:0 0 0 2px #000 inset, 0 10px 22px rgba(0,0,0,.28);
-      margin:6px 0 18px;
-      text-align:center;
+      display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+      gap:.5rem; padding:10px 14px; border-radius:14px; background:#111; color:#ffd700;
+      border:2px solid #e0c66f; font-weight:800; font-size:clamp(1rem,3.6vw,1.2rem);
+      letter-spacing:.2px; box-shadow:0 0 0 2px #000 inset, 0 10px 22px rgba(0,0,0,.28);
+      margin:6px 0 18px; text-align:center;
     }
     .price-line span{ white-space:nowrap; }
     .price-line .sep{ opacity:.75 }
@@ -89,19 +75,15 @@
     .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:26px; background:#111; color:#ffd700; border:2px solid #e0c66f; padding:12px 16px; border-radius:10px; box-shadow:0 10px 26px rgba(0,0,0,.28); font-weight:700; z-index:9999; display:none; }
 
     .legal-disclaimer { max-width:900px; margin:34px auto 0; padding:18px 16px 8px; border-top:1px solid #222; border-bottom:1px solid #222; font-size:.82rem; color:#aaa; text-align:center; line-height:1.45; }
-    .legal-disclaimer h3 { margin:0 0 10px; font-size:1rem; color:#ffd700; font-weight:800; }
 
-    /* === $BAG Transaction Ticker (JS-driven; CSS cannot pause it) === */
+    /* === $BAG Transaction Ticker (JS engine; cannot pause) === */
     .ticker{
-      position:relative; width:100%;
-      background:#0a0a0a; color:#19ff6b;
+      position:relative; width:100%; background:#0a0a0a; color:#19ff6b;
       font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-      font-size:14px; line-height:1; padding:10px 0;
-      overflow:hidden;
+      font-size:14px; line-height:1; padding:10px 0; overflow:hidden;
       -webkit-mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
               mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
-      border-top:1px solid #111; border-bottom:1px solid #111;
-      pointer-events:none; /* touches can't interfere */
+      border-top:1px solid #111; border-bottom:1px solid #111; pointer-events:none;
     }
     .ticker__track{ display:inline-block; white-space:nowrap; will-change: transform; transform:translate3d(0,0,0); }
     .ticker__item{ display:inline-block; padding:0 24px; }
@@ -162,7 +144,6 @@
       <div class="ticker" id="bagTicker" aria-label="$BAG activity feed">
         <div class="ticker__track" id="bagTickerTrack"></div>
       </div>
-      <!-- === /Ticker === -->
 
       <div class="otc-head" style="margin-top:16px;">
         <h2>GET THE $BAG — OTC</h2>
@@ -280,38 +261,60 @@
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // === PRICE AGGREGATOR (strict + consensus) ===
+    // === PRICE SOURCES ===
     async function fetchWithTimeout(url, ms=3000){
       return Promise.race([ fetch(url, {cache:'no-store'}), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms)) ]);
     }
-    function isSanePrice(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
-    async function fetchSpotXrpUsd(){
-      const tasks = [
-        async () => { const r=await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot'); const j=await r.json(); return Number(j?.data?.amount); },
-        async () => { const r=await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT'); const j=await r.json(); return Number(j?.price); },
-        async () => { const r=await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const j=await r.json(); return Number(j?.ripple?.usd); },
-        async () => { const r=await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD'); const j=await r.json(); return Number(j?.USD); }
-      ];
-      const vals=[];
-      for (const t of tasks){ try{ const v=await t(); if(isSanePrice(v)) vals.push(v); }catch{} }
-      if (!vals.length) throw new Error('no spot');
-      vals.sort((a,b)=>a-b);
-      const mid = vals[Math.floor(vals.length/2)];
-      const pool = vals.filter(v => Math.abs(v-mid)/mid <= 0.05); // ±5%
-      const final = pool.length >= 2 ? pool : vals; // need ≥2 agreeing
-      final.sort((a,b)=>a-b);
-      return final[Math.floor(final.length/2)];
+    function sane(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
+
+    async function coinbaseSpot(){
+      const r = await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot');
+      const j = await r.json();
+      const v = Number(j?.data?.amount);
+      if (!sane(v)) throw new Error('cb bad'); return v;
     }
+    async function geckoSpot(){
+      const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const j = await r.json();
+      const v = Number(j?.ripple?.usd);
+      if (!sane(v)) throw new Error('cg bad'); return v;
+    }
+    async function binanceSpot(){
+      const r = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT');
+      const j = await r.json();
+      const v = Number(j?.price);
+      if (!sane(v)) throw new Error('bn bad'); return v;
+    }
+    async function cryptocompareSpot(){
+      const r = await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD');
+      const j = await r.json();
+      const v = Number(j?.USD);
+      if (!sane(v)) throw new Error('cc bad'); return v;
+    }
+
+    // Live price: prefer Coinbase, then Gecko, then Binance, then CryptoCompare
+    async function getLiveXrpUsd(){
+      try { return {usd: await coinbaseSpot(), source:'Coinbase'}; } catch {}
+      try { return {usd: await geckoSpot(),   source:'CoinGecko'}; } catch {}
+      try { return {usd: await binanceSpot(), source:'Binance'}; } catch {}
+      const usd = await cryptocompareSpot(); return {usd, source:'CryptoCompare'};
+    }
+
     async function fetchQuote(usd){
       const r = await fetch(`${API}/api/quote?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json(); if (!j.ok) throw new Error(j.error||'quote failed'); return j;
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "quote failed");
+      return j; // { ok, xrp_to_send, xrp_usd? }
     }
+
     async function tryDeeplink(usd){
       try{ const r=await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`,{cache:"no-store",mode:"cors",credentials:"omit"}); if(!r.ok) return null; const j=await r.json(); return j.deeplink?.deeplink || j.deeplink || null; }catch{ return null; }
     }
+
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
+    // --- MAIN INPUT HANDLER ---
     async function handleUSDInput(){
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
@@ -320,36 +323,38 @@
       if (!Number.isFinite(usd) || usd < 1){ if (usd>0) xrpConversion.textContent='❌ Minimum $1'; return; }
 
       try{
-        let spotRateUSD = NaN;
-        try{ spotRateUSD = await fetchSpotXrpUsd(); }catch{}
-        let server = null;
-        try{ server = await fetchQuote(usd); }catch{}
+        // Live price (display-only)
+        let live = null;
+        try { live = await getLiveXrpUsd(); } catch {}
 
-        const xrpFromSpot   = Number.isFinite(spotRateUSD) ? (usd / spotRateUSD) : NaN;
-        const xrpFromServer = Number(server?.xrp_to_send ?? server?.xrp);
-        const serverRateUSD = Number(server?.xrp_usd);
+        // Server quote (source of truth for amount)
+        let quote = null;
+        try { quote = await fetchQuote(usd); } catch {}
 
-        let xrpNeeded, rateUsedUSD, label;
-        if (Number.isFinite(xrpFromSpot) && Number.isFinite(xrpFromServer)){
-          if (xrpFromSpot >= xrpFromServer){ xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; label='Live'; }
-          else { xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD || spotRateUSD; label='Quote'; }
-        } else if (Number.isFinite(xrpFromSpot)){
-          xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; label='Live';
-        } else if (Number.isFinite(xrpFromServer)){
-          xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD; label='Quote';
-        } else {
-          throw new Error('no usable rate');
+        let xrpNeeded, rateUsedUSD, barParts = [
+          '<span>1M $BAG = $1 USD</span>',
+          '<span class="sep">·</span>',
+          '<span>Powered by $XRP</span>'
+        ];
+
+        // If server quote exists, use it for amount and derive its rate from amount.
+        if (quote && Number.isFinite(Number(quote.xrp_to_send ?? quote.xrp))){
+          xrpNeeded   = Number(quote.xrp_to_send ?? quote.xrp);
+          rateUsedUSD = Number(quote.xrp_usd);
+          if (!sane(rateUsedUSD)) rateUsedUSD = usd / xrpNeeded; // derive exact
+          barParts.push('<span class="sep">·</span><span>Quote XRP: $' + (rateUsedUSD||0).toFixed(4) + '/XRP</span>');
         }
 
-        if (spotLine){
-          spotLine.innerHTML = `
-            <span>1M $BAG = $1 USD</span>
-            <span class="sep">·</span>
-            <span>Powered by $XRP</span>
-            <span class="sep">·</span>
-            <span>${label} XRP: $${(rateUsedUSD||0).toFixed(4)}/XRP</span>
-          `;
+        // Show live too (for transparency)
+        if (live && sane(live.usd)){
+          barParts.push('<span class="sep">·</span><span>Live (' + live.source + '): $' + live.usd.toFixed(4) + '/XRP</span>');
+          // If we had no server, use live for amount.
+          if (!Number.isFinite(xrpNeeded)){ xrpNeeded = usd / live.usd; rateUsedUSD = live.usd; }
         }
+
+        if (!Number.isFinite(xrpNeeded)) throw new Error('no usable rate');
+
+        spotLine.innerHTML = barParts.join('');
 
         xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${(rateUsedUSD||0).toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
@@ -358,9 +363,9 @@
         if (link) enableBuy(link, "Open in wallet"); else disableBuy("Quote shown. Deeplink unavailable.");
       }catch(e){
         console.error(e);
-        xrpConversion.textContent = '⚠️ Could not fetch live price';
+        xrpConversion.textContent = '⚠️ Could not fetch price';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
-        disableBuy("Could not fetch live price");
+        disableBuy("Could not fetch price");
       }
     }
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
@@ -406,7 +411,7 @@
     track.appendChild(build(arr));
     track.appendChild(build(arr)); // duplicate
 
-    // === JS engine: unstoppable scroll ===
+    // === Unstoppable JS scroll engine ===
     let seqW = 0, offset = 0, last = performance.now();
     const SPEED = 90; // px/sec
 
@@ -418,13 +423,13 @@
       track.style.transform = `translate3d(${-offset}px,0,0)`;
       requestAnimationFrame(step);
     }
-    // Fallback timer if RAF throttles during scroll
-    setInterval(()=>{ const now=performance.now(); if (now-last > 180){ // ~5.5fps fallback
-      const dt=(now-last)/1000; last=now; offset+=SPEED*dt; if(offset>=seqW) offset-=seqW; track.style.transform=`translate3d(${-offset}px,0,0)`; }
-    }, 80);
+    // Safety timer if RAF throttles during heavy scroll
+    setInterval(()=>{ const now=performance.now(); if (now-last > 180){
+      const dt=(now-last)/1000; last=now; offset+=SPEED*dt; if(offset>=seqW) offset-=seqW; track.style.transform=`translate3d(${-offset}px,0,0)`;
+    }}, 80);
 
     window.addEventListener('load', ()=>{ measure(); last=performance.now(); requestAnimationFrame(step); });
-    window.addEventListener('resize', ()=>{ const prev = seqW; measure(); if (seqW !== prev){ offset = offset % seqW; } });
+    window.addEventListener('resize', ()=>{ const prev=seqW; measure(); if (seqW !== prev){ offset = offset % seqW; } });
   })();
   </script>
 </body>
