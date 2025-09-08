@@ -93,6 +93,7 @@
       /* Kill hover/touch interference completely */
       pointer-events: none;
     }
+    /* ---- TICKER: NEVER PAUSE ---- */
     .ticker__track{
       display:inline-block;
       white-space:nowrap;
@@ -100,6 +101,17 @@
       animation: tickerScroll linear infinite;
       animation-play-state: running !important; /* Never pause */
     }
+    .ticker, .ticker * { pointer-events: none; } /* taps can't create hover/focus */
+    .ticker:hover .ticker__track,
+    .ticker:active .ticker__track,
+    .ticker:focus .ticker__track { animation-play-state: running !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .ticker__track {
+        animation-duration: var(--tickerDur, 60s) !important;
+        animation-play-state: running !important;
+      }
+    }
+
     .ticker__item{ display:inline-block; padding:0 24px; }
     @keyframes tickerScroll{
       from{ transform: translate3d(0,0,0); }
@@ -292,41 +304,36 @@
       let t; return (...args) => { clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
     };
 
-    // === Live XRP/USD spot (multi-source with median; robust CORS options) ===
+    // --- utilities for price ---
+    async function fetchWithTimeout(url, ms=3000){
+      return Promise.race([
+        fetch(url, {cache:'no-store'}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms))
+      ]);
+    }
+    function isSanePrice(p){ return Number.isFinite(p) && p > 0.05 && p < 25; } // guardrails
+
+    // --- robust spot aggregator with outlier filtering ---
     async function fetchSpotXrpUsd(){
-      const providers = [
-        async () => { // CoinGecko
-          const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd', { cache:'no-store' });
-          const j = await r.json(); return Number(j?.ripple?.usd);
-        },
-        async () => { // CryptoCompare
-          const r = await fetch('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD', { cache:'no-store' });
-          const j = await r.json(); return Number(j?.USD);
-        },
-        async () => { // Coinbase
-          const r = await fetch('https://api.coinbase.com/v2/prices/XRP-USD/spot', { cache:'no-store' });
-          const j = await r.json(); return Number(j?.data?.amount);
-        },
-        async () => { // Binance
-          const r = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT', { cache:'no-store' });
-          const j = await r.json(); return Number(j?.price);
-        },
-        async () => { // Kraken
-          const r = await fetch('https://api.kraken.com/0/public/Ticker?pair=XXRPZUSD', { cache:'no-store' });
-          const j = await r.json(); const s = j?.result?.XXRPZUSD?.c?.[0]; return Number(s);
-        }
+      const tasks = [
+        async () => { const r = await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot'); const j = await r.json(); return Number(j?.data?.amount); },
+        async () => { const r = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT'); const j = await r.json(); return Number(j?.price); },
+        async () => { const r = await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD'); const j = await r.json(); return Number(j?.USD); },
+        async () => { const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const j = await r.json(); return Number(j?.ripple?.usd); }
       ];
       const vals = [];
-      for (const p of providers){
-        try {
-          const v = await p();
-          if (Number.isFinite(v) && v > 0) vals.push(v);
-        } catch {}
+      for (const t of tasks){
+        try { const v = await t(); if (isSanePrice(v)) vals.push(v); } catch {}
       }
-      if (!vals.length) throw new Error('No spot sources available');
+      if (!vals.length) throw new Error('no spot');
       vals.sort((a,b)=>a-b);
-      const median = vals[Math.floor(vals.length/2)];
-      return { usd: median, samples: vals };
+      const trimmed = vals.slice(Math.floor(vals.length*0.15), Math.ceil(vals.length*0.85));
+      const mean = trimmed.reduce((s,v)=>s+v,0)/trimmed.length;
+      const filtered = vals.filter(v => Math.abs(v-mean)/mean <= 0.08);
+      const pool = filtered.length ? filtered : vals;
+      pool.sort((a,b)=>a-b);
+      const med = pool[Math.floor(pool.length/2)];
+      return { usd: med, pool, mean };
     }
 
     async function fetchQuote(usd){
@@ -348,6 +355,7 @@
 
     function fmt(n, d=6){ return Number(n).toFixed(d); }
 
+    // --- main input handler (consistent rate + amount) ---
     async function handleUSDInput() {
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
@@ -360,19 +368,36 @@
       }
 
       try {
-        // 1) Live spot (median of sources)
-        const spot = await fetchSpotXrpUsd();
-        const spotRate = spot.usd;            // USD per XRP
-        const xrpFromSpot = usd / spotRate;   // XRP needed from spot
+        // 1) Spot (robust)
+        let spotRateUSD;
+        try {
+          const spot = await fetchSpotXrpUsd();
+          spotRateUSD = spot.usd; // USD per XRP
+        } catch { spotRateUSD = NaN; }
 
-        // 2) Server quote fallback (ensure we don't understate XRP needed)
+        // 2) Server quote (fallback / compare)
         let serverQuote = null;
-        try { serverQuote = await fetchQuote(usd); } catch(e){ /* non-fatal */ }
-        const serverRate = Number(serverQuote?.xrp_usd) || 0;
-        const xrpFromServer = Number(serverQuote?.xrp_to_send ?? serverQuote?.xrp) || 0;
+        try { serverQuote = await fetchQuote(usd); } catch {}
 
-        const xrpNeeded = Math.max(xrpFromSpot, xrpFromServer || 0);
-        const rateUsed = (xrpNeeded === xrpFromServer && xrpFromServer) ? (serverRate || spotRate) : spotRate;
+        const xrpFromSpot = Number.isFinite(spotRateUSD) ? (usd / spotRateUSD) : NaN;
+        const xrpFromServer = Number(serverQuote?.xrp_to_send ?? serverQuote?.xrp);
+        const serverRateUSD = Number(serverQuote?.xrp_usd);
+
+        // Choose source to avoid understating required XRP
+        let xrpNeeded, rateUsedUSD, source;
+        if (Number.isFinite(xrpFromSpot) && Number.isFinite(xrpFromServer)) {
+          if (xrpFromSpot >= xrpFromServer) {
+            xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; source = 'spot';
+          } else {
+            xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD || spotRateUSD; source = 'server';
+          }
+        } else if (Number.isFinite(xrpFromSpot)) {
+          xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; source = 'spot';
+        } else if (Number.isFinite(xrpFromServer)) {
+          xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD; source = 'server';
+        } else {
+          throw new Error('no usable rate');
+        }
 
         if (spotLine) {
           spotLine.innerHTML = `
@@ -380,11 +405,11 @@
             <span class="sep">·</span>
             <span>Powered by $XRP</span>
             <span class="sep">·</span>
-            <span>Live XRP: $${rateUsed.toFixed(4)}/XRP</span>
+            <span>${source === 'server' ? 'Quote' : 'Live'} XRP: $${(rateUsedUSD||0).toFixed(4)}/XRP</span>
           `;
         }
 
-        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${rateUsed.toFixed(4)}/XRP)`;
+        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${(rateUsedUSD||0).toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
         const link = await tryDeeplink(usd);
@@ -508,6 +533,20 @@
         track.style.animationName = 'tickerScroll';
       });
     });
+  })();
+  </script>
+
+  <!-- Watchdog to force ticker running even if a browser/extension pauses it -->
+  <script>
+  (function forceTickerRunning(){
+    const track = document.getElementById('bagTickerTrack');
+    if (!track) return;
+    function tick(){
+      const ps = getComputedStyle(track).animationPlayState;
+      if (ps !== 'running') track.style.animationPlayState = 'running';
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
   })();
   </script>
 </body>
