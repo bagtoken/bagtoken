@@ -26,10 +26,8 @@
     body { margin: 0; background: #000; color: #f8f8f8; font-family: Arial, sans-serif; line-height: 1.5; overflow-x: hidden; }
     p { margin: 0 0 10px; }
     .hero { text-align: center; padding: 6vh 5vw 2vh; }
-
     .hero-img { width: 55%; max-width: 320px; height: auto; margin: 0 auto 20px; display: block; }
     @media (max-width: 480px) { .hero-img { width: 65%; max-width: 220px; } }
-
     h1 { font-size: clamp(1.8rem, 6vw, 2.8rem); margin-bottom: 10px; }
     .tagline { font-size: clamp(1rem, 4vw, 1.3rem); color: #bbb; margin-bottom: 4px; padding: 0 10px; }
 
@@ -69,7 +67,7 @@
     /* ---- price-line: prevent overflow on mobile ---- */
     .price-line{
       display:flex;
-      flex-wrap:wrap;             /* allow wrapping */
+      flex-wrap:wrap;
       justify-content:center;
       align-items:center;
       gap:.5rem;
@@ -93,35 +91,20 @@
     .legal-disclaimer { max-width:900px; margin:34px auto 0; padding:18px 16px 8px; border-top:1px solid #222; border-bottom:1px solid #222; font-size:.82rem; color:#aaa; text-align:center; line-height:1.45; }
     .legal-disclaimer h3 { margin:0 0 10px; font-size:1rem; color:#ffd700; font-weight:800; }
 
-    /* === $BAG Transaction Ticker === */
+    /* === $BAG Transaction Ticker (JS-driven; CSS cannot pause it) === */
     .ticker{
-      position:relative;
-      width:100%;
-      background:#0a0a0a;
-      color:#19ff6b;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size:14px;
-      line-height:1;
-      padding:10px 0;
+      position:relative; width:100%;
+      background:#0a0a0a; color:#19ff6b;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+      font-size:14px; line-height:1; padding:10px 0;
       overflow:hidden;
       -webkit-mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
               mask-image: linear-gradient(to right, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
-      border-top:1px solid #111;
-      border-bottom:1px solid #111;
-      pointer-events:none;        /* taps can’t pause */
+      border-top:1px solid #111; border-bottom:1px solid #111;
+      pointer-events:none; /* touches can't interfere */
     }
-    .ticker__track{
-      display:inline-block;
-      white-space:nowrap;
-      will-change: transform;
-      animation: tickerScroll linear infinite;
-      animation-play-state: running !important; /* never pause */
-    }
+    .ticker__track{ display:inline-block; white-space:nowrap; will-change: transform; transform:translate3d(0,0,0); }
     .ticker__item{ display:inline-block; padding:0 24px; }
-    @keyframes tickerScroll{
-      from{ transform: translate3d(0,0,0); }
-      to  { transform: translate3d(var(--toX, -50%),0,0); }
-    }
   </style>
 
   <!-- Favicon & App Icons -->
@@ -292,117 +275,79 @@
     const btnBuy = document.getElementById('btnBuy');
     const spotLine = document.getElementById('spotLine');
 
-    function disableBuy(msg){
-      btnBuy.setAttribute("aria-disabled","true");
-      btnBuy.href="#";
-      if (msg) btnBuy.title = msg;
-    }
-    function enableBuy(link, msg){
-      btnBuy.setAttribute("aria-disabled","false");
-      btnBuy.href = link;
-      btnBuy.title = msg || "Open in wallet";
-    }
+    function disableBuy(msg){ btnBuy.setAttribute("aria-disabled","true"); btnBuy.href="#"; if (msg) btnBuy.title = msg; }
+    function enableBuy(link, msg){ btnBuy.setAttribute("aria-disabled","false"); btnBuy.href = link; btnBuy.title = msg || "Open in wallet"; }
+    const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // Debounce helper
-    const debounce = (fn, ms=250) => { let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; };
-
-    // --- utilities for price ---
+    // === PRICE AGGREGATOR (strict + consensus) ===
     async function fetchWithTimeout(url, ms=3000){
-      return Promise.race([
-        fetch(url, {cache:'no-store'}),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms))
-      ]);
+      return Promise.race([ fetch(url, {cache:'no-store'}), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms)) ]);
     }
-    // Tight sanity band: 0.2–1.5 USD per XRP
-    function isSanePrice(p){ return Number.isFinite(p) && p >= 0.2 && p <= 1.5; }
-
-    // --- robust spot aggregator: ≥2-source consensus, outlier trimmed ---
+    function isSanePrice(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
     async function fetchSpotXrpUsd(){
       const tasks = [
-        async () => { const r = await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot'); const j = await r.json(); return Number(j?.data?.amount); },
-        async () => { const r = await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT'); const j = await r.json(); return Number(j?.price); },
-        async () => { const r = await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD'); const j = await r.json(); return Number(j?.USD); },
-        async () => { const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const j = await r.json(); return Number(j?.ripple?.usd); }
+        async () => { const r=await fetchWithTimeout('https://api.coinbase.com/v2/prices/XRP-USD/spot'); const j=await r.json(); return Number(j?.data?.amount); },
+        async () => { const r=await fetchWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT'); const j=await r.json(); return Number(j?.price); },
+        async () => { const r=await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const j=await r.json(); return Number(j?.ripple?.usd); },
+        async () => { const r=await fetchWithTimeout('https://min-api.cryptocompare.com/data/price?fsym=XRP&tsyms=USD'); const j=await r.json(); return Number(j?.USD); }
       ];
-      const vals = [];
-      for (const t of tasks){ try { const v = await t(); if (isSanePrice(v)) vals.push(v); } catch {} }
+      const vals=[];
+      for (const t of tasks){ try{ const v=await t(); if(isSanePrice(v)) vals.push(v); }catch{} }
       if (!vals.length) throw new Error('no spot');
-
       vals.sort((a,b)=>a-b);
       const mid = vals[Math.floor(vals.length/2)];
-      const pool = vals.filter(v => Math.abs(v-mid)/mid <= 0.05); // within ±5%
-
-      const finalPool = pool.length >= 2 ? pool : vals; // require ≥2 agreeing, else fallback to sane set
-      finalPool.sort((a,b)=>a-b);
-      const median = finalPool[Math.floor(finalPool.length/2)];
-      return { usd: median, count: finalPool.length, raw: vals };
+      const pool = vals.filter(v => Math.abs(v-mid)/mid <= 0.05); // ±5%
+      const final = pool.length >= 2 ? pool : vals; // need ≥2 agreeing
+      final.sort((a,b)=>a-b);
+      return final[Math.floor(final.length/2)];
     }
-
     async function fetchQuote(usd){
-      const res = await fetch(`${API}/api/quote?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || "quote failed");
-      return data; // { ok, xrp_to_send, xrp_usd, ... }
+      const r = await fetch(`${API}/api/quote?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json(); if (!j.ok) throw new Error(j.error||'quote failed'); return j;
     }
-
     async function tryDeeplink(usd){
-      try {
-        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
-        if (!r.ok) return null;
-        const j = await r.json();
-        return j.deeplink?.deeplink || j.deeplink || null;
-      } catch { return null; }
+      try{ const r=await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`,{cache:"no-store",mode:"cors",credentials:"omit"}); if(!r.ok) return null; const j=await r.json(); return j.deeplink?.deeplink || j.deeplink || null; }catch{ return null; }
     }
+    const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    function fmt(n, d=6){ return Number(n).toFixed(d); }
-
-    // --- main input handler (consistent rate + amount) ---
-    async function handleUSDInput() {
+    async function handleUSDInput(){
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
       bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
       disableBuy("Enter an amount to enable");
+      if (!Number.isFinite(usd) || usd < 1){ if (usd>0) xrpConversion.textContent='❌ Minimum $1'; return; }
 
-      if (!Number.isFinite(usd) || usd < 1) {
-        if (usd > 0) xrpConversion.textContent = '❌ Minimum $1';
-        return;
-      }
+      try{
+        let spotRateUSD = NaN;
+        try{ spotRateUSD = await fetchSpotXrpUsd(); }catch{}
+        let server = null;
+        try{ server = await fetchQuote(usd); }catch{}
 
-      try {
-        // 1) Spot (consensus)
-        let spotRateUSD;
-        try { const spot = await fetchSpotXrpUsd(); spotRateUSD = spot.usd; } catch { spotRateUSD = NaN; }
+        const xrpFromSpot   = Number.isFinite(spotRateUSD) ? (usd / spotRateUSD) : NaN;
+        const xrpFromServer = Number(server?.xrp_to_send ?? server?.xrp);
+        const serverRateUSD = Number(server?.xrp_usd);
 
-        // 2) Server quote
-        let serverQuote = null;
-        try { serverQuote = await fetchQuote(usd); } catch {}
-
-        const xrpFromSpot = Number.isFinite(spotRateUSD) ? (usd / spotRateUSD) : NaN;
-        const xrpFromServer = Number(serverQuote?.xrp_to_send ?? serverQuote?.xrp);
-        const serverRateUSD = Number(serverQuote?.xrp_usd);
-
-        // Choose source to avoid understating required XRP
-        let xrpNeeded, rateUsedUSD, source;
-        if (Number.isFinite(xrpFromSpot) && Number.isFinite(xrpFromServer)) {
-          if (xrpFromSpot >= xrpFromServer) { xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; source = 'Live'; }
-          else { xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD || spotRateUSD; source = 'Quote'; }
-        } else if (Number.isFinite(xrpFromSpot)) {
-          xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; source = 'Live';
-        } else if (Number.isFinite(xrpFromServer)) {
-          xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD; source = 'Quote';
+        let xrpNeeded, rateUsedUSD, label;
+        if (Number.isFinite(xrpFromSpot) && Number.isFinite(xrpFromServer)){
+          if (xrpFromSpot >= xrpFromServer){ xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; label='Live'; }
+          else { xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD || spotRateUSD; label='Quote'; }
+        } else if (Number.isFinite(xrpFromSpot)){
+          xrpNeeded = xrpFromSpot; rateUsedUSD = spotRateUSD; label='Live';
+        } else if (Number.isFinite(xrpFromServer)){
+          xrpNeeded = xrpFromServer; rateUsedUSD = serverRateUSD; label='Quote';
         } else {
           throw new Error('no usable rate');
         }
 
-        if (spotLine) {
+        if (spotLine){
           spotLine.innerHTML = `
             <span>1M $BAG = $1 USD</span>
             <span class="sep">·</span>
             <span>Powered by $XRP</span>
             <span class="sep">·</span>
-            <span>${source} XRP: $${(rateUsedUSD||0).toFixed(4)}/XRP</span>
+            <span>${label} XRP: $${(rateUsedUSD||0).toFixed(4)}/XRP</span>
           `;
         }
 
@@ -410,108 +355,76 @@
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
         const link = await tryDeeplink(usd);
-        if (link) enableBuy(link, "Open in wallet");
-        else disableBuy("Quote shown. Deeplink unavailable.");
-      } catch (e) {
+        if (link) enableBuy(link, "Open in wallet"); else disableBuy("Quote shown. Deeplink unavailable.");
+      }catch(e){
         console.error(e);
         xrpConversion.textContent = '⚠️ Could not fetch live price';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
         disableBuy("Could not fetch live price");
       }
     }
-
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
   </script>
 
-  <!-- === $BAG Transaction Feed Ticker Script (randomized, never pauses, ≥1M & ≤100B) === -->
+  <!-- === $BAG Transaction Feed Ticker (JS engine, ≥1M & ≤100B) === -->
   <script>
   (function(){
-    const MIN = 1_000_000;           // 1M
-    const MAX = 100_000_000_000;     // 100B
-    const COUNT = 180;               // unique items per loop
+    const MIN = 1_000_000, MAX = 100_000_000_000, COUNT = 180;
 
     const bands = [
-      { min: 1_000_000,        max: 100_000_000,      w: 0.45 }, // 1M–100M
-      { min: 100_000_000,      max: 1_000_000_000,    w: 0.30 }, // 100M–1B
-      { min: 1_000_000_000,    max: 10_000_000_000,   w: 0.18 }, // 1B–10B
-      { min: 10_000_000_000,   max: 100_000_000_000,  w: 0.07 }  // 10B–100B
+      { min: 1_000_000,        max: 100_000_000,      w: 0.45 },
+      { min: 100_000_000,      max: 1_000_000_000,    w: 0.30 },
+      { min: 1_000_000_000,    max: 10_000_000_000,   w: 0.18 },
+      { min: 10_000_000_000,   max: 100_000_000_000,  w: 0.07 }
     ];
-    const multipliers = [1,1.1,1.2,1.25,1.3,1.33,1.4,1.5,1.6,1.66,1.75,1.8,1.9,2,2.2,2.25,2.5,2.75,2.8,2.9,3,3.2,3.25,3.3,3.5,3.75,4,4.2,4.4,4.5,4.8,5,5.2,5.4,5.5,5.75,6,6.2,6.4,6.5,6.6,6.75,6.9,7,7.2,7.4,7.5,7.7,7.8,8,8.2,8.4,8.6,8.8,9,9.1,9.2,9.4,9.6,9.8,9.9,10,11,12.5,13.3,15,18.9,20,22.2,25,27.5,30,33,35,37.5,40,45,50,55,60,66,70,75,80,90,100];
+    const multipliers = [1,1.1,1.2,1.25,1.3,1.33,1.4,1.5,1.6,1.66,1.75,1.8,1.9,2,2.2,2.25,2.5,2.75,2.8,2.9,3,3.25,3.5,3.75,4,4.2,4.4,4.5,4.8,5,5.25,5.5,5.75,6,6.5,6.75,6.9,7,7.5,7.8,8,8.5,9,9.5,10,11,12.5,13.3,15,18.9,20,22.2,25,27.5,30,33,35,37.5,40,45,50,55,60,66,70,75,80,90,100];
 
-    function pickBand(){
-      const r = Math.random(); let acc = 0;
-      for (const b of bands){ acc += b.w; if (r <= acc) return b; }
-      return bands[bands.length-1];
-    }
-    function nearestBase(n){
-      const p = Math.pow(10, Math.floor(Math.log10(n)));
-      const opts = [1,2,5].map(k=>k*p);
-      return opts.reduce((best,c)=>Math.abs(n-c)<Math.abs(n-best)?c:best, opts[0]);
-    }
+    function pickBand(){ const r=Math.random(); let a=0; for(const b of bands){ a+=b.w; if(r<=a) return b; } return bands.at(-1); }
+    function nearestBase(n){ const p=Math.pow(10, Math.floor(Math.log10(n))); const opts=[1,2,5].map(k=>k*p); return opts.reduce((best,c)=>Math.abs(n-c)<Math.abs(n-best)?c:best,opts[0]); }
     function genOne(){
-      const band = pickBand();
-      const base = nearestBase(band.min + Math.random()*(band.max - band.min));
-      const mult = multipliers[(Math.random()*multipliers.length)|0];
-      let val = Math.round(base * mult);
-      if (val < MIN) val = MIN;
-      if (val > MAX) val = MAX;
-      return Math.round(val/1000)*1000;
+      const b=pickBand(); const base=nearestBase(b.min+Math.random()*(b.max-b.min));
+      const mult=multipliers[(Math.random()*multipliers.length)|0];
+      let v=Math.round(base*mult); if(v<MIN)v=MIN; if(v>MAX)v=MAX; return Math.round(v/1000)*1000;
     }
     function format(n){ return n.toLocaleString('en-US'); }
 
-    const set = new Set(); let guard = 0;
-    while (set.size < COUNT && guard < COUNT*20){ set.add(genOne()); guard++; }
-    [1_000_000,5_000_000,10_000_000,25_000_000,50_000_000,100_000_000,250_000_000,500_000_000,
-     1_000_000_000,2_000_000_000,5_000_000_000,10_000_000_000,25_000_000_000,50_000_000_000,100_000_000_000]
-     .forEach(a=>set.add(a));
+    const set=new Set(); let guard=0;
+    while(set.size<COUNT && guard<COUNT*20){ set.add(genOne()); guard++; }
+    [1_000_000,5_000_000,10_000_000,25_000_000,50_000_000,100_000_000,250_000_000,500_000_000,1_000_000_000,2_000_000_000,5_000_000_000,10_000_000_000,25_000_000_000,50_000_000_000,100_000_000_000].forEach(a=>set.add(a));
 
-    const arr = Array.from(set);
-    for (let i=arr.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    const arr=Array.from(set); for(let i=arr.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [arr[i],arr[j]]=[arr[j],arr[i]]; }
 
-    const track = document.getElementById('bagTickerTrack');
-    function buildChunk(list){
-      const frag = document.createDocumentFragment();
+    const track=document.getElementById('bagTickerTrack');
+    function build(list){
+      const frag=document.createDocumentFragment();
       list.forEach(n=>{
         const s=document.createElement('span'); s.className='ticker__item'; s.textContent=`${format(n)} $BAG received`; frag.appendChild(s);
         const dot=document.createElement('span'); dot.className='ticker__item'; dot.textContent='•'; frag.appendChild(dot);
       });
       return frag;
     }
-    track.appendChild(buildChunk(arr));
-    track.appendChild(buildChunk(arr));
+    track.appendChild(build(arr));
+    track.appendChild(build(arr)); // duplicate
 
-    function setAnimation(){
-      const seqWidth = track.scrollWidth / 2;
-      const speedPxPerSec = 90;
-      const duration = seqWidth / speedPxPerSec;
-      track.style.setProperty('--toX', `-${seqWidth}px`);
-      track.style.animationDuration = `${duration}s`;
-      track.style.animationPlayState = 'running';
-    }
-    window.addEventListener('load', setAnimation, { once: true });
-    window.addEventListener('resize', ()=>{
-      track.style.animation='none';
-      requestAnimationFrame(()=>{
-        setAnimation();
-        track.style.animation='';
-        track.style.animationName='tickerScroll';
-      });
-    });
-  })();
-  </script>
+    // === JS engine: unstoppable scroll ===
+    let seqW = 0, offset = 0, last = performance.now();
+    const SPEED = 90; // px/sec
 
-  <!-- Watchdog to force ticker running even if a browser/extension pauses it -->
-  <script>
-  (function forceTickerRunning(){
-    const track = document.getElementById('bagTickerTrack');
-    if (!track) return;
-    function tick(){
-      if (getComputedStyle(track).animationPlayState !== 'running') {
-        track.style.animationPlayState = 'running';
-      }
-      requestAnimationFrame(tick);
+    function measure(){ seqW = track.scrollWidth / 2; }
+    function step(now){
+      const dt = (now - last) / 1000; last = now;
+      offset += SPEED * dt;
+      if (offset >= seqW) offset -= seqW;
+      track.style.transform = `translate3d(${-offset}px,0,0)`;
+      requestAnimationFrame(step);
     }
-    requestAnimationFrame(tick);
+    // Fallback timer if RAF throttles during scroll
+    setInterval(()=>{ const now=performance.now(); if (now-last > 180){ // ~5.5fps fallback
+      const dt=(now-last)/1000; last=now; offset+=SPEED*dt; if(offset>=seqW) offset-=seqW; track.style.transform=`translate3d(${-offset}px,0,0)`; }
+    }, 80);
+
+    window.addEventListener('load', ()=>{ measure(); last=performance.now(); requestAnimationFrame(step); });
+    window.addEventListener('resize', ()=>{ const prev = seqW; measure(); if (seqW !== prev){ offset = offset % seqW; } });
   })();
   </script>
 </body>
