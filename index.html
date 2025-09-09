@@ -228,7 +228,7 @@
     </div>
   </div>
 
-  <div style="text-align:center; margin:32px 0;">
+  <div style="text-align:center; margin:32px 0%;">
     <a href="https://github.com/bagtoken/bagtoken/blob/254c692228c62e50c4b90e3f6b430673eb116132/litepaper.md" target="_blank" rel="noopener" class="btn btn-secondary">📄 View Lite Paper</a>
   </div>
 
@@ -285,43 +285,98 @@
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // === COINGECKO-ONLY PRICE (LOCKED PER LOAD) ===
-    const priceState = { usd: NaN, ts: 0, locked: false };
-    const unlocked = new URLSearchParams(location.search).has('unlock'); // ?unlock=1 to allow re-fetch
+    // === PRICE: Proxy → CoinGecko → local cache (locked per load) ===
+    const priceState = { usd: NaN, ts: 0, locked: false, src: '', cached: false };
+    const unlocked = new URLSearchParams(location.search).has('unlock'); // add ?unlock=1 to allow refetch on same load
+    const LS_KEY='bag_last_xrp_usd', LS_SRC_KEY='bag_last_xrp_src', LS_TS_KEY='bag_last_xrp_usd_ts';
 
-    function sane(p){ return Number.isFinite(p) && p >= 0.25 && p <= 1.5; } // tight band
+    function sane(p){ return Number.isFinite(p) && p >= 0.05 && p <= 10.0; } // wide enough for $XRP
 
-    async function fetchGeckoXrpUsd(){
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&precision=full&_=${Date.now()}`;
-      const ctrl = new AbortController();
-      const t = setTimeout(()=>ctrl.abort(), 4000);
+    function saveLocal(v, src){
       try{
-        const r = await fetch(url, { cache: "no-store", mode: "cors", signal: ctrl.signal, headers:{'accept':'application/json'} });
-        const j = await r.json();
-        const v = Number(j?.ripple?.usd);
-        if (!sane(v)) throw new Error('gecko out of sane range');
-        return v;
-      } finally { clearTimeout(t); }
+        localStorage.setItem(LS_KEY, String(v));
+        localStorage.setItem(LS_SRC_KEY, src||'');
+        localStorage.setItem(LS_TS_KEY, String(Date.now()));
+      }catch{}
+    }
+    function loadLocal(){
+      try{
+        const v = Number(localStorage.getItem(LS_KEY));
+        const src = localStorage.getItem(LS_SRC_KEY)||'cache';
+        const ts = Number(localStorage.getItem(LS_TS_KEY)||0);
+        if (sane(v)) return { v, src, ts };
+      }catch{}
+      return null;
     }
 
-    function updateSpotBar(rate, locked=true){
+    function updateSpotBar(rate, src='proxy', locked=true, cached=false){
       if (!spotLine) return;
+      const tag = cached ? `${src} (cached)` : src;
       spotLine.innerHTML = `
         <span>1M $BAG = $1 USD</span>
         <span class="sep">·</span>
         <span>Powered by $XRP</span>
         <span class="sep">·</span>
-        <span>Live (CoinGecko${locked ? ', locked' : ''}): $${(rate||0).toFixed(4)}/XRP</span>
+        <span>Live (${tag}${locked ? ', locked' : ''}): $${(rate||0).toFixed(4)}/XRP</span>
       `;
     }
 
-    async function getLockedGeckoPrice(){
-      if (priceState.locked && sane(priceState.usd)) return priceState.usd;
-      const v = await fetchGeckoXrpUsd();
-      priceState.usd = v; priceState.ts = Date.now();
-      if (!unlocked) priceState.locked = true;
-      return v;
+    async function fetchProxy(){
+      const r = await fetch(`${API}/api/xrp-usd`, { cache:'no-store', mode:'cors' });
+      const j = await r.json();
+      if (!j.ok) throw new Error('proxy not ok');
+      const v = Number(j.usd);
+      if (!sane(v)) throw new Error('proxy insane');
+      return { v, src:'proxy', cached: !!j.cached };
     }
+
+    async function fetchGecko(){
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&precision=full&_=${Date.now()}`;
+      const ctrl = new AbortController();
+      const to = setTimeout(()=>ctrl.abort(), 5000);
+      try{
+        const r = await fetch(url, { cache:'no-store', mode:'cors', signal: ctrl.signal, headers:{ 'accept':'application/json' } });
+        if (!r.ok) throw new Error('gecko http '+r.status);
+        const j = await r.json();
+        const v = Number(j?.ripple?.usd);
+        if (!sane(v)) throw new Error('gecko insane');
+        return { v, src:'CoinGecko', cached:false };
+      } finally { clearTimeout(to); }
+    }
+
+    async function getLockedPrice(){
+      if (priceState.locked && sane(priceState.usd)) return priceState;
+
+      // 1) Proxy (median of sources)
+      try{
+        const {v,src,cached} = await fetchProxy();
+        priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
+        if (!unlocked) priceState.locked=true;
+        saveLocal(v, src+(cached?' cached':'')); 
+        return priceState;
+      }catch{}
+
+      // 2) CoinGecko
+      try{
+        const {v,src,cached} = await fetchGecko();
+        priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
+        if (!unlocked) priceState.locked=true;
+        saveLocal(v, src);
+        return priceState;
+      }catch{}
+
+      // 3) Local cache
+      const c = loadLocal();
+      if (c){
+        priceState.usd=c.v; priceState.src=c.src||'cache'; priceState.cached=true; priceState.ts=c.ts;
+        if (!unlocked) priceState.locked=true;
+        return priceState;
+      }
+
+      throw new Error('no price source');
+    }
+
+    const fmt = (n,d=6)=>Number(n).toFixed(d);
 
     async function tryDeeplink(usd){
       try {
@@ -332,9 +387,7 @@
       } catch { return null; }
     }
 
-    const fmt = (n,d=6)=>Number(n).toFixed(d);
-
-    // --- MAIN INPUT HANDLER (Gecko-locked math) ---
+    // --- MAIN INPUT HANDLER (locked price per load) ---
     async function handleUSDInput(){
       const usd = Number.parseFloat(usdInput.value);
       xrpConversion.textContent = '🔁 XRP Required: 0';
@@ -344,27 +397,30 @@
       if (!Number.isFinite(usd) || usd < 1){ if (usd>0) xrpConversion.textContent='❌ Minimum $1'; return; }
 
       try{
-        const rateUSD = await getLockedGeckoPrice();  // locked CoinGecko rate
-        updateSpotBar(rateUSD, !unlocked);
+        const p = await getLockedPrice();
+        updateSpotBar(p.usd, p.src, !unlocked, p.cached);
 
-        const xrpNeeded = usd / rateUSD;
-        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${rateUSD.toFixed(4)}/XRP)`;
+        const xrpNeeded = usd / p.usd;
+        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${p.usd.toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
         const link = await tryDeeplink(usd);
         if (link) enableBuy(link, "Open in wallet"); else disableBuy("Quote shown. Deeplink unavailable.");
       }catch(e){
         console.error(e);
-        xrpConversion.textContent = '⚠️ Could not fetch CoinGecko price';
+        xrpConversion.textContent = '⚠️ Could not fetch price';
         bagAmount.textContent = '🪙 You’ll receive: 0 $BAG';
         disableBuy("Could not fetch price");
       }
     }
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
 
-    // Init price bar once per load (locked)
+    // Prime the spot bar once at load
     (async function initPrice(){
-      try{ const r = await getLockedGeckoPrice(); updateSpotBar(r, !unlocked); }catch{}
+      try{
+        const p = await getLockedPrice();
+        updateSpotBar(p.usd, p.src, !unlocked, p.cached);
+      }catch{}
     })();
   </script>
 
@@ -420,7 +476,6 @@
     const initial = Math.max(VISIBLE_ROWS + 3, 8);
     for (let i=0;i<initial;i++) list.appendChild(makeItem(genAmount()));
 
-    // EXACTLY 3 visible items: measure first item and set container height
     function setExactHeight(){
       const first = list.firstElementChild;
       if (!first) return;
@@ -455,20 +510,18 @@
       setTimeout(()=>{ if (list.classList.contains('animating')) onDone(); }, 700);
     }
 
-    function nextDelay(){ return STEP_MIN_MS + Math.random()*(STEP_MAX_MS - STEP_MAX_MS + STEP_MIN_MS); } // keep 1–3s
-
     function scheduleNext(){
-      if (Math.random() < BURST_PROB){
-        const burstCount = BURST_COUNT_MIN + Math.floor(Math.random()*(BURST_COUNT_MAX-BURST_COUNT_MIN+1));
+      if (Math.random() < 0.12){
+        const burstCount = 5 + Math.floor(Math.random()*(12-5+1));
         let i = 0;
         const burstTimer = setInterval(()=>{
           stepOnce();
           i++;
-          if (i >= burstCount) { clearInterval(burstTimer); setTimeout(scheduleNext, STEP_MIN_MS + Math.random()*(STEP_MAX_MS-STEP_MIN_MS)); }
+          if (i >= burstCount) { clearInterval(burstTimer); setTimeout(scheduleNext, 1000 + Math.random()*(3000-1000)); }
         }, 90 + Math.random()*110);
         return;
       }
-      setTimeout(()=>{ stepOnce(); scheduleNext(); }, STEP_MIN_MS + Math.random()*(STEP_MAX_MS-STEP_MIN_MS));
+      setTimeout(()=>{ stepOnce(); scheduleNext(); }, 1000 + Math.random()*(3000-1000));
     }
     scheduleNext();
 
