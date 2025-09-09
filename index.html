@@ -47,7 +47,9 @@
     .status-badge { display:inline-flex; align-items:center; gap:.5rem; font:600 12px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:.35rem .6rem; border-radius:999px; border:1px solid #2a2a2a; background:#1b1b1f; color:#cfcfcf; user-select:none; }
     .status-dot{width:.5rem;height:.5rem;border-radius:50%;background:#666;}
     .status-badge.live  { color:#0f0; border-color:#1e4021; background:#102214; }
+    .status-badge.live .status-dot  { background:#27c93f; box-shadow:0 0 8px #27c93f88; }
     .status-badge.warn  { color:#ffe8a6; border-color:#4a3b13; background:#221a08; }
+    .status-badge.warn .status-dot  { background:#ffc21a; box-shadow:0 0 8px #ffc21a88; }
     .status-badge.down  { color:#ffd8d8; border-color:#402020; background:#221010; }
 
     .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:12px 18px; border-radius:10px; text-decoration:none; font:600 16px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.25); transform:translateY(0); transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease; cursor:pointer; user-select:none; border:none; }
@@ -280,8 +282,17 @@
     const btnBuy = document.getElementById('btnBuy');
     const spotLine = document.getElementById('spotLine');
 
-    function disableBuy(msg){ btnBuy.setAttribute("aria-disabled","true"); btnBuy.href="#"; if (msg) btnBuy.title = msg; }
-    function enableBuy(link, msg){ btnBuy.setAttribute("aria-disabled","false"); btnBuy.href = link; btnBuy.title = msg || "Open in wallet"; }
+    function disableBuy(msg){
+      btnBuy.setAttribute("aria-disabled","true");
+      btnBuy.removeAttribute("href");
+      if (msg) btnBuy.title = msg;
+    }
+    function enableBuy(link, msg){
+      btnBuy.setAttribute("aria-disabled","false");
+      btnBuy.href = link;
+      btnBuy.title = msg || "Open in wallet";
+      btnBuy.style.pointerEvents = 'auto'; // ensure clickable if CSS blocked disabled state
+    }
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
@@ -352,7 +363,7 @@
         const {v,src,cached} = await fetchProxy();
         priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
         if (!unlocked) priceState.locked=true;
-        saveLocal(v, src+(cached?' cached':'')); 
+        saveLocal(v, src+(cached?' cached':''));
         return priceState;
       }catch{}
 
@@ -378,12 +389,13 @@
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
+    // PREFER HTTPS Xumm fallback; use xrp: only if no fallback
     async function tryDeeplink(usd){
       try {
         const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
         if (!r.ok) return null;
         const j = await r.json();
-        return j.deeplink?.deeplink || j.deeplink || null;
+        return j.fallback || j.deeplink || j.deeplink?.deeplink || null;
       } catch { return null; }
     }
 
@@ -414,6 +426,20 @@
       }
     }
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
+
+    // Safety: if clicked too fast, try upgrading xrp: to HTTPS on the fly
+    btnBuy.addEventListener('click', async (e)=>{
+      if (btnBuy.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+      if (btnBuy.href && btnBuy.href.startsWith('xrp:')) {
+        const usd = Number.parseFloat(usdInput.value);
+        if (Number.isFinite(usd) && usd >= 1) {
+          const link = await tryDeeplink(usd);
+          if (link && link !== btnBuy.href) {
+            btnBuy.href = link;
+          }
+        }
+      }
+    }, { passive:true });
 
     // Prime the spot bar once at load
     (async function initPrice(){
