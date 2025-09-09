@@ -47,9 +47,7 @@
     .status-badge { display:inline-flex; align-items:center; gap:.5rem; font:600 12px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:.35rem .6rem; border-radius:999px; border:1px solid #2a2a2a; background:#1b1b1f; color:#cfcfcf; user-select:none; }
     .status-dot{width:.5rem;height:.5rem;border-radius:50%;background:#666;}
     .status-badge.live  { color:#0f0; border-color:#1e4021; background:#102214; }
-    .status-badge.live .status-dot  { background:#27c93f; box-shadow:0 0 8px #27c93f88; }
     .status-badge.warn  { color:#ffe8a6; border-color:#4a3b13; background:#221a08; }
-    .status-badge.warn .status-dot  { background:#ffc21a; box-shadow:0 0 8px #ffc21a88; }
     .status-badge.down  { color:#ffd8d8; border-color:#402020; background:#221010; }
 
     .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:12px 18px; border-radius:10px; text-decoration:none; font:600 16px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.25); transform:translateY(0); transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease; cursor:pointer; user-select:none; border:none; }
@@ -63,7 +61,6 @@
     .social a{ display:inline-block; margin:0 8px; text-decoration:none; line-height:0; }
     .social img{ width:28px; height:28px; vertical-align:middle; display:block; }
 
-    /* price-line wraps on mobile */
     .price-line{
       display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
       gap:.5rem; padding:10px 14px; border-radius:14px; background:#111; color:#ffd700;
@@ -93,7 +90,7 @@
       list-style:none;
       margin:0;
       padding:0;
-      height: 90px; /* ~3 items visible (JS will refine) */
+      height: 90px; /* 3 items visible */
       position:relative;
       will-change: transform;
     }
@@ -164,9 +161,7 @@
   <div class="otc-section">
     <div class="otc-wrap">
 
-      <!-- (Removed horizontal streaming ticker by request) -->
-
-      <!-- === Vertical $BAG Activity Feed (periodic + bursts) === -->
+      <!-- Periodic vertical feed -->
       <div class="feedbox" id="bagFeed" aria-label="$BAG recent activity">
         <ul class="feedlist" id="bagFeedList"></ul>
       </div>
@@ -282,16 +277,13 @@
     const btnBuy = document.getElementById('btnBuy');
     const spotLine = document.getElementById('spotLine');
 
-    function disableBuy(msg){
-      btnBuy.setAttribute("aria-disabled","true");
-      btnBuy.removeAttribute("href");
-      if (msg) btnBuy.title = msg;
-    }
+    function disableBuy(msg){ btnBuy.setAttribute("aria-disabled","true"); btnBuy.href="#"; if (msg) btnBuy.title = msg; }
     function enableBuy(link, msg){
       btnBuy.setAttribute("aria-disabled","false");
       btnBuy.href = link;
       btnBuy.title = msg || "Open in wallet";
-      btnBuy.style.pointerEvents = 'auto'; // ensure clickable if CSS blocked disabled state
+      btnBuy.rel = "noopener noreferrer external";
+      btnBuy.target = "_blank";
     }
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
@@ -301,7 +293,7 @@
     const unlocked = new URLSearchParams(location.search).has('unlock'); // add ?unlock=1 to allow refetch on same load
     const LS_KEY='bag_last_xrp_usd', LS_SRC_KEY='bag_last_xrp_src', LS_TS_KEY='bag_last_xrp_usd_ts';
 
-    function sane(p){ return Number.isFinite(p) && p >= 0.05 && p <= 10.0; } // wide enough for $XRP
+    function sane(p){ return Number.isFinite(p) && p >= 0.05 && p <= 10.0; }
 
     function saveLocal(v, src){
       try{
@@ -358,16 +350,14 @@
     async function getLockedPrice(){
       if (priceState.locked && sane(priceState.usd)) return priceState;
 
-      // 1) Proxy (median of sources)
       try{
         const {v,src,cached} = await fetchProxy();
         priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
         if (!unlocked) priceState.locked=true;
-        saveLocal(v, src+(cached?' cached':''));
+        saveLocal(v, src+(cached?' cached':'')); 
         return priceState;
       }catch{}
 
-      // 2) CoinGecko
       try{
         const {v,src,cached} = await fetchGecko();
         priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
@@ -376,28 +366,42 @@
         return priceState;
       }catch{}
 
-      // 3) Local cache
       const c = loadLocal();
       if (c){
         priceState.usd=c.v; priceState.src=c.src||'cache'; priceState.cached=true; priceState.ts=c.ts;
         if (!unlocked) priceState.locked=true;
         return priceState;
       }
-
       throw new Error('no price source');
     }
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // PREFER HTTPS Xumm fallback; use xrp: only if no fallback
+    // === Deeplink: prefer universal fallback ===
     async function tryDeeplink(usd){
       try {
         const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
         if (!r.ok) return null;
         const j = await r.json();
-        return j.fallback || j.deeplink || j.deeplink?.deeplink || null;
+        // Prefer Xumm Detect universal link when available
+        const universal = j.fallback || (j.deeplink && j.deeplink.fallback);
+        const raw = j.deeplink?.deeplink || j.deeplink || null;
+        return universal || raw || null;
       } catch { return null; }
     }
+
+    // Safety: if we ever get a raw xrp: link on desktop, wrap it so it still works
+    btnBuy.addEventListener('click', (e)=>{
+      const disabled = btnBuy.getAttribute('aria-disabled') === 'true';
+      if (disabled) { e.preventDefault(); return; }
+      const href = btnBuy.getAttribute('href') || '';
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (href.startsWith('xrp:') && !isMobile){
+        e.preventDefault();
+        const detect = 'https://xumm.app/detect?uri=' + encodeURIComponent(href);
+        window.open(detect, '_blank', 'noopener,noreferrer');
+      }
+    });
 
     // --- MAIN INPUT HANDLER (locked price per load) ---
     async function handleUSDInput(){
@@ -417,7 +421,11 @@
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
         const link = await tryDeeplink(usd);
-        if (link) enableBuy(link, "Open in wallet"); else disableBuy("Quote shown. Deeplink unavailable.");
+        if (link) {
+          enableBuy(link, "Open in wallet");
+        } else {
+          disableBuy("Quote shown. Deeplink unavailable.");
+        }
       }catch(e){
         console.error(e);
         xrpConversion.textContent = '⚠️ Could not fetch price';
@@ -426,20 +434,6 @@
       }
     }
     if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
-
-    // Safety: if clicked too fast, try upgrading xrp: to HTTPS on the fly
-    btnBuy.addEventListener('click', async (e)=>{
-      if (btnBuy.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
-      if (btnBuy.href && btnBuy.href.startsWith('xrp:')) {
-        const usd = Number.parseFloat(usdInput.value);
-        if (Number.isFinite(usd) && usd >= 1) {
-          const link = await tryDeeplink(usd);
-          if (link && link !== btnBuy.href) {
-            btnBuy.href = link;
-          }
-        }
-      }
-    }, { passive:true });
 
     // Prime the spot bar once at load
     (async function initPrice(){
@@ -455,10 +449,10 @@
   (function(){
     const BOX_ID = 'bagFeed';
     const LIST_ID = 'bagFeedList';
-    const VISIBLE_ROWS = 3;  // exactly three visible rows
-    const STEP_MIN_MS = 1000;   // 1s
-    const STEP_MAX_MS = 3000;   // 3s
-    const BURST_PROB = 0.12;    // 12%
+    const VISIBLE_ROWS = 3;
+    const STEP_MIN_MS = 1000;
+    const STEP_MAX_MS = 3000;
+    const BURST_PROB = 0.12;
     const BURST_COUNT_MIN = 5;
     const BURST_COUNT_MAX = 12;
     const MAX_ITEMS_KEEP = 120;
