@@ -238,7 +238,7 @@
   <div class="footer">
     © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
     <br>
-    <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f; text-decoration:none; font-weight:bold;">𝕏 @getthebag_io</a> |
+    <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f; text-decoration:none; font-weight:bold;"> 𝕏 @getthebag_io</a> |
     <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f; text-decoration:none; font-weight:bold;">Telegram @getthebag_io</a>
   </div>
 
@@ -444,19 +444,64 @@
     })();
   </script>
 
-  <!-- === Vertical $BAG Activity Feed (periodic 1–3s + bursts, 3 rows visible) === -->
+  <!-- === Vertical $BAG Activity Feed — slowed cadence with simple speed profiles === -->
   <script>
   (function(){
     const BOX_ID = 'bagFeed';
     const LIST_ID = 'bagFeedList';
-    const VISIBLE_ROWS = 3;
-    const STEP_MIN_MS = 1000;
-    const STEP_MAX_MS = 3000;
-    const BURST_PROB = 0.12;
-    const BURST_COUNT_MIN = 5;
-    const BURST_COUNT_MAX = 12;
-    const MAX_ITEMS_KEEP = 120;
 
+    // --- Speed profile: defaults to "slow", override with ?speed=normal or ?speed=fast if needed
+    const url = new URL(location.href);
+    const SPEED = (url.searchParams.get('speed') || 'slow').toLowerCase();
+
+    const PROFILES = {
+      slow: {
+        VISIBLE_ROWS: 3,
+        STEP_MIN_MS: 4000,   // was 1000
+        STEP_MAX_MS: 9000,   // was 3000
+        BURST_PROB: 0.03,    // was 0.12
+        BURST_COUNT_MIN: 2,  // was 5
+        BURST_COUNT_MAX: 4,  // was 12
+        BURST_STEP_MIN_MS: 220, // between items inside a burst
+        BURST_STEP_MAX_MS: 360,
+        POST_BURST_IDLE_MIN_MS: 3000,
+        POST_BURST_IDLE_MAX_MS: 7000,
+        AGE_TICK_MS: 30000,  // time label updates were every 15s
+        AGE_STEP_SEC: 30     // increment labels by 30s instead of 15s
+      },
+      normal: {
+        VISIBLE_ROWS: 3,
+        STEP_MIN_MS: 1000,
+        STEP_MAX_MS: 3000,
+        BURST_PROB: 0.12,
+        BURST_COUNT_MIN: 5,
+        BURST_COUNT_MAX: 12,
+        BURST_STEP_MIN_MS: 90,
+        BURST_STEP_MAX_MS: 200,
+        POST_BURST_IDLE_MIN_MS: 1000,
+        POST_BURST_IDLE_MAX_MS: 3000,
+        AGE_TICK_MS: 15000,
+        AGE_STEP_SEC: 15
+      },
+      fast: {
+        VISIBLE_ROWS: 3,
+        STEP_MIN_MS: 700,
+        STEP_MAX_MS: 1800,
+        BURST_PROB: 0.18,
+        BURST_COUNT_MIN: 6,
+        BURST_COUNT_MAX: 14,
+        BURST_STEP_MIN_MS: 70,
+        BURST_STEP_MAX_MS: 140,
+        POST_BURST_IDLE_MIN_MS: 800,
+        POST_BURST_IDLE_MAX_MS: 2000,
+        AGE_TICK_MS: 12000,
+        AGE_STEP_SEC: 12
+      }
+    };
+
+    const cfg = PROFILES[SPEED] || PROFILES.slow;
+
+    // Amount generator unchanged
     const MIN = 1_000_000, MAX = 100_000_000_000;
     const bands = [
       { min: 1_000_000,        max: 100_000_000,      w: 0.50 },
@@ -493,18 +538,19 @@
       return li;
     }
 
-    const initial = Math.max(VISIBLE_ROWS + 3, 8);
+    const initial = Math.max(cfg.VISIBLE_ROWS + 3, 8);
     for (let i=0;i<initial;i++) list.appendChild(makeItem(genAmount()));
 
     function setExactHeight(){
       const first = list.firstElementChild;
       if (!first) return;
       const h = first.offsetHeight || 30;
-      list.style.height = (h * VISIBLE_ROWS) + 'px';
+      list.style.height = (h * cfg.VISIBLE_ROWS) + 'px';
     }
     window.addEventListener('load', setExactHeight);
     setTimeout(setExactHeight, 50);
 
+    const MAX_ITEMS_KEEP = 120;
     function clampItems(){
       const extra = list.children.length - MAX_ITEMS_KEEP;
       for (let i=0;i<extra;i++) list.removeChild(list.firstChild);
@@ -530,34 +576,40 @@
       setTimeout(()=>{ if (list.classList.contains('animating')) onDone(); }, 700);
     }
 
+    function rand(min, max){ return min + Math.random()*(max - min); }
+
     function scheduleNext(){
-      if (Math.random() < 0.12){
-        const burstCount = 5 + Math.floor(Math.random()*(12-5+1));
+      if (Math.random() < cfg.BURST_PROB){
+        const burstCount = cfg.BURST_COUNT_MIN + Math.floor(Math.random()*(cfg.BURST_COUNT_MAX - cfg.BURST_COUNT_MIN + 1));
         let i = 0;
         const burstTimer = setInterval(()=>{
           stepOnce();
           i++;
-          if (i >= burstCount) { clearInterval(burstTimer); setTimeout(scheduleNext, 1000 + Math.random()*(3000-1000)); }
-        }, 90 + Math.random()*110);
+          if (i >= burstCount) {
+            clearInterval(burstTimer);
+            setTimeout(scheduleNext, rand(cfg.POST_BURST_IDLE_MIN_MS, cfg.POST_BURST_IDLE_MAX_MS));
+          }
+        }, rand(cfg.BURST_STEP_MIN_MS, cfg.BURST_STEP_MAX_MS));
         return;
       }
-      setTimeout(()=>{ stepOnce(); scheduleNext(); }, 1000 + Math.random()*(3000-1000));
+      setTimeout(()=>{ stepOnce(); scheduleNext(); }, rand(cfg.STEP_MIN_MS, cfg.STEP_MAX_MS));
     }
     scheduleNext();
 
+    // Slower label aging to match the calmer cadence
     setInterval(()=>{
       const items = list.querySelectorAll('.feeditem .time');
       items.forEach((el, idx)=>{
         if (idx < items.length - 1) {
           const v = el.textContent;
-          if (v === 'now') el.textContent = '1s';
+          if (v === 'now') el.textContent = `${cfg.AGE_STEP_SEC}s`;
           else {
             const n = parseInt(v,10);
-            if (!Number.isNaN(n)) el.textContent = (Math.min(n+15, 300)) + 's';
+            if (!Number.isNaN(n)) el.textContent = (Math.min(n + cfg.AGE_STEP_SEC, 600)) + 's';
           }
         }
       });
-    }, 15000);
+    }, cfg.AGE_TICK_MS);
   })();
   </script>
 </body>
