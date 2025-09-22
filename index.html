@@ -338,10 +338,10 @@
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // === Deeplink: require a real Xaman signature URL. Never send to xrpl.services ===
-    function looksLikeServices(u){ return /(^https?:\/\/)?(?:www\.)?xrpl\.services/i.test(u||''); }
-    function looksLikeXummUniversal(u){ return /^https?:\/\/xumm\.app\/(?:d|detect|sign)/i.test(u||''); }
-    function looksLikeXummDeep(u){ return /^xumm:/i.test(u||''); }
+    // === Deeplink: require real Xaman signature; synthesize Detect link from to/amount if needed; never xrpl.services ===
+    const looksLikeServices = u => /(^https?:\/\/)?(?:www\.)?xrpl\.services/i.test(u||'');
+    const looksLikeXummUniversal = u => /^https?:\/\/xumm\.app\/(?:sign|d|detect)/i.test(u||'');
+    const looksLikeXummDeep = u => /^xumm:/i.test(u||'');
 
     async function tryDeeplink(usd){
       try {
@@ -349,30 +349,39 @@
         if (!r.ok) return null;
         const j = await r.json();
 
+        // 1) direct UUID → universal sign link
+        const uuid =
+          j?.payload?.uuidv4 ||
+          j?.uuid ||
+          j?.sign?.uuid ||
+          j?.deeplink?.uuid ||
+          null;
+        if (uuid) return `https://xumm.app/sign/${uuid}`;
+
+        // 2) scan all candidate URLs (filter out xrpl.services)
         const dl = j.deeplink || j || {};
         const candidates = [
-          dl.universal,                 // https://xumm.app/sign/...
-          dl.detect,                    // https://xumm.app/detect?uri=...
-          dl.open,
-          dl.url,
-          dl.web,
-          dl.deeplink,                  // xumm://...
-          dl?.next?.always,
-          dl.fallback,
-          j.fallback
-        ].filter(Boolean);
+          dl.universal, dl.detect, dl.open, dl.url, dl.web, dl.deeplink,
+          dl?.next?.always, dl.fallback, j.open, j.url, j.web, j.fallback
+        ].filter(Boolean).filter(u => !looksLikeServices(u));
 
-        // Remove xrpl.services entirely
-        const filtered = candidates.filter(u => !looksLikeServices(u));
+        const picked =
+          candidates.find(looksLikeXummUniversal) ||
+          candidates.find(looksLikeXummDeep) ||
+          candidates[0];
 
-        // Prefer Xumm universal, then deep, then any remaining non-services URL
-        const chosen =
-          filtered.find(looksLikeXummUniversal) ||
-          filtered.find(looksLikeXummDeep) ||
-          filtered[0] ||
-          null;
+        if (picked) return picked;
 
-        return chosen;
+        // 3) synthesize from fields if provided (to + amount_drops or amount_xrp)
+        const to = j.to || j.destination || j.account;
+        const drops = j.amount_drops || j.amountDrops ||
+                      (Number.isFinite(+j.amount_xrp) ? Math.round(Number(j.amount_xrp) * 1e6) : null);
+        if (to && drops) {
+          const uri = `xrp:${to}?amount=${drops}`;
+          return `https://xumm.app/detect?uri=${encodeURIComponent(uri)}`;
+        }
+
+        return null;
       } catch {
         return null;
       }
