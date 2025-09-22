@@ -209,7 +209,7 @@
     // === CONFIG ===
     const API = "https://api.getthebag.io"; // still used for status & price proxy
     const DEST = "rEP5BEvLoDdVTh58Xf21V69r4d2ThD1Ss5"; // OTC receive address
-    const DEST_TAG = null; // set a number if you require a destination tag, e.g. 12345
+    const DEST_TAG = null; // set e.g. 12345 if you require a destination tag
 
     function setBadge(state, text) {
       const el = document.getElementById("liveStatus");
@@ -340,10 +340,13 @@
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // === Build payment link client-side (no backend, no xrpl.services) ===
-    function buildXrpUri(drops){
+    // === Build payment link client-side in XRP (NOT drops) ===
+    function trimXrp(x){ // keep up to 6 decimals, strip trailing zeros
+      return Number(x).toFixed(6).replace(/\.?0+$/,'');
+    }
+    function buildXrpUri(xrpAmount){
       const params = new URLSearchParams();
-      params.set('amount', String(drops));
+      params.set('amount', trimXrp(xrpAmount)); // XRP decimal as required by Xaman xrp: scheme
       if (Number.isInteger(DEST_TAG)) params.set('dt', String(DEST_TAG));
       return `xrp:${DEST}?${params.toString()}`;
     }
@@ -379,11 +382,11 @@
         updateSpotBar(p.usd, p.src, !unlocked, p.cached);
 
         const xrpNeeded = usd / p.usd;
-        const drops = Math.max(1, Math.round(xrpNeeded * 1_000_000)); // minimum 1 drop
-        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${p.usd.toFixed(4)}/XRP)`;
+        const xrpRounded = Math.max(0.000001, Math.round(xrpNeeded * 1e6) / 1e6); // 6 dp
+        xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpRounded)} XRP (Rate: $${p.usd.toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
-        const uri = buildXrpUri(drops);
+        const uri = buildXrpUri(xrpRounded);
         const link = buildOpenLink(uri);
         enableBuy(link, "Open in wallet");
       }catch(e){
