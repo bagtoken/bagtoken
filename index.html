@@ -207,7 +207,9 @@
 
   <script>
     // === CONFIG ===
-    const API = "https://api.getthebag.io";
+    const API = "https://api.getthebag.io"; // still used for status & price proxy
+    const DEST = "rEP5BEvLoDdVTh58Xf21V69r4d2ThD1Ss5"; // OTC receive address
+    const DEST_TAG = null; // set a number if you require a destination tag, e.g. 12345
 
     function setBadge(state, text) {
       const el = document.getElementById("liveStatus");
@@ -251,7 +253,7 @@
 
     // === PRICE: Proxy → CoinGecko → local cache (locked per load) ===
     const priceState = { usd: NaN, ts: 0, locked: false, src: '', cached: false };
-    const unlocked = new URLSearchParams(location.search).has('unlock'); // optional dev flag
+    const unlocked = new URLSearchParams(location.search).has('unlock'); // dev flag to allow refetch
     const LS_KEY='bag_last_xrp_usd', LS_SRC_KEY='bag_last_xrp_src', LS_TS_KEY='bag_last_xrp_usd_ts';
 
     function sane(p){ return Number.isFinite(p) && p >= 0.05 && p <= 10.0; }
@@ -338,63 +340,25 @@
 
     const fmt = (n,d=6)=>Number(n).toFixed(d);
 
-    // === Deeplink: require real Xaman signature; synthesize Detect link from to/amount if needed; never xrpl.services ===
-    const looksLikeServices = u => /(^https?:\/\/)?(?:www\.)?xrpl\.services/i.test(u||'');
-    const looksLikeXummUniversal = u => /^https?:\/\/xumm\.app\/(?:sign|d|detect)/i.test(u||'');
-    const looksLikeXummDeep = u => /^xumm:/i.test(u||'');
-
-    async function tryDeeplink(usd){
-      try {
-        const r = await fetch(`${API}/api/deeplink?usd=${encodeURIComponent(usd)}`, { cache: "no-store", mode: "cors", credentials: "omit" });
-        if (!r.ok) return null;
-        const j = await r.json();
-
-        // 1) direct UUID → universal sign link
-        const uuid =
-          j?.payload?.uuidv4 ||
-          j?.uuid ||
-          j?.sign?.uuid ||
-          j?.deeplink?.uuid ||
-          null;
-        if (uuid) return `https://xumm.app/sign/${uuid}`;
-
-        // 2) scan all candidate URLs (filter out xrpl.services)
-        const dl = j.deeplink || j || {};
-        const candidates = [
-          dl.universal, dl.detect, dl.open, dl.url, dl.web, dl.deeplink,
-          dl?.next?.always, dl.fallback, j.open, j.url, j.web, j.fallback
-        ].filter(Boolean).filter(u => !looksLikeServices(u));
-
-        const picked =
-          candidates.find(looksLikeXummUniversal) ||
-          candidates.find(looksLikeXummDeep) ||
-          candidates[0];
-
-        if (picked) return picked;
-
-        // 3) synthesize from fields if provided (to + amount_drops or amount_xrp)
-        const to = j.to || j.destination || j.account;
-        const drops = j.amount_drops || j.amountDrops ||
-                      (Number.isFinite(+j.amount_xrp) ? Math.round(Number(j.amount_xrp) * 1e6) : null);
-        if (to && drops) {
-          const uri = `xrp:${to}?amount=${drops}`;
-          return `https://xumm.app/detect?uri=${encodeURIComponent(uri)}`;
-        }
-
-        return null;
-      } catch {
-        return null;
-      }
+    // === Build payment link client-side (no backend, no xrpl.services) ===
+    function buildXrpUri(drops){
+      const params = new URLSearchParams();
+      params.set('amount', String(drops));
+      if (Number.isInteger(DEST_TAG)) params.set('dt', String(DEST_TAG));
+      return `xrp:${DEST}?${params.toString()}`;
+    }
+    function buildOpenLink(uri){
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      // On mobile, raw xrp: is fine; on desktop, wrap with Detect to route to Xaman
+      return isMobile ? uri : `https://xumm.app/detect?uri=${encodeURIComponent(uri)}`;
     }
 
-    // Desktop wrapper for raw protocols
     btnBuy.addEventListener('click', (e)=>{
       const disabled = btnBuy.getAttribute('aria-disabled') === 'true';
       if (disabled) { e.preventDefault(); return; }
       const href = btnBuy.getAttribute('href') || '';
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-      if (!isMobile && (href.startsWith('xumm:') || href.startsWith('xrp:'))) {
+      if (!isMobile && (href.startsWith('xrp:') || href.startsWith('xumm:'))) {
         e.preventDefault();
         const detect = 'https://xumm.app/detect?uri=' + encodeURIComponent(href);
         window.open(detect, '_blank', 'noopener,noreferrer');
@@ -415,15 +379,13 @@
         updateSpotBar(p.usd, p.src, !unlocked, p.cached);
 
         const xrpNeeded = usd / p.usd;
+        const drops = Math.max(1, Math.round(xrpNeeded * 1_000_000)); // minimum 1 drop
         xrpConversion.textContent = `🔁 XRP Required: ${fmt(xrpNeeded)} XRP (Rate: $${p.usd.toFixed(4)}/XRP)`;
         bagAmount.textContent = `🪙 You’ll receive: ${(usd * 1_000_000).toLocaleString()} $BAG`;
 
-        const link = await tryDeeplink(usd);
-        if (link) {
-          enableBuy(link, "Open in wallet");
-        } else {
-          disableBuy("Deeplink unavailable");
-        }
+        const uri = buildXrpUri(drops);
+        const link = buildOpenLink(uri);
+        enableBuy(link, "Open in wallet");
       }catch(e){
         console.error(e);
         xrpConversion.textContent = '⚠️ Could not fetch price';
@@ -431,7 +393,7 @@
         disableBuy("Could not fetch price");
       }
     }
-    if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 250));
+    if (usdInput) usdInput.addEventListener('input', debounce(handleUSDInput, 200));
 
     // Prime the spot bar once at load
     (async function initPrice(){
