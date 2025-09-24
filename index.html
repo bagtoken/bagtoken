@@ -139,6 +139,8 @@
         <span>1M $BAG = $1 USD</span>
         <span class="sep">·</span>
         <span>Powered by $XRP</span>
+        <span class="sep">·</span>
+        <span id="xrpPriceLive">Live: —</span>
       </div>
 
       <div style="width:100%; max-width:520px; margin:0 auto; background:#fffef4; border:3px solid #e0c66f; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.1); padding:20px; text-align:center; color:#111;">
@@ -207,10 +209,11 @@
 
   <script>
     // === CONFIG ===
-    const API = "https://api.getthebag.io"; // still used for status & price proxy
+    const API = "https://api.getthebag.io"; // new API subdomain
     const DEST = "rEP5BEvLoDdVTh58Xf21V69r4d2ThD1Ss5"; // OTC receive address
     const DEST_TAG = null; // set e.g. 12345 if you require a destination tag
 
+    // ---- Status badge helpers ----
     function setBadge(state, text) {
       const el = document.getElementById("liveStatus");
       const tx = document.getElementById("liveText");
@@ -222,10 +225,9 @@
 
     async function refreshStatus() {
       try {
-        const r = await fetch(`${API}/api/status`, { cache: "no-store", mode: "cors", credentials: "omit" });
-        const j = await r.json();
-        if (j.running && j.connected) setBadge("live", "LIVE");
-        else if (j.running && !j.connected) setBadge("warn", "DEGRADED");
+        const r = await fetch(`${API}/health`, { cache: "no-store", mode: "cors" });
+        const ok = r.ok ? (await r.json()).ok === true : false;
+        if (ok) setBadge("live", "LIVE");
         else setBadge("down", "OFFLINE");
       } catch {
         setBadge("down", "OFFLINE");
@@ -234,11 +236,13 @@
     refreshStatus();
     setInterval(refreshStatus, 10000);
 
+    // ---- DOM refs ----
     const usdInput = document.getElementById('usdInput');
     const xrpConversion = document.getElementById('xrpConversion');
     const bagAmount = document.getElementById('bagAmount');
     const btnBuy = document.getElementById('btnBuy');
     const spotLine = document.getElementById('spotLine');
+    const xrpPriceLive = document.getElementById('xrpPriceLive');
 
     function disableBuy(msg){ btnBuy.setAttribute("aria-disabled","true"); btnBuy.href="#"; if (msg) btnBuy.title = msg; }
     function enableBuy(link, msg){
@@ -251,7 +255,7 @@
     const debounce = (fn, ms=250) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
     disableBuy("Enter an amount to enable");
 
-    // === PRICE: Proxy → CoinGecko → local cache (locked per load) ===
+    // === PRICE: API → CoinGecko → local cache (locked per load) ===
     const priceState = { usd: NaN, ts: 0, locked: false, src: '', cached: false };
     const unlocked = new URLSearchParams(location.search).has('unlock'); // dev flag to allow refetch
     const LS_KEY='bag_last_xrp_usd', LS_SRC_KEY='bag_last_xrp_src', LS_TS_KEY='bag_last_xrp_usd_ts';
@@ -275,25 +279,21 @@
       return null;
     }
 
-    function updateSpotBar(rate, src='proxy', locked=true, cached=false){
-      if (!spotLine) return;
-      const tag = cached ? `${src} (cached)` : src;
-      spotLine.innerHTML = `
-        <span>1M $BAG = $1 USD</span>
-        <span class="sep">·</span>
-        <span>Powered by $XRP</span>
-        <span class="sep">·</span>
-        <span>Live (${tag}${locked ? ', locked' : ''}): $${(rate||0).toFixed(4)}/XRP</span>
-      `;
+    function updateSpotBar(rate, src='API', locked=true, cached=false){
+      if (xrpPriceLive) {
+        const tag = cached ? `${src} (cached)` : src;
+        xrpPriceLive.textContent = `Live (${tag}${locked ? ', locked' : ''}): $${(rate||0).toFixed(4)}/XRP`;
+      }
     }
 
-    async function fetchProxy(){
-      const r = await fetch(`${API}/api/xrp-usd`, { cache:'no-store', mode:'cors' });
+    async function fetchApiPrice(){
+      const r = await fetch(`${API}/price`, { cache:'no-store', mode:'cors' });
+      if (!r.ok) throw new Error('api http '+r.status);
       const j = await r.json();
-      if (!j.ok) throw new Error('proxy not ok');
-      const v = Number(j.usd);
-      if (!sane(v)) throw new Error('proxy insane');
-      return { v, src:'proxy', cached: !!j.cached };
+      if (!j.ok) throw new Error('api not ok');
+      const v = Number(j.xrp_usd);
+      if (!sane(v)) throw new Error('api insane');
+      return { v, src:'API', cached:false };
     }
 
     async function fetchGecko(){
@@ -314,10 +314,10 @@
       if (priceState.locked && sane(priceState.usd)) return priceState;
 
       try{
-        const {v,src,cached} = await fetchProxy();
+        const {v,src,cached} = await fetchApiPrice();
         priceState.usd=v; priceState.src=src; priceState.cached=cached; priceState.ts=Date.now();
         if (!unlocked) priceState.locked=true;
-        saveLocal(v, src+(cached?' cached':'')); 
+        saveLocal(v, src);
         return priceState;
       }catch{}
 
@@ -352,7 +352,6 @@
     }
     function buildOpenLink(uri){
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      // On mobile, raw xrp: is fine; on desktop, wrap with Detect to route to Xaman
       return isMobile ? uri : `https://xumm.app/detect?uri=${encodeURIComponent(uri)}`;
     }
 
@@ -403,7 +402,9 @@
       try{
         const p = await getLockedPrice();
         updateSpotBar(p.usd, p.src, !unlocked, p.cached);
-      }catch{}
+      }catch{
+        if (xrpPriceLive) xrpPriceLive.textContent = 'Live: —';
+      }
     })();
   </script>
 </body>
