@@ -4,46 +4,63 @@
 
 # $BAG — XRPL’s Heaviest Meme
 
+> Utility on Chain. Culture on Brand.  
+> Built to flex. Powered by $XRP.
+
+---
+
 ## Overview
-$BAG is not here to explain utility. It already inherits the speed, low fees, and instant transfers of XRPL.  
-This is a **culture token**. Utility on chain, culture on brand. XRPL’s heaviest meme.
+$BAG inherits XRPL’s speed, low fees, and instant settlement.  
+This is a **culture token** — signal first, memes with momentum, and a brand that moves.
 
 - **Name:** BAG  
 - **Ticker:** $BAG  
-- **Chain:** XRPL  
+- **Chain:** XRP Ledger (XRPL)  
 - **Supply:** 1,000,000,000,000 (1T)  
 - **Decimals:** 6  
+- **Status:** Live
 
 ---
 
 ## Purpose
 Everyone’s after the $BAG.  
-It’s not about whitepapers and suits — it’s about flexing, trading, and building culture that sticks.  
+Own the narrative, move with conviction, and make the culture obvious.
 
 ---
 
 ## Distribution
-- **Treasury:** 70%  
-- **Reserve:** 20%  
-- **Liquidity:** 10%  
+- **Treasury — 70%**  
+  Operations, growth, listings, partnerships, creative, legal, infrastructure
+
+- **Reserve — 20%**  
+  Principal holdings for long-term strategy and future incentives
+
+- **Liquidity — 10%**  
+  On-chain depth and price stability
 
 ---
 
-## OTC Sale
-- **Entry Rate:** $1 = 1,000,000 $BAG  
-- **Public Launch Target:** 3× OTC rate  
+## Principles
+- No promises  
+- No roadmaps  
+- No apologies  
+- Just **get the bag**
 
 ---
 
-## Meme Ethos
-- No promises.  
-- No roadmaps.  
-- No apologies.  
-- Just **get the bag**.
+## Brand Notes
+- Meme-forward, mobile-first presence  
+- Instant value transfer on XRPL  
+- Visual identity built around the BAG coin, stack, and “BAG RECEIVED” moments
 
 ---
 
 ## Links
-- 🌐 Website: [getthebag.io](https://getthebag.io)  
-- 𝕏: [x.com/getthebag_io](https://x.com/getthebag_io)  
-- Telegram: [t.me/getthebag_io](https://t.me/getthebag_io)  
+- 🌐 Website — [getthebag.io](https://getthebag.io)  
+- 𝕏 — [x.com/getthebag_io](https://x.com/getthebag_io)  
+- Telegram — [t.me/getthebag_io](https://t.me/getthebag_io)
+
+---
+
+## Disclaimer
+$BAG is a community-driven meme token. Nothing herein is financial, legal, or tax advice. Always do your own research.
