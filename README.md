@@ -20,24 +20,19 @@
 
 ## 🔗 Live Deployment
 
-| Item          | Link                              |
-|---------------|-----------------------------------|
-| Website       | [getthebag.io](https://getthebag.io) |
-| Host          | [Vercel](https://vercel.com)      |
-| Domain        | [Namecheap](https://namecheap.com) |
-| DNS           | Vercel DNS (ns1 / ns2.vercel-dns.com) |
+| Item    | Link                                   |
+|---------|----------------------------------------|
+| Website | [getthebag.io](https://getthebag.io)   |
+| Host    | [Vercel](https://vercel.com)           |
+| Domain  | [Namecheap](https://namecheap.com)     |
+| DNS     | Vercel DNS (ns1 / ns2.vercel-dns.com)  |
 
 ---
 
 ## 💼 About the Project
 
-**$BAG** is XRPL’s loudest meme — not because it promises utility, but because it already has it.  
-It rides the $XRP rails. Fast, cheap, and built to move.  
-
-The site exists to:
-- Serve as the official launchpad for the token  
-- Host OTC sales and drops  
-- Broadcast $BAG’s identity to the chain
+**$BAG** runs on XRPL — fast, low fees, built to move.  
+The site is the official hub for the token, announcements, releases, and identity.
 
 No empty promises. Just:  
 **Built to flex. Powered by $XRP.**
@@ -46,36 +41,45 @@ No empty promises. Just:
 
 ## 🧱 Stack
 
-| Layer     | Tech           |
-|-----------|----------------|
+| Layer     | Tech            |
+|-----------|-----------------|
 | Frontend  | HTML / CSS / JS |
-| Hosting   | Vercel         |
-| DNS       | Vercel DNS     |
-| Registry  | Namecheap      |
-| Chain     | XRPL           |
+| Hosting   | Vercel          |
+| DNS       | Vercel DNS      |
+| Registry  | Namecheap       |
+| Chain     | XRPL            |
 
 ---
 
 ## 📁 Project Structure
 
+~~~
+/
+├─ assets/                # Icons, images, branding
+├─ css/                   # Stylesheets
+├─ js/                    # Client scripts
+├─ .well-known/           # xrpl-related metadata, TOML, etc.
+├─ index.html             # Landing page
+├─ vercel.json            # Redirects and headers
+└─ README.md
+~~~
 
 ---
 
-## 📦 Features (In Progress)
+## 📦 Features
 
-- OTC sale form + processing  
-- XRPL token trustline + explorer links  
-- Visual branding (BAG stack, coin assets, loading indicator)  
-- Meme-forward mobile layout  
-- Social meta tags + share preview  
-- Redirects from www + legacy domains
+- XRPL token info and explorer links  
+- Visual branding: BAG stack, coin assets, loading indicator  
+- Mobile-first, meme-forward layout  
+- Social meta tags and rich share previews  
+- Clean redirects from www and legacy domains
 
 ---
 
 ## 🧠 Dev Notes
 
 - Primary domain: `getthebag.io`  
-- All other domains (e.g. `bagtoken.net`) are unlinked  
+- All other domains (e.g., `bagtoken.net`) are unlinked  
 - No crossover with any other project  
 - No roadmap. No promises. Just presence.
 
@@ -85,6 +89,7 @@ No empty promises. Just:
 
 This site is auto-deployed from GitHub → Vercel.
 
-```bash
+~~~bash
 git commit -m "update site"
 git push origin main
+~~~
