@@ -66,14 +66,6 @@ $BAG introduces a **100-cycle reseeding mechanism**:
 
 ---
 
-## Brand Notes
-- Meme-forward, mobile-first presence  
-- Instant value transfer on XRPL  
-- Visual identity built around the BAG coin, stack, and “BAG RECEIVED” moments  
-- Theme: **Everyone’s After the $BAG**  
-
----
-
 ## Links
 - 🌐 Website — [getthebag.io](https://getthebag.io)  
 - 𝕏 — [x.com/getthebag_io](https://x.com/getthebag_io)  
