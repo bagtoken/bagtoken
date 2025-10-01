@@ -163,15 +163,6 @@
   .live-line{display:flex; gap:10px; align-items:center; margin-top:8px; color:#cfd6cf; font-size:.9rem}
   .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a}
   .dot.ok{background:#2fbf6b} .dot.warn{background:#e8a85c} .dot.err{background:#e06767}
-
-  /* NEW: Dice + system roll readout */
-  .roll-stats{
-    margin-top:10px; border:1px solid #1b4a2f; border-radius:10px; background:#0b1e16;
-    padding:10px; font-size:.95rem; color:#dfe6e0; display:flex; gap:12px; flex-wrap:wrap;
-  }
-  .roll-stats .item{display:flex;gap:6px;align-items:baseline}
-  .roll-stats .label{color:#9fb3a4;font-size:.85rem}
-  .roll-stats .value{font-weight:800;letter-spacing:.3px}
 </style>
 </head>
 <body>
@@ -260,11 +251,11 @@
             <div class="win" id="winFill"></div>
           </div>
           <div class="meta">
-            Win if number &gt; <b id="thrText">53</b> · Chance: <b id="chanceText">47%</b>
+            Win range: <b id="thrText">8–12</b> · Chance: <b id="chanceText">42%</b>
           </div>
         </div>
 
-        <!-- Manual price inputs (kept as fallback / visible) -->
+        <!-- Prices (auto live; editable fallback) -->
         <div class="demo-row">
           <label>Prices (auto from live feeds; editable if feeds fail)</label>
           <div class="price-grid">
@@ -315,18 +306,6 @@
           </div>
         </div>
 
-        <!-- NEW: Dice & system number readout -->
-        <div class="roll-stats" id="rollStats">
-          <div class="item">
-            <span class="label">🎲 Dice:</span>
-            <span class="value" id="diceVals">—</span>
-          </div>
-          <div class="item">
-            <span class="label">🎯 System #:</span>
-            <span class="value" id="sysVal">—</span>
-          </div>
-        </div>
-
         <div id="resultCard" class="result">
           <div class="n" id="rollNumber">—</div>
           <div class="t" id="rollText">Tap Roll</div>
@@ -342,10 +321,10 @@
       <div class="game-card">
         <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
         <ul class="game-list">
-          <li>Select a number range between 0 and 100</li>
-          <li>Place your bet in XRP or BAG</li>
-          <li>Roll the dice — land in range and win BAG</li>
-          <li>Rare chance triggers the BAG DROP jackpot</li>
+          <li>Two dice roll → total 2–12</li>
+          <li><strong>Win:</strong> 8–12 &nbsp;|&nbsp; <strong>Push:</strong> 7 &nbsp;|&nbsp; <strong>Lose:</strong> 2–6</li>
+          <li>Bet in XRP or BAG, wins pay out in BAG</li>
+          <li>Live USD estimate based on BAG price feed</li>
         </ul>
         <p class="note">No wallet connection yet. Visual demo only while development continues.</p>
       </div>
@@ -374,14 +353,9 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
-<!-- Free-play dice demo with white dice + payout + live pricing + dice readout -->
+<!-- Free-play dice demo (2–12 logic, 7 = push) -->
 <script>
 (function(){
-  const thr = document.getElementById('demoThreshold');
-  const thrLabel = document.getElementById('thrLabel');
-  const thrText = document.getElementById('thrText');
-  const chanceText = document.getElementById('chanceText');
-  const winFill = document.getElementById('winFill');
   const rollBtn = document.getElementById('rollBtn');
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
@@ -392,28 +366,69 @@
 
   const dieA = document.getElementById('dieA');
   const dieB = document.getElementById('dieB');
-  const EDGE = 0.02; // 2% house edge
 
-  // Currency + pricing + USD
+  // UI elements retained for aesthetics
+  const thr = document.getElementById('demoThreshold');
+  const thrLabel = document.getElementById('thrLabel');
+  const thrText = document.getElementById('thrText');
+  const chanceText = document.getElementById('chanceText');
+  const winFill = document.getElementById('winFill');
+
+  // Currency & pricing & USD display
   const curToggle = document.getElementById('curToggle');
   const bagUsdInput = document.getElementById('bagUsd');
   const xrpUsdInput = document.getElementById('xrpUsd');
   const payoutUSD = document.getElementById('payoutUSD');
   const unitSpan = document.querySelector('#bagDiceDemo .unit');
-
-  // Live price UI
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
 
-  // NEW: dice & system readout
-  const diceValsEl = document.getElementById('diceVals');
-  const sysValEl = document.getElementById('sysVal');
+  // ------- CONFIG
+  const EDGE = 0.02;              // 2% house edge
+  const RULE = 'push7';           // 'push7' | 'sevenLose' | 'sevenWin' | 'jackpot7'
+  const JACKPOT_MULT = 10;        // only used for 'jackpot7'
+  // ----------------
 
-  // State
+  // Dice sum distribution (out of 36)
+  const COUNTS = {2:1,3:2,4:3,5:4,6:5,7:6,8:5,9:4,10:3,11:2,12:1};
+
+  function probs(rule){
+    let win=0, loss=0, push=0;
+    for(let s=2;s<=12;s++){
+      const c = COUNTS[s];
+      if(rule==='push7'){
+        if(s<=6) loss+=c; else if(s===7) push+=c; else win+=c;
+      }else if(rule==='sevenLose'){
+        if(s<=7) loss+=c; else win+=c;
+      }else if(rule==='sevenWin'){
+        if(s>=7) win+=c; else loss+=c;
+      }else if(rule==='jackpot7'){
+        if(s===7) push+=c; else if(s>=8) win+=c; else loss+=c;
+      }
+    }
+    return { pW:win/36, pL:loss/36, pPush:push/36 };
+  }
+
+  function baseMultiplier(edge, rule){
+    const {pW, pL} = probs(rule);
+    return 1 + (pL - edge) / pW; // total incl. stake
+  }
+
+  function multipliers(edge, rule){
+    if(rule !== 'jackpot7'){
+      const k = baseMultiplier(edge, rule);
+      return { kBase: Math.max(1.01, k), kJackpot: null };
+    }
+    const {pW, pL, pPush} = probs('jackpot7'); // pPush = p(7)
+    const kBase = Math.max(1.01, 1 + (pL + edge - pPush*(JACKPOT_MULT-1)) / pW);
+    return { kBase, kJackpot: JACKPOT_MULT };
+  }
+
+  // Price state
   const PRICES = { bagUsd: 0, xrpUsd: 0 };
-  const PRICE_REFRESH_MS = 15000; // 15s
+  const PRICE_REFRESH_MS = 15000;
 
   function fmt(n){ return (Math.round(n*100)/100).toLocaleString(); }
   function fmt4(n){ return (Math.round(n*10000)/10000).toLocaleString(); }
@@ -421,93 +436,69 @@
   async function fetchXrpUsd(){
     try{
       const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
-      if(!r.ok) throw new Error('XRP price HTTP '+r.status);
+      if(!r.ok) throw new Error('XRP HTTP '+r.status);
       const j = await r.json();
-      const v = j && j.ripple && j.ripple.usd;
-      if(typeof v === 'number' && isFinite(v)){
-        PRICES.xrpUsd = v;
-        xrpUsdInput.value = String(v);
-        liveXRP.textContent = fmt4(v);
-        return true;
+      const v = j?.ripple?.usd;
+      if(typeof v==='number' && isFinite(v)){
+        PRICES.xrpUsd = v; xrpUsdInput.value = String(v); liveXRP.textContent = fmt4(v); return true;
       }
     }catch(e){}
     return false;
   }
-
   async function fetchBagUsd(){
     try{
-      // Your site should serve: /api/bag-price.json -> {"usd": 0.00000000}
       const r = await fetch('/api/bag-price.json',{cache:'no-store'});
-      if(!r.ok) throw new Error('BAG price HTTP '+r.status);
+      if(!r.ok) throw new Error('BAG HTTP '+r.status);
       const j = await r.json();
-      const v = j && j.usd;
-      if(typeof v === 'number' && isFinite(v)){
-        PRICES.bagUsd = v;
-        bagUsdInput.value = String(v);
-        liveBAG.textContent = fmt4(v);
-        return true;
+      const v = j?.usd;
+      if(typeof v==='number' && isFinite(v)){
+        PRICES.bagUsd = v; bagUsdInput.value = String(v); liveBAG.textContent = fmt4(v); return true;
       }
     }catch(e){}
     return false;
   }
-
   async function refreshPrices(){
     const [okX, okB] = await Promise.all([fetchXrpUsd(), fetchBagUsd()]);
-    if(okX && okB){
-      liveDot.className = 'dot ok';
-      liveNote.textContent = ' (live)';
-    }else if(okX || okB){
-      liveDot.className = 'dot warn';
-      liveNote.textContent = ' (partial live; you can edit the other)';
-    }else{
-      liveDot.className = 'dot err';
-      liveNote.textContent = ' (live feeds unavailable; edit fields manually)';
-    }
+    if(okX && okB){ liveDot.className='dot ok'; liveNote.textContent=' (live)'; }
+    else if(okX || okB){ liveDot.className='dot warn'; liveNote.textContent=' (partial live)'; }
+    else { liveDot.className='dot err'; liveNote.textContent=' (edit prices manually)'; }
     updateUI();
   }
 
   function updateUI(){
-    // Selected currency (affects the bet label only in the demo)
+    // Currency label
     const selectedCur = (curToggle.querySelector('input[name="betCur"]:checked')||{}).value || 'XRP';
     unitSpan.textContent = selectedCur;
 
-    // Keep PRICES in sync if user edits manually (fallback mode)
+    // Sync prices if edited manually
     const bagUsdVal = parseFloat(bagUsdInput.value||0);
     const xrpUsdVal = parseFloat(xrpUsdInput.value||0);
     if(isFinite(bagUsdVal) && bagUsdVal>0) PRICES.bagUsd = bagUsdVal;
     if(isFinite(xrpUsdVal) && xrpUsdVal>0) PRICES.xrpUsd = xrpUsdVal;
 
-    const t = parseInt(thr.value,10);
-    const p = (100-(t+1))/100; // win if n > t
+    // Show win chance band for this rule (8–12 win when push7)
+    const {pW} = probs(RULE);
+    thrLabel.textContent = '—';
+    thrText.textContent = '8–12';
+    chanceText.textContent = Math.round(pW*100) + '%';
+    winFill.style.width = (pW*100) + '%';
+
+    // Compute base payout shown (per bet) in BAG
     const bet = Math.max(0, parseFloat(betInput.value||0));
+    const {kBase} = multipliers(EDGE, RULE);
+    const totalBAG = bet * kBase;
+    const profitBAG = totalBAG - bet;
 
-    thrLabel.textContent = t;
-    thrText.textContent = t;
-    chanceText.textContent = Math.round(p*100) + '%';
-    winFill.style.width = (p*100) + '%';
-
-    if(p > 0){
-      // Demo math: payout displayed in BAG regardless of input currency
-      const totalBAG = bet * ((1-EDGE)/p); // includes stake
-      const profitBAG = totalBAG - bet;
-
-      payoutTotal.textContent  = totalBAG ? `${fmt(totalBAG)} BAG` : '—';
-      payoutProfit.textContent = profitBAG ? `${fmt(profitBAG)} BAG` : '—';
-
-      const bagPrice = PRICES.bagUsd || 0;
-      const totalUSD = totalBAG * bagPrice;
-      payoutUSD.textContent = (bagPrice > 0 && totalBAG > 0) ? `$${fmt(totalUSD)}` : '—';
-    } else {
-      payoutTotal.textContent = '—';
-      payoutProfit.textContent = '—';
-      payoutUSD.textContent = '—';
-    }
+    payoutTotal.textContent  = bet ? `${fmt(totalBAG)} BAG` : '—';
+    payoutProfit.textContent = bet ? `${fmt(profitBAG)} BAG` : '—';
+    const totalUSD = totalBAG * (PRICES.bagUsd||0);
+    payoutUSD.textContent = (bet && PRICES.bagUsd) ? `$${fmt(totalUSD)}` : '—';
   }
 
-  function addHistory(n,win){
+  function addHistory(text, cls){
     const el = document.createElement('div');
-    el.className = 'pill ' + (win?'win':'lose');
-    el.textContent = n + (win ? ' ✓' : ' ✗');
+    el.className = 'pill ' + (cls||'');
+    el.textContent = text;
     history.prepend(el);
     while(history.children.length>8) history.lastChild.remove();
   }
@@ -515,7 +506,8 @@
   function resetCube(el){ el.className = 'cube'; }
   function poseCube(el, val){ el.classList.add('show-' + val); }
 
-  thr.addEventListener('input', updateUI);
+  // Wire inputs (slider remains visual)
+  document.getElementById('demoThreshold').addEventListener('input', updateUI);
   betInput.addEventListener('input', updateUI);
   curToggle.addEventListener('change', updateUI);
   bagUsdInput.addEventListener('input', updateUI);
@@ -524,25 +516,19 @@
   rollBtn.addEventListener('click', async ()=>{
     rollBtn.disabled = true;
 
-    // Start dice spin
+    // Spin dice
     const a = Math.floor(Math.random()*6)+1;
     const b = Math.floor(Math.random()*6)+1;
     document.querySelectorAll('.cube').forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
 
-    // Game result 0..100
-    const n = Math.floor(Math.random()*101);
+    // Animate number to sum
+    const sum = a + b;
     rollText.textContent = 'Rolling…';
-
-    // Show placeholders
-    diceValsEl.textContent = 'rolling…';
-    sysValEl.textContent = '—';
-
-    // Number animation
     await new Promise(res=>{
       const start = performance.now(), dur = 900;
       const step = (now)=>{
         const p = Math.min(1,(now-start)/dur);
-        const val = Math.floor(p*n);
+        const val = Math.max(2, Math.min(12, Math.floor(2 + p*(sum-2))));
         rollNumber.textContent = val;
         if(p<1) requestAnimationFrame(step); else res();
       };
@@ -551,29 +537,35 @@
 
     // Stop spin and show faces
     document.querySelectorAll('.cube').forEach(c=>c.classList.remove('rolling'));
-    setTimeout(()=>{
-      const cubes = document.querySelectorAll('.cube');
-      poseCube(cubes[0], a);
-      poseCube(cubes[1], b);
-    }, 20);
+    setTimeout(()=>{ poseCube(dieA, a); poseCube(dieB, b); }, 20);
 
-    // Display dice and system number
-    diceValsEl.textContent = `${a} + ${b} = ${a + b}`;
-    sysValEl.textContent = String(n);
+    // Outcome
+    let outcome, css = '';
+    if(RULE==='push7'){
+      if(sum<=6) { outcome='Lose — total '+sum; css='lose'; }
+      else if(sum===7){ outcome='Push — total 7'; css=''; }
+      else { outcome='Win — total '+sum; css='win'; }
+    }else if(RULE==='sevenLose'){
+      if(sum<=7) { outcome='Lose — total '+sum; css='lose'; } else { outcome='Win — total '+sum; css='win'; }
+    }else if(RULE==='sevenWin'){
+      if(sum>=7) { outcome='Win — total '+sum; css='win'; } else { outcome='Lose — total '+sum; css='lose'; }
+    }else if(RULE==='jackpot7'){
+      if(sum===7){ outcome='JACKPOT — total 7'; css='win'; }
+      else if(sum>=8){ outcome='Win — total '+sum; css='win'; }
+      else { outcome='Lose — total '+sum; css='lose'; }
+    }
 
-    // Judge result
-    const t = parseInt(thr.value,10);
-    const win = n > t;
-    rollText.textContent = win ? 'Win — in-range' : 'Lose — out of range';
-    rollText.style.color = win ? '#2fbf6b' : '#e25b5b';
-    addHistory(n,win);
+    rollText.textContent = outcome;
+    rollText.style.color = (css==='win') ? '#2fbf6b' : (css==='lose' ? '#e25b5b' : '#cfd6cf');
+    addHistory(`${a}+${b}=${sum}` + (css==='win'?' ✓': css==='lose'?' ✗':' ↺'), css);
 
     setTimeout(()=>{ rollBtn.disabled = false; }, 250);
   });
 
-  // Kick off price loop
+  // Init
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
+  updateUI();
 })();
 </script>
 </body>
