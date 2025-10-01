@@ -150,16 +150,11 @@
 
   /* Currency chips + price inputs + live line */
   .toggle { display:flex; gap:8px; flex-wrap:wrap; }
-  .chip {
-    display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
-    border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9; font-weight:800; cursor:pointer;
-  }
+  .chip { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
+    border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9; font-weight:800; cursor:pointer; }
   .chip input { accent-color:#2fbf6b; }
   .price-grid { display:grid; grid-template-columns:auto 120px auto 120px; gap:8px 12px; align-items:center; }
-  .price-grid input {
-    width:100%; background:#0b2217; border:1px solid #1b4a2f; border-radius:8px; color:#f3f5f0; padding:8px;
-    font-variant-numeric: tabular-nums;
-  }
+  .price-grid input { width:100%; background:#0b2217; border:1px solid #1b4a2f; border-radius:8px; color:#f3f5f0; padding:8px; font-variant-numeric: tabular-nums; }
   .live-line{display:flex; gap:10px; align-items:center; margin-top:8px; color:#cfd6cf; font-size:.9rem}
   .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a}
   .dot.ok{background:#2fbf6b} .dot.warn{background:#e8a85c} .dot.err{background:#e06767}
@@ -215,12 +210,12 @@
       <span class="badge">Coming Soon</span><span class="subbadge">Work in progress</span>
       <h2 id="game-teaser-title" class="game-title">🎲 $BAG Dice</h2>
       <p class="game-copy">
-        Choose <strong>Over/Under</strong>, set a threshold, then roll two dice. Wins pay in <strong>$BAG</strong>. <strong>7 = push</strong>.
+        Choose <strong>Over/Under</strong>, set a threshold (3–11), roll two dice. <strong>7 = push</strong>. Wins pay out in <strong>$BAG</strong>.
       </p>
     </div>
 
     <div class="game-grid">
-      <!-- Free-play demo card with dice -->
+      <!-- Free-play demo card -->
       <div class="game-card mock" id="bagDiceDemo">
         <div class="demo-head"><strong>Free demo</strong> · no wallet, no payouts</div>
 
@@ -264,7 +259,7 @@
           </div>
         </div>
 
-        <!-- Manual price inputs (fallback) -->
+        <!-- Prices (live + editable fallback) -->
         <div class="demo-row">
           <label>Prices (auto from live feeds; editable if feeds fail)</label>
           <div class="price-grid">
@@ -365,7 +360,6 @@
 <!-- Demo logic -->
 <script>
 (function(){
-  // Elements
   const thr = document.getElementById('demoThreshold');
   const thrLabel = document.getElementById('thrLabel');
   const thrText = document.getElementById('thrText');
@@ -384,7 +378,6 @@
   const dieA = document.getElementById('dieA');
   const dieB = document.getElementById('dieB');
 
-  // Currency + prices
   const curToggle = document.getElementById('curToggle');
   const unitSpan = document.querySelector('#bagDiceDemo .unit');
   const ouToggle = document.getElementById('ouToggle');
@@ -399,82 +392,92 @@
   const PRICES = { bagUsd: 0, xrpUsd: 0 };
   const PRICE_REFRESH_MS = 15000;
 
-  // 2d6 probabilities (out of 36)
+  // 2d6 outcomes (out of 36)
   const PROB = {2:1,3:2,4:3,5:4,6:5,7:6,8:5,9:4,10:3,11:2,12:1};
+  const TOTAL = 36, PUSH = PROB[7]; // 6
+  const NONPUSH = TOTAL - PUSH;     // 30
 
   const fmt = n => (Math.round(n*100)/100).toLocaleString();
   const fmt4 = n => (Math.round(n*10000)/10000).toLocaleString();
 
-  // Live prices
   async function fetchXrpUsd(){
-    try{const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
-      const j=await r.json();const v=j?.ripple?.usd;
-      if(typeof v==='number'){PRICES.xrpUsd=v;xrpUsdInput.value=String(v);liveXRP.textContent=fmt4(v);return true;}
-    }catch(e){} return false;
+    try{
+      const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
+      if(!r.ok) throw new Error();
+      const v=(await r.json())?.ripple?.usd;
+      if(typeof v==='number'){ PRICES.xrpUsd=v; xrpUsdInput.value=String(v); liveXRP.textContent=fmt4(v); return true; }
+    }catch(e){}
+    return false;
   }
   async function fetchBagUsd(){
-    try{const r=await fetch('/api/bag-price.json',{cache:'no-store'});
-      const j=await r.json();const v=j?.usd;
-      if(typeof v==='number'){PRICES.bagUsd=v;bagUsdInput.value=String(v);liveBAG.textContent=fmt4(v);return true;}
-    }catch(e){} return false;
+    try{
+      const r=await fetch('/api/bag-price.json',{cache:'no-store'});
+      if(!r.ok) throw new Error();
+      const v=(await r.json())?.usd;
+      if(typeof v==='number'){ PRICES.bagUsd=v; bagUsdInput.value=String(v); liveBAG.textContent=fmt4(v); return true; }
+    }catch(e){}
+    return false;
   }
   async function refreshPrices(){
     const [okX,okB]=await Promise.all([fetchXrpUsd(),fetchBagUsd()]);
-    if(okX&&okB){liveDot.className='dot ok';liveNote.textContent=' (live)';}
-    else if(okX||okB){liveDot.className='dot warn';liveNote.textContent=' (partial live)';}
-    else{liveDot.className='dot err';liveNote.textContent=' (feeds unavailable; edit manually)';}
+    if(okX&&okB){ liveDot.className='dot ok'; liveNote.textContent=' (live)'; }
+    else if(okX||okB){ liveDot.className='dot warn'; liveNote.textContent=' (partial live)'; }
+    else { liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)'; }
     updateUI();
   }
 
-  function winProbability(type, t){
-    // exclude 7 (push) from wins & losses
+  function winsCount(type, t){
     let wins=0;
-    if(type==='over'){ for(let s=t+1; s<=12; s++) if(s!==7) wins+=PROB[s]||0; }
-    else { for(let s=2; s<=t-1; s++) if(s!==7) wins+=PROB[s]||0; }
-    return wins/36;
+    if(type==='over'){
+      for(let s=t+1; s<=12; s++) if(s!==7) wins+=PROB[s]||0;
+    }else{
+      for(let s=2; s<=t-1; s++) if(s!==7) wins+=PROB[s]||0;
+    }
+    return wins;
   }
-
+  function winProbability(type, t){
+    return winsCount(type,t)/NONPUSH; // exclude pushes
+  }
   function winSetText(type, t){
     if(type==='over'){
       const lo=t+1, hi=12;
-      return lo<=12 ? `${lo}–12${(lo<=7&&7<=12)?' (excl. 7)':''}` : '—';
+      if(lo>12) return '—';
+      return (lo<=7&&7<=hi)?`${lo}–12 (excl. 7)`:`${lo}–12`;
     }else{
       const lo=2, hi=t-1;
       if(hi<2) return '—';
-      const excl = (lo<=7&&7<=hi)?' (excl. 7)':'';
-      return `${lo}–${hi}${excl}`;
+      return (lo<=7&&7<=hi)?`${lo}–${hi} (excl. 7)`: `${lo}–${hi}`;
     }
   }
 
   function updateUI(){
-    const selectedCur = (curToggle.querySelector('input[name="betCur"]:checked')||{}).value || 'XRP';
-    unitSpan.textContent = selectedCur;
+    const selectedCur=(curToggle.querySelector('input[name="betCur"]:checked')||{}).value||'XRP';
+    unitSpan.textContent=selectedCur;
 
-    const type = (ouToggle.querySelector('input[name="ou"]:checked')||{}).value || 'over';
-    const t = parseInt(thr.value,10);
-    thrLabel.textContent = t;
-    thrText.textContent = t;
-    ruleText.innerHTML = `Win if total <b>${type==='over'?'&gt;':'&lt;'}</b> <b id="thrText">${t}</b> (7 = push)`;
+    const type=(ouToggle.querySelector('input[name="ou"]:checked')||{}).value||'over';
+    const t=parseInt(thr.value,10);
+    thrLabel.textContent=t;
+    thrText.textContent=t;
+    ruleText.innerHTML=`Win if total <b>${type==='over'?'&gt;':'&lt;'}</b> <b id="thrText">${t}</b> (7 = push)`;
 
-    // prices (allow manual edits)
-    const bu = parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
-    const xu = parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
+    // keep prices synced if edited
+    const bu=parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
+    const xu=parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
 
-    // chance + visual bar
-    const p = winProbability(type, t);
-    chanceText.textContent = Math.round(p*100)+'%';
-    winFill.style.width = (p*100)+'%';
-    rangeText.textContent = winSetText(type, t);
+    const p = winProbability(type,t);
+    chanceText.textContent=Math.round(p*100)+'%';
+    winFill.style.width=(p*100)+'%';
+    rangeText.textContent=winSetText(type,t);
 
-    const bet = Math.max(0, parseFloat(betInput.value||0));
+    const bet=Math.max(0,parseFloat(betInput.value||0));
     if(p>0){
-      const totalBAG = bet * ((1-EDGE)/p); // includes stake
+      const totalBAG = bet * ((1-EDGE)/p);  // includes stake
       const profitBAG = totalBAG - bet;
       payoutTotal.textContent = `${fmt(totalBAG)} BAG`;
       payoutProfit.textContent = `${fmt(profitBAG)} BAG`;
-      const totalUSD = totalBAG * (PRICES.bagUsd||0);
-      payoutUSD.textContent = totalUSD>0 ? `$${fmt(totalUSD)}` : '—';
-    } else {
+      const usd = totalBAG*(PRICES.bagUsd||0);
+      payoutUSD.textContent = usd>0 ? `$${fmt(usd)}` : '—';
+    }else{
       payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
   }
@@ -482,7 +485,7 @@
   function addHistory(total,outcome){
     const el=document.createElement('div');
     el.className='pill ' + (outcome==='win'?'win':outcome==='lose'?'lose':'');
-    el.textContent = total + (outcome==='win'?' ✓': outcome==='lose'?' ✗':' ↺');
+    el.textContent= total + (outcome==='win'?' ✓': outcome==='lose'?' ✗':' ↺');
     history.prepend(el);
     while(history.children.length>8) history.lastChild.remove();
   }
@@ -490,7 +493,6 @@
   function resetCube(el){ el.className='cube'; }
   function poseCube(el,val){ el.classList.add('show-'+val); }
 
-  // events
   ['input','change'].forEach(ev=>{
     thr.addEventListener(ev,updateUI);
     ouToggle.addEventListener(ev,updateUI);
@@ -500,36 +502,29 @@
   bagUsdInput.addEventListener('input',updateUI);
   xrpUsdInput.addEventListener('input',updateUI);
 
-  // roll
   document.getElementById('rollBtn').addEventListener('click', async ()=>{
     rollBtn.disabled=true;
     document.querySelectorAll('.cube').forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
 
     const a=Math.floor(Math.random()*6)+1;
     const b=Math.floor(Math.random()*6)+1;
-
-    await new Promise(r=>setTimeout(r,900));
+    await new Promise(r=>setTimeout(r,900)); // spin time
 
     document.querySelectorAll('.cube').forEach(c=>c.classList.remove('rolling'));
     poseCube(dieA,a); poseCube(dieB,b);
 
     const total=a+b;
     const t=parseInt(thr.value,10);
-    const type=(ouToggle.querySelector('input[name="ou"]:checked')||{}).value || 'over';
+    const type=(ouToggle.querySelector('input[name="ou"]:checked')||{}).value||'over';
 
     let outcome='push';
     if(total===7){
-      outcome='push';
       rollText.textContent=`Push — total ${total}`;
       rollText.style.color='#e8a85c';
     }else if((type==='over' && total>t) || (type==='under' && total<t)){
-      outcome='win';
-      rollText.textContent=`Win — total ${total}`;
-      rollText.style.color='#2fbf6b';
+      outcome='win'; rollText.textContent=`Win — total ${total}`; rollText.style.color='#2fbf6b';
     }else{
-      outcome='lose';
-      rollText.textContent=`Lose — total ${total}`;
-      rollText.style.color='#e25b5b';
+      outcome='lose'; rollText.textContent=`Lose — total ${total}`; rollText.style.color='#e25b5b';
     }
     rollNumber.textContent=total;
     addHistory(total,outcome);
@@ -537,7 +532,6 @@
     setTimeout(()=>{ rollBtn.disabled=false; }, 250);
   });
 
-  // init
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
 })();
