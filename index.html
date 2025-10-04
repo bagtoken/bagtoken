@@ -154,7 +154,7 @@
   .price-grid { display:grid; grid-template-columns:auto 120px auto 120px; gap:8px 12px; align-items:center; }
   .price-grid input { width:100%; background:#0b2217; border:1px solid #1b4a2f; border-radius:8px; color:#f3f5f0; padding:8px; font-variant-numeric: tabular-nums; }
   .live-line{display:flex; gap:10px; align-items:center; margin-top:8px; color:#cfd6cf; font-size:.9rem}
-  .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a}
+  .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a} /* fixed typo */
   .dot.ok{background:#2fbf6b} .dot.warn{background:#e8a85c} .dot.err{background:#e06767}
   .live-time{opacity:.8;font-size:.82rem}
   .point-badge{
@@ -249,17 +249,24 @@
           <label>Prices (auto from live feeds; editable if feeds fail)</label>
           <div class="price-grid">
             <span>BAG USD</span>
-            <input id="bagUsd" type="number" min="0" step="any" inputmode="decimal" value="0" />
+            <input id="bagUsd" type="number" min="0" step="any" inputmode="decimal" placeholder="loading…" />
             <span>XRP USD</span>
-            <input id="xrpUsd" type="number" min="0" step="0.0001" value="0.00" />
+            <input id="xrpUsd" type="number" min="0" step="0.0001" inputmode="decimal" placeholder="loading…" />
           </div>
+
+          <!-- NEW: quick conversion readout -->
           <div class="live-line">
             <span class="dot" id="liveDot"></span>
-            <span>Live prices:</span>
-            <span>BAG $<span id="liveBAG">0.00</span></span> ·
-            <span>XRP $<span id="liveXRP">0.00</span></span>
+            <span>Live:</span>
+            <span>BAG $<span id="liveBAG">—</span></span> ·
+            <span>XRP $<span id="liveXRP">—</span></span>
             <span class="live-time" id="liveTime"></span>
             <span id="liveNote" style="color:#9fb3a4;"></span>
+          </div>
+          <div class="live-line" style="opacity:.9">
+            <span>1 BAG ≈ $<span id="convBagUsd">—</span> · <span id="convBagXrp">—</span> XRP</span>
+            <span style="opacity:.5">&nbsp;|&nbsp;</span>
+            <span>1 XRP ≈ $<span id="convXrpUsd">—</span> · <span id="convXrpBag">—</span> BAG</span>
           </div>
         </div>
 
@@ -382,6 +389,12 @@
   const liveNote = document.getElementById('liveNote');
   const liveTime = document.getElementById('liveTime');
 
+  // NEW: conversion readout refs
+  const convBagUsd = document.getElementById('convBagUsd');
+  const convBagXrp = document.getElementById('convBagXrp');
+  const convXrpUsd = document.getElementById('convXrpUsd');
+  const convXrpBag = document.getElementById('convXrpBag');
+
   // State
   let point = null; // null => come-out
   const PRICES = { bagUsd: 0, xrpUsd: 0 };
@@ -394,12 +407,13 @@
   function fmtAdaptive(n){
     if (!Number.isFinite(n) || n <= 0) return '0';
     const abs = Math.abs(n);
-    let decimals = 2;
-    if (abs < 1e-2) decimals = 6;
-    if (abs < 1e-4) decimals = 8;
-    if (abs < 1e-5) decimals = 10;
-    if (abs < 1e-6) decimals = 12;
-    return Number(n.toFixed(decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+    let dp = 2;
+    if (abs < 1e-2) dp = 6;
+    if (abs < 1e-4) dp = 8;
+    if (abs < 1e-5) dp = 10;
+    if (abs < 1e-6) dp = 12;
+    const s = Number(n.toFixed(dp)).toString();
+    return Number(s).toLocaleString(undefined, { maximumFractionDigits: dp });
   }
   const fmtTime = (t)=> t ? new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
 
@@ -420,6 +434,29 @@
     }
   }
 
+  function updateConversions(){
+    const bu = PRICES.bagUsd || 0;
+    const xu = PRICES.xrpUsd || 0;
+
+    if (bu > 0){
+      convBagUsd.textContent = fmtAdaptive(bu);
+      if (xu > 0) convBagXrp.textContent = fmtAdaptive(bu / xu);
+      else convBagXrp.textContent = '—';
+    } else {
+      convBagUsd.textContent = '—';
+      convBagXrp.textContent = '—';
+    }
+
+    if (xu > 0){
+      convXrpUsd.textContent = fmtAdaptive(xu);
+      if (bu > 0) convXrpBag.textContent = fmtAdaptive(xu / bu);
+      else convXrpBag.textContent = '—';
+    } else {
+      convXrpUsd.textContent = '—';
+      convXrpBag.textContent = '—';
+    }
+  }
+
   function updatePayoutPreview(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
     if(bet>0){
@@ -428,7 +465,7 @@
       payoutTotal.textContent  = `${fmt(totalBAG)} BAG`;
       payoutProfit.textContent = `${fmt(profitBAG)} BAG`;
       const usd = totalBAG * (PRICES.bagUsd||0);
-      payoutUSD.textContent = usd>0 ? `$${fmt(usd)}` : '—';
+      payoutUSD.textContent = (usd>0 && Number.isFinite(usd)) ? `$${fmt(usd)}` : '—';
     }else{
       payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
@@ -474,7 +511,7 @@
     return false;
   }
 
-  // Live prices: BAG from API subdomain with fallback and diagnostics
+  // Live prices: BAG from our API; compute USD if needed from bag_xrp*xrp_usd
   async function fetchBagUsd(){
     for (const base of BAG_PRICE_URLS){
       const url = `${base}?ts=${Date.now()}`;
@@ -488,7 +525,7 @@
         const xrp_usd = Number(j?.xrp_usd);
         const bag_xrp = Number(j?.bag_xrp);
 
-        // If usd is missing but we have bag_xrp and xrp_usd, compute usd
+        // Compute USD if api omitted it but we have bag_xrp & xrp_usd
         if (!Number.isFinite(usd) && Number.isFinite(bag_xrp) && (Number.isFinite(xrp_usd) || Number.isFinite(PRICES.xrpUsd))){
           usd = bag_xrp * (Number.isFinite(xrp_usd) ? xrp_usd : PRICES.xrpUsd);
         }
@@ -496,12 +533,11 @@
         if(Number.isFinite(usd) && usd>0){
           PRICES.bagUsd = usd;
 
-          // Write a clean non-scientific string to the input (up to 12dp)
-          bagUsdInput.value = (usd).toFixed(12).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.$/,'');
-          // Live display with adaptive decimals
+          // Write nice precise string (up to 12dp, trimmed)
+          bagUsdInput.value = usd.toFixed(12).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.$/,'');
           liveBAG.textContent = fmtAdaptive(usd);
 
-          // Prefer API's XRP price if present
+          // Prefer API xrp_usd if provided
           if (Number.isFinite(xrp_usd) && xrp_usd>0){
             PRICES.xrpUsd = xrp_usd;
             xrpUsdInput.value = String(Number(xrp_usd.toFixed(10)));
@@ -523,11 +559,11 @@
   }
 
   async function refreshPrices(){
-    // respect manual edits
+    // Keep any manual edits
     const bu=parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
     const xu=parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
 
-    // Try BAG first (also sets XRP if present), then fill XRP from CG if needed
+    // Fetch BAG first (might also set XRP). If XRP missing, fill from CG.
     const okB = await fetchBagUsd();
     let okX = false;
     if (!okB || !Number.isFinite(PRICES.xrpUsd) || PRICES.xrpUsd <= 0){
@@ -542,6 +578,7 @@
       liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)';
     }
 
+    updateConversions();
     updatePayoutPreview();
   }
 
@@ -554,14 +591,24 @@
     if(v>0){
       PRICES.bagUsd=v;
       liveBAG.textContent=fmtAdaptive(v);
+      updateConversions();
+      updatePayoutPreview();
+    }else{
+      liveBAG.textContent='—';
+      updateConversions();
       updatePayoutPreview();
     }
   });
+
   xrpUsdInput.addEventListener('input', ()=>{
     const v=parseFloat(xrpUsdInput.value||0);
     if(v>0){
       PRICES.xrpUsd=v;
       liveXRP.textContent=fmt4(v);
+      updateConversions();
+    }else{
+      liveXRP.textContent='—';
+      updateConversions();
     }
   });
 
