@@ -308,19 +308,20 @@
 
 <script>
 (function(){
-  // --- Endpoints ---
+  // =====================  CONFIG  =====================
   const BAG_FEEDS = [
     'https://api.getthebag.io/bag-price.json',
-    'https://api.getthebag.io/api/bag-price.json'
+    'https://api.getthebag.io/api/bag-price.json',
+    // add optional mirrors if you create them later:
+    // 'https://getthebag.io/assets/bag-price.json'
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
 
-  // --- Timings / cache ---
   const PRICE_REFRESH_MS = 15000;
-  const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-  const FETCH_TIMEOUT_MS = 7000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 
-  // --- UI refs (all optional-safe) ---
+  // =====================  UI HOOKS  ====================
   const rollBtn = document.getElementById('rollBtn');
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
@@ -332,236 +333,270 @@
   const pointBadge = document.getElementById('pointBadge');
   const pointVal = document.getElementById('pointVal');
   const curToggle = document.getElementById('curToggle');
-  const unitSpan = document.querySelector('.unit');
+  const unitSpan = document.querySelector('#bagDiceDemo .unit');
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
-  const liveConv = document.getElementById('liveConv') || document.createElement('span'); // safe
+  const liveTime = document.getElementById('liveTime');
 
-  const dieA = document.getElementById('dieA');
-  const dieB = document.getElementById('dieB');
-
-  // --- State ---
-  let point = null;
-  const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—' };
-
-  // --- Helpers ---
-  const fmt  = n => (Math.round(n*100)/100).toLocaleString();
-  const fmt4 = n => (Math.round(n*10000)/10000).toLocaleString();
-  function fmtAdaptive(n){
-    if (!Number.isFinite(n) || n<=0) return '—';
-    const a=Math.abs(n);
-    if (a>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if (a>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if (a>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
+  // A small inline diagnostics span (appended near prices)
+  let diagSpan = document.getElementById('bagDiag');
+  if (!diagSpan) {
+    diagSpan = document.createElement('div');
+    diagSpan.id = 'bagDiag';
+    diagSpan.style.cssText = 'font-size:.8rem;opacity:.75;margin-top:4px;';
+    const parent = liveNote?.parentElement || document.body;
+    parent && parent.appendChild(diagSpan);
   }
-  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k){ try{
-      const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null;
-      if(Date.now()-o.t>CACHE_TTL_MS) return null; return o.v;
-    }catch{ return null } }
-  async function timedFetch(url, opts={}, t=FETCH_TIMEOUT_MS){
-    const c=new AbortController(), id=setTimeout(()=>c.abort('timeout'), t);
-    try{ return await fetch(url,{...opts, signal:c.signal, cache:'no-store', mode:'cors', credentials:'omit'}); }
-    finally{ clearTimeout(id); }
-  }
-  const num = x => { const n=Number(x); return Number.isFinite(n)?n:NaN; };
-  const pick = (...xs) => xs.map(num).find(v=>v>0);
+  function diag(msg){ try{ diagSpan.textContent = msg; }catch{} }
 
-  // --- Data resolution from one payload ---
+  // =====================  STATE  =======================
+  let point = null; // come-out when null
+  const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—', ts: 0 };
+
+  // =====================  HELPERS  =====================
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+  const pick = (...xs) => xs.map(num).find(v => v > 0);
+
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
+  function fmtTime(ts){ return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : ''; }
+
+  function cacheSet(key, val){ try{ localStorage.setItem(key, JSON.stringify({t:Date.now(), v:val})); }catch{} }
+  function cacheGet(key){
+    try {
+      const o = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!o) return null;
+      return (Date.now() - o.t) <= CACHE_TTL_MS ? o.v : null;
+    } catch { return null; }
+  }
+
+  async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(new Error('timeout')), timeout);
+    try {
+      return await fetch(url, { ...opts, mode:'cors', cache:'no-store', credentials:'omit', signal: ctrl.signal });
+    } finally { clearTimeout(id); }
+  }
+
+  // Resolve fields from a parsed JSON payload with many accepted shapes
   function resolveFromPayload(j){
-    // Accept many key names
-    const directUsd = pick(j?.usd, j?.bag_usd, j?.BAG_USD, j?.price_usd, j?.priceUSD, j?.price);
-    // XRP per BAG (preferred)
-    const xrpPerBag = pick(j?.bag_xrp, j?.xrp_bag, j?.xrpPerBag, j?.xrp_per_bag);
-    // BAG per XRP (inverse)
-    const bagPerXrp = pick(j?.bag_per_xrp, j?.bagPerXrp, j?.bagxrp, j?.BAG_per_XRP);
+    // direct USD (accept many casings/keys)
+    const usd = pick(j?.usd, j?.USD, j?.bag_usd, j?.BAG_USD, j?.price_usd, j?.priceUSD, j?.price);
 
-    const xrpUsdFromFeed = pick(j?.xrp_usd, j?.XRP_USD, j?.xrpPriceUsd);
-    if (xrpUsdFromFeed) PRICES.xrpUsd = xrpUsdFromFeed;
+    // exchange rates
+    const xrp_usd = pick(j?.xrp_usd, j?.XRP_USD, j?.xrpPriceUsd);
+    const xrp_per_bag = pick(j?.bag_xrp, j?.xrp_bag, j?.xrpPerBag, j?.xrp_per_bag); // XRP per 1 BAG
+    const bag_per_xrp = pick(j?.bag_per_xrp, j?.bagPerXrp, j?.BAG_per_XRP);        // BAG per 1 XRP
 
-    if (directUsd) { PRICES.bagUsd = directUsd; return true; }
+    // timestamp (optional)
+    const ts = num(j?.timestamp);
+    if (ts > 0) PRICES.ts = ts;
 
-    // Try to derive using whichever shape we have
-    if (xrpPerBag && PRICES.xrpUsd) {
-      PRICES.bagUsd = xrpPerBag * PRICES.xrpUsd;  // (XRP/BAG) * (USD/XRP)
+    // prefer feed XRP if present
+    if (xrp_usd) PRICES.xrpUsd = xrp_usd;
+
+    if (usd) { PRICES.bagUsd = usd; return true; }
+
+    // derive from rates if USD not given
+    if (xrp_per_bag && PRICES.xrpUsd) {
+      PRICES.bagUsd = xrp_per_bag * PRICES.xrpUsd; // (XRP/BAG)*(USD/XRP)
       return true;
     }
-    if (bagPerXrp && PRICES.xrpUsd) {
-      PRICES.bagUsd = (1 / bagPerXrp) * PRICES.xrpUsd; // (USD/XRP) / (BAG/XRP)
+    if (bag_per_xrp && PRICES.xrpUsd) {
+      PRICES.bagUsd = (1 / bag_per_xrp) * PRICES.xrpUsd; // (USD/XRP)/(BAG/XRP)
       return true;
     }
     return false;
   }
 
-  // --- Fetchers ---
+  // Text fallback when JSON parsing fails (very robust; regex any known keys)
+  function resolveFromText(txt){
+    const grab = key => {
+      const re = new RegExp(`"${key}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`);
+      const m = txt.match(re);
+      return m ? num(m[1]) : NaN;
+    };
+    const usd = pick(grab('usd'), grab('USD'), grab('bag_usd'), grab('BAG_USD'), grab('price_usd'), grab('price'));
+    const xrp_usd = pick(grab('xrp_usd'), grab('XRP_USD'));
+    const bag_xrp = pick(grab('bag_xrp'), grab('xrp_bag'), grab('xrp_per_bag'));
+    const bag_per_xrp = pick(grab('bag_per_xrp'), grab('BAG_per_XRP'));
+
+    if (xrp_usd) PRICES.xrpUsd = xrp_usd;
+
+    if (usd){ PRICES.bagUsd = usd; return true; }
+    if (bag_xrp && PRICES.xrpUsd){ PRICES.bagUsd = bag_xrp * PRICES.xrpUsd; return true; }
+    if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
+    return false;
+  }
+
+  // =====================  FETCHERS  ====================
   async function fetchXrpUsd(){
     try{
-      const r=await timedFetch(CG_XRP);
-      if(!r.ok) throw 0;
-      const v=(await r.json())?.ripple?.usd;
-      if (num(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd', v); return true; }
-    }catch{}
+      const r = await timedFetch(CG_XRP);
+      if (!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if (num(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
+    }catch(e){ /* ignore */ }
     return false;
   }
 
   async function fetchBagUsd(){
-    // First pass over feeds (may include xrp_usd)
+    let lastErr = '';
     for (const base of BAG_FEEDS){
       try{
-        const r=await timedFetch(`${base}?ts=${Date.now()}`);
-        if(!r.ok) continue;
-        const j=await r.json();
-        if (resolveFromPayload(j)) return true;
-      }catch{}
+        const r = await timedFetch(`${base}?ts=${Date.now()}`);
+        if (!r.ok) { lastErr = `${base} -> HTTP ${r.status}`; continue; }
+
+        // try JSON first
+        let ok = false;
+        try {
+          const j = await r.clone().json();
+          ok = resolveFromPayload(j);
+        } catch {
+          // fall back to raw text + regex
+          const t = await r.text();
+          ok = resolveFromText(t);
+        }
+        if (ok) { diag(`Feed OK: ${base}`); return true; }
+        lastErr = `${base} -> no usable fields`;
+      }catch(e){ lastErr = `${base} -> ${e && e.message || 'fetch error'}`; }
     }
-    // If we still don't have BAG but we do have bag_per_xrp / bag_xrp without xrp_usd, pull XRP from CG and try again
-    if (!(PRICES.xrpUsd>0)) await fetchXrpUsd();
-    for (const base of BAG_FEEDS){
-      try{
-        const r=await timedFetch(`${base}?ts=${Date.now()}`);
-        if(!r.ok) continue;
-        const j=await r.json();
-        if (resolveFromPayload(j)) return true;
-      }catch{}
-    }
+    if (lastErr) diag(lastErr);
     return false;
   }
 
   function loadCache(){
-    const bag = cacheGet('bag_prices');
+    const bag = cacheGet('bag_prices'); // {bagUsd, xrpUsd, ts}
     const xrp = cacheGet('xrp_usd');
-    let used=false;
-    if (bag && num(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(num(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; used=true; }
-    if (!PRICES.xrpUsd && num(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
-    if (used && PRICES.source==='—') PRICES.source='cached';
+    let used = false;
+    if (bag && num(bag.bagUsd)>0){ PRICES.bagUsd = bag.bagUsd; if (num(bag.xrpUsd)>0) PRICES.xrpUsd = bag.xrpUsd; PRICES.ts = bag.ts || PRICES.ts; used = true; }
+    if (!PRICES.xrpUsd && num(xrp)>0){ PRICES.xrpUsd = xrp; used = true; }
     return used;
   }
 
-  // --- UI updaters ---
+  // =====================  UI UPDATES  ==================
   function updateLiveLine(){
-    if(liveBAG) liveBAG.textContent = fmtAdaptive(PRICES.bagUsd);
-    if(liveXRP) liveXRP.textContent = fmt4(PRICES.xrpUsd || 0);
-    if(liveConv){
-      if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        const bagInXrp = PRICES.bagUsd / PRICES.xrpUsd;
-        const xrpInBag = PRICES.xrpUsd / PRICES.bagUsd;
-        liveConv.textContent = `1 BAG ≈ ${fmtAdaptive(bagInXrp)} XRP · 1 XRP ≈ ${fmtAdaptive(xrpInBag)} BAG`;
-      } else {
-        liveConv.textContent = `1 BAG ≈ — XRP · 1 XRP ≈ — BAG`;
-      }
-    }
-    if(liveDot){
-      liveDot.className = 'dot ' + (
-        PRICES.source==='live' ? 'ok' :
-        PRICES.source==='partial live' ? 'warn' :
-        PRICES.source==='cached' ? 'warn' : 'err'
-      );
-    }
-    if(liveNote){
+    if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
+    if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
+    if (liveTime && PRICES.ts) liveTime.textContent = `· updated ${fmtTime(PRICES.ts)}`;
+
+    const cls =
+      PRICES.source === 'live' ? 'ok' :
+      PRICES.source === 'partial live' ? 'warn' :
+      PRICES.source === 'cached' ? 'warn' : 'err';
+    if (liveDot) liveDot.className = `dot ${cls}`;
+
+    if (liveNote){
       liveNote.textContent =
-        PRICES.source==='live' ? ' (live)' :
-        PRICES.source==='partial live' ? ' (partial live)' :
-        PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
+        PRICES.source === 'live' ? ' (live)' :
+        PRICES.source === 'partial live' ? ' (partial live)' :
+        PRICES.source === 'cached' ? ' (cached)' : ' (unavailable)';
     }
   }
 
   function currentCurrency(){
-    const el = curToggle && curToggle.querySelector('input[name="betCur"]:checked');
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
     return el ? el.value : 'XRP';
   }
 
   function stakeInBAG(){
-    const bet = Math.max(0, parseFloat(betInput?.value||0));
-    if(!bet) return 0;
-    return currentCurrency()==='BAG'
-      ? bet
-      : (PRICES.bagUsd>0 && PRICES.xrpUsd>0 ? bet * (PRICES.xrpUsd/PRICES.bagUsd) : 0);
+    const bet = Math.max(0, parseFloat(betInput?.value || 0));
+    if (!bet) return 0;
+    if (currentCurrency() === 'BAG') return bet;
+    // XRP bet -> convert to BAG
+    if (PRICES.bagUsd > 0 && PRICES.xrpUsd > 0) {
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+      return bet * bagPerXrp;
+    }
+    return 0;
   }
 
   function updatePayoutPreview(){
     const s = stakeInBAG();
-    if (s>0){
-      const total = s*2, profit=s, usd = PRICES.bagUsd>0 ? total*PRICES.bagUsd : 0;
-      if(payoutTotal)  payoutTotal.textContent  = `${fmtAdaptive(total)} BAG`;
-      if(payoutProfit) payoutProfit.textContent = `${fmtAdaptive(profit)} BAG`;
-      if(payoutUSD)    payoutUSD.textContent    = usd>0 ? `$${fmtAdaptive(usd)}` : '—';
+    if (s > 0){
+      const total = s * 2, profit = s, usd = PRICES.bagUsd > 0 ? total * PRICES.bagUsd : 0;
+      if (payoutTotal)  payoutTotal.textContent  = `${fmt(total)} BAG`;
+      if (payoutProfit) payoutProfit.textContent = `${fmt(profit)} BAG`;
+      if (payoutUSD)    payoutUSD.textContent    = usd > 0 ? `$${fmt(usd)}` : '—';
     } else {
-      if(payoutTotal)  payoutTotal.textContent='—';
-      if(payoutProfit) payoutProfit.textContent='—';
-      if(payoutUSD)    payoutUSD.textContent='—';
+      if (payoutTotal)  payoutTotal.textContent  = '—';
+      if (payoutProfit) payoutProfit.textContent = '—';
+      if (payoutUSD)    payoutUSD.textContent    = '—';
     }
   }
 
-  function updateBetUnits(){
-    if(unitSpan) unitSpan.textContent = currentCurrency();
-    updatePayoutPreview();
-  }
+  function updateBetUnits(){ if (unitSpan) unitSpan.textContent = currentCurrency(); updatePayoutPreview(); }
 
   function updateStateText(){
-    if(!stateText||!pointBadge||!pointVal) return;
-    if(point==null){ stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
-    else { stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; }
+    if (!stateText || !pointBadge || !pointVal) return;
+    if (point == null){ stateText.textContent = 'Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display = 'none'; }
+    else { stateText.textContent = 'Point phase — hit the Point before 7'; pointVal.textContent = String(point); pointBadge.style.display = 'inline-block'; }
   }
 
-  function resetCube(el){ if(el) el.className='cube'; }
-  function poseCube(el,val){ if(el) el.classList.add('show-'+val); }
+  function resetCube(el){ if (el) el.className = 'cube'; }
+  function poseCube(el, v){ if (el) el.classList.add('show-'+v); }
 
-  // --- Refresh prices orchestrator ---
+  // =====================  ORCHESTRATION  ===============
   async function refreshPrices(){
-    let gotBag = await fetchBagUsd();             // might also set xrpUsd
-    let gotXrp = PRICES.xrpUsd>0 || await fetchXrpUsd();
+    let gotBag = await fetchBagUsd();            // might also set xrpUsd
+    let hadXrp = PRICES.xrpUsd > 0;
+    let gotXrp = hadXrp || await fetchXrpUsd();
 
-    if (gotBag && gotXrp) PRICES.source='live';
-    else if (gotBag || gotXrp) PRICES.source='partial live';
-    else if (loadCache()) PRICES.source='cached';
-    else PRICES.source='—';
+    if (gotBag && gotXrp) PRICES.source = 'live';
+    else if (gotBag || gotXrp) PRICES.source = 'partial live';
+    else if (loadCache()) PRICES.source = 'cached';
+    else PRICES.source = '—';
 
-    // persist
-    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0)
-      cacheSet('bag_prices', {bagUsd:PRICES.bagUsd||0, xrpUsd:PRICES.xrpUsd||0});
+    // Persist last good
+    if (PRICES.bagUsd > 0 || PRICES.xrpUsd > 0)
+      cacheSet('bag_prices', { bagUsd: PRICES.bagUsd || 0, xrpUsd: PRICES.xrpUsd || 0, ts: PRICES.ts || 0 });
 
     updateLiveLine();
     updatePayoutPreview();
   }
 
-  // --- Events ---
-  if (betInput) betInput.addEventListener('input', updatePayoutPreview);
-  if (curToggle) curToggle.addEventListener('change', updateBetUnits);
+  // =====================  EVENTS  ======================
+  betInput?.addEventListener('input', updatePayoutPreview);
+  curToggle?.addEventListener('change', updateBetUnits);
 
-  if (rollBtn) rollBtn.addEventListener('click', async ()=>{
-    rollBtn.disabled=true;
-    [dieA,dieB].forEach(c=>{ resetCube(c); c && c.classList.add('rolling'); });
+  rollBtn?.addEventListener('click', async ()=>{
+    rollBtn.disabled = true;
+    [dieA,dieB].forEach(c=>{ resetCube(c); c?.classList.add('rolling'); });
     const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
     await new Promise(r=>setTimeout(r,900));
-    [dieA,dieB].forEach(c=>c && c.classList.remove('rolling'));
+    [dieA,dieB].forEach(c=>c?.classList.remove('rolling'));
     poseCube(dieA,a); poseCube(dieB,b);
+    const total = a+b; rollNumber && (rollNumber.textContent = total);
 
-    const total=a+b; if(rollNumber) rollNumber.textContent=total;
-    if(point==null){
-      if(total===7||total===11){ if(rollText){ rollText.textContent=`Come-out WIN — ${total}`; rollText.className='t ok'; } }
-      else if(total===2||total===3||total===12){ if(rollText){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.className='t err'; } }
-      else { point=total; if(rollText){ rollText.textContent=`Point set to ${point}. Roll again.`; rollText.className='t warn'; } updateStateText(); rollBtn.disabled=false; return; }
+    if (point == null){
+      if (total===7||total===11){ rollText && (rollText.textContent=`Come-out WIN — ${total}`); }
+      else if (total===2||total===3||total===12){ rollText && (rollText.textContent=`Come-out LOSE — ${total}`); }
+      else { point = total; rollText && (rollText.textContent=`Point set to ${point}. Roll again.`); updateStateText(); rollBtn.disabled=false; return; }
     }else{
-      if(total===point){ if(rollText){ rollText.textContent=`WIN — hit the Point ${point}`; rollText.className='t ok'; } point=null; updateStateText(); }
-      else if(total===7){ if(rollText){ rollText.textContent=`LOSE — seven out`; rollText.className='t err'; } point=null; updateStateText(); }
-      else { if(rollText){ rollText.textContent=`Roll again — need ${point} (rolled ${total})`; rollText.className='t'; } }
+      if (total===point){ rollText && (rollText.textContent=`WIN — hit the Point ${point}`); point=null; updateStateText(); }
+      else if (total===7){ rollText && (rollText.textContent=`LOSE — seven out`); point=null; updateStateText(); }
+      else { rollText && (rollText.textContent=`Roll again — need ${point} (rolled ${total})`); }
     }
-    rollBtn.disabled=false;
+    rollBtn.disabled = false;
   });
 
-  // --- Init ---
+  // =====================  INIT  ========================
   updateStateText();
   updateBetUnits();
-  loadCache();            // prefill if we have something
-  updateLiveLine();
-  updatePayoutPreview();
+  // seed view from cache (if available) before first live pull
+  if (loadCache()) { PRICES.source = 'cached'; updateLiveLine(); updatePayoutPreview(); }
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
 })();
 </script>
 </body>
 </html>
+
 
