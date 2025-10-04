@@ -76,7 +76,7 @@
 
   /* Game header (image + title above game) */
   .game-header{text-align:center;padding:36px 10px 14px}
-  /* Make dice art the SAME size rules as the top logo */
+  /* Dice art uses the SAME sizing rules as the top logo */
   .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
 
@@ -147,9 +147,14 @@
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.25rem}
   .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e06767}
-  /* win/lose text colors */
+  /* win/lose colors */
   .t.win{color:#2fbf6b}
   .t.lose{color:#e25b5b}
+
+  /* Litepaper */
+  .litepaper-wrap{text-align:center;margin:40px 0 20px}
+  .btn-litepaper{display:inline-block;padding:10px 18px;font-size:.95rem;font-weight:700;color:#000;background:var(--gold);border-radius:18px;text-decoration:none;transition:filter .2s ease}
+  .btn-litepaper:hover{filter:brightness(1.05)}
 
   .legal-disclaimer{max-width:900px;margin:34px auto 0;padding:18px 16px 8px;border-top:1px solid #222;border-bottom:1px solid #222;font-size:.82rem;color:#aaa;text-align:center;line-height:1.45}
   .footer{text-align:center;padding:40px 10px;font-size:.85rem;color:#777}
@@ -200,7 +205,6 @@
 
 <!-- Game header (image + title ABOVE the game) -->
 <section class="game-header">
-  <!-- same sizing rules as the logo -->
   <img src="/assets/bag-dice.png" alt="$BAG Dice" class="hero-img">
   <h2>🎲 $BAG Dice (Craps)</h2>
   <p class="micro" style="margin-top:6px">Free demo — visual only, no wallet required.</p>
@@ -299,6 +303,14 @@
   </div>
 </section>
 
+<!-- LITE PAPER (restored) -->
+<div class="litepaper-wrap">
+  <a class="btn-litepaper" target="_blank" rel="noopener"
+     href="https://github.com/bagtoken/bagtoken/blob/9f9b3a418554c676d83f8be0c590a7c56287fced/litepaper.md">
+    📄 View Lite Paper
+  </a>
+</div>
+
 <div class="legal-disclaimer">
   <h3>Legal Disclaimer</h3>
   <p>$BAG is an independent community-driven token built on the XRP Ledger (XRPL). It is <strong>not affiliated with, endorsed by, or associated with</strong> Ripple Labs Inc., the XRP Ledger Foundation, or any related companies, individuals, trademarks, or intellectual property.</p>
@@ -357,7 +369,6 @@
     if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
-  function fmtTime(ts){ return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : ''; }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
@@ -365,22 +376,20 @@
     try{ return await fetch(url,{...opts,mode:'cors',cache:'no-store',credentials:'omit',signal:ctrl.signal}); }
     finally{ clearTimeout(id); }
   }
-
   function resolveFromPayload(j){
     const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
     const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
     const xrp_per_bag = pick(j?.bag_xrp,j?.xrp_bag,j?.xrpPerBag,j?.xrp_per_bag);
     const bag_per_xrp = pick(j?.bag_per_xrp,j?.bagPerXrp,j?.BAG_per_XRP);
-    const ts = num(j?.timestamp); if (ts>0) PRICES.ts = ts;
+    const ts = Number(j?.timestamp); if (ts>0) PRICES.ts = ts;
     if (xrp_usd) PRICES.xrpUsd = xrp_usd;
-
     if (usd){ PRICES.bagUsd = usd; return true; }
     if (xrp_per_bag && PRICES.xrpUsd){ PRICES.bagUsd = xrp_per_bag * PRICES.xrpUsd; return true; }
     if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
     return false;
   }
   function resolveFromText(txt){
-    const grab = k => { const m = txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?num(m[1]):NaN; };
+    const grab = k => { const m = txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?Number(m[1]):NaN; };
     const usd = pick(grab('usd'),grab('USD'),grab('bag_usd'),grab('BAG_USD'),grab('price_usd'),grab('price'));
     const xrp_usd = pick(grab('xrp_usd'),grab('XRP_USD'));
     const bag_xrp = pick(grab('bag_xrp'),grab('xrp_bag'),grab('xrp_per_bag'));
@@ -398,7 +407,7 @@
       const r = await timedFetch(CG_XRP);
       if (!r.ok) throw 0;
       const v = (await r.json())?.ripple?.usd;
-      if (num(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
+      if (Number(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
     }catch(_){} return false;
   }
   async function fetchBagUsd(){
@@ -419,14 +428,13 @@
   }
   function loadCache(){
     const bag = cacheGet('bag_prices'); const xrp = cacheGet('xrp_usd'); let used=false;
-    if (bag && num(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(num(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
-    if (!PRICES.xrpUsd && num(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
+    if (bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
+    if (!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
 
   // ---------- UI updates ----------
   function updateConversions(){
-    if (!liveConv) return;
     if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
       const xrpPerBag = PRICES.bagUsd / PRICES.xrpUsd;
       const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
@@ -436,28 +444,24 @@
     }
   }
   function updateLiveLine(){
-    if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
-    if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
-
+    liveBAG.textContent = fmt(PRICES.bagUsd);
+    liveXRP.textContent = fmt(PRICES.xrpUsd);
     const dotClass = PRICES.source==='live' ? 'ok' :
                      PRICES.source==='partial live' ? 'warn' :
                      PRICES.source==='cached' ? 'warn' : 'err';
-    liveDot && (liveDot.className = dotClass);
-
-    liveNote && (liveNote.textContent =
+    liveDot.className = dotClass;
+    liveNote.textContent =
       PRICES.source==='live' ? ' (live)' :
       PRICES.source==='partial live' ? ' (partial live)' :
-      PRICES.source==='cached' ? ' (cached)' : ' (unavailable)'
-    );
-
+      PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
     updateConversions();
   }
   function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    const el = curToggle.querySelector('input[name="betCur"]:checked');
     return el ? el.value : 'XRP';
   }
   function stakeInBAG(){
-    const bet = Math.max(0, parseFloat(betInput?.value || 0));
+    const bet = Math.max(0, parseFloat(betInput.value || 0));
     if (!bet) return 0;
     if (currentCurrency() === 'BAG') return bet;
     if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
@@ -477,13 +481,13 @@
       payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
   }
-  function updateBetUnits(){ if (unitSpan) unitSpan.textContent=currentCurrency(); updatePayoutPreview(); }
+  function updateBetUnits(){ unitSpan.textContent=currentCurrency(); updatePayoutPreview(); }
   function updateStateText(){
     if (point==null){ stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
     else { stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; }
   }
-  function resetCube(el){ el && (el.className='cube'); }
-  function poseCube(el,v){ el && el.classList.add('show-'+v); }
+  function resetCube(el){ el.className='cube'; }
+  function poseCube(el,v){ el.classList.add('show-'+v); }
 
   // ---------- Orchestration ----------
   async function refreshPrices(){
@@ -515,7 +519,6 @@
     poseCube(dieA,a); poseCube(dieB,b);
     const total=a+b; rollNumber.textContent=total;
 
-    // clear prior color
     rollText.classList.remove('win','lose');
 
     if (point==null){
