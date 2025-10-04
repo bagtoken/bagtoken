@@ -133,7 +133,7 @@
   .cube.show-2{transform:rotateX(0) rotateY(-90deg)}
   .cube.show-3{transform:rotateX(0) rotateY(-180deg)}
   .cube.show-4{transform:rotateX(0) rotateY(90deg)}
-  .cube.show-5{transform:rotateX(90deg) rotateY(0)}
+  .cube.show-5{transform:rotateX(-90deg) rotateY(0)}
   .cube.show-6{transform:rotateX(90deg) rotateY(0)}
 
   .btn-roll{
@@ -248,8 +248,10 @@
         <div class="demo-row">
           <label>Prices (auto from live feeds; editable if feeds fail)</label>
           <div class="price-grid">
-            <span>BAG USD</span><input id="bagUsd" type="number" min="0" step="0.00000001" value="0.00" />
-            <span>XRP USD</span><input id="xrpUsd" type="number" min="0" step="0.0001" value="0.00" />
+            <span>BAG USD</span>
+            <input id="bagUsd" type="number" min="0" step="any" inputmode="decimal" value="0" />
+            <span>XRP USD</span>
+            <input id="xrpUsd" type="number" min="0" step="0.0001" value="0.00" />
           </div>
           <div class="live-line">
             <span class="dot" id="liveDot"></span>
@@ -276,22 +278,22 @@
             <div class="face two"><div class="pip tl"></div><div class="pip br"></div></div>
             <div class="face three"><div class="pip tl"></div><div class="pip c"></div><div class="pip br"></div></div>
             <div class="face four"><div class="pip tl"></div><div class="pip tr"></div><div class="pip bl"></div><div class="pip br"></div></div>
+            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
             <div class="face six">
               <div class="pip tl"></div><div class="pip ml"></div><div class="pip bl"></div>
               <div class="pip tr"></div><div class="pip mr"></div><div class="pip br"></div>
             </div>
-            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
           </div>
           <div class="cube" id="dieB">
             <div class="face one"><div class="pip c"></div></div>
             <div class="face two"><div class="pip tl"></div><div class="pip br"></div></div>
             <div class="face three"><div class="pip tl"></div><div class="pip c"></div><div class="pip br"></div></div>
             <div class="face four"><div class="pip tl"></div><div class="pip tr"></div><div class="pip bl"></div><div class="pip br"></div></div>
+            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
             <div class="face six">
               <div class="pip tl"></div><div class="pip ml"></div><div class="pip bl"></div>
               <div class="pip tr"></div><div class="pip mr"></div><div class="pip br"></div>
             </div>
-            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
           </div>
         </div>
 
@@ -388,15 +390,16 @@
   const fmt  = n => (Math.round(n*100)/100).toLocaleString();
   const fmt4 = n => (Math.round(n*10000)/10000).toLocaleString();
 
-  // NEW: adaptive decimals for tiny USD prices (so we don't show "0.0000")
+  // Adaptive decimals for tiny USD prices (avoids scientific notation)
   function fmtAdaptive(n){
-    if (!Number.isFinite(n)) return '0';
+    if (!Number.isFinite(n) || n <= 0) return '0';
     const abs = Math.abs(n);
     let decimals = 2;
     if (abs < 1e-2) decimals = 6;
     if (abs < 1e-4) decimals = 8;
-    if (abs < 1e-6) decimals = 10;
-    return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+    if (abs < 1e-5) decimals = 10;
+    if (abs < 1e-6) decimals = 12;
+    return Number(n.toFixed(decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: decimals });
   }
   const fmtTime = (t)=> t ? new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
 
@@ -461,7 +464,7 @@
       const v=(await r.json())?.ripple?.usd;
       if(typeof v==='number'){
         PRICES.xrpUsd=v;
-        xrpUsdInput.value=String(v);
+        xrpUsdInput.value=String(Number(v.toFixed(10)));
         liveXRP.textContent=fmt4(v);
         return true;
       }
@@ -481,23 +484,36 @@
         const raw = await r.text();
         let j; try { j = JSON.parse(raw); } catch(err){ console.warn('BAG JSON parse failed from', base, 'raw:', raw); continue; }
 
-        const usd = Number(j?.usd);
+        let usd = Number(j?.usd);
         const xrp_usd = Number(j?.xrp_usd);
+        const bag_xrp = Number(j?.bag_xrp);
+
+        // If usd is missing but we have bag_xrp and xrp_usd, compute usd
+        if (!Number.isFinite(usd) && Number.isFinite(bag_xrp) && (Number.isFinite(xrp_usd) || Number.isFinite(PRICES.xrpUsd))){
+          usd = bag_xrp * (Number.isFinite(xrp_usd) ? xrp_usd : PRICES.xrpUsd);
+        }
+
         if(Number.isFinite(usd) && usd>0){
           PRICES.bagUsd = usd;
-          bagUsdInput.value = String(usd);
-          // Show tiny USD prices with more decimals
+
+          // Write a clean non-scientific string to the input (up to 12dp)
+          bagUsdInput.value = (usd).toFixed(12).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.$/,'');
+          // Live display with adaptive decimals
           liveBAG.textContent = fmtAdaptive(usd);
-          // If API gave xrp_usd, use it (fallback/override slow CG)
+
+          // Prefer API's XRP price if present
           if (Number.isFinite(xrp_usd) && xrp_usd>0){
             PRICES.xrpUsd = xrp_usd;
-            xrpUsdInput.value = String(xrp_usd);
+            xrpUsdInput.value = String(Number(xrp_usd.toFixed(10)));
             liveXRP.textContent = fmt4(xrp_usd);
           }
+
           if (Number.isFinite(j?.timestamp)) liveTime.textContent = `· updated ${fmtTime(j.timestamp)}`;
+          else liveTime.textContent = '';
+
           return true;
         } else {
-          console.warn('BAG feed missing/invalid usd field from', base, j);
+          console.warn('BAG feed missing/invalid price from', base, j);
         }
       }catch(e){
         console.warn('BAG price fetch failed from', base, e);
@@ -518,7 +534,7 @@
       okX = await fetchXrpUsd();
     }
 
-    if((okB && (okX || PRICES.xrpUsd>0)) || (okB && !okX)){
+    if (okB && (okX || PRICES.xrpUsd>0)){
       liveDot.className='dot ok'; liveNote.textContent=' (live)';
     } else if (okB || okX){
       liveDot.className='dot warn'; liveNote.textContent=' (partial live)';
@@ -532,8 +548,22 @@
   // Events
   betInput.addEventListener('input', updatePayoutPreview);
   curToggle.addEventListener('change', updateBetUnits);
-  bagUsdInput.addEventListener('input', ()=>{ const v=parseFloat(bagUsdInput.value||0); if(v>0) { PRICES.bagUsd=v; liveBAG.textContent=fmtAdaptive(v);} updatePayoutPreview(); });
-  xrpUsdInput.addEventListener('input', ()=>{ const v=parseFloat(xrpUsdInput.value||0); if(v>0) { PRICES.xrpUsd=v; liveXRP.textContent=fmt4(v);} });
+
+  bagUsdInput.addEventListener('input', ()=>{
+    const v=parseFloat(bagUsdInput.value||0);
+    if(v>0){
+      PRICES.bagUsd=v;
+      liveBAG.textContent=fmtAdaptive(v);
+      updatePayoutPreview();
+    }
+  });
+  xrpUsdInput.addEventListener('input', ()=>{
+    const v=parseFloat(xrpUsdInput.value||0);
+    if(v>0){
+      PRICES.xrpUsd=v;
+      liveXRP.textContent=fmt4(v);
+    }
+  });
 
   document.getElementById('rollBtn').addEventListener('click', async ()=>{
     rollBtn.disabled=true;
