@@ -352,11 +352,14 @@
 (function(){
   // === CONFIG: Absolute API endpoints ===
   const BAG_PRICE_URLS = [
-    'https://api.getthebag.io/bag-price.json',    // canonical
-    'https://api.getthebag.io/api/bag-price.json' // legacy fallback
+    'https://api.getthebag.io/bag-price.json',
+    'https://api.getthebag.io/api/bag-price.json'
   ];
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 6000;
+
+  // Simple local cache
+  const CACHE_KEY = 'bag_prices_v1'; // {bagUsd,xrpUsd,ts}
 
   // UI refs
   const rollBtn = document.getElementById('rollBtn');
@@ -409,6 +412,46 @@
     return (curToggle.querySelector('input[name="betCur"]:checked')||{}).value || 'XRP';
   }
 
+  // ---- Cache helpers ----
+  function loadCache(){
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}'); }
+    catch { return {}; }
+  }
+  function saveCache(bagUsd, xrpUsd){
+    try {
+      const ts = Math.floor(Date.now()/1000);
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ bagUsd, xrpUsd, ts }));
+    } catch {}
+  }
+  function applyCacheIfUseful(showBadge=true){
+    const c = loadCache();
+    if (!c) return false;
+    let used = false;
+    if (Number.isFinite(c.bagUsd) && c.bagUsd > 0 && !PRICES.bagUsd){
+      PRICES.bagUsd = c.bagUsd;
+      bagUsdInput.value = String(c.bagUsd);
+      used = true;
+    }
+    if (Number.isFinite(c.xrpUsd) && c.xrpUsd > 0 && !PRICES.xrpUsd){
+      PRICES.xrpUsd = c.xrpUsd;
+      xrpUsdInput.value = String(c.xrpUsd);
+      used = true;
+    }
+    if (used){
+      updateConversions();
+      updatePayoutPreview();
+      if (showBadge){
+        liveDot.className = 'dot warn';
+        const ageSec = Math.max(0, Math.floor(Date.now()/1000 - (c.ts||0)));
+        const ageStr = ageSec > 3600 ? `${Math.round(ageSec/3600)}h` :
+                       ageSec > 60 ? `${Math.round(ageSec/60)}m` : `${ageSec}s`;
+        liveNote.textContent = ` (cached · ${ageStr} old)`;
+        if (c.ts) liveTime.textContent = `· updated ${fmtTime(c.ts)}`;
+      }
+    }
+    return used;
+  }
+
   function updateBetUnits(){
     unitSpan.textContent = selectedCurrency();
     updatePayoutPreview();
@@ -447,7 +490,6 @@
     const xu = PRICES.xrpUsd || parseFloat(xrpUsdInput.value) || 0;
 
     if(bet>0){
-      // convert stake to BAG, then even-money
       let stakeBAG = 0;
       if (cur === 'BAG'){
         stakeBAG = bet;
@@ -485,9 +527,8 @@
   async function timedFetch(url, opts={}, timeoutMs=FETCH_TIMEOUT_MS){
     const ctrl = new AbortController();
     const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeoutMs);
-    try {
-      return await fetch(url, {...opts, signal: ctrl.signal});
-    } finally { clearTimeout(id); }
+    try { return await fetch(url, {...opts, signal: ctrl.signal}); }
+    finally { clearTimeout(id); }
   }
 
   // XRP from CoinGecko
@@ -496,12 +537,16 @@
       const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const v=(await r.json())?.ripple?.usd;
-      if(typeof v==='number'){ PRICES.xrpUsd=v; xrpUsdInput.value=String(v); return true; }
+      if(typeof v==='number'){
+        PRICES.xrpUsd=v;
+        xrpUsdInput.value=String(v);
+        return true;
+      }
     }catch(e){ console.warn('XRP price fetch failed:', e); }
     return false;
   }
 
-  // BAG from our API (also carries xrp_usd sometimes)
+  // BAG from our API (and compute if only bag_xrp present)
   async function fetchBagUsd(){
     for (const base of BAG_PRICE_URLS){
       const url = `${base}?ts=${Date.now()}`;
@@ -509,14 +554,28 @@
         const r = await timedFetch(url, { cache:'no-store', mode:'cors', credentials:'omit' });
         if(!r.ok) continue;
         const raw = await r.text();
-        let j; try { j = JSON.parse(raw); } catch{ continue; }
+        let j; try { j = JSON.parse(raw); } catch { continue; }
 
-        const usd = Number(j?.usd);
+        // Try usd, else compute via bag_xrp * xrp_usd (from feed or current)
+        let usd = Number(j?.usd);
+        const xrp_usd = Number(j?.xrp_usd);
+        const bag_xrp = Number(j?.bag_xrp);
+
+        if (!Number.isFinite(usd) || usd <= 0){
+          const useXrpUsd = Number.isFinite(xrp_usd) && xrp_usd>0 ? xrp_usd : (PRICES.xrpUsd || parseFloat(xrpUsdInput.value) || 0);
+          if (Number.isFinite(bag_xrp) && bag_xrp>0 && useXrpUsd>0){
+            usd = bag_xrp * useXrpUsd;
+          }
+        }
+
         if(Number.isFinite(usd) && usd>0){
           PRICES.bagUsd = usd;
           bagUsdInput.value = String(usd);
-          const xu = Number(j?.xrp_usd);
-          if(Number.isFinite(xu) && xu>0){ PRICES.xrpUsd = xu; xrpUsdInput.value = String(xu); }
+          // If feed had xrp_usd, take it too.
+          if(Number.isFinite(xrp_usd) && xrp_usd>0){
+            PRICES.xrpUsd = xrp_usd;
+            xrpUsdInput.value = String(xrp_usd);
+          }
           if (Number.isFinite(j?.timestamp)) liveTime.textContent = `· updated ${fmtTime(j.timestamp)}`;
           return true;
         }
@@ -526,19 +585,35 @@
   }
 
   async function refreshPrices(){
-    // Respect manual overrides
+    // Start with cache so UI isn't blank if offline
+    const hadCache = applyCacheIfUseful(true);
+
+    // Respect manual overrides typed by user
     const bu=parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
     const xu=parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
 
-    const okB = await fetchBagUsd();        // may also set XRP
+    // Try BAG (may also set XRP), then fill XRP from CG if still missing
+    const okB = await fetchBagUsd();
     let okX = false;
     if (!okB || !Number.isFinite(PRICES.xrpUsd) || PRICES.xrpUsd <= 0){
       okX = await fetchXrpUsd();
     }
 
-    if(okB && (okX || PRICES.xrpUsd>0)){ liveDot.className='dot ok'; liveNote.textContent=' (live)'; }
-    else if (okB || okX){ liveDot.className='dot warn'; liveNote.textContent=' (partial live)'; }
-    else { liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)'; }
+    // Save successful results to cache
+    if ((okB || okX) && PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      saveCache(PRICES.bagUsd, PRICES.xrpUsd);
+    }
+
+    if (okB && (okX || PRICES.xrpUsd>0)){
+      liveDot.className='dot ok';
+      liveNote.textContent=' (live)';
+    } else if (okB || okX || hadCache){
+      liveDot.className='dot warn';
+      if (!hadCache) liveNote.textContent=' (partial live)';
+    } else {
+      liveDot.className='dot err';
+      liveNote.textContent=' (feeds unavailable; edit manually)';
+    }
 
     updateConversions();
     updatePayoutPreview();
@@ -605,6 +680,7 @@
   });
 
   // Init
+  applyCacheIfUseful(false); // pre-fill immediately if we have cache
   updateStateText();
   updateBetUnits();
   updateConversions();
@@ -615,3 +691,4 @@
 </script>
 </body>
 </html>
+
