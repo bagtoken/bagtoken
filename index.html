@@ -33,7 +33,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="$BAG">
 
-<!-- Perf: warm connections for live price calls -->
+<!-- Perf -->
 <link rel="preconnect" href="https://api.getthebag.io" crossorigin>
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
@@ -41,7 +41,8 @@
   *{box-sizing:border-box}
   :root{
     --gold:#ffd700;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--green2:#34c759;--line:#173524;--shadow:rgba(0,0,0,.35)
+    --green:#2fbf6b;--green2:#34c759;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --red:#e25b5b;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
   img{display:block;max-width:100%;height:auto}
@@ -65,7 +66,7 @@
   .utility h2{font-size:clamp(1.5rem,5vw,2rem);margin:0 0 15px}
   .utility p{margin:6px 0;color:#cfd6cf;font-size:clamp(1rem,4vw,1.15rem)}
 
-  /* Buy section (kept above the game) */
+  /* Buy section */
   .buy-section{background:#0b0b0c;color:#fff;padding:56px 20px;text-align:center;border-top:1px solid #141414;border-bottom:1px solid #141414}
   .buy-section h2{font-size:2.2rem;margin:0 0 12px}
   .buy-section p{font-size:1.15rem;margin:0 0 28px;color:#e6e6e6}
@@ -75,7 +76,8 @@
 
   /* Game header (image + title above game) */
   .game-header{text-align:center;padding:36px 10px 14px}
-  .game-header img{width:140px;max-width:56%;margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+  /* Make dice art the SAME size rules as the top logo */
+  .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
 
   /* Game area */
@@ -145,6 +147,9 @@
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.25rem}
   .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e06767}
+  /* win/lose text colors */
+  .t.win{color:#2fbf6b}
+  .t.lose{color:#e25b5b}
 
   .legal-disclaimer{max-width:900px;margin:34px auto 0;padding:18px 16px 8px;border-top:1px solid #222;border-bottom:1px solid #222;font-size:.82rem;color:#aaa;text-align:center;line-height:1.45}
   .footer{text-align:center;padding:40px 10px;font-size:.85rem;color:#777}
@@ -195,7 +200,8 @@
 
 <!-- Game header (image + title ABOVE the game) -->
 <section class="game-header">
-  <img src="/assets/bag-dice.png" alt="$BAG Dice">
+  <!-- same sizing rules as the logo -->
+  <img src="/assets/bag-dice.png" alt="$BAG Dice" class="hero-img">
   <h2>🎲 $BAG Dice (Craps)</h2>
   <p class="micro" style="margin-top:6px">Free demo — visual only, no wallet required.</p>
 </section>
@@ -308,20 +314,17 @@
 
 <script>
 (function(){
-  // =====================  CONFIG  =====================
+  // ---------- CONFIG ----------
   const BAG_FEEDS = [
     'https://api.getthebag.io/bag-price.json',
-    'https://api.getthebag.io/api/bag-price.json',
-    // add optional mirrors if you create them later:
-    // 'https://getthebag.io/assets/bag-price.json'
+    'https://api.getthebag.io/api/bag-price.json'
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
-
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
   const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 
-  // =====================  UI HOOKS  ====================
+  // ---------- UI ----------
   const rollBtn = document.getElementById('rollBtn');
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
@@ -338,27 +341,15 @@
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
-  const liveTime = document.getElementById('liveTime');
+  const liveConv = document.getElementById('liveConv');
 
-  // A small inline diagnostics span (appended near prices)
-  let diagSpan = document.getElementById('bagDiag');
-  if (!diagSpan) {
-    diagSpan = document.createElement('div');
-    diagSpan.id = 'bagDiag';
-    diagSpan.style.cssText = 'font-size:.8rem;opacity:.75;margin-top:4px;';
-    const parent = liveNote?.parentElement || document.body;
-    parent && parent.appendChild(diagSpan);
-  }
-  function diag(msg){ try{ diagSpan.textContent = msg; }catch{} }
-
-  // =====================  STATE  =======================
-  let point = null; // come-out when null
+  // ---------- STATE ----------
+  let point = null;
   const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—', ts: 0 };
 
-  // =====================  HELPERS  =====================
+  // ---------- HELPERS ----------
   const num = v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
   const pick = (...xs) => xs.map(num).find(v => v > 0);
-
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
@@ -367,236 +358,185 @@
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
   function fmtTime(ts){ return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : ''; }
-
-  function cacheSet(key, val){ try{ localStorage.setItem(key, JSON.stringify({t:Date.now(), v:val})); }catch{} }
-  function cacheGet(key){
-    try {
-      const o = JSON.parse(localStorage.getItem(key) || 'null');
-      if (!o) return null;
-      return (Date.now() - o.t) <= CACHE_TTL_MS ? o.v : null;
-    } catch { return null; }
-  }
-
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(new Error('timeout')), timeout);
-    try {
-      return await fetch(url, { ...opts, mode:'cors', cache:'no-store', credentials:'omit', signal: ctrl.signal });
-    } finally { clearTimeout(id); }
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return await fetch(url,{...opts,mode:'cors',cache:'no-store',credentials:'omit',signal:ctrl.signal}); }
+    finally{ clearTimeout(id); }
   }
 
-  // Resolve fields from a parsed JSON payload with many accepted shapes
   function resolveFromPayload(j){
-    // direct USD (accept many casings/keys)
-    const usd = pick(j?.usd, j?.USD, j?.bag_usd, j?.BAG_USD, j?.price_usd, j?.priceUSD, j?.price);
-
-    // exchange rates
-    const xrp_usd = pick(j?.xrp_usd, j?.XRP_USD, j?.xrpPriceUsd);
-    const xrp_per_bag = pick(j?.bag_xrp, j?.xrp_bag, j?.xrpPerBag, j?.xrp_per_bag); // XRP per 1 BAG
-    const bag_per_xrp = pick(j?.bag_per_xrp, j?.bagPerXrp, j?.BAG_per_XRP);        // BAG per 1 XRP
-
-    // timestamp (optional)
-    const ts = num(j?.timestamp);
-    if (ts > 0) PRICES.ts = ts;
-
-    // prefer feed XRP if present
+    const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
+    const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
+    const xrp_per_bag = pick(j?.bag_xrp,j?.xrp_bag,j?.xrpPerBag,j?.xrp_per_bag);
+    const bag_per_xrp = pick(j?.bag_per_xrp,j?.bagPerXrp,j?.BAG_per_XRP);
+    const ts = num(j?.timestamp); if (ts>0) PRICES.ts = ts;
     if (xrp_usd) PRICES.xrpUsd = xrp_usd;
 
-    if (usd) { PRICES.bagUsd = usd; return true; }
-
-    // derive from rates if USD not given
-    if (xrp_per_bag && PRICES.xrpUsd) {
-      PRICES.bagUsd = xrp_per_bag * PRICES.xrpUsd; // (XRP/BAG)*(USD/XRP)
-      return true;
-    }
-    if (bag_per_xrp && PRICES.xrpUsd) {
-      PRICES.bagUsd = (1 / bag_per_xrp) * PRICES.xrpUsd; // (USD/XRP)/(BAG/XRP)
-      return true;
-    }
+    if (usd){ PRICES.bagUsd = usd; return true; }
+    if (xrp_per_bag && PRICES.xrpUsd){ PRICES.bagUsd = xrp_per_bag * PRICES.xrpUsd; return true; }
+    if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
     return false;
   }
-
-  // Text fallback when JSON parsing fails (very robust; regex any known keys)
   function resolveFromText(txt){
-    const grab = key => {
-      const re = new RegExp(`"${key}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`);
-      const m = txt.match(re);
-      return m ? num(m[1]) : NaN;
-    };
-    const usd = pick(grab('usd'), grab('USD'), grab('bag_usd'), grab('BAG_USD'), grab('price_usd'), grab('price'));
-    const xrp_usd = pick(grab('xrp_usd'), grab('XRP_USD'));
-    const bag_xrp = pick(grab('bag_xrp'), grab('xrp_bag'), grab('xrp_per_bag'));
-    const bag_per_xrp = pick(grab('bag_per_xrp'), grab('BAG_per_XRP'));
-
+    const grab = k => { const m = txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?num(m[1]):NaN; };
+    const usd = pick(grab('usd'),grab('USD'),grab('bag_usd'),grab('BAG_USD'),grab('price_usd'),grab('price'));
+    const xrp_usd = pick(grab('xrp_usd'),grab('XRP_USD'));
+    const bag_xrp = pick(grab('bag_xrp'),grab('xrp_bag'),grab('xrp_per_bag'));
+    const bag_per_xrp = pick(grab('bag_per_xrp'),grab('BAG_per_XRP'));
     if (xrp_usd) PRICES.xrpUsd = xrp_usd;
-
     if (usd){ PRICES.bagUsd = usd; return true; }
     if (bag_xrp && PRICES.xrpUsd){ PRICES.bagUsd = bag_xrp * PRICES.xrpUsd; return true; }
     if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
     return false;
   }
 
-  // =====================  FETCHERS  ====================
+  // ---------- FETCHERS ----------
   async function fetchXrpUsd(){
     try{
       const r = await timedFetch(CG_XRP);
       if (!r.ok) throw 0;
       const v = (await r.json())?.ripple?.usd;
       if (num(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
-    }catch(e){ /* ignore */ }
-    return false;
+    }catch(_){} return false;
   }
-
   async function fetchBagUsd(){
-    let lastErr = '';
     for (const base of BAG_FEEDS){
       try{
         const r = await timedFetch(`${base}?ts=${Date.now()}`);
-        if (!r.ok) { lastErr = `${base} -> HTTP ${r.status}`; continue; }
-
-        // try JSON first
-        let ok = false;
-        try {
+        if (!r.ok) continue;
+        try{
           const j = await r.clone().json();
-          ok = resolveFromPayload(j);
-        } catch {
-          // fall back to raw text + regex
+          if (resolveFromPayload(j)) return true;
+        }catch{
           const t = await r.text();
-          ok = resolveFromText(t);
+          if (resolveFromText(t)) return true;
         }
-        if (ok) { diag(`Feed OK: ${base}`); return true; }
-        lastErr = `${base} -> no usable fields`;
-      }catch(e){ lastErr = `${base} -> ${e && e.message || 'fetch error'}`; }
+      }catch(_){/* next */}
     }
-    if (lastErr) diag(lastErr);
     return false;
   }
-
   function loadCache(){
-    const bag = cacheGet('bag_prices'); // {bagUsd, xrpUsd, ts}
-    const xrp = cacheGet('xrp_usd');
-    let used = false;
-    if (bag && num(bag.bagUsd)>0){ PRICES.bagUsd = bag.bagUsd; if (num(bag.xrpUsd)>0) PRICES.xrpUsd = bag.xrpUsd; PRICES.ts = bag.ts || PRICES.ts; used = true; }
-    if (!PRICES.xrpUsd && num(xrp)>0){ PRICES.xrpUsd = xrp; used = true; }
+    const bag = cacheGet('bag_prices'); const xrp = cacheGet('xrp_usd'); let used=false;
+    if (bag && num(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(num(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
+    if (!PRICES.xrpUsd && num(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
 
-  // =====================  UI UPDATES  ==================
+  // ---------- UI updates ----------
+  function updateConversions(){
+    if (!liveConv) return;
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag = PRICES.bagUsd / PRICES.xrpUsd;
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+      liveConv.textContent = `1 BAG ≈ ${fmt(xrpPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerXrp)} BAG`;
+    } else {
+      liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+    }
+  }
   function updateLiveLine(){
     if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
     if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
-    if (liveTime && PRICES.ts) liveTime.textContent = `· updated ${fmtTime(PRICES.ts)}`;
 
-    const cls =
-      PRICES.source === 'live' ? 'ok' :
-      PRICES.source === 'partial live' ? 'warn' :
-      PRICES.source === 'cached' ? 'warn' : 'err';
-    if (liveDot) liveDot.className = `dot ${cls}`;
+    const dotClass = PRICES.source==='live' ? 'ok' :
+                     PRICES.source==='partial live' ? 'warn' :
+                     PRICES.source==='cached' ? 'warn' : 'err';
+    liveDot && (liveDot.className = dotClass);
 
-    if (liveNote){
-      liveNote.textContent =
-        PRICES.source === 'live' ? ' (live)' :
-        PRICES.source === 'partial live' ? ' (partial live)' :
-        PRICES.source === 'cached' ? ' (cached)' : ' (unavailable)';
-    }
+    liveNote && (liveNote.textContent =
+      PRICES.source==='live' ? ' (live)' :
+      PRICES.source==='partial live' ? ' (partial live)' :
+      PRICES.source==='cached' ? ' (cached)' : ' (unavailable)'
+    );
+
+    updateConversions();
   }
-
   function currentCurrency(){
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
     return el ? el.value : 'XRP';
   }
-
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput?.value || 0));
     if (!bet) return 0;
     if (currentCurrency() === 'BAG') return bet;
-    // XRP bet -> convert to BAG
-    if (PRICES.bagUsd > 0 && PRICES.xrpUsd > 0) {
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
       const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
       return bet * bagPerXrp;
     }
     return 0;
   }
-
   function updatePayoutPreview(){
     const s = stakeInBAG();
     if (s > 0){
-      const total = s * 2, profit = s, usd = PRICES.bagUsd > 0 ? total * PRICES.bagUsd : 0;
-      if (payoutTotal)  payoutTotal.textContent  = `${fmt(total)} BAG`;
-      if (payoutProfit) payoutProfit.textContent = `${fmt(profit)} BAG`;
-      if (payoutUSD)    payoutUSD.textContent    = usd > 0 ? `$${fmt(usd)}` : '—';
+      const total = s*2, profit=s, usd = PRICES.bagUsd>0 ? total*PRICES.bagUsd : 0;
+      payoutTotal.textContent  = `${fmt(total)} BAG`;
+      payoutProfit.textContent = `${fmt(profit)} BAG`;
+      payoutUSD.textContent    = usd>0 ? `$${fmt(usd)}` : '—';
     } else {
-      if (payoutTotal)  payoutTotal.textContent  = '—';
-      if (payoutProfit) payoutProfit.textContent = '—';
-      if (payoutUSD)    payoutUSD.textContent    = '—';
+      payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
   }
-
-  function updateBetUnits(){ if (unitSpan) unitSpan.textContent = currentCurrency(); updatePayoutPreview(); }
-
+  function updateBetUnits(){ if (unitSpan) unitSpan.textContent=currentCurrency(); updatePayoutPreview(); }
   function updateStateText(){
-    if (!stateText || !pointBadge || !pointVal) return;
-    if (point == null){ stateText.textContent = 'Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display = 'none'; }
-    else { stateText.textContent = 'Point phase — hit the Point before 7'; pointVal.textContent = String(point); pointBadge.style.display = 'inline-block'; }
+    if (point==null){ stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
+    else { stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; }
   }
+  function resetCube(el){ el && (el.className='cube'); }
+  function poseCube(el,v){ el && el.classList.add('show-'+v); }
 
-  function resetCube(el){ if (el) el.className = 'cube'; }
-  function poseCube(el, v){ if (el) el.classList.add('show-'+v); }
-
-  // =====================  ORCHESTRATION  ===============
+  // ---------- Orchestration ----------
   async function refreshPrices(){
-    let gotBag = await fetchBagUsd();            // might also set xrpUsd
-    let hadXrp = PRICES.xrpUsd > 0;
-    let gotXrp = hadXrp || await fetchXrpUsd();
+    const gotBag = await fetchBagUsd();
+    const hadX = PRICES.xrpUsd>0;
+    const gotX = hadX || await fetchXrpUsd();
 
-    if (gotBag && gotXrp) PRICES.source = 'live';
-    else if (gotBag || gotXrp) PRICES.source = 'partial live';
-    else if (loadCache()) PRICES.source = 'cached';
-    else PRICES.source = '—';
+    PRICES.source = gotBag && gotX ? 'live' : (gotBag || gotX) ? 'partial live' : loadCache() ? 'cached' : '—';
 
-    // Persist last good
-    if (PRICES.bagUsd > 0 || PRICES.xrpUsd > 0)
-      cacheSet('bag_prices', { bagUsd: PRICES.bagUsd || 0, xrpUsd: PRICES.xrpUsd || 0, ts: PRICES.ts || 0 });
+    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
+      cacheSet('bag_prices', {bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
+    }
 
     updateLiveLine();
     updatePayoutPreview();
   }
 
-  // =====================  EVENTS  ======================
-  betInput?.addEventListener('input', updatePayoutPreview);
-  curToggle?.addEventListener('change', updateBetUnits);
+  // ---------- Events ----------
+  betInput.addEventListener('input', updatePayoutPreview);
+  curToggle.addEventListener('change', updateBetUnits);
 
-  rollBtn?.addEventListener('click', async ()=>{
-    rollBtn.disabled = true;
-    [dieA,dieB].forEach(c=>{ resetCube(c); c?.classList.add('rolling'); });
+  rollBtn.addEventListener('click', async ()=>{
+    rollBtn.disabled=true;
+    const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
+    [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
     const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
     await new Promise(r=>setTimeout(r,900));
-    [dieA,dieB].forEach(c=>c?.classList.remove('rolling'));
+    [dieA,dieB].forEach(c=>c.classList.remove('rolling'));
     poseCube(dieA,a); poseCube(dieB,b);
-    const total = a+b; rollNumber && (rollNumber.textContent = total);
+    const total=a+b; rollNumber.textContent=total;
 
-    if (point == null){
-      if (total===7||total===11){ rollText && (rollText.textContent=`Come-out WIN — ${total}`); }
-      else if (total===2||total===3||total===12){ rollText && (rollText.textContent=`Come-out LOSE — ${total}`); }
-      else { point = total; rollText && (rollText.textContent=`Point set to ${point}. Roll again.`); updateStateText(); rollBtn.disabled=false; return; }
+    // clear prior color
+    rollText.classList.remove('win','lose');
+
+    if (point==null){
+      if (total===7||total===11){ rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win'); }
+      else if (total===2||total===3||total===12){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose'); }
+      else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; updateStateText(); rollBtn.disabled=false; return; }
     }else{
-      if (total===point){ rollText && (rollText.textContent=`WIN — hit the Point ${point}`); point=null; updateStateText(); }
-      else if (total===7){ rollText && (rollText.textContent=`LOSE — seven out`); point=null; updateStateText(); }
-      else { rollText && (rollText.textContent=`Roll again — need ${point} (rolled ${total})`); }
+      if (total===point){ rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win'); point=null; updateStateText(); }
+      else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; updateStateText(); }
+      else { rollText.textContent=`Roll again — need ${point} (rolled ${total})`; }
     }
-    rollBtn.disabled = false;
+    rollBtn.disabled=false;
   });
 
-  // =====================  INIT  ========================
+  // ---------- Init ----------
   updateStateText();
   updateBetUnits();
-  // seed view from cache (if available) before first live pull
-  if (loadCache()) { PRICES.source = 'cached'; updateLiveLine(); updatePayoutPreview(); }
+  if (loadCache()){ PRICES.source='cached'; updateLiveLine(); updatePayoutPreview(); }
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
 })();
 </script>
 </body>
 </html>
-
-
