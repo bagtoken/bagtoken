@@ -151,12 +151,13 @@
   .chip { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
     border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9; font-weight:800; cursor:pointer; }
   .chip input { accent-color:#2fbf6b; }
-  .price-grid { display:grid; grid-template-columns:auto 120px auto 120px; gap:8px 12px; align-items:center; }
+  .price-grid { display:grid; grid-template-columns:auto 140px auto 140px; gap:8px 12px; align-items:center; }
   .price-grid input { width:100%; background:#0b2217; border:1px solid #1b4a2f; border-radius:8px; color:#f3f5f0; padding:8px; font-variant-numeric: tabular-nums; }
   .live-line{display:flex; gap:10px; align-items:center; margin-top:8px; color:#cfd6cf; font-size:.9rem}
-  .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a} /* fixed typo */
+  .dot{width:8px;height:8px;border-radius:50%;background:#6a6a6a}
   .dot.ok{background:#2fbf6b} .dot.warn{background:#e8a85c} .dot.err{background:#e06767}
   .live-time{opacity:.8;font-size:.82rem}
+  .conv{margin-top:6px; color:#cfd6cf; font-size:.88rem}
   .point-badge{
     display:inline-block; padding:6px 10px; border-radius:999px; background:#132b1e;
     border:1px solid #24523a; color:#e9efe9; font-weight:800; margin-top:6px;
@@ -222,6 +223,7 @@
     </div>
 
     <div class="game-grid">
+      <!-- Demo card -->
       <div class="game-card mock" id="bagDiceDemo">
         <div class="demo-head"><strong>Free demo</strong> · Pass Line only</div>
 
@@ -249,12 +251,10 @@
           <label>Prices (auto from live feeds; editable if feeds fail)</label>
           <div class="price-grid">
             <span>BAG USD</span>
-            <input id="bagUsd" type="number" min="0" step="any" inputmode="decimal" placeholder="loading…" />
+            <input id="bagUsd" type="number" min="0" step="0.0000000001" placeholder="loading…" value="" />
             <span>XRP USD</span>
-            <input id="xrpUsd" type="number" min="0" step="0.0001" inputmode="decimal" placeholder="loading…" />
+            <input id="xrpUsd" type="number" min="0" step="0.0001" placeholder="loading…" value="" />
           </div>
-
-          <!-- NEW: quick conversion readout -->
           <div class="live-line">
             <span class="dot" id="liveDot"></span>
             <span>Live:</span>
@@ -263,11 +263,7 @@
             <span class="live-time" id="liveTime"></span>
             <span id="liveNote" style="color:#9fb3a4;"></span>
           </div>
-          <div class="live-line" style="opacity:.9">
-            <span>1 BAG ≈ $<span id="convBagUsd">—</span> · <span id="convBagXrp">—</span> XRP</span>
-            <span style="opacity:.5">&nbsp;|&nbsp;</span>
-            <span>1 XRP ≈ $<span id="convXrpUsd">—</span> · <span id="convXrpBag">—</span> BAG</span>
-          </div>
+          <div class="conv" id="convLine">1 BAG ≈ — · — XRP  |  1 XRP ≈ — · — BAG</div>
         </div>
 
         <div class="payout" id="payoutBox">
@@ -279,6 +275,7 @@
 
         <button id="rollBtn" class="btn-roll">Roll</button>
 
+        <!-- 3D Dice -->
         <div class="dice-area">
           <div class="cube" id="dieA">
             <div class="face one"><div class="pip c"></div></div>
@@ -380,7 +377,7 @@
   const curToggle = document.getElementById('curToggle');
   const unitSpan = document.querySelector('#bagDiceDemo .unit');
 
-  // Prices
+  // Prices + live line elements
   const bagUsdInput = document.getElementById('bagUsd');
   const xrpUsdInput = document.getElementById('xrpUsd');
   const liveDot = document.getElementById('liveDot');
@@ -388,12 +385,7 @@
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
   const liveTime = document.getElementById('liveTime');
-
-  // NEW: conversion readout refs
-  const convBagUsd = document.getElementById('convBagUsd');
-  const convBagXrp = document.getElementById('convBagXrp');
-  const convXrpUsd = document.getElementById('convXrpUsd');
-  const convXrpBag = document.getElementById('convXrpBag');
+  const convLine = document.getElementById('convLine');
 
   // State
   let point = null; // null => come-out
@@ -402,24 +394,23 @@
   // Helpers
   const fmt  = n => (Math.round(n*100)/100).toLocaleString();
   const fmt4 = n => (Math.round(n*10000)/10000).toLocaleString();
-
-  // Adaptive decimals for tiny USD prices (avoids scientific notation)
   function fmtAdaptive(n){
-    if (!Number.isFinite(n) || n <= 0) return '0';
+    if (!Number.isFinite(n)) return '0';
     const abs = Math.abs(n);
-    let dp = 2;
-    if (abs < 1e-2) dp = 6;
-    if (abs < 1e-4) dp = 8;
-    if (abs < 1e-5) dp = 10;
-    if (abs < 1e-6) dp = 12;
-    const s = Number(n.toFixed(dp)).toString();
-    return Number(s).toLocaleString(undefined, { maximumFractionDigits: dp });
+    let decimals = 2;
+    if (abs < 1e-2) decimals = 6;
+    if (abs < 1e-4) decimals = 8;
+    if (abs < 1e-6) decimals = 10;
+    return n.toLocaleString(undefined, { maximumFractionDigits: decimals });
   }
   const fmtTime = (t)=> t ? new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
 
+  function selectedCurrency(){
+    return (curToggle.querySelector('input[name="betCur"]:checked')||{}).value || 'XRP';
+  }
+
   function updateBetUnits(){
-    const selectedCur=(curToggle.querySelector('input[name="betCur"]:checked')||{}).value||'XRP';
-    unitSpan.textContent = selectedCur;
+    unitSpan.textContent = selectedCurrency();
     updatePayoutPreview();
   }
 
@@ -435,37 +426,45 @@
   }
 
   function updateConversions(){
-    const bu = PRICES.bagUsd || 0;
-    const xu = PRICES.xrpUsd || 0;
+    const bu = PRICES.bagUsd || parseFloat(bagUsdInput.value) || 0;
+    const xu = PRICES.xrpUsd || parseFloat(xrpUsdInput.value) || 0;
+    if (bu > 0) liveBAG.textContent = fmtAdaptive(bu);
+    if (xu > 0) liveXRP.textContent = fmt4(xu);
 
-    if (bu > 0){
-      convBagUsd.textContent = fmtAdaptive(bu);
-      if (xu > 0) convBagXrp.textContent = fmtAdaptive(bu / xu);
-      else convBagXrp.textContent = '—';
-    } else {
-      convBagUsd.textContent = '—';
-      convBagXrp.textContent = '—';
-    }
-
-    if (xu > 0){
-      convXrpUsd.textContent = fmtAdaptive(xu);
-      if (bu > 0) convXrpBag.textContent = fmtAdaptive(xu / bu);
-      else convXrpBag.textContent = '—';
-    } else {
-      convXrpUsd.textContent = '—';
-      convXrpBag.textContent = '—';
+    if (bu > 0 && xu > 0){
+      const bagPerXrp = xu / bu;       // how many BAG in 1 XRP
+      const xrpPerBag = bu / xu;       // how many XRP in 1 BAG
+      convLine.textContent =
+        `1 BAG ≈ $${fmtAdaptive(bu)} · ${fmt4(xrpPerBag)} XRP  |  1 XRP ≈ $${fmt4(xu)} · ${fmt4(bagPerXrp)} BAG`;
     }
   }
 
+  // Payout math: always show payout in BAG
   function updatePayoutPreview(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
+    const cur = selectedCurrency();
+    const bu = PRICES.bagUsd || parseFloat(bagUsdInput.value) || 0;
+    const xu = PRICES.xrpUsd || parseFloat(xrpUsdInput.value) || 0;
+
     if(bet>0){
-      const totalBAG = bet * 2;           // includes stake
-      const profitBAG = bet;              // net
-      payoutTotal.textContent  = `${fmt(totalBAG)} BAG`;
-      payoutProfit.textContent = `${fmt(profitBAG)} BAG`;
-      const usd = totalBAG * (PRICES.bagUsd||0);
-      payoutUSD.textContent = (usd>0 && Number.isFinite(usd)) ? `$${fmt(usd)}` : '—';
+      // convert stake to BAG, then even-money
+      let stakeBAG = 0;
+      if (cur === 'BAG'){
+        stakeBAG = bet;
+      } else if (cur === 'XRP' && xu>0 && bu>0){
+        const usd = bet * xu;
+        stakeBAG = usd / bu;
+      }
+      if (stakeBAG > 0){
+        const totalBAG = stakeBAG * 2;
+        const profitBAG = stakeBAG;
+        payoutTotal.textContent  = `${fmtAdaptive(totalBAG)} BAG`;
+        payoutProfit.textContent = `${fmtAdaptive(profitBAG)} BAG`;
+        const usd = totalBAG * (bu||0);
+        payoutUSD.textContent = usd>0 ? `$${fmt(usd)}` : '—';
+      } else {
+        payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
+      }
     }else{
       payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
@@ -488,95 +487,58 @@
     const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeoutMs);
     try {
       return await fetch(url, {...opts, signal: ctrl.signal});
-    } finally {
-      clearTimeout(id);
-    }
+    } finally { clearTimeout(id); }
   }
 
-  // Live prices: XRP from Coingecko
+  // XRP from CoinGecko
   async function fetchXrpUsd(){
     try{
       const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const v=(await r.json())?.ripple?.usd;
-      if(typeof v==='number'){
-        PRICES.xrpUsd=v;
-        xrpUsdInput.value=String(Number(v.toFixed(10)));
-        liveXRP.textContent=fmt4(v);
-        return true;
-      }
-    }catch(e){
-      console.warn('XRP price fetch failed:', e);
-    }
+      if(typeof v==='number'){ PRICES.xrpUsd=v; xrpUsdInput.value=String(v); return true; }
+    }catch(e){ console.warn('XRP price fetch failed:', e); }
     return false;
   }
 
-  // Live prices: BAG from our API; compute USD if needed from bag_xrp*xrp_usd
+  // BAG from our API (also carries xrp_usd sometimes)
   async function fetchBagUsd(){
     for (const base of BAG_PRICE_URLS){
       const url = `${base}?ts=${Date.now()}`;
       try{
         const r = await timedFetch(url, { cache:'no-store', mode:'cors', credentials:'omit' });
-        if(!r.ok) { console.warn('BAG fetch not OK', r.status, 'for', base); continue; }
+        if(!r.ok) continue;
         const raw = await r.text();
-        let j; try { j = JSON.parse(raw); } catch(err){ console.warn('BAG JSON parse failed from', base, 'raw:', raw); continue; }
+        let j; try { j = JSON.parse(raw); } catch{ continue; }
 
-        let usd = Number(j?.usd);
-        const xrp_usd = Number(j?.xrp_usd);
-        const bag_xrp = Number(j?.bag_xrp);
-
-        // Compute USD if api omitted it but we have bag_xrp & xrp_usd
-        if (!Number.isFinite(usd) && Number.isFinite(bag_xrp) && (Number.isFinite(xrp_usd) || Number.isFinite(PRICES.xrpUsd))){
-          usd = bag_xrp * (Number.isFinite(xrp_usd) ? xrp_usd : PRICES.xrpUsd);
-        }
-
+        const usd = Number(j?.usd);
         if(Number.isFinite(usd) && usd>0){
           PRICES.bagUsd = usd;
-
-          // Write nice precise string (up to 12dp, trimmed)
-          bagUsdInput.value = usd.toFixed(12).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.$/,'');
-          liveBAG.textContent = fmtAdaptive(usd);
-
-          // Prefer API xrp_usd if provided
-          if (Number.isFinite(xrp_usd) && xrp_usd>0){
-            PRICES.xrpUsd = xrp_usd;
-            xrpUsdInput.value = String(Number(xrp_usd.toFixed(10)));
-            liveXRP.textContent = fmt4(xrp_usd);
-          }
-
+          bagUsdInput.value = String(usd);
+          const xu = Number(j?.xrp_usd);
+          if(Number.isFinite(xu) && xu>0){ PRICES.xrpUsd = xu; xrpUsdInput.value = String(xu); }
           if (Number.isFinite(j?.timestamp)) liveTime.textContent = `· updated ${fmtTime(j.timestamp)}`;
-          else liveTime.textContent = '';
-
           return true;
-        } else {
-          console.warn('BAG feed missing/invalid price from', base, j);
         }
-      }catch(e){
-        console.warn('BAG price fetch failed from', base, e);
-      }
+      }catch(e){ console.warn('BAG price fetch failed from', base, e); }
     }
     return false;
   }
 
   async function refreshPrices(){
-    // Keep any manual edits
+    // Respect manual overrides
     const bu=parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
     const xu=parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
 
-    // Fetch BAG first (might also set XRP). If XRP missing, fill from CG.
-    const okB = await fetchBagUsd();
+    const okB = await fetchBagUsd();        // may also set XRP
     let okX = false;
     if (!okB || !Number.isFinite(PRICES.xrpUsd) || PRICES.xrpUsd <= 0){
       okX = await fetchXrpUsd();
     }
 
-    if (okB && (okX || PRICES.xrpUsd>0)){
-      liveDot.className='dot ok'; liveNote.textContent=' (live)';
-    } else if (okB || okX){
-      liveDot.className='dot warn'; liveNote.textContent=' (partial live)';
-    } else {
-      liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)';
-    }
+    if(okB && (okX || PRICES.xrpUsd>0)){ liveDot.className='dot ok'; liveNote.textContent=' (live)'; }
+    else if (okB || okX){ liveDot.className='dot warn'; liveNote.textContent=' (partial live)'; }
+    else { liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)'; }
 
     updateConversions();
     updatePayoutPreview();
@@ -584,33 +546,9 @@
 
   // Events
   betInput.addEventListener('input', updatePayoutPreview);
-  curToggle.addEventListener('change', updateBetUnits);
-
-  bagUsdInput.addEventListener('input', ()=>{
-    const v=parseFloat(bagUsdInput.value||0);
-    if(v>0){
-      PRICES.bagUsd=v;
-      liveBAG.textContent=fmtAdaptive(v);
-      updateConversions();
-      updatePayoutPreview();
-    }else{
-      liveBAG.textContent='—';
-      updateConversions();
-      updatePayoutPreview();
-    }
-  });
-
-  xrpUsdInput.addEventListener('input', ()=>{
-    const v=parseFloat(xrpUsdInput.value||0);
-    if(v>0){
-      PRICES.xrpUsd=v;
-      liveXRP.textContent=fmt4(v);
-      updateConversions();
-    }else{
-      liveXRP.textContent='—';
-      updateConversions();
-    }
-  });
+  curToggle.addEventListener('change', ()=>{ updateBetUnits(); updatePayoutPreview(); });
+  bagUsdInput.addEventListener('input', ()=>{ const v=parseFloat(bagUsdInput.value||0); if(v>0){ PRICES.bagUsd=v; } updateConversions(); updatePayoutPreview(); });
+  xrpUsdInput.addEventListener('input', ()=>{ const v=parseFloat(xrpUsdInput.value||0); if(v>0){ PRICES.xrpUsd=v; } updateConversions(); updatePayoutPreview(); });
 
   document.getElementById('rollBtn').addEventListener('click', async ()=>{
     rollBtn.disabled=true;
@@ -669,6 +607,7 @@
   // Init
   updateStateText();
   updateBetUnits();
+  updateConversions();
   updatePayoutPreview();
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
