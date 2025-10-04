@@ -33,7 +33,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="$BAG">
 
-<!-- Perf: warm up connections for live price calls -->
+<!-- Perf: warm connections for live price calls -->
 <link rel="preconnect" href="https://api.getthebag.io" crossorigin>
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
@@ -133,7 +133,7 @@
   .cube.show-2{transform:rotateX(0) rotateY(-90deg)}
   .cube.show-3{transform:rotateX(0) rotateY(-180deg)}
   .cube.show-4{transform:rotateX(0) rotateY(90deg)}
-  .cube.show-5{transform:rotateX(-90deg) rotateY(0)}
+  .cube.show-5{transform:rotateX(90deg) rotateY(0)}
   .cube.show-6{transform:rotateX(90deg) rotateY(0)}
 
   .btn-roll{
@@ -276,22 +276,22 @@
             <div class="face two"><div class="pip tl"></div><div class="pip br"></div></div>
             <div class="face three"><div class="pip tl"></div><div class="pip c"></div><div class="pip br"></div></div>
             <div class="face four"><div class="pip tl"></div><div class="pip tr"></div><div class="pip bl"></div><div class="pip br"></div></div>
-            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
             <div class="face six">
               <div class="pip tl"></div><div class="pip ml"></div><div class="pip bl"></div>
               <div class="pip tr"></div><div class="pip mr"></div><div class="pip br"></div>
             </div>
+            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
           </div>
           <div class="cube" id="dieB">
             <div class="face one"><div class="pip c"></div></div>
             <div class="face two"><div class="pip tl"></div><div class="pip br"></div></div>
             <div class="face three"><div class="pip tl"></div><div class="pip c"></div><div class="pip br"></div></div>
             <div class="face four"><div class="pip tl"></div><div class="pip tr"></div><div class="pip bl"></div><div class="pip br"></div></div>
-            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
             <div class="face six">
               <div class="pip tl"></div><div class="pip ml"></div><div class="pip bl"></div>
               <div class="pip tr"></div><div class="pip mr"></div><div class="pip br"></div>
             </div>
+            <div class="face five"><div class="pip tl"></div><div class="pip tr"></div><div class="pip c"></div><div class="pip bl"></div><div class="pip br"></div></div>
           </div>
         </div>
 
@@ -387,6 +387,17 @@
   // Helpers
   const fmt  = n => (Math.round(n*100)/100).toLocaleString();
   const fmt4 = n => (Math.round(n*10000)/10000).toLocaleString();
+
+  // NEW: adaptive decimals for tiny USD prices (so we don't show "0.0000")
+  function fmtAdaptive(n){
+    if (!Number.isFinite(n)) return '0';
+    const abs = Math.abs(n);
+    let decimals = 2;
+    if (abs < 1e-2) decimals = 6;
+    if (abs < 1e-4) decimals = 8;
+    if (abs < 1e-6) decimals = 10;
+    return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+  }
   const fmtTime = (t)=> t ? new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
 
   function updateBetUnits(){
@@ -448,7 +459,12 @@
       const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const v=(await r.json())?.ripple?.usd;
-      if(typeof v==='number'){ PRICES.xrpUsd=v; xrpUsdInput.value=String(v); liveXRP.textContent=fmt4(v); return true; }
+      if(typeof v==='number'){
+        PRICES.xrpUsd=v;
+        xrpUsdInput.value=String(v);
+        liveXRP.textContent=fmt4(v);
+        return true;
+      }
     }catch(e){
       console.warn('XRP price fetch failed:', e);
     }
@@ -465,12 +481,19 @@
         const raw = await r.text();
         let j; try { j = JSON.parse(raw); } catch(err){ console.warn('BAG JSON parse failed from', base, 'raw:', raw); continue; }
 
-        const v = Number(j?.usd);
-        if(Number.isFinite(v) && v>0){
-          PRICES.bagUsd = v;
-          bagUsdInput.value = String(v);
-          liveBAG.textContent = fmt4(v);
-          if (Number.isFinite(j?.xrp_usd)) liveXRP.textContent = fmt4(j.xrp_usd);
+        const usd = Number(j?.usd);
+        const xrp_usd = Number(j?.xrp_usd);
+        if(Number.isFinite(usd) && usd>0){
+          PRICES.bagUsd = usd;
+          bagUsdInput.value = String(usd);
+          // Show tiny USD prices with more decimals
+          liveBAG.textContent = fmtAdaptive(usd);
+          // If API gave xrp_usd, use it (fallback/override slow CG)
+          if (Number.isFinite(xrp_usd) && xrp_usd>0){
+            PRICES.xrpUsd = xrp_usd;
+            xrpUsdInput.value = String(xrp_usd);
+            liveXRP.textContent = fmt4(xrp_usd);
+          }
           if (Number.isFinite(j?.timestamp)) liveTime.textContent = `· updated ${fmtTime(j.timestamp)}`;
           return true;
         } else {
@@ -488,10 +511,20 @@
     const bu=parseFloat(bagUsdInput.value||0); if(isFinite(bu)&&bu>0) PRICES.bagUsd=bu;
     const xu=parseFloat(xrpUsdInput.value||0); if(isFinite(xu)&&xu>0) PRICES.xrpUsd=xu;
 
-    const [okX,okB]=await Promise.all([fetchXrpUsd(),fetchBagUsd()]);
-    if(okX&&okB){ liveDot.className='dot ok'; liveNote.textContent=' (live)'; }
-    else if(okX||okB){ liveDot.className='dot warn'; liveNote.textContent=' (partial live)'; }
-    else { liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)'; }
+    // Try BAG first (also sets XRP if present), then fill XRP from CG if needed
+    const okB = await fetchBagUsd();
+    let okX = false;
+    if (!okB || !Number.isFinite(PRICES.xrpUsd) || PRICES.xrpUsd <= 0){
+      okX = await fetchXrpUsd();
+    }
+
+    if((okB && (okX || PRICES.xrpUsd>0)) || (okB && !okX)){
+      liveDot.className='dot ok'; liveNote.textContent=' (live)';
+    } else if (okB || okX){
+      liveDot.className='dot warn'; liveNote.textContent=' (partial live)';
+    } else {
+      liveDot.className='dot err'; liveNote.textContent=' (feeds unavailable; edit manually)';
+    }
 
     updatePayoutPreview();
   }
@@ -499,8 +532,8 @@
   // Events
   betInput.addEventListener('input', updatePayoutPreview);
   curToggle.addEventListener('change', updateBetUnits);
-  bagUsdInput.addEventListener('input', ()=>{ const v=parseFloat(bagUsdInput.value||0); if(v>0) PRICES.bagUsd=v; updatePayoutPreview(); });
-  xrpUsdInput.addEventListener('input', ()=>{ const v=parseFloat(xrpUsdInput.value||0); if(v>0) PRICES.xrpUsd=v; });
+  bagUsdInput.addEventListener('input', ()=>{ const v=parseFloat(bagUsdInput.value||0); if(v>0) { PRICES.bagUsd=v; liveBAG.textContent=fmtAdaptive(v);} updatePayoutPreview(); });
+  xrpUsdInput.addEventListener('input', ()=>{ const v=parseFloat(xrpUsdInput.value||0); if(v>0) { PRICES.xrpUsd=v; liveXRP.textContent=fmt4(v);} });
 
   document.getElementById('rollBtn').addEventListener('click', async ()=>{
     rollBtn.disabled=true;
