@@ -328,7 +328,8 @@
 (function(){
   // ---------- CONFIG ----------
   const BAG_FEEDS = [
-    'https://api.getthebag.io/bag-price.json' // ✅ only the working endpoint
+    'https://api.getthebag.io/bag-price.json',      // primary (API subdomain)
+    'https://getthebag.io/assets/bag-price.json'    // fallback (same-origin mirror)
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
   const PRICE_REFRESH_MS = 15000;
@@ -372,7 +373,7 @@
   function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
     const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
-    try{ return await fetch(url,{...opts,mode:'cors',cache:'no-store',credentials:'omit',signal:ctrl.signal}); }
+    try{ return await fetch(url,{...opts,mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
     finally{ clearTimeout(id); }
   }
   function resolveFromPayload(j){
@@ -421,7 +422,7 @@
           const t = await r.text();
           if (resolveFromText(t)) return true;
         }
-      }catch(_){/* next */}
+      }catch(_){ /* try next feed */ }
     }
     return false;
   }
@@ -490,9 +491,9 @@
 
   // ---------- Orchestration ----------
   async function refreshPrices(){
-    const gotBag = await fetchBagUsd();
-    const hadX = PRICES.xrpUsd>0;
-    const gotX = hadX || await fetchXrpUsd();
+    const gotBag = await fetchBagUsd();           // may also set xrp_usd
+    const hadX   = PRICES.xrpUsd>0;
+    const gotX   = hadX || await fetchXrpUsd();
 
     PRICES.source = gotBag && gotX ? 'live' : (gotBag || gotX) ? 'partial live' : loadCache() ? 'cached' : '—';
 
