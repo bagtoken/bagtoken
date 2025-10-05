@@ -327,14 +327,14 @@
 (function(){
   // ---------- CONFIG ----------
   const BAG_FEEDS = [
-    'https://api.getthebag.io/bag-price.json',            // primary
-    'https://bagproxy.bagtokenhq.workers.dev/',           // XRPL book_offers fallback
-    'https://getthebag.io/assets/bag-price.json'          // same-origin fallback
+    'https://api.getthebag.io/bag-price.json',      // primary
+    'https://getthebag.io/assets/bag-price.json'    // same-origin fallback
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
   const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+  const MAX_BET_USD = 2000;                // per-play cap (USD)
 
   // ---------- UI ----------
   const rollBtn = document.getElementById('rollBtn');
@@ -356,10 +356,34 @@
   const liveConv = document.getElementById('liveConv');
   const diagSpan = document.getElementById('bagDiag');
 
+  // Tiny helper UI under the bet input
+  let limitNote = document.getElementById('limitNote');
+  let limitToast = document.getElementById('limitToast');
+  (function ensureLimitUi(){
+    if (!betInput) return;
+    const holder = betInput.closest('div');
+    const container = holder?.parentElement;
+    if (container) {
+      if (!limitNote) {
+        limitNote = document.createElement('div');
+        limitNote.id = 'limitNote';
+        limitNote.className = 'micro';
+        limitNote.style.marginTop = '6px';
+        container.appendChild(limitNote);
+      }
+      if (!limitToast) {
+        limitToast = document.createElement('div');
+        limitToast.id = 'limitToast';
+        limitToast.className = 'micro';
+        limitToast.style.cssText = 'margin-top:4px;color:#e25b5b;display:none;';
+        container.appendChild(limitToast);
+      }
+    }
+  })();
+
   // ---------- STATE ----------
   let point = null;
   const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—', ts: 0 };
-  let lastDiag = '';
 
   // ---------- HELPERS ----------
   const num = v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
@@ -371,7 +395,16 @@
     if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
-  function setDiag(msg){ lastDiag = msg; if (diagSpan) diagSpan.textContent = msg || ''; }
+  function toast(msg){
+    if (!limitToast) return;
+    limitToast.textContent = msg || '';
+    limitToast.style.display = msg ? 'block' : 'none';
+    if (msg){
+      limitToast.style.opacity = '1';
+      setTimeout(()=>{ limitToast.style.transition='opacity .6s'; limitToast.style.opacity='0'; }, 1200);
+      setTimeout(()=>{ limitToast.style.display='none'; limitToast.style.transition=''; limitToast.style.opacity=''; }, 1900);
+    }
+  }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
@@ -412,36 +445,77 @@
       const v = (await r.json())?.ripple?.usd;
       if (Number(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
       throw new Error('bad payload');
-    }catch(e){ setDiag('XRP feed: '+(e.message||'error')); return false; }
+    }catch(e){ if (diagSpan) diagSpan.textContent = 'XRP feed: '+(e.message||'error'); return false; }
   }
-
   async function fetchBagUsd(){
     let reason = '';
     for (const base of BAG_FEEDS){
       try{
-        const url = `${base}${base.includes('?') ? '&' : '?'}ts=${Date.now()}`;
+        const url = `${base}?ts=${Date.now()}`;
         const r = await timedFetch(url);
         if (!r.ok){ reason = `${base} → HTTP ${r.status}`; continue; }
         try{
           const j = await r.clone().json();
-          if (resolveFromPayload(j)){ setDiag(`BAG feed OK: ${base}`); return true; }
+          if (resolveFromPayload(j)){ if (diagSpan) diagSpan.textContent=`BAG feed OK: ${base}`; return true; }
           reason = `${base} → no usable fields`;
         }catch{
           const t = await r.text();
-          if (resolveFromText(t)){ setDiag(`BAG feed (text) OK: ${base}`); return true; }
+          if (resolveFromText(t)){ if (diagSpan) diagSpan.textContent=`BAG feed (text) OK: ${base}`; return true; }
           reason = `${base} → parse failed`;
         }
       }catch(e){ reason = `${base} → ${e.message||'fetch error'}`; }
     }
-    setDiag(reason);
+    if (diagSpan) diagSpan.textContent = reason;
     return false;
   }
-
   function loadCache(){
     const bag = cacheGet('bag_prices'); const xrp = cacheGet('xrp_usd'); let used=false;
     if (bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
     if (!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
+  }
+
+  // ---------- Limit logic (AUTO-CLAMP) ----------
+  function maxForCurrency(){
+    // returns the maximum bet quantity allowed in the currently selected unit
+    const cur = currentCurrency();
+    if (cur === 'BAG') {
+      return PRICES.bagUsd > 0 ? MAX_BET_USD / PRICES.bagUsd : 0;
+    } else {
+      return PRICES.xrpUsd > 0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
+    }
+  }
+  function betUsdEstimate(){
+    const bet = Math.max(0, parseFloat(betInput.value || 0));
+    if (!bet) return 0;
+    return currentCurrency()==='BAG'
+      ? (PRICES.bagUsd>0 ? bet * PRICES.bagUsd : 0)
+      : (PRICES.xrpUsd>0 ? bet * PRICES.xrpUsd : 0);
+  }
+  function clampIfNeeded(showToast=true){
+    const maxQty = maxForCurrency();
+    if (!maxQty) return; // no prices yet → nothing to clamp
+    let val = Math.max(0, parseFloat(betInput.value || 0));
+    if (val > maxQty) {
+      betInput.value = String(maxQty);
+      if (showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`);
+    }
+  }
+  function updateLimitUi(){
+    // Max hint
+    let note = `Max $${MAX_BET_USD.toLocaleString()}`;
+    const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
+    const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD / PRICES.bagUsd : 0;
+    const parts = [];
+    if (maxXrp) parts.push(`${fmt(maxXrp)} XRP`);
+    if (maxBag) parts.push(`${fmt(maxBag)} BAG`);
+    if (parts.length) note += ` ≈ ${parts.join(' or ')}`;
+    if (limitNote) limitNote.textContent = note;
+
+    // Auto-clamp and keep roll enabled only when prices exist
+    clampIfNeeded(false);
+    rollBtn.disabled = !pricesReadyForCurrentCurrency();
+    betInput.style.borderColor = '#1b4a2f';
   }
 
   // ---------- UI updates ----------
@@ -466,10 +540,15 @@
       PRICES.source==='partial live' ? ' (partial live)' :
       PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
     updateConversions();
+    updateLimitUi();
+    updatePayoutPreview();
   }
   function currentCurrency(){
     const el = curToggle.querySelector('input[name="betCur"]:checked');
     return el ? el.value : 'XRP';
+  }
+  function pricesReadyForCurrentCurrency(){
+    return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0;
   }
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput.value || 0));
@@ -492,65 +571,63 @@
       payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
     }
   }
-  function updateBetUnits(){ unitSpan.textContent=currentCurrency(); updatePayoutPreview(); }
-  function updateStateText(){
-    if (point==null){ stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
-    else { stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; }
-  }
-  function resetCube(el){ el.className='cube'; }
-  function poseCube(el,v){ el.classList.add('show-'+v); }
 
   // ---------- Orchestration ----------
   async function refreshPrices(){
-    const gotBag = await fetchBagUsd();           // may also set xrp_usd
+    const gotBag = await fetchBagUsd();
     const hadX   = PRICES.xrpUsd>0;
     const gotX   = hadX || await fetchXrpUsd();
-
     PRICES.source = gotBag && gotX ? 'live' : (gotBag || gotX) ? 'partial live' : loadCache() ? 'cached' : '—';
 
     if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
       cacheSet('bag_prices', {bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
     }
-
     updateLiveLine();
-    updatePayoutPreview();
   }
 
   // ---------- Events ----------
-  betInput.addEventListener('input', updatePayoutPreview);
-  curToggle.addEventListener('change', updateBetUnits);
+  betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
+  curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
   rollBtn.addEventListener('click', async ()=>{
+    if (!pricesReadyForCurrentCurrency()){
+      toast('Waiting for live price…'); return;
+    }
+    clampIfNeeded(true); // one last safety clamp
+
     rollBtn.disabled=true;
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
+    const resetCube = el => { el.className='cube'; };
+    const poseCube  = (el,v)=>{ el.classList.add('show-'+v); };
     [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
     const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
     await new Promise(r=>setTimeout(r,900));
     [dieA,dieB].forEach(c=>c.classList.remove('rolling'));
     poseCube(dieA,a); poseCube(dieB,b);
     const total=a+b; rollNumber.textContent=total;
-
     rollText.classList.remove('win','lose');
 
     if (point==null){
       if (total===7||total===11){ rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win'); }
       else if (total===2||total===3||total===12){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose'); }
-      else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; updateStateText(); rollBtn.disabled=false; return; }
+      else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; rollBtn.disabled=false; return; }
     }else{
-      if (total===point){ rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win'); point=null; updateStateText(); }
-      else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; updateStateText(); }
+      if (total===point){ rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
+      else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
       else { rollText.textContent=`Roll again — need ${point} (rolled ${total})`; }
     }
     rollBtn.disabled=false;
   });
 
   // ---------- Init ----------
-  updateStateText();
-  updateBetUnits();
-  if (loadCache()){ PRICES.source='cached'; updateLiveLine(); updatePayoutPreview(); }
+  stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
+  unitSpan.textContent='XRP';
+  if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
   refreshPrices();
   setInterval(refreshPrices, PRICE_REFRESH_MS);
 })();
 </script>
+
 </body>
 </html>
+
