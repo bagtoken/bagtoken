@@ -76,7 +76,6 @@
 
   /* Game header (image + title above game) */
   .game-header{text-align:center;padding:36px 10px 14px}
-  /* Dice art uses the SAME sizing rules as the top logo */
   .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
 
@@ -147,9 +146,7 @@
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.25rem}
   .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e06767}
-  /* win/lose colors */
-  .t.win{color:#2fbf6b}
-  .t.lose{color:#e25b5b}
+  .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}
 
   /* Litepaper */
   .litepaper-wrap{text-align:center;margin:40px 0 20px}
@@ -245,6 +242,7 @@
             <span id="liveDot" class="warn">●</span>
             <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
             <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+            <div id="bagDiag" class="micro" style="opacity:.55;margin-top:4px;"></div>
           </div>
 
           <div class="callout mono" id="payoutBox">
@@ -303,7 +301,7 @@
   </div>
 </section>
 
-<!-- LITE PAPER (restored) -->
+<!-- LITE PAPER -->
 <div class="litepaper-wrap">
   <a class="btn-litepaper" target="_blank" rel="noopener"
      href="https://github.com/bagtoken/bagtoken/blob/main/litepaper.md">
@@ -328,8 +326,8 @@
 (function(){
   // ---------- CONFIG ----------
   const BAG_FEEDS = [
-    'https://api.getthebag.io/bag-price.json',      // primary (API subdomain)
-    'https://getthebag.io/assets/bag-price.json'    // fallback (same-origin mirror)
+    'https://api.getthebag.io/bag-price.json',      // primary
+    'https://getthebag.io/assets/bag-price.json'    // same-origin fallback
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
   const PRICE_REFRESH_MS = 15000;
@@ -354,10 +352,12 @@
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
   const liveConv = document.getElementById('liveConv');
+  const diagSpan = document.getElementById('bagDiag');
 
   // ---------- STATE ----------
   let point = null;
   const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—', ts: 0 };
+  let lastDiag = '';
 
   // ---------- HELPERS ----------
   const num = v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
@@ -369,11 +369,12 @@
     if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
+  function setDiag(msg){ lastDiag = msg; if (diagSpan) diagSpan.textContent = msg || ''; }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
     const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
-    try{ return await fetch(url,{...opts,mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    try{ return await fetch(url,{...opts,headers:{Accept:'application/json'},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
     finally{ clearTimeout(id); }
   }
   function resolveFromPayload(j){
@@ -405,27 +406,35 @@
   async function fetchXrpUsd(){
     try{
       const r = await timedFetch(CG_XRP);
-      if (!r.ok) throw 0;
+      if (!r.ok) throw new Error('HTTP '+r.status);
       const v = (await r.json())?.ripple?.usd;
       if (Number(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
-    }catch(_){} return false;
+      throw new Error('bad payload');
+    }catch(e){ setDiag('XRP feed: '+(e.message||'error')); return false; }
   }
+
   async function fetchBagUsd(){
+    let reason = '';
     for (const base of BAG_FEEDS){
       try{
-        const r = await timedFetch(`${base}?ts=${Date.now()}`);
-        if (!r.ok) continue;
+        const url = `${base}?ts=${Date.now()}`;
+        const r = await timedFetch(url);
+        if (!r.ok){ reason = `${base} → HTTP ${r.status}`; continue; }
         try{
           const j = await r.clone().json();
-          if (resolveFromPayload(j)) return true;
+          if (resolveFromPayload(j)){ setDiag(`BAG feed OK: ${base}`); return true; }
+          reason = `${base} → no usable fields`;
         }catch{
           const t = await r.text();
-          if (resolveFromText(t)) return true;
+          if (resolveFromText(t)){ setDiag(`BAG feed (text) OK: ${base}`); return true; }
+          reason = `${base} → parse failed`;
         }
-      }catch(_){ /* try next feed */ }
+      }catch(e){ reason = `${base} → ${e.message||'fetch error'}`; }
     }
+    setDiag(reason);
     return false;
   }
+
   function loadCache(){
     const bag = cacheGet('bag_prices'); const xrp = cacheGet('xrp_usd'); let used=false;
     if (bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
