@@ -1,0 +1,41 @@
+name: Update bag-price.json
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE: https://api.getthebag.io
+      # Optional: used if the API doesn't return BAG price
+      BAG_USD_FALLBACK: "0.000001"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm i node-fetch@3
+
+      - name: Update bag-price.json
+        env:
+          BAG_API_KEY: ${{ secrets.BAG_API_KEY }}
+        run: node scripts/update-bag-price.mjs
+
+      - name: Commit changes
+        run: |
+          git config user.name  "bag-price-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add assets/bag-price.json
+          git commit -m "chore: refresh assets/bag-price.json" || echo "No changes"
+          git push
