@@ -475,6 +475,140 @@
 })();
 </script>
 
+<!-- SOUND HELPERS: cash (win), dice rattle (roll), thud (loss) -->
+<script>
+(function(){
+  // Cash-register "cha-ching" — drawer thump + bell + coin shimmer
+  window.playCash = function(){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      const ctx = new AC();
+      const now = ctx.currentTime;
+
+      function blip(freq, type, t0, dur, peak){
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, now + t0);
+        g.gain.setValueAtTime(0.0001, now + t0);
+        g.gain.exponentialRampToValueAtTime(peak, now + t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + t0 + dur);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + t0); o.stop(now + t0 + dur + 0.02);
+      }
+      // 1) Drawer thump
+      blip(110, 'sine', 0.00, 0.18, 0.30);
+      // 2) Register bell sweep
+      {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(1100, now + 0.04);
+        o.frequency.exponentialRampToValueAtTime(1700, now + 0.28);
+        g.gain.setValueAtTime(0.0001, now + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.22, now + 0.07);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + 0.04); o.stop(now + 0.36);
+      }
+      // 3) Coin shimmer (band-passed noise)
+      {
+        const len = Math.floor(ctx.sampleRate * 0.25);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for(let i=0;i<len;i++) data[i] = Math.random()*2 - 1;
+
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4000; bp.Q.value=8;
+        const g  = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, now + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.15, now + 0.10);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.30);
+
+        src.connect(bp).connect(g).connect(ctx.destination);
+        src.start(now + 0.08); src.stop(now + 0.31);
+      }
+      setTimeout(()=>ctx.close(), 700);
+    }catch(e){}
+  };
+
+  // Dice rattle synced to 900ms spin
+  window.playDiceRoll = function(ms=900){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      const ctx = new AC();
+      const now = ctx.currentTime;
+      const dur = Math.max(0.2, ms/1000);
+
+      const frames = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i=0;i<frames;i++){
+        const t = i/frames;
+        data[i] = (Math.random()*2-1) * (1 - t*0.6);
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf;
+
+      const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=450;
+      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=0.9;
+
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.18, now + dur*0.20);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur*0.90);
+
+      function tick(at, freq){
+        const o = ctx.createOscillator();
+        const gg = ctx.createGain();
+        o.type='square'; o.frequency.setValueAtTime(freq, now+at);
+        gg.gain.setValueAtTime(0.0001, now+at);
+        gg.gain.exponentialRampToValueAtTime(0.14, now+at+0.008);
+        gg.gain.exponentialRampToValueAtTime(0.0001, now+at+0.07);
+        o.connect(gg).connect(ctx.destination);
+        o.start(now+at); o.stop(now+at+0.09);
+      }
+      tick(dur*0.33, 950);
+      tick(dur*0.60, 780);
+      tick(dur*0.85, 680);
+
+      if (pan){
+        pan.pan.setValueAtTime(-0.25, now);
+        pan.pan.linearRampToValueAtTime(0.25, now + dur*0.5);
+        pan.pan.linearRampToValueAtTime(0.00, now + dur);
+        src.connect(hp).connect(bp).connect(g).connect(pan).connect(ctx.destination);
+      }else{
+        src.connect(hp).connect(bp).connect(g).connect(ctx.destination);
+      }
+
+      src.start(now);
+      src.stop(now + dur);
+      setTimeout(()=>ctx.close(), ms + 250);
+    }catch(e){}
+  };
+
+  // Low "thud" for losses
+  window.playThud = function(){
+    try{
+      const Ctx = window.AudioContext||window.webkitAudioContext;
+      if(!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type='sine'; o.frequency.value=130;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.22);
+      o.connect(g).connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime+0.25);
+      setTimeout(()=>ctx.close(), 400);
+    }catch(e){}
+  };
+})();
+</script>
+
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -629,7 +763,6 @@
 
   // ---------- Limit logic (AUTO-CLAMP) ----------
   function maxForCurrency(){
-    // returns the maximum bet quantity allowed in the currently selected unit
     const cur = currentCurrency();
     if (cur === 'BAG') {
       return PRICES.bagUsd > 0 ? MAX_BET_USD / PRICES.bagUsd : 0;
@@ -646,7 +779,7 @@
   }
   function clampIfNeeded(showToast=true){
     const maxQty = maxForCurrency();
-    if (!maxQty) return; // no prices yet → nothing to clamp
+    if (!maxQty) return;
     let val = Math.max(0, parseFloat(betInput.value || 0));
     if (val > maxQty) {
       betInput.value = String(maxQty);
@@ -654,7 +787,6 @@
     }
   }
   function updateLimitUi(){
-    // Max hint
     let note = `Max $${MAX_BET_USD.toLocaleString()}`;
     const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
     const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD / PRICES.bagUsd : 0;
@@ -664,7 +796,6 @@
     if (parts.length) note += ` ≈ ${parts.join(' or ')}`;
     if (limitNote) limitNote.textContent = note;
 
-    // Auto-clamp and keep roll enabled only when prices exist
     clampIfNeeded(false);
     rollBtn.disabled = !pricesReadyForCurrentCurrency();
     betInput.style.borderColor = '#1b4a2f';
@@ -752,6 +883,7 @@
     const resetCube = el => { el.className='cube'; };
     const poseCube  = (el,v)=>{ el.classList.add('show-'+v); };
     [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
+    playDiceRoll(900); // dice rattle synced to spin
     const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
     await new Promise(r=>setTimeout(r,900));
     [dieA,dieB].forEach(c=>c.classList.remove('rolling'));
@@ -762,17 +894,36 @@
     if (point==null){
       if (total===7||total===11){
         rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
-        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'WIN', subtext:`+${fmt(s)} BAG` }); }catch(e){}
+        try{
+          const s = stakeInBAG();
+          if (s>0 && typeof showWin==='function'){
+            showWin({ message:'WIN', subtext:`+${fmt(s)} BAG`, sound:false });
+            if (typeof playCash==='function') playCash();
+          }
+        }catch(e){}
       }
-      else if (total===2||total===3||total===12){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose'); }
+      else if (total===2||total===3||total===12){
+        rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
+        try{ if (typeof playThud==='function') playThud(); }catch(e){}
+      }
       else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; rollBtn.disabled=false; return; }
     }else{
       if (total===point){
         rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win');
-        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG` }); }catch(e){}
+        try{
+          const s = stakeInBAG();
+          if (s>0 && typeof showWin==='function'){
+            showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG`, sound:false });
+            if (typeof playCash==='function') playCash();
+          }
+        }catch(e){}
         point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
       }
-      else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
+      else if (total===7){
+        rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose');
+        try{ if (typeof playThud==='function') playThud(); }catch(e){}
+        point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
+      }
       else { rollText.textContent=`Roll again — need ${point} (rolled ${total})`; }
     }
     rollBtn.disabled=false;
