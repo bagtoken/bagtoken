@@ -157,6 +157,21 @@
   .legal-disclaimer{max-width:900px;margin:34px auto 0;padding:18px 16px 8px;border-top:1px solid #222;border-bottom:1px solid #222;font-size:.82rem;color:#aaa;text-align:center;line-height:1.45}
   .footer{text-align:center;padding:40px 10px;font-size:.85rem;color:#777}
 </style>
+
+<!-- WIN overlay styles -->
+<style>
+  :root{ --win-fg:#fff; --win-glow:#00ffb2; --win-accent:#18a0fb; --win-bg: rgba(10,12,16,.70); }
+  #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
+  #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
+  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
+  #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.04em; }
+  #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
+  #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
+  @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
+  @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
+  @keyframes shine{ 0%{ background-position:0% 50% } 100%{ background-position:200% 50% } }
+  @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
+</style>
 </head>
 <body>
 
@@ -322,6 +337,143 @@
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
+
+<!-- WIN overlay markup -->
+<canvas id="win-canvas"></canvas>
+<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
+  <div id="win-card">
+    <button id="win-close" aria-label="Close">×</button>
+    <div id="win-text">WIN</div>
+    <div id="win-sub">Nice roll</div>
+  </div>
+</div>
+
+<!-- WIN overlay logic -->
+<script>
+(function(){
+  const overlay = document.getElementById('win-overlay');
+  const canvas  = document.getElementById('win-canvas');
+  const ctx = canvas.getContext('2d');
+  const closeBtn = document.getElementById('win-close');
+  const sub = document.getElementById('win-sub');
+  const title = document.getElementById('win-text');
+
+  let rafId=null, particles=[], start=0, dur=2000, running=false;
+
+  function sizeCanvas(){
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    canvas.width = Math.floor(innerWidth*dpr);
+    canvas.height = Math.floor(innerHeight*dpr);
+    canvas.style.width = innerWidth+'px';
+    canvas.style.height = innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  sizeCanvas(); addEventListener('resize', sizeCanvas);
+
+  function rand(n){ return Math.random()*n }
+  function choose(a){ return a[(Math.random()*a.length)|0] }
+
+  function spawnConfetti(count){
+    particles.length = 0;
+    const colors = ['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<count;i++){
+      const x = innerWidth*0.25 + Math.random()*innerWidth*0.5;
+      const y = innerHeight*0.35 + Math.random()*innerHeight*0.1;
+      const speed = 2 + Math.random()*4;
+      particles.push({
+        x, y,
+        vx:(Math.random()-.5)*speed*1.2,
+        vy:-(3+Math.random()*5),
+        g: 0.12 + Math.random()*0.2,
+        rot: rand(Math.PI*2),
+        vr: (Math.random()-.5)*0.2,
+        sz: 6 + Math.random()*10,
+        col: choose(colors),
+        shape: Math.random()<.4 ? 'circle' : (Math.random()<.5 ? 'square' : 'tri')
+      });
+    }
+  }
+
+  function drawConfetti(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{
+      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.rot += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.col;
+      const s = p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
+
+  function animate(ts){
+    if(!start) start = ts;
+    const elapsed = ts - start;
+    drawConfetti();
+    if(elapsed < dur){ rafId = requestAnimationFrame(animate); }
+    else { stopConfetti(); }
+  }
+
+  function startConfetti(){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    start = 0; dur = 2200; running = true;
+    canvas.style.display='block';
+    spawnConfetti(180);
+    rafId = requestAnimationFrame(animate);
+  }
+  function stopConfetti(){
+    running = false;
+    cancelAnimationFrame(rafId);
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    canvas.style.display='none';
+  }
+
+  function playChime(){
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if(!AudioCtx) return;
+      const ctxA = new AudioCtx();
+      const now = ctxA.currentTime;
+      const notes = [880, 1175, 1760];
+      notes.forEach((f,i)=>{
+        const o = ctxA.createOscillator();
+        const g = ctxA.createGain();
+        o.type='triangle'; o.frequency.value=f;
+        g.gain.setValueAtTime(.0001, now+i*0.02);
+        g.gain.linearRampToValueAtTime(.18, now+i*0.02+0.03);
+        g.gain.exponentialRampToValueAtTime(.0001, now+i*0.02+0.28);
+        o.connect(g).connect(ctxA.destination);
+        o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
+      });
+      setTimeout(()=>ctxA.close(), 600);
+    }catch(e){}
+  }
+
+  function showOverlay(){
+    overlay.style.display='grid';
+    const esc = (e)=>{ if(e.key==='Escape'){ hideOverlay() } };
+    addEventListener('keydown', esc, { once:true });
+  }
+  function hideOverlay(){
+    overlay.style.display='none';
+    stopConfetti();
+  }
+  closeBtn.addEventListener('click', hideOverlay);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) hideOverlay() });
+
+  window.showWin = function(opts={}){
+    const { message='WIN', subtext='Nice roll', duration=1800, sound=true } = opts;
+    title.textContent = message;
+    sub.textContent = subtext;
+    showOverlay();
+    startConfetti();
+    if(sound) playChime();
+    clearTimeout(window.__winTimer);
+    window.__winTimer = setTimeout(hideOverlay, Math.max(1000, duration));
+  };
+})();
+</script>
 
 <script>
 (function(){
@@ -608,11 +760,18 @@
     rollText.classList.remove('win','lose');
 
     if (point==null){
-      if (total===7||total===11){ rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win'); }
+      if (total===7||total===11){
+        rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
+        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'WIN', subtext:`+${fmt(s)} BAG` }); }catch(e){}
+      }
       else if (total===2||total===3||total===12){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose'); }
       else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; rollBtn.disabled=false; return; }
     }else{
-      if (total===point){ rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
+      if (total===point){
+        rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win');
+        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG` }); }catch(e){}
+        point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
+      }
       else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
       else { rollText.textContent=`Roll again — need ${point} (rolled ${total})`; }
     }
@@ -630,4 +789,3 @@
 
 </body>
 </html>
-
