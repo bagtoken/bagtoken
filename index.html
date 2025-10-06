@@ -475,62 +475,66 @@
 })();
 </script>
 
-<!-- SOUND CORE: shared audio ctx + improved sounds (coin, dice, subtle nudge) -->
+<!-- SOUND CORE: shared audio ctx + improved sounds + RELIABLE UNLOCK -->
 <script>
 (function(){
   const AC = window.AudioContext || window.webkitAudioContext;
-  let sharedCtx = null;
-  function getCtx(){
+  let ctx = null;
+  async function unlock(){
     if(!AC) return null;
-    if(!sharedCtx) sharedCtx = new AC();
-    if(sharedCtx.state === 'suspended') { sharedCtx.resume(); }
-    return sharedCtx;
+    if(!ctx) ctx = new AC();
+    if (ctx.state === 'suspended') { try{ await ctx.resume(); }catch(e){} }
+    // iOS unlock ping (silent)
+    try{
+      const b = ctx.createBuffer(1,1,ctx.sampleRate);
+      const s = ctx.createBufferSource(); s.buffer=b; s.connect(ctx.destination); s.start(0);
+    }catch(e){}
+    return ctx;
   }
+  // Prime on first interaction anywhere
+  ['pointerdown','touchstart','mousedown','keydown'].forEach(ev=>{
+    window.addEventListener(ev, ()=>{ unlock(); }, { once:true, passive:true });
+  });
 
-  // Fallback of the original "win chime" (outside overlay) so we can call it
+  function getCtx(){ return ctx; }
+
+  // Original win chime (fallback)
   window.playWinChime = function(){
-    const ctx = getCtx(); if(!ctx) return false;
-    const now = ctx.currentTime;
+    const c = getCtx(); if(!c) return false;
+    const now = c.currentTime;
     [880,1175,1760].forEach((f,i)=>{
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
+      const o = c.createOscillator();
+      const g = c.createGain();
       o.type='triangle'; o.frequency.setValueAtTime(f, now+i*0.02);
       g.gain.setValueAtTime(0.0001, now+i*0.02);
       g.gain.linearRampToValueAtTime(0.18, now+i*0.02+0.03);
       g.gain.exponentialRampToValueAtTime(0.0001, now+i*0.02+0.28);
-      o.connect(g).connect(ctx.destination);
+      o.connect(g).connect(c.destination);
       o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
     });
     return true;
   };
 
-  // Improved coin "cha-ching" — drawer thump + bell ping + two coin clinks + shimmer
+  // Coin cha-ching
   window.playChaChing = function(){
-    const ctx = getCtx(); if(!ctx) return false;
-    const now = ctx.currentTime;
-
+    const c = getCtx(); if(!c) return false;
+    const now = c.currentTime;
     function ping(f, t0, dur, peak, type='triangle'){
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
+      const o = c.createOscillator();
+      const g = c.createGain();
       o.type = type; o.frequency.setValueAtTime(f, now+t0);
       g.gain.setValueAtTime(0.0001, now+t0);
       g.gain.exponentialRampToValueAtTime(peak, now+t0+0.015);
       g.gain.exponentialRampToValueAtTime(0.0001, now+t0+dur);
-      o.connect(g).connect(ctx.destination);
+      o.connect(g).connect(c.destination);
       o.start(now+t0); o.stop(now+t0+dur+0.02);
     }
-
-    // Drawer thump (low)
-    ping(120, 0.00, 0.12, 0.28, 'sine');
-
-    // Bell ping (metallic sweep using FM-like bend)
+    ping(120, 0.00, 0.12, 0.28, 'sine');      // thump
+    // Bell sweep
     {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      const m = ctx.createOscillator(); // simple FM
-      const mg = ctx.createGain();
-      o.type='sine';
-      m.type='sine';
+      const o = c.createOscillator(), g = c.createGain();
+      const m = c.createOscillator(), mg = c.createGain();
+      o.type='sine'; m.type='sine';
       o.frequency.setValueAtTime(1100, now+0.04);
       o.frequency.exponentialRampToValueAtTime(1800, now+0.26);
       mg.gain.setValueAtTime(120, now+0.04);
@@ -538,123 +542,101 @@
       g.gain.setValueAtTime(0.0001, now+0.04);
       g.gain.exponentialRampToValueAtTime(0.22, now+0.07);
       g.gain.exponentialRampToValueAtTime(0.0001, now+0.36);
-      m.connect(mg).connect(o.frequency);
-      o.connect(g).connect(ctx.destination);
-      o.start(now+0.04); m.start(now+0.04);
-      o.stop(now+0.38);  m.stop(now+0.38);
+      m.connect(mg).connect(o.frequency); o.connect(g).connect(c.destination);
+      o.start(now+0.04); m.start(now+0.04); o.stop(now+0.38); m.stop(now+0.38);
     }
-
-    // Two coin clinks (high, very short)
-    ping(2500, 0.16, 0.06, 0.12, 'square');
+    ping(2500, 0.16, 0.06, 0.12, 'square');   // clinks
     ping(2200, 0.24, 0.05, 0.10, 'square');
-
-    // Shimmer (bandpassed noise)
+    // Shimmer
     {
-      const dur = 0.22;
-      const frames = Math.floor(ctx.sampleRate * dur);
-      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const d = 0.22, frames = Math.floor(c.sampleRate * d);
+      const buf = c.createBuffer(1, frames, c.sampleRate);
       const data = buf.getChannelData(0);
       for(let i=0;i<frames;i++){ const t=i/frames; data[i] = (Math.random()*2-1) * (1 - t); }
-      const src = ctx.createBufferSource(); src.buffer = buf;
-      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4500; bp.Q.value=6;
-      const g  = ctx.createGain();
+      const src = c.createBufferSource(); src.buffer = buf;
+      const bp = c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4500; bp.Q.value=6;
+      const g  = c.createGain();
       g.gain.setValueAtTime(0.0001, now+0.10);
       g.gain.exponentialRampToValueAtTime(0.12, now+0.12);
       g.gain.exponentialRampToValueAtTime(0.0001, now+0.30);
-      src.connect(bp).connect(g).connect(ctx.destination);
+      src.connect(bp).connect(g).connect(c.destination);
       src.start(now+0.10); src.stop(now+0.32);
     }
     return true;
   };
 
-  // Dice roll: granular clicks + subtle rattle, timed to animation duration
+  // Dice roll rattle
   window.playDiceRoll = function(ms=900){
-    const ctx = getCtx(); if(!ctx) return false;
-    const now = ctx.currentTime;
+    const c = getCtx(); if(!c) return false;
+    const now = c.currentTime;
     const dur = Math.max(0.25, ms/1000);
 
-    // Background rattle (bandpassed noise)
+    // background rattle
     (function(){
-      const frames = Math.floor(ctx.sampleRate * dur);
-      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const frames = Math.floor(c.sampleRate * dur);
+      const buf = c.createBuffer(1, frames, c.sampleRate);
       const data = buf.getChannelData(0);
       for(let i=0;i<frames;i++){
         const t = i/frames;
-        data[i] = (Math.random()*2-1) * (0.25 + 0.2*Math.sin(t*12)); // texture
+        data[i] = (Math.random()*2-1) * (0.25 + 0.2*Math.sin(t*12));
       }
-      const src = ctx.createBufferSource(); src.buffer = buf;
-      const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=500;
-      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1800; bp.Q.value=1.2;
-      const g  = ctx.createGain();
+      const src = c.createBufferSource(); src.buffer = buf;
+      const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=500;
+      const bp = c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1800; bp.Q.value=1.2;
+      const g  = c.createGain();
       g.gain.setValueAtTime(0.0001, now);
       g.gain.linearRampToValueAtTime(0.10, now + dur*0.15);
       g.gain.linearRampToValueAtTime(0.06, now + dur*0.70);
       g.gain.exponentialRampToValueAtTime(0.002, now + dur);
-      src.connect(hp).connect(bp).connect(g).connect(ctx.destination);
+      src.connect(hp).connect(bp).connect(g).connect(c.destination);
       src.start(now); src.stop(now+dur);
     })();
 
-    // Discrete dice hits (short crackles)
-    const hits = Math.floor(8 + Math.random()*6); // 8-14
+    // discrete hits
+    const hits = Math.floor(8 + Math.random()*6);
     for(let i=0;i<hits;i++){
-      const at = now + (Math.random()*0.8 + i/hits*0.2) * dur; // spread, denser early
+      const at = now + (Math.random()*0.8 + i/hits*0.2) * dur;
       const len = 0.012 + Math.random()*0.010;
-      const frames = Math.floor(ctx.sampleRate * len);
-      const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const frames = Math.floor(c.sampleRate * len);
+      const buf = c.createBuffer(1, frames, c.sampleRate);
       const data = buf.getChannelData(0);
-      for(let j=0;j<frames;j++){
-        const t = j/frames;
-        // sharp click with fast decay
-        data[j] = (Math.random()*2-1) * Math.pow(1-t, 4);
-      }
-      const src = ctx.createBufferSource(); src.buffer = buf;
-      const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200 + Math.random()*600;
-      const g  = ctx.createGain();
+      for(let j=0;j<frames;j++){ const t = j/frames; data[j] = (Math.random()*2-1) * Math.pow(1-t, 4); }
+      const src = c.createBufferSource(); src.buffer = buf;
+      const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200 + Math.random()*600;
+      const g  = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.exponentialRampToValueAtTime(0.18, at + 0.004);
       g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      if (pan){
-        pan.pan.setValueAtTime((Math.random()*2-1)*0.35, at);
-        src.connect(hp).connect(g).connect(pan).connect(ctx.destination);
-      } else {
-        src.connect(hp).connect(g).connect(ctx.destination);
-      }
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+      if (pan){ pan.pan.setValueAtTime((Math.random()*2-1)*0.35, at); src.connect(hp).connect(g).connect(pan).connect(c.destination); }
+      else { src.connect(hp).connect(g).connect(c.destination); }
       src.start(at); src.stop(at + len + 0.02);
     }
     return true;
   };
 
-  // Subtle, short nudge for losses
+  // subtle nudge (loss)
   window.playNudge = function(){
-    const ctx = getCtx(); if(!ctx) return false;
-    const t0 = ctx.currentTime;
-    // Low tap
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type='sine';
-    o.frequency.setValueAtTime(170, t0);
+    const c = getCtx(); if(!c) return false;
+    const t0 = c.currentTime;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(170, t0);
     o.frequency.exponentialRampToValueAtTime(110, t0+0.12);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(0.12, t0+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t0+0.18);
-    o.connect(g).connect(ctx.destination);
-    o.start(t0); o.stop(t0+0.20);
+    o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+0.20);
 
-    // Tiny click overlay
-    const click = ctx.createOscillator();
-    const cg = ctx.createGain();
+    const click = c.createOscillator(), cg = c.createGain();
     click.type='square'; click.frequency.setValueAtTime(1000, t0+0.01);
     cg.gain.setValueAtTime(0.0001, t0+0.01);
     cg.gain.exponentialRampToValueAtTime(0.03, t0+0.02);
     cg.gain.exponentialRampToValueAtTime(0.0001, t0+0.06);
-    click.connect(cg).connect(ctx.destination);
-    click.start(t0+0.01); click.stop(t0+0.08);
+    click.connect(cg).connect(c.destination); click.start(t0+0.01); click.stop(t0+0.08);
     return true;
   };
 
-  // expose ctx getter so we can warm it at click time
-  window.__bagAudio = { getCtx };
+  window.__bagAudio = { unlock, getCtx };
 })();
 </script>
 
@@ -828,7 +810,7 @@
   }
   function clampIfNeeded(showToast=true){
     const maxQty = maxForCurrency();
-    if (!maxQty) return;
+    if (!maxQty) return; // no prices yet → nothing to clamp
     let val = Math.max(0, parseFloat(betInput.value || 0));
     if (val > maxQty) {
       betInput.value = String(maxQty);
@@ -836,6 +818,7 @@
     }
   }
   function updateLimitUi(){
+    // Max hint
     let note = `Max $${MAX_BET_USD.toLocaleString()}`;
     const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
     const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD / PRICES.bagUsd : 0;
@@ -845,6 +828,7 @@
     if (parts.length) note += ` ≈ ${parts.join(' or ')}`;
     if (limitNote) limitNote.textContent = note;
 
+    // Auto-clamp and keep roll enabled only when prices exist
     clampIfNeeded(false);
     rollBtn.disabled = !pricesReadyForCurrentCurrency();
     betInput.style.borderColor = '#1b4a2f';
@@ -922,8 +906,8 @@
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
   rollBtn.addEventListener('click', async ()=>{
-    // Warm the shared audio context immediately on user gesture
-    try{ window.__bagAudio && window.__bagAudio.getCtx && window.__bagAudio.getCtx(); }catch(e){}
+    // Ensure AudioContext is unlocked before any sound
+    try{ if (window.__bagAudio && window.__bagAudio.unlock) await window.__bagAudio.unlock(); }catch(e){}
 
     if (!pricesReadyForCurrentCurrency()){
       toast('Waiting for live price…'); return;
@@ -953,7 +937,6 @@
           const s = stakeInBAG();
           if (s>0 && typeof showWin==='function'){
             showWin({ message:'WIN', subtext:`+${fmt(s)} BAG`, sound:false });
-            // Prefer coin sound; fall back to original chime if unavailable
             if (!(window.playChaChing && window.playChaChing())) { window.playWinChime && window.playWinChime(); }
           }
         }catch(e){}
