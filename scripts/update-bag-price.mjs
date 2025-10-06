@@ -1,88 +1,64 @@
 #!/usr/bin/env node
-// scripts/update-bag-price.mjs
-// Builds assets/bag-price.json from your API.
-// Requires repo secret: BAG_API_KEY
-// Node 18+ (or Actions setup-node 20). Uses ESM + node-fetch v3.
+/**
+ * Writes assets/bag-price.json with live XRP/USD (median of 3 exchanges),
+ * and BAG/USD from env (or default). Frontend consumes this JSON.
+ */
+import fs from 'node:fs/promises';
 
-import fs from "node:fs";
-import path from "node:path";
-import fetch from "node-fetch";
+const BAG_USD = Number(process.env.BAG_USD || '0.000001'); // change default if desired
 
-const API_BASE = process.env.API_BASE || "https://api.getthebag.io";
-const KEY = process.env.BAG_API_KEY || "";
-const FALLBACK_BAG_USD = parseFloat(process.env.BAG_USD_FALLBACK || "0.000001");
-
-// ---- helpers ----
-function assert(cond, msg) {
-  if (!cond) {
-    throw new Error(msg);
-  }
-}
-function isNum(n) {
-  return typeof n === "number" && Number.isFinite(n);
-}
-async function quoteAmt({ amount, base, quote }) {
-  const r = await fetch(`${API_BASE}/quote`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": KEY,
-      "origin": "https://getthebag.io",
-    },
-    body: JSON.stringify({ amount: String(amount), base, quote }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => "");
-    throw new Error(`quote ${base}->${quote} ${r.status}: ${body.slice(0, 200)}`);
-  }
+async function kraken() {
+  const r = await fetch('https://api.kraken.com/0/public/Ticker?pair=XRPUSD');
   const j = await r.json();
-  if (!j || !isNum(j.quote)) {
-    throw new Error(`unexpected payload for ${base}->${quote}: ${JSON.stringify(j).slice(0, 200)}`);
-  }
-  return j.quote; // numeric
+  if (!j.result) throw new Error('Kraken bad JSON');
+  const k = Object.keys(j.result)[0];          // e.g. "XXRPZUSD"
+  return Number(j.result[k].c[0]);             // last trade
 }
 
-// ---- main ----
-(async () => {
-  assert(KEY, "Missing BAG_API_KEY env");
+async function coinbase() {
+  const r = await fetch('https://api.coinbase.com/v2/prices/XRP-USD/spot');
+  const j = await r.json();
+  return Number(j?.data?.amount);
+}
 
-  // Use bigger notionals to reduce rounding noise, then scale back.
-  // 100 USD -> XRP  => xrp_usd = 100 / XRP_received
-  const usdToXrp = await quoteAmt({ amount: 100, base: "USD", quote: "XRP" });
-  assert(usdToXrp > 0, "USD->XRP quote must be > 0");
-  const xrp_usd = 100 / usdToXrp;
+async function bitstamp() {
+  const r = await fetch('https://www.bitstamp.net/api/v2/ticker/xrpusd/');
+  const j = await r.json();
+  return Number(j?.last);
+}
 
-  // Try 1,000,000 USD -> BAG to derive bag_usd precisely.
-  // If BAG is not quotable yet, fall back to configured price.
-  let bag_usd;
-  try {
-    const usdToBag = await quoteAmt({ amount: 1_000_000, base: "USD", quote: "BAG" });
-    assert(usdToBag > 0, "USD->BAG quote must be > 0");
-    bag_usd = 1_000_000 / usdToBag; // USD per 1 BAG
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn("USD->BAG quote failed, using fallback:", e.message);
-    bag_usd = FALLBACK_BAG_USD;
+async function getXrpUsd() {
+  const vals = [];
+  for (const fn of [kraken, coinbase, bitstamp]) {
+    try {
+      const v = await fn();
+      if (Number.isFinite(v) && v > 0) vals.push(v);
+    } catch {}
   }
+  if (!vals.length) throw new Error('No XRP price sources responded');
+  vals.sort((a, b) => a - b);
+  return vals[Math.floor(vals.length / 2)]; // median
+}
 
-  // Derive BAG priced in XRP
-  const bag_xrp = bag_usd / xrp_usd;
+const round = (n, dp = 8) => Number(n.toFixed(dp));
 
-  const out = {
-    bag_usd: +bag_usd.toFixed(12),
-    xrp_usd: +xrp_usd.toFixed(6),
-    bag_xrp: +bag_xrp.toFixed(12),
-    timestamp: new Date().toISOString(),
+(async () => {
+  const xrp_usd = round(await getXrpUsd(), 6);
+  const bag_usd = round(BAG_USD, 12);
+  const bag_xrp = round(bag_usd / xrp_usd, 12);
+
+  const payload = {
+    bag_usd,
+    xrp_usd,
+    bag_xrp,
+    timestamp: new Date().toISOString()
   };
 
-  // Write assets/bag-price.json
-  const outPath = path.join("assets", "bag-price.json");
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + "\n", "utf8");
+  await fs.writeFile(
+    'assets/bag-price.json',
+    JSON.stringify(payload, null, 2) + '\n',
+    'utf8'
+  );
 
-  // eslint-disable-next-line no-console
-  console.log("Wrote", outPath, out);
-})().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+  console.log('Updated assets/bag-price.json', payload);
+})();
