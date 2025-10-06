@@ -475,171 +475,6 @@
 })();
 </script>
 
-<!-- SOUND CORE: shared audio ctx + improved sounds + RELIABLE UNLOCK -->
-<script>
-(function(){
-  const AC = window.AudioContext || window.webkitAudioContext;
-  let ctx = null;
-  async function unlock(){
-    if(!AC) return null;
-    if(!ctx) ctx = new AC();
-    if (ctx.state === 'suspended') { try{ await ctx.resume(); }catch(e){} }
-    // iOS unlock ping (silent)
-    try{
-      const b = ctx.createBuffer(1,1,ctx.sampleRate);
-      const s = ctx.createBufferSource(); s.buffer=b; s.connect(ctx.destination); s.start(0);
-    }catch(e){}
-    return ctx;
-  }
-  // Prime on first interaction anywhere
-  ['pointerdown','touchstart','mousedown','keydown'].forEach(ev=>{
-    window.addEventListener(ev, ()=>{ unlock(); }, { once:true, passive:true });
-  });
-
-  function getCtx(){ return ctx; }
-
-  // Original win chime (fallback)
-  window.playWinChime = function(){
-    const c = getCtx(); if(!c) return false;
-    const now = c.currentTime;
-    [880,1175,1760].forEach((f,i)=>{
-      const o = c.createOscillator();
-      const g = c.createGain();
-      o.type='triangle'; o.frequency.setValueAtTime(f, now+i*0.02);
-      g.gain.setValueAtTime(0.0001, now+i*0.02);
-      g.gain.linearRampToValueAtTime(0.18, now+i*0.02+0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+i*0.02+0.28);
-      o.connect(g).connect(c.destination);
-      o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
-    });
-    return true;
-  };
-
-  // Coin cha-ching
-  window.playChaChing = function(){
-    const c = getCtx(); if(!c) return false;
-    const now = c.currentTime;
-    function ping(f, t0, dur, peak, type='triangle'){
-      const o = c.createOscillator();
-      const g = c.createGain();
-      o.type = type; o.frequency.setValueAtTime(f, now+t0);
-      g.gain.setValueAtTime(0.0001, now+t0);
-      g.gain.exponentialRampToValueAtTime(peak, now+t0+0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+t0+dur);
-      o.connect(g).connect(c.destination);
-      o.start(now+t0); o.stop(now+t0+dur+0.02);
-    }
-    ping(120, 0.00, 0.12, 0.28, 'sine');      // thump
-    // Bell sweep
-    {
-      const o = c.createOscillator(), g = c.createGain();
-      const m = c.createOscillator(), mg = c.createGain();
-      o.type='sine'; m.type='sine';
-      o.frequency.setValueAtTime(1100, now+0.04);
-      o.frequency.exponentialRampToValueAtTime(1800, now+0.26);
-      mg.gain.setValueAtTime(120, now+0.04);
-      mg.gain.exponentialRampToValueAtTime(10, now+0.26);
-      g.gain.setValueAtTime(0.0001, now+0.04);
-      g.gain.exponentialRampToValueAtTime(0.22, now+0.07);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+0.36);
-      m.connect(mg).connect(o.frequency); o.connect(g).connect(c.destination);
-      o.start(now+0.04); m.start(now+0.04); o.stop(now+0.38); m.stop(now+0.38);
-    }
-    ping(2500, 0.16, 0.06, 0.12, 'square');   // clinks
-    ping(2200, 0.24, 0.05, 0.10, 'square');
-    // Shimmer
-    {
-      const d = 0.22, frames = Math.floor(c.sampleRate * d);
-      const buf = c.createBuffer(1, frames, c.sampleRate);
-      const data = buf.getChannelData(0);
-      for(let i=0;i<frames;i++){ const t=i/frames; data[i] = (Math.random()*2-1) * (1 - t); }
-      const src = c.createBufferSource(); src.buffer = buf;
-      const bp = c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4500; bp.Q.value=6;
-      const g  = c.createGain();
-      g.gain.setValueAtTime(0.0001, now+0.10);
-      g.gain.exponentialRampToValueAtTime(0.12, now+0.12);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+0.30);
-      src.connect(bp).connect(g).connect(c.destination);
-      src.start(now+0.10); src.stop(now+0.32);
-    }
-    return true;
-  };
-
-  // Dice roll rattle
-  window.playDiceRoll = function(ms=900){
-    const c = getCtx(); if(!c) return false;
-    const now = c.currentTime;
-    const dur = Math.max(0.25, ms/1000);
-
-    // background rattle
-    (function(){
-      const frames = Math.floor(c.sampleRate * dur);
-      const buf = c.createBuffer(1, frames, c.sampleRate);
-      const data = buf.getChannelData(0);
-      for(let i=0;i<frames;i++){
-        const t = i/frames;
-        data[i] = (Math.random()*2-1) * (0.25 + 0.2*Math.sin(t*12));
-      }
-      const src = c.createBufferSource(); src.buffer = buf;
-      const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=500;
-      const bp = c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1800; bp.Q.value=1.2;
-      const g  = c.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.linearRampToValueAtTime(0.10, now + dur*0.15);
-      g.gain.linearRampToValueAtTime(0.06, now + dur*0.70);
-      g.gain.exponentialRampToValueAtTime(0.002, now + dur);
-      src.connect(hp).connect(bp).connect(g).connect(c.destination);
-      src.start(now); src.stop(now+dur);
-    })();
-
-    // discrete hits
-    const hits = Math.floor(8 + Math.random()*6);
-    for(let i=0;i<hits;i++){
-      const at = now + (Math.random()*0.8 + i/hits*0.2) * dur;
-      const len = 0.012 + Math.random()*0.010;
-      const frames = Math.floor(c.sampleRate * len);
-      const buf = c.createBuffer(1, frames, c.sampleRate);
-      const data = buf.getChannelData(0);
-      for(let j=0;j<frames;j++){ const t = j/frames; data[j] = (Math.random()*2-1) * Math.pow(1-t, 4); }
-      const src = c.createBufferSource(); src.buffer = buf;
-      const hp = c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200 + Math.random()*600;
-      const g  = c.createGain();
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(0.18, at + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
-      if (pan){ pan.pan.setValueAtTime((Math.random()*2-1)*0.35, at); src.connect(hp).connect(g).connect(pan).connect(c.destination); }
-      else { src.connect(hp).connect(g).connect(c.destination); }
-      src.start(at); src.stop(at + len + 0.02);
-    }
-    return true;
-  };
-
-  // subtle nudge (loss)
-  window.playNudge = function(){
-    const c = getCtx(); if(!c) return false;
-    const t0 = c.currentTime;
-    const o = c.createOscillator(), g = c.createGain();
-    o.type='sine'; o.frequency.setValueAtTime(170, t0);
-    o.frequency.exponentialRampToValueAtTime(110, t0+0.12);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.12, t0+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0+0.18);
-    o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+0.20);
-
-    const click = c.createOscillator(), cg = c.createGain();
-    click.type='square'; click.frequency.setValueAtTime(1000, t0+0.01);
-    cg.gain.setValueAtTime(0.0001, t0+0.01);
-    cg.gain.exponentialRampToValueAtTime(0.03, t0+0.02);
-    cg.gain.exponentialRampToValueAtTime(0.0001, t0+0.06);
-    click.connect(cg).connect(c.destination); click.start(t0+0.01); click.stop(t0+0.08);
-    return true;
-  };
-
-  window.__bagAudio = { unlock, getCtx };
-})();
-</script>
-
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -794,6 +629,7 @@
 
   // ---------- Limit logic (AUTO-CLAMP) ----------
   function maxForCurrency(){
+    // returns the maximum bet quantity allowed in the currently selected unit
     const cur = currentCurrency();
     if (cur === 'BAG') {
       return PRICES.bagUsd > 0 ? MAX_BET_USD / PRICES.bagUsd : 0;
@@ -906,9 +742,6 @@
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
   rollBtn.addEventListener('click', async ()=>{
-    // Ensure AudioContext is unlocked before any sound
-    try{ if (window.__bagAudio && window.__bagAudio.unlock) await window.__bagAudio.unlock(); }catch(e){}
-
     if (!pricesReadyForCurrentCurrency()){
       toast('Waiting for live price…'); return;
     }
@@ -919,10 +752,6 @@
     const resetCube = el => { el.className='cube'; };
     const poseCube  = (el,v)=>{ el.classList.add('show-'+v); };
     [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
-
-    // Dice rattle synced to the spin
-    try{ if (typeof playDiceRoll==='function') playDiceRoll(900); }catch(e){}
-
     const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
     await new Promise(r=>setTimeout(r,900));
     [dieA,dieB].forEach(c=>c.classList.remove('rolling'));
@@ -933,36 +762,17 @@
     if (point==null){
       if (total===7||total===11){
         rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
-        try{
-          const s = stakeInBAG();
-          if (s>0 && typeof showWin==='function'){
-            showWin({ message:'WIN', subtext:`+${fmt(s)} BAG`, sound:false });
-            if (!(window.playChaChing && window.playChaChing())) { window.playWinChime && window.playWinChime(); }
-          }
-        }catch(e){}
+        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'WIN', subtext:`+${fmt(s)} BAG` }); }catch(e){}
       }
-      else if (total===2||total===3||total===12){
-        rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
-        try{ if (typeof playNudge==='function') playNudge(); }catch(e){}
-      }
+      else if (total===2||total===3||total===12){ rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose'); }
       else { point=total; rollText.textContent=`Point set to ${point}. Roll again.`; stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; rollBtn.disabled=false; return; }
     }else{
       if (total===point){
         rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win');
-        try{
-          const s = stakeInBAG();
-          if (s>0 && typeof showWin==='function'){
-            showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG`, sound:false });
-            if (!(window.playChaChing && window.playChaChing())) { window.playWinChime && window.playWinChime(); }
-          }
-        }catch(e){}
+        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG` }); }catch(e){}
         point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
       }
-      else if (total===7){
-        rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose');
-        try{ if (typeof playNudge==='function') playNudge(); }catch(e){}
-        point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
-      }
+      else if (total===7){ rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose'); point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none'; }
       else { rollText.textContent=`Roll again — need ${point} (rolled ${total})`; }
     }
     rollBtn.disabled=false;
