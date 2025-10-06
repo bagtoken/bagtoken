@@ -378,10 +378,33 @@
     o.start();
     o.stop(ac.currentTime + 0.01);
   }
+
+  // --- helpers ---
+  function makeNoise(ac, dur=0.08){
+    // white noise burst (band-passed) for dice tick / texture
+    const len = Math.max(1, Math.floor(dur * ac.sampleRate));
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i=0;i<len;i++) data[i] = (Math.random()*2-1) * 0.9;
+
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1200;
+    bp.Q.value = 2.0;
+
+    const g = ac.createGain();
+    g.gain.value = 0;
+
+    src.connect(bp).connect(g);
+    return { src, g };
+  }
+
+  // WIN: simple bright triad
   function chime(){
     const ac = ensure(); if (!ac) return;
     const now = ac.currentTime;
-    const notes = [880, 1175, 1760]; // win triad
+    const notes = [880, 1175, 1760];
     notes.forEach((f,i)=>{
       const o = ac.createOscillator();
       const g = ac.createGain();
@@ -393,23 +416,65 @@
       o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
     });
   }
+
+  // LOSE: clearer subtle nudge (noise “tick” + short downward blip through light compression)
   function nudge(){
     const ac = ensure(); if (!ac) return;
     const now = ac.currentTime;
+
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -26;
+    comp.knee.value = 16;
+    comp.ratio.value = 3.5;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.08;
+    comp.connect(MASTER);
+
+    // 1) Short noise tick
+    const { src: nSrc, g: nGain } = makeNoise(ac, 0.06);
+    nGain.connect(comp);
+    nGain.gain.setValueAtTime(0.0001, now);
+    nGain.gain.linearRampToValueAtTime(0.12, now + 0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+    nSrc.start(now);
+    nSrc.stop(now + 0.09);
+
+    // 2) Downward sine blip
     const o = ac.createOscillator();
     const g = ac.createGain();
     o.type = 'sine';
-    o.frequency.setValueAtTime(320, now);
-    o.frequency.exponentialRampToValueAtTime(180, now+0.22);
+    o.frequency.setValueAtTime(420, now);
+    o.frequency.exponentialRampToValueAtTime(200, now + 0.18);
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.06, now+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now+0.28);
-    o.connect(g).connect(MASTER);
+    g.gain.linearRampToValueAtTime(0.10, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    o.connect(g).connect(comp);
     o.start(now);
-    o.stop(now+0.3);
+    o.stop(now + 0.24);
   }
 
-  window.__bagAudio = { unlock, chime, nudge };
+  // DICE: soft crackle/roll texture during animation
+  function dice(){
+    const ac = ensure(); if (!ac) return;
+    const now = ac.currentTime;
+
+    // three tiny ticks spaced over ~0.2s
+    for (let i=0;i<3;i++){
+      const t = now + i*0.06;
+      const { src, g } = makeNoise(ac, 0.05);
+      const hp = ac.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 900;
+      src.connect(hp).connect(g).connect(MASTER);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.08, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      src.start(t);
+      src.stop(t + 0.1);
+    }
+  }
+
+  window.__bagAudio = { unlock, chime, nudge, dice };
 })();
 </script>
 
@@ -693,7 +758,7 @@
   }
   function clampIfNeeded(showToast=true){
     const maxQty = maxForCurrency();
-    if (!maxQty) return; // no prices yet → nothing to clamp
+    if (!maxQty) return;
     let val = Math.max(0, parseFloat(betInput.value || 0));
     if (val > maxQty) {
       betInput.value = String(maxQty);
@@ -787,13 +852,13 @@
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
   rollBtn.addEventListener('click', async ()=>{
-    // unlock audio during the user gesture (mobile Safari et al.)
-    try{ if (window.__bagAudio) __bagAudio.unlock(); }catch(e){}
+    // unlock audio + play dice texture during the user gesture
+    try{ if (window.__bagAudio){ __bagAudio.unlock(); __bagAudio.dice(); } }catch(e){}
 
     if (!pricesReadyForCurrentCurrency()){
       toast('Waiting for live price…'); return;
     }
-    clampIfNeeded(true); // one last safety clamp
+    clampIfNeeded(true);
 
     rollBtn.disabled=true;
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
