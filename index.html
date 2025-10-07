@@ -556,7 +556,7 @@
 })();
 </script>
 
-<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY -->
+<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY + $1 MIN ENFORCEMENT -->
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -565,6 +565,7 @@
   const FETCH_TIMEOUT_MS = 8000;
   const CACHE_TTL_MS = 6*60*60*1000;
   const MAX_BET_USD = 2000;
+  const MIN_BET_USD = 1.00;   // << $1 minimum enforced
 
   const BAG_FEEDS = [
     'https://api.getthebag.io/bag-price.json',
@@ -628,6 +629,12 @@
     }
     return 0;
   }
+  function stakeUsdEquivalent(){
+    const qty = Math.max(0, parseFloat(betInput.value||0));
+    if (!qty) return 0;
+    if (currentCurrency()==='BAG') return PRICES.bagUsd>0 ? qty * PRICES.bagUsd : 0;
+    return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
+  }
 
   // ---------- PREVIEW ----------
   function updatePayoutPreview(){
@@ -661,17 +668,26 @@
     if(msg){ limitToast.style.opacity='1'; setTimeout(()=>{ limitToast.style.transition='opacity .6s'; limitToast.style.opacity='0'; },1200); setTimeout(()=>{ limitToast.style.display='none'; limitToast.style.transition=''; limitToast.style.opacity=''; },1900); }
   }
   function maxForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0); }
+  function minForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? MIN_BET_USD/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? MIN_BET_USD/PRICES.xrpUsd : 0); }
   function clampIfNeeded(showToast=true){
-    const maxQty = maxForCurrency(); if (!maxQty) return;
+    const maxQty = maxForCurrency();
+    if (!maxQty) return;
     let val = Math.max(0, parseFloat(betInput.value||0));
     if (val > maxQty){ betInput.value=String(maxQty); if(showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`); }
   }
   function updateLimitUi(){
-    let note = `Max $${MAX_BET_USD.toLocaleString()}`;
+    let note = `Min $${MIN_BET_USD.toLocaleString()} · Max $${MAX_BET_USD.toLocaleString()}`;
     const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0;
     const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0;
-    const parts=[]; if(maxXrp) parts.push(`${fmt(maxXrp)} XRP`); if(maxBag) parts.push(`${fmt(maxBag)} BAG`);
-    if (parts.length) note += ` ≈ ${parts.join(' or ')}`;
+    const minXrp = PRICES.xrpUsd>0 ? MIN_BET_USD/PRICES.xrpUsd : 0;
+    const minBag = PRICES.bagUsd>0 ? MIN_BET_USD/PRICES.bagUsd : 0;
+    const partsMax=[]; if(maxXrp) partsMax.push(`${fmt(maxXrp)} XRP`); if(maxBag) partsMax.push(`${fmt(maxBag)} BAG`);
+    const partsMin=[]; if(minXrp) partsMin.push(`${fmt(minXrp)} XRP`); if(minBag) partsMin.push(`${fmt(minBag)} BAG`);
+    if (partsMin.length || partsMax.length){
+      const minTxt = partsMin.length ? `Min ≈ ${partsMin.join(' or ')}` : '';
+      const maxTxt = partsMax.length ? `Max ≈ ${partsMax.join(' or ')}` : '';
+      note += ` · ${[minTxt,maxTxt].filter(Boolean).join(' · ')}`;
+    }
     limitNote.textContent = note;
     clampIfNeeded(false);
     rollBtn.disabled = !pricesReadyForCurrentCurrency();
@@ -771,7 +787,16 @@
   rollBtn.addEventListener('click', async ()=>{
     try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
+
+    // ----- $1 USD minimum enforcement -----
+    const usdEq = stakeUsdEquivalent();
+    if (usdEq < MIN_BET_USD){
+      toast('Minimum bet is $1 — stack heavier.');
+      return;
+    }
+    // Optional clamp to max after the min check
     clampIfNeeded(true);
+
     rollBtn.disabled=true;
 
     // Animate dice
@@ -838,4 +863,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
