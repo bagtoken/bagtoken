@@ -408,6 +408,10 @@
   const VIEW_CACHE_KEY = 'bag_prices_v8';
   const LAST_LIVE_KEY = 'bag_last_live_v1';
 
+  // defaulting control
+  let userEditedBet = false;      // flips true once user types
+  let needDefaultBAG = false;     // if BAG default is waiting for prices
+
   // ---------- HELPERS ----------
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
@@ -447,6 +451,29 @@
     if (!qty) return 0;
     if (currentCurrency()==='BAG') return PRICES.bagUsd>0 ? qty * PRICES.bagUsd : 0;
     return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
+  }
+
+  // ---------- DEFAULTING ----------
+  function setDefaultForXRP(){
+    betInput.value = '1';
+    needDefaultBAG = false;
+  }
+  function setDefaultForBAG(){
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd; // 1 XRP in BAG
+      betInput.value = String(bagPerXrp);
+      needDefaultBAG = false;
+    } else {
+      // wait until prices arrive, then auto-fill once
+      needDefaultBAG = true;
+    }
+  }
+  function maybeApplyPendingDefaultBAG(){
+    if (needDefaultBAG && !userEditedBet){
+      setDefaultForBAG();
+      updatePayoutPreview();
+      updateLimitUi();
+    }
   }
 
   // ---------- PREVIEW ----------
@@ -527,6 +554,8 @@
       PRICES.source==='live-amm' ? ' (AMM live)' :
       PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
     updateConversions(); updateLimitUi(); updatePayoutPreview();
+    // if we were waiting to set 1 XRP in BAG, do it now
+    maybeApplyPendingDefaultBAG();
   }
 
   async function fetchXrpUsd(){
@@ -594,7 +623,6 @@
     if (PRICES.xrpUsd>0){
       PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;   // USD/BAG
       PRICES.source = 'live-amm';
-      // persist last known live
       cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
       return true;
     }
@@ -629,10 +657,9 @@
 
     if (gotLive && gotX){
       PRICES.source = 'live-amm';
-      // update lightweight view cache too (for quick reloads)
       cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0});
     } else if (loadLastLive()){
-      // already set to last-live in loader
+      // already marked as last-live
     } else if (loadViewCache()){
       PRICES.source = 'last-live';
     } else {
@@ -716,21 +743,33 @@
   // ---------- Init ----------
   stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
   unitSpan.textContent='XRP';
-  betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
-  curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
+
+  // mark user-edited once they type
+  betInput.addEventListener('input', ()=>{ userEditedBet = true; clampIfNeeded(false); updatePayoutPreview(); });
+
+  // currency toggle: set unit, and if user hasn't typed yet, set defaults
+  curToggle.addEventListener('change', ()=>{
+    unitSpan.textContent=currentCurrency();
+    if (!userEditedBet){
+      if (currentCurrency()==='XRP') setDefaultForXRP();
+      else setDefaultForBAG();
+    }
+    clampIfNeeded(true);
+    updatePayoutPreview();
+    updateLimitUi();
+  });
 
   // clear older cache keys
-  try {
-    ['bag_prices','bag_prices_v2','bag_prices_v3','bag_prices_v4','bag_prices_v5','bag_prices_v6','bag_prices_v7'].forEach(k=>localStorage.removeItem(k));
-  } catch {}
+  try { ['bag_prices','bag_prices_v2','bag_prices_v3','bag_prices_v4','bag_prices_v5','bag_prices_v6','bag_prices_v7'].forEach(k=>localStorage.removeItem(k)); } catch {}
+
+  // Apply initial defaults: start at 1 XRP (unless user immediately types)
+  setDefaultForXRP();
 
   if (loadViewCache()){ PRICES.source='last-live'; updateLiveLine(); }
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
   updatePayoutPreview();
 })();
 </script>
-
-
 
 <!-- Service worker -->
 <script>
@@ -741,5 +780,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
-
