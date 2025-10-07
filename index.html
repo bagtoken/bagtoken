@@ -558,12 +558,12 @@
 <script>
 (function(){
   // ---------- CONFIG ----------
-  const JACKPOT_N = 100;      // client-side visual jackpot chance on normal come-out wins
+  const JACKPOT_N = 100;
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
   const CACHE_TTL_MS = 6*60*60*1000;
   const MAX_BET_USD = 2000;
-  const MIN_BET_USD = 1.00;   // $1 minimum enforced
+  const MIN_BET_USD = 1.00;
 
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
 
@@ -598,6 +598,7 @@
   // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+  const CACHE_KEY = 'bag_prices_v2';
 
   // ---------- HELPERS ----------
   const num = v => { const n=Number(v); return Number.isFinite(n)?n:NaN; };
@@ -633,6 +634,19 @@
     if (!qty) return 0;
     if (currentCurrency()==='BAG') return PRICES.bagUsd>0 ? qty * PRICES.bagUsd : 0;
     return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
+  }
+
+  // Convert XRPL book_offers.quality when XRP (drops) is involved
+  function qualityToRate({quality, paysXrp, getsXrp}) {
+    const q = Number(quality);
+    if (!Number.isFinite(q) || q <= 0) return null;
+    if (paysXrp && !getsXrp) {         // drops per BAG -> XRP per BAG
+      return q / 1_000_000;
+    }
+    if (!paysXrp && getsXrp) {         // BAG per drop -> BAG per XRP
+      return q * 1_000_000;
+    }
+    return q; // IOU/IOU
   }
 
   // ---------- PREVIEW ----------
@@ -722,7 +736,7 @@
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // XRPL DEX mid price → sets PRICES.bagUsd using orderbook bests
+  // XRPL DEX mid price → sets PRICES.bagUsd using orderbook bests (with drops conversion)
   async function fetchBagUsdFromDEX() {
     function bookReq(taker_gets, taker_pays, id) {
       return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
@@ -749,14 +763,18 @@
           if (msg.id === 2) gotBid = msg;
           if (!gotAsk || !gotBid) return;
           clearTimeout(t); try{ws.close();}catch{};
+
           let bestAsk = null, bestBid = null;
           if (Array.isArray(gotAsk?.result?.offers) && gotAsk.result.offers.length){
-            bestAsk = Number(gotAsk.result.offers[0].quality); // XRP per BAG
+            const q = gotAsk.result.offers[0].quality; // drops per BAG
+            bestAsk = qualityToRate({ quality:q, paysXrp:true, getsXrp:false }); // XRP/BAG
           }
           if (Array.isArray(gotBid?.result?.offers) && gotBid.result.offers.length){
-            const q = Number(gotBid.result.offers[0].quality); // BAG per XRP
-            if (q > 0) bestBid = 1 / q; // → XRP per BAG
+            const q = gotBid.result.offers[0].quality; // BAG per drop
+            const bagPerXrp = qualityToRate({ quality:q, paysXrp:false, getsXrp:true }); // BAG/XRP
+            if (bagPerXrp && bagPerXrp > 0) bestBid = 1 / bagPerXrp; // XRP/BAG
           }
+
           const vals = [bestAsk, bestBid].filter(v => Number.isFinite(v) && v > 0);
           if (!vals.length) return resolve(null);
           resolve(vals.length === 2 ? (vals[0]+vals[1])/2 : vals[0]);
@@ -775,7 +793,7 @@
     return false;
   }
 
-  function loadCache(){ const bag=cacheGet('bag_prices'); const xrp=cacheGet('xrp_usd'); let used=false;
+  function loadCache(){ const bag=cacheGet(CACHE_KEY); const xrp=cacheGet('xrp_usd'); let used=false;
     if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
@@ -801,7 +819,7 @@
     }
 
     if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
-      cacheSet('bag_prices',{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
+      cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
     }
     updateLiveLine();
   }
