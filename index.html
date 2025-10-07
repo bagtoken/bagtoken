@@ -369,10 +369,12 @@
   const JACKPOT_N = 100;
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const CACHE_TTL_MS = 6*60*60*1000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;   // keep last-live for a day
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
   const MAX_BET_USD = 2000;
   const MIN_BET_USD = 1.00;
 
+  const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
@@ -403,7 +405,8 @@
   // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const CACHE_KEY = 'bag_prices_v8'; // bump to invalidate older caches
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY = 'bag_last_live_v1';
 
   // ---------- HELPERS ----------
   function fmt(n){
@@ -414,7 +417,14 @@
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS)?o.v:null; }catch{ return null; } }
+  function cacheGet(k, ttlMs){
+    try{
+      const o=JSON.parse(localStorage.getItem(k)||'null');
+      if(!o) return null;
+      const age = Date.now() - (o.t||0);
+      return age<=ttlMs ? o.v : null;
+    }catch{ return null; }
+  }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
     const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
     try{ return await fetch(url,{...opts,headers:{Accept:'application/json'},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
@@ -509,133 +519,126 @@
   function updateLiveLine(){
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
-    const dotClass = (PRICES.source==='live-dex') ? 'ok'
-                      : PRICES.source==='partial live' ? 'warn'
-                      : PRICES.source==='cached' ? 'warn' : 'err';
+    const dotClass =
+      PRICES.source==='live-amm' ? 'ok' :
+      PRICES.source==='last-live' ? 'warn' : 'err';
     liveDot.className = dotClass;
-    liveNote.textContent = PRICES.source==='live-dex' ? ' (DEX)'
-                         : PRICES.source==='partial live' ? ' (partial live)'
-                         : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
+    liveNote.textContent =
+      PRICES.source==='live-amm' ? ' (AMM live)' :
+      PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
     updateConversions(); updateLimitUi(); updatePayoutPreview();
   }
 
-  // ---- XRP-USD with multi-provider fallback ----
   async function fetchXrpUsd(){
-    const providers = [
-      {name:'CoinGecko', url:'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd', parse: j => Number(j?.ripple?.usd)},
-      {name:'Coinbase',  url:'https://api.coinbase.com/v2/prices/XRP-USD/spot', parse: j => Number(j?.data?.amount)},
-      {name:'Kraken',    url:'https://api.kraken.com/0/public/Ticker?pair=XXRPZUSD', parse: j => Number(j?.result?.XXRPZUSD?.c?.[0])}
-    ];
-    for (const p of providers){
-      try{
-        const r = await timedFetch(p.url);
-        if (!r.ok) throw new Error('HTTP '+r.status);
-        const v = p.parse(await r.json());
-        if (Number.isFinite(v) && v>0){
-          PRICES.xrpUsd = v;
-          cacheSet('xrp_usd', v);
-          diagSpan.textContent = `XRP from ${p.name}: $${v}`;
-          return true;
-        }
-      }catch(e){
-        // keep trying next
-      }
-    }
-    diagSpan.textContent = 'XRP feed: failed (all providers)';
-    return false;
+    try{
+      const r=await timedFetch(CG_XRP);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const v=(await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd',v); return true; }
+      throw new Error('bad payload');
+    }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // ---- DEX pricing from TakerPays/TakerGets (drops/BAG) ----
-  async function fetchBagUsdFromDEX(){
-    function bookReq(taker_gets, taker_pays, id){ return { id, command:'book_offers', taker_gets, taker_pays, limit:5 }; }
-
-    const askReq = bookReq({currency:BAG_CODE,issuer:BAG_ISSUER},{currency:'XRP'},1); // sell BAG for XRP
-    const bidReq = bookReq({currency:'XRP'},{currency:BAG_CODE,issuer:BAG_ISSUER},2); // buy BAG with XRP
-
-    function xrpPerBagFromOffer(ofr){
-      const gets = ofr.TakerGets; const pays = ofr.TakerPays;
-      let drops=0, bags=0;
-      if (typeof gets === 'string') drops = Number(gets);
-      if (typeof pays === 'string') drops = Number(pays);
-      if (typeof gets === 'object' && gets.currency === BAG_CODE) bags = Number(gets.value);
-      if (typeof pays === 'object' && pays.currency === BAG_CODE) bags = Number(pays.value);
-      if (!(drops>0 && bags>0)) return null;
-      return (drops / bags) / 1_000_000; // XRP/BAG
+  // XRPL AMM live price
+  function parseXrpAmount(a){
+    if (a==null) return null;
+    if (typeof a==='string') return Number(a)/1_000_000;           // drops
+    if (typeof a==='object'){
+      if (a.currency === 'XRP' && a.value!=null) return Number(a.value);
+      if (a.value!=null && a.currency==='XRP') return Number(a.value);
     }
+    return null;
+  }
+  function parseIouAmount(a){
+    if (!a || typeof a!=='object') return null;
+    return Number(a.value);
+  }
 
-    const midXrpPerBag = await new Promise((resolve)=>{
-      let gotAsk, gotBid;
+  async function fetchBagUsdFromAMM(){
+    const req = {
+      id: 1,
+      command: 'amm_info',
+      asset: { currency: BAG_CODE, issuer: BAG_ISSUER },
+      asset2: { currency: 'XRP' }
+    };
+    const xrpPerBag = await new Promise((resolve)=>{
       const ws = new WebSocket(XRPL_WSS);
-      const timeout = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
-      ws.onopen = ()=>{ ws.send(JSON.stringify(askReq)); ws.send(JSON.stringify(bidReq)); };
-      ws.onerror = ()=>{ clearTimeout(timeout); try{ws.close();}catch{}; resolve(null); };
-      ws.onmessage = ev=>{
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev)=>{
         try{
           const msg = JSON.parse(ev.data);
-          if (msg.id===1) gotAsk = msg;
-          if (msg.id===2) gotBid = msg;
-          if (!gotAsk || !gotBid) return;
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
 
-          clearTimeout(timeout); try{ws.close();}catch{};
+          // balances
+          const bagBal = parseIouAmount(amm.amount);     // BAG side
+          const xrpBal = parseXrpAmount(amm.amount2);    // XRP side
 
-          const askOffer = gotAsk?.result?.offers?.[0];
-          const bidOffer = gotBid?.result?.offers?.[0];
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
 
-          const bestAsk = askOffer ? xrpPerBagFromOffer(askOffer) : null; // lowest price
-          const bestBid = bidOffer ? xrpPerBagFromOffer(bidOffer) : null; // highest price
+          const price = xrpBal / bagBal; // XRP per BAG
+          if (!(price>0) || !isFinite(price)) return resolve(null);
 
-          const vals = [bestAsk, bestBid].filter(v=>Number.isFinite(v) && v>0);
-          if (!vals.length) return resolve(null);
+          if (diagSpan) diagSpan.textContent =
+            `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
 
-          // if both exist but inverted (illiquid book), just take the average of the two numbers anyway
-          const mid = (bestAsk && bestBid) ? (bestAsk + bestBid)/2 : vals[0];
-
-          if (!(mid>0) || mid<1e-12 || mid>1e3) return resolve(null);
-
-          const parts=[];
-          if(bestAsk) parts.push(`ask ${bestAsk.toLocaleString(undefined,{maximumFractionDigits:8})}`);
-          if(bestBid) parts.push(`bid ${bestBid.toLocaleString(undefined,{maximumFractionDigits:8})}`);
-          parts.push(`mid ${mid.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`);
-          diagSpan.textContent = `DEX ${parts.join(' · ')}`;
-
-          resolve(mid);
+          resolve(price);
         }catch{ resolve(null); }
       };
     });
 
-    if (!midXrpPerBag || !Number.isFinite(midXrpPerBag) || midXrpPerBag<=0) return false;
-    if (PRICES.xrpUsd > 0) {
-      PRICES.bagUsd = PRICES.xrpUsd * midXrpPerBag; // USD/BAG
-      PRICES.source = 'live-dex';
+    if (!xrpPerBag || !Number.isFinite(xrpPerBag) || xrpPerBag<=0) return false;
+    if (PRICES.xrpUsd>0){
+      PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;   // USD/BAG
+      PRICES.source = 'live-amm';
+      // persist last known live
+      cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
       return true;
     }
     return false;
   }
 
-  function loadCache(){
-    const bag=cacheGet(CACHE_KEY);
-    const xrp=cacheGet('xrp_usd');
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet('xrp_usd', VIEW_CACHE_TTL_MS);
     let used=false;
-    if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; used=true; }
-    if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
+    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd=v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=v.xrpUsd; used=true; }
+    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=x; used=true; }
     return used;
+  }
+  function loadLastLive(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = v.bagUsd;
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = v.xrpUsd;
+      PRICES.source = 'last-live';
+      return true;
+    }
+    return false;
   }
 
   async function refreshPrices(){
-    let gotX = PRICES.xrpUsd>0;
-    if (!gotX) gotX = await fetchXrpUsd();
+    const hadX = PRICES.xrpUsd>0;
+    const gotX = hadX || await fetchXrpUsd();
 
-    let gotBag = false;
-    try { gotBag = await fetchBagUsdFromDEX(); } catch {}
+    let gotLive = false;
+    try { gotLive = await fetchBagUsdFromAMM(); } catch {}
 
-    if (gotBag && gotX) PRICES.source = 'live-dex';
-    else if (gotX && (PRICES.bagUsd>0)) PRICES.source = 'partial live';
-    else if (loadCache()) PRICES.source = 'cached';
-    else PRICES.source = '—';
-
-    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
-      cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:Date.now()});
+    if (gotLive && gotX){
+      PRICES.source = 'live-amm';
+      // update lightweight view cache too (for quick reloads)
+      cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0});
+    } else if (loadLastLive()){
+      // already set to last-live in loader
+    } else if (loadViewCache()){
+      PRICES.source = 'last-live';
+    } else {
+      PRICES.source = '—';
     }
+
     updateLiveLine();
   }
 
@@ -716,16 +719,17 @@
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
-  // clear old cache keys so bogus values don't persist
+  // clear older cache keys
   try {
     ['bag_prices','bag_prices_v2','bag_prices_v3','bag_prices_v4','bag_prices_v5','bag_prices_v6','bag_prices_v7'].forEach(k=>localStorage.removeItem(k));
   } catch {}
 
-  if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
+  if (loadViewCache()){ PRICES.source='last-live'; updateLiveLine(); }
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
   updatePayoutPreview();
 })();
 </script>
+
 
 
 <!-- Service worker -->
@@ -737,4 +741,5 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
