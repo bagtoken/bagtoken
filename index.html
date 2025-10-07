@@ -365,13 +365,11 @@
   </div>
 </div>
 
-<!-- AUDIO ENGINE (shared, robust resume) -->
+<!-- AUDIO ENGINE -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  let AC = null, MASTER = null;
-  let lastInteractTs = 0;
-  let watchdogTimer = null;
+  let AC = null, MASTER = null, lastInteractTs = 0, watchdogTimer = null;
 
   function makeAC(){
     if (!AudioCtx) return null;
@@ -380,148 +378,23 @@
     master.gain.value = 0.22;
     master.connect(ac.destination);
     AC = ac; MASTER = master;
-    ac.onstatechange = function(){
-      if (ac.state === 'suspended') tryResume();
-    };
+    ac.onstatechange = function(){ if (ac.state === 'suspended') tryResume(); };
     return ac;
   }
-
-  function getAC(){
-    if (AC && AC.state !== 'closed') return AC;
-    return makeAC();
-  }
-
-  function silentTick(ac){
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    g.gain.value = 0.00001;
-    o.connect(g).connect(MASTER);
-    o.start();
-    o.stop(ac.currentTime + 0.01);
-  }
-
-  async function tryResume(){
-    const ac = getAC();
-    if (!ac) return;
-    if (ac.state === 'suspended') {
-      try { await ac.resume(); } catch(e){}
-    }
-    if (ac.state === 'running') {
-      silentTick(ac);
-    }
-  }
-
-  function markInteract(){
-    lastInteractTs = Date.now();
-    tryResume();
-  }
-
-  async function ensureInteractive(){
-    const ac = getAC();
-    if (!ac) return null;
-    if (ac.state !== 'running') {
-      await tryResume();
-    }
-    return ac;
-  }
-
+  function getAC(){ if (AC && AC.state !== 'closed') return AC; return makeAC(); }
+  function silentTick(ac){ const o = ac.createOscillator(); const g = ac.createGain(); g.gain.value = 0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime + 0.01); }
+  async function tryResume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } if(ac.state==='running'){ silentTick(ac); } }
+  function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
+  async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
   function unlock(){ ensureInteractive(); }
-
-  function makeNoise(ac, dur=0.08){
-    const len = Math.max(1, Math.floor(dur * ac.sampleRate));
-    const buf = ac.createBuffer(1, len, ac.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i=0;i<len;i++) data[i] = (Math.random()*2-1) * 0.9;
-
-    const src = ac.createBufferSource(); src.buffer = buf;
-    const bp = ac.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 2.0;
-
-    const g = ac.createGain(); g.gain.value = 0;
-    src.connect(bp).connect(g);
-    return { src, g };
-  }
-
-  function chime(){
-    const ac = getAC(); if (!ac) return;
-    if (ac.state !== 'running') { tryResume(); return; }
-    const now = ac.currentTime;
-    const notes = [880, 1175, 1760];
-    notes.forEach((f,i)=>{
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.type='triangle'; o.frequency.value=f;
-      g.gain.setValueAtTime(0.0001, now+i*0.02);
-      g.gain.linearRampToValueAtTime(0.18,  now+i*0.02+0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+i*0.02+0.28);
-      o.connect(g).connect(MASTER);
-      o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
-    });
-  }
-
-  function nudge(){
-    const ac = getAC(); if (!ac) return;
-    if (ac.state !== 'running') { tryResume(); return; }
-    const now = ac.currentTime;
-
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -26; comp.knee.value = 16; comp.ratio.value = 3.5;
-    comp.attack.value = 0.003; comp.release.value = 0.08;
-    comp.connect(MASTER);
-
-    const { src: nSrc, g: nGain } = makeNoise(ac, 0.06);
-    nGain.connect(comp);
-    nGain.gain.setValueAtTime(0.0001, now);
-    nGain.gain.linearRampToValueAtTime(0.12, now + 0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    nSrc.start(now); nSrc.stop(now + 0.09);
-
-    const o = ac.createOscillator(); const g = ac.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(420, now);
-    o.frequency.exponentialRampToValueAtTime(200, now + 0.18);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.10, now + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    o.connect(g).connect(comp);
-    o.start(now); o.stop(now + 0.24);
-  }
-
-  function dice(){
-    const ac = getAC(); if (!ac) return;
-    if (ac.state !== 'running') { tryResume(); return; }
-    const now = ac.currentTime;
-    for (let i=0;i<3;i++){
-      const t = now + i*0.06;
-      const { src, g } = makeNoise(ac, 0.05);
-      const hp = ac.createBiquadFilter();
-      hp.type = 'highpass'; hp.frequency.value = 900;
-      src.connect(hp).connect(g).connect(MASTER);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(0.08, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-      src.start(t); src.stop(t + 0.1);
-    }
-  }
-
-  const INTERACT_EVENTS = ['pointerdown','mousedown','touchstart','keydown','click'];
-  INTERACT_EVENTS.forEach(ev => addEventListener(ev, markInteract, { passive:true, capture:true }));
-  addEventListener('visibilitychange', ()=>{ if (!document.hidden) tryResume(); });
-  addEventListener('pageshow', ()=>{ tryResume(); });
-  addEventListener('focus', ()=>{ tryResume(); });
-
-  function startWatchdog(){
-    if (watchdogTimer) return;
-    watchdogTimer = setInterval(()=>{
-      const ac = AC;
-      if (!ac) return;
-      const activeRecently = Date.now() - lastInteractTs < 30_000;
-      if (activeRecently && ac.state === 'suspended') tryResume();
-    }, 1500);
-  }
+  function makeNoise(ac, dur=0.08){ const len=Math.max(1,Math.floor(dur*ac.sampleRate)); const buf=ac.createBuffer(1,len,ac.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9; const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0; const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g); return {src,g}; }
+  function chime(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; const notes=[880,1175,1760]; notes.forEach((f,i)=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(0.0001,now+i*0.02); g.gain.linearRampToValueAtTime(0.18,now+i*0.02+0.03); g.gain.exponentialRampToValueAtTime(0.0001,now+i*0.02+0.28); o.connect(g).connect(MASTER); o.start(now+i*0.02); o.stop(now+i*0.02+0.3); }); }
+  function nudge(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; const comp=ac.createDynamicsCompressor(); comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08; comp.connect(MASTER); const {src:nSrc,g:nGain}=makeNoise(ac,0.06); nGain.connect(comp); nGain.gain.setValueAtTime(0.0001,now); nGain.gain.linearRampToValueAtTime(0.12,now+0.008); nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08); nSrc.start(now); nSrc.stop(now+0.09); const o=ac.createOscillator(); const g=ac.createGain(); o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18); g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.10,now+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+0.22); o.connect(g).connect(comp); o.start(now); o.stop(now+0.24); }
+  function dice(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; for(let i=0;i<3;i++){ const t=now+i*0.06; const {src,g}=makeNoise(ac,0.05); const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=900; src.connect(hp).connect(g).connect(MASTER); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.08,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.09); src.start(t); src.stop(t+0.1); } }
+  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click']; INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true})); addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); }); addEventListener('pageshow',()=>{ tryResume(); }); addEventListener('focus',()=>{ tryResume(); });
+  function startWatchdog(){ if(watchdogTimer) return; watchdogTimer=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30_000; if(active && ac.state==='suspended') tryResume(); },1500); }
   startWatchdog();
-
-  window.__bagAudio = { unlock, ensureInteractive, chime, nudge, dice };
+  window.__bagAudio={unlock,ensureInteractive,chime,nudge,dice};
 })();
 </script>
 
@@ -553,7 +426,7 @@
 })();
 </script>
 
-<!-- GAME LOGIC + PRICES (DEX ONLY) + $1 MIN ENFORCEMENT -->
+<!-- GAME LOGIC + PRICES (DEX ONLY) -->
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -565,8 +438,6 @@
   const MIN_BET_USD = 1.00;
 
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
-
-  // XRPL DEX mid-price (XRP per BAG) → BAG_USD = XRP_USD * (XRP per BAG)
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
@@ -596,18 +467,10 @@
 
   // ---------- STATE ----------
   let point = null;
-  const PRICES = (window.__PRICES__ = {
-    bagUsd: 0,
-    xrpUsd: 0,
-    xrpPerBag: 0,  // XRP per 1 BAG
-    bagPerXrp: 0,  // BAG per 1 XRP
-    source: '—',
-    ts: 0
-  });
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
   const CACHE_KEY = 'bag_prices_v4';
 
   // ---------- HELPERS ----------
-  const num = v => { const n=Number(v); return Number.isFinite(n)?n:NaN; };
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
@@ -624,12 +487,14 @@
   }
   function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
   function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
-
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
     if (!bet) return 0;
     if (currentCurrency()==='BAG') return bet;
-    if (PRICES.bagPerXrp>0) return bet * PRICES.bagPerXrp;
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+      return bet * bagPerXrp;
+    }
     return 0;
   }
   function stakeUsdEquivalent(){
@@ -698,8 +563,10 @@
 
   // ---------- Prices ----------
   function updateConversions(){
-    if(PRICES.xrpPerBag>0 && PRICES.bagPerXrp>0){
-      liveConv.textContent = `1 BAG ≈ ${fmt(PRICES.xrpPerBag)} XRP · 1 XRP ≈ ${fmt(PRICES.bagPerXrp)} BAG`;
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+      const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+      liveConv.textContent = `1 BAG ≈ ${fmt(xrpPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerXrp)} BAG`;
     } else {
       liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
     }
@@ -727,16 +594,16 @@
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // XRPL DEX mid price → direct rates (with drops math) → bagUsd
+  // XRPL DEX mid price (correct quality handling)
   async function fetchBagUsdFromDEX() {
     function bookReq(taker_gets, taker_pays, id) {
       return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
     }
-    const ask = bookReq( // asks: sell BAG, receive XRP
+    const askReq = bookReq( // asks: sell BAG, receive XRP
       { currency: BAG_CODE, issuer: BAG_ISSUER },
       { currency: 'XRP' }, 1
     );
-    const bid = bookReq( // bids: buy BAG, pay XRP
+    const bidReq = bookReq( // bids: buy BAG, pay XRP
       { currency: 'XRP' },
       { currency: BAG_CODE, issuer: BAG_ISSUER }, 2
     );
@@ -745,7 +612,7 @@
       let gotAsk, gotBid;
       const ws = new WebSocket(XRPL_WSS);
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
-      ws.onopen = () => { ws.send(JSON.stringify(ask)); ws.send(JSON.stringify(bid)); };
+      ws.onopen = () => { ws.send(JSON.stringify(askReq)); ws.send(JSON.stringify(bidReq)); };
       ws.onerror = () => { clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
       ws.onmessage = (ev) => {
         try{
@@ -756,29 +623,33 @@
 
           clearTimeout(t); try{ws.close();}catch{};
 
-          let askXrpPerBag = null, bidXrpPerBag = null;
+          let bestAsk=null, bestBid=null;
 
           if (Array.isArray(gotAsk?.result?.offers) && gotAsk.result.offers.length){
-            // ask.quality = drops per BAG => XRP/BAG = drops/BAG / 1e6
+            // ASK book: quality = BAG per drop -> XRP/BAG = 1 / (quality * 1e6)
             const q = Number(gotAsk.result.offers[0].quality);
-            if (Number.isFinite(q) && q > 0) askXrpPerBag = q / 1_000_000;
+            if (Number.isFinite(q) && q>0) bestAsk = 1 / (q * 1_000_000);
           }
           if (Array.isArray(gotBid?.result?.offers) && gotBid.result.offers.length){
-            // bid.quality = BAG per drop => BAG/XRP = BAG/drop * 1e6 => XRP/BAG = 1 / (BAG/XRP)
+            // BID book: quality = drops per BAG -> XRP/BAG = quality / 1e6
             const q = Number(gotBid.result.offers[0].quality);
-            if (Number.isFinite(q) && q > 0) {
-              const bagPerXrp = q * 1_000_000;
-              if (bagPerXrp > 0) bidXrpPerBag = 1 / bagPerXrp;
-            }
+            if (Number.isFinite(q) && q>0) bestBid = q / 1_000_000;
           }
 
-          const vals = [askXrpPerBag, bidXrpPerBag].filter(v => Number.isFinite(v) && v > 0);
+          const vals = [bestAsk, bestBid].filter(v => Number.isFinite(v) && v > 0);
           if (!vals.length) return resolve(null);
 
           const mid = (vals.length === 2) ? (vals[0]+vals[1]) / 2 : vals[0];
 
-          // sanity guard
           if (!(mid > 0) || mid < 1e-12 || mid > 1e12) return resolve(null);
+
+          if (diagSpan){
+            const parts=[];
+            if (bestAsk) parts.push(`ask ${bestAsk.toLocaleString(undefined,{maximumFractionDigits:8})}`);
+            if (bestBid) parts.push(`bid ${bestBid.toLocaleString(undefined,{maximumFractionDigits:8})}`);
+            parts.push(`mid ${mid.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`);
+            diagSpan.textContent = `DEX ${parts.join(' · ')}`;
+          }
 
           resolve(mid);
         }catch{ resolve(null); }
@@ -787,31 +658,19 @@
 
     if (!midXrpPerBag || !Number.isFinite(midXrpPerBag) || midXrpPerBag <= 0) return false;
     if (PRICES.xrpUsd > 0) {
-      PRICES.xrpPerBag = midXrpPerBag;
-      PRICES.bagPerXrp = 1 / midXrpPerBag;
-      PRICES.bagUsd    = PRICES.xrpUsd * midXrpPerBag; // correct direction
-      PRICES.source    = 'live-dex';
-      if (diagSpan) {
-        diagSpan.textContent = `DEX mid ≈ ${midXrpPerBag.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`;
-      }
+      PRICES.bagUsd = PRICES.xrpUsd / midXrpPerBag;
+      PRICES.source = 'live-dex';
       return true;
     }
     return false;
   }
 
   function loadCache(){ const bag=cacheGet(CACHE_KEY); const xrp=cacheGet('xrp_usd'); let used=false;
-    if(bag && Number(bag.bagUsd)>0){
-      PRICES.bagUsd=bag.bagUsd;
-      PRICES.xrpPerBag=Number(bag.xrpPerBag)||0;
-      PRICES.bagPerXrp=Number(bag.bagPerXrp)||0;
-      if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd;
-      PRICES.ts=bag.ts||PRICES.ts; used=true;
-    }
+    if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
 
-  // DEX → cache (no OTC feeds)
   async function refreshPrices(){
     const hadX = PRICES.xrpUsd>0;
     const gotX = hadX || await fetchXrpUsd();
@@ -831,13 +690,7 @@
     }
 
     if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
-      cacheSet(CACHE_KEY,{
-        bagUsd:PRICES.bagUsd||0,
-        xrpUsd:PRICES.xrpUsd||0,
-        xrpPerBag:PRICES.xrpPerBag||0,
-        bagPerXrp:PRICES.bagPerXrp||0,
-        ts:PRICES.ts||0
-      });
+      cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
     }
     updateLiveLine();
   }
@@ -865,10 +718,7 @@
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
 
     const usdEq = stakeUsdEquivalent();
-    if (usdEq < MIN_BET_USD){
-      toast('Minimum bet is $1 — stack heavier.');
-      return;
-    }
+    if (usdEq < MIN_BET_USD){ toast('Minimum bet is $1 — stack heavier.'); return; }
     clampIfNeeded(true);
 
     rollBtn.disabled=true;
@@ -922,11 +772,10 @@
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
-  // clear any old cache keys so bogus values don't persist
   try { localStorage.removeItem('bag_prices'); localStorage.removeItem('bag_prices_v2'); localStorage.removeItem('bag_prices_v3'); } catch {}
 
   if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
-  refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS);
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
   updatePayoutPreview();
 })();
 </script>
