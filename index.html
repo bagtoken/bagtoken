@@ -365,87 +365,246 @@
 <!-- GAME LOGIC + PRICES -->
 <script>
 (function(){
-  /* config & UI refs unchanged … */
+  // ---------- CONFIG ----------
+  const JACKPOT_N = 100;
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const CACHE_TTL_MS = 6*60*60*1000;
+  const MAX_BET_USD = 2000;
+  const MIN_BET_USD = 1.00;
 
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  // ---------- UI ----------
+  const rollBtn = document.getElementById('rollBtn');
+  const rollNumber = document.getElementById('rollNumber');
+  const rollText = document.getElementById('rollText');
+  const betInput = document.getElementById('demoBet');
+  const stateText = document.getElementById('stateText');
+  const pointBadge = document.getElementById('pointBadge');
+  const pointVal = document.getElementById('pointVal');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan = document.querySelector('#bagDiceDemo .unit');
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+  const diagSpan = document.getElementById('bagDiag');
+
+  const payoutPoint = document.getElementById('payoutPoint');
+  const payoutNormal = document.getElementById('payoutNormal');
+  const payoutNormalGain = document.getElementById('payoutNormalGain');
+  const payoutJackpot = document.getElementById('payoutJackpot');
+  const payoutJackpotGain = document.getElementById('payoutJackpotGain');
+
+  // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const CACHE_KEY = 'bag_prices_v7'; /* bump to invalidate */
+  const CACHE_KEY = 'bag_prices_v8'; // bump to invalidate older caches
 
-  /* helpers, preview, limits unchanged … */
+  // ---------- HELPERS ----------
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS)?o.v:null; }catch{ return null; } }
+  async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return await fetch(url,{...opts,headers:{Accept:'application/json'},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    finally{ clearTimeout(id); }
+  }
+  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+  function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
+  function stakeInBAG(){
+    const bet = Math.max(0, parseFloat(betInput.value||0));
+    if (!bet) return 0;
+    if (currentCurrency()==='BAG') return bet;
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+      return bet * bagPerXrp;
+    }
+    return 0;
+  }
+  function stakeUsdEquivalent(){
+    const qty = Math.max(0, parseFloat(betInput.value||0));
+    if (!qty) return 0;
+    if (currentCurrency()==='BAG') return PRICES.bagUsd>0 ? qty * PRICES.bagUsd : 0;
+    return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
+  }
 
+  // ---------- PREVIEW ----------
+  function updatePayoutPreview(){
+    const s = stakeInBAG();
+    if (s>0){
+      const ptTotal = s*1.00;
+      const nmTotal = s*1.25, nmGain = s*0.25;
+      const jpTotal = s*2.00, jpGain = s*1.00;
+      payoutPoint.textContent = `${fmt(ptTotal)} BAG`;
+      payoutNormal.textContent = `${fmt(nmTotal)} BAG`;
+      payoutNormalGain.textContent = `(gain +${fmt(nmGain)} BAG)`;
+      payoutJackpot.textContent = `${fmt(jpTotal)} BAG`;
+      payoutJackpotGain.textContent = `(gain +${fmt(jpGain)} BAG)`;
+    } else {
+      payoutPoint.textContent = payoutNormal.textContent = payoutJackpot.textContent = '—';
+      payoutNormalGain.textContent = payoutJackpotGain.textContent = '';
+    }
+  }
+
+  // ---------- Limits ----------
+  let limitNote, limitToast;
+  (function ensureLimitUi(){
+    const holder=betInput.closest('div'); const container=holder?.parentElement;
+    if(container){
+      limitNote=document.createElement('div'); limitNote.className='micro'; limitNote.style.marginTop='6px'; container.appendChild(limitNote);
+      limitToast=document.createElement('div'); limitToast.className='micro'; limitToast.style.cssText='margin-top:4px;color:#e25b5b;display:none;'; container.appendChild(limitToast);
+    }
+  })();
+  function toast(msg){
+    limitToast.textContent = msg||''; limitToast.style.display = msg?'block':'none';
+    if(msg){ limitToast.style.opacity='1'; setTimeout(()=>{ limitToast.style.transition='opacity .6s'; limitToast.style.opacity='0'; },1200); setTimeout(()=>{ limitToast.style.display='none'; limitToast.style.transition=''; limitToast.style.opacity=''; },1900); }
+  }
+  function maxForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0); }
+  function minForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? MIN_BET_USD/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? MIN_BET_USD/PRICES.xrpUsd : 0); }
+  function clampIfNeeded(showToast=true){
+    const maxQty = maxForCurrency();
+    if (!maxQty) return;
+    let val = Math.max(0, parseFloat(betInput.value||0));
+    if (val > maxQty){ betInput.value=String(maxQty); if(showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`); }
+  }
+  function updateLimitUi(){
+    let note = `Min $${MIN_BET_USD.toLocaleString()} · Max $${MAX_BET_USD.toLocaleString()}`;
+    const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0;
+    const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0;
+    const minXrp = PRICES.xrpUsd>0 ? MIN_BET_USD/PRICES.xrpUsd : 0;
+    const minBag = PRICES.bagUsd>0 ? MIN_BET_USD/PRICES.bagUsd : 0;
+    const partsMax=[]; if(maxXrp) partsMax.push(`${fmt(maxXrp)} XRP`); if(maxBag) partsMax.push(`${fmt(maxBag)} BAG`);
+    const partsMin=[]; if(minXrp) partsMin.push(`${fmt(minXrp)} XRP`); if(minBag) partsMin.push(`${fmt(minBag)} BAG`);
+    if (partsMin.length || partsMax.length){
+      const minTxt = partsMin.length ? `Min ≈ ${partsMin.join(' or ')}` : '';
+      const maxTxt = partsMax.length ? `Max ≈ ${partsMax.join(' or ')}` : '';
+      note += ` · ${[minTxt,maxTxt].filter(Boolean).join(' · ')}`;
+    }
+    limitNote.textContent = note;
+    clampIfNeeded(false);
+    rollBtn.disabled = !pricesReadyForCurrentCurrency();
+  }
+
+  // ---------- Prices ----------
+  function updateConversions(){
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+      const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+      liveConv.textContent = `1 BAG ≈ ${fmt(xrpPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerXrp)} BAG`;
+    } else {
+      liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+    }
+  }
+  function updateLiveLine(){
+    liveBAG.textContent = fmt(PRICES.bagUsd);
+    liveXRP.textContent = fmt(PRICES.xrpUsd);
+    const dotClass = (PRICES.source==='live-dex') ? 'ok'
+                      : PRICES.source==='partial live' ? 'warn'
+                      : PRICES.source==='cached' ? 'warn' : 'err';
+    liveDot.className = dotClass;
+    liveNote.textContent = PRICES.source==='live-dex' ? ' (DEX)'
+                         : PRICES.source==='partial live' ? ' (partial live)'
+                         : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
+    updateConversions(); updateLimitUi(); updatePayoutPreview();
+  }
+
+  // ---- XRP-USD with multi-provider fallback ----
   async function fetchXrpUsd(){
-    try{
-      const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{headers:{Accept:'application/json'}});
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const v=(await r.json())?.ripple?.usd;
-      if(Number(v)>0){ PRICES.xrpUsd=v; localStorage.setItem('xrp_usd',JSON.stringify({t:Date.now(),v})); return true; }
-      throw new Error('bad payload');
-    }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
+    const providers = [
+      {name:'CoinGecko', url:'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd', parse: j => Number(j?.ripple?.usd)},
+      {name:'Coinbase',  url:'https://api.coinbase.com/v2/prices/XRP-USD/spot', parse: j => Number(j?.data?.amount)},
+      {name:'Kraken',    url:'https://api.kraken.com/0/public/Ticker?pair=XXRPZUSD', parse: j => Number(j?.result?.XXRPZUSD?.c?.[0])}
+    ];
+    for (const p of providers){
+      try{
+        const r = await timedFetch(p.url);
+        if (!r.ok) throw new Error('HTTP '+r.status);
+        const v = p.parse(await r.json());
+        if (Number.isFinite(v) && v>0){
+          PRICES.xrpUsd = v;
+          cacheSet('xrp_usd', v);
+          diagSpan.textContent = `XRP from ${p.name}: $${v}`;
+          return true;
+        }
+      }catch(e){
+        // keep trying next
+      }
+    }
+    diagSpan.textContent = 'XRP feed: failed (all providers)';
+    return false;
   }
 
   // ---- DEX pricing from TakerPays/TakerGets (drops/BAG) ----
   async function fetchBagUsdFromDEX(){
     function bookReq(taker_gets, taker_pays, id){ return { id, command:'book_offers', taker_gets, taker_pays, limit:5 }; }
 
-    // Asks: sell BAG for XRP (taker buys BAG paying XRP)
-    const askReq = bookReq({currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},{currency:'XRP'},1);
-    // Bids: buy BAG with XRP (taker sells BAG to receive XRP)
-    const bidReq = bookReq({currency:'XRP'},{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},2);
+    const askReq = bookReq({currency:BAG_CODE,issuer:BAG_ISSUER},{currency:'XRP'},1); // sell BAG for XRP
+    const bidReq = bookReq({currency:'XRP'},{currency:BAG_CODE,issuer:BAG_ISSUER},2); // buy BAG with XRP
 
     function xrpPerBagFromOffer(ofr){
-      // both paths reduce to (drops / BAG) / 1e6
-      const gets = ofr.TakerGets; // may be string (drops) or object
-      const pays = ofr.TakerPays;
+      const gets = ofr.TakerGets; const pays = ofr.TakerPays;
       let drops=0, bags=0;
       if (typeof gets === 'string') drops = Number(gets);
       if (typeof pays === 'string') drops = Number(pays);
-      if (typeof gets === 'object' && gets.currency === 'BAG') bags = Number(gets.value);
-      if (typeof pays === 'object' && pays.currency === 'BAG') bags = Number(pays.value);
+      if (typeof gets === 'object' && gets.currency === BAG_CODE) bags = Number(gets.value);
+      if (typeof pays === 'object' && pays.currency === BAG_CODE) bags = Number(pays.value);
       if (!(drops>0 && bags>0)) return null;
-      return (drops / bags) / 1_000_000;
+      return (drops / bags) / 1_000_000; // XRP/BAG
     }
 
     const midXrpPerBag = await new Promise((resolve)=>{
       let gotAsk, gotBid;
-      const ws = new WebSocket('wss://s1.ripple.com');
-      const timeout = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); },8000);
+      const ws = new WebSocket(XRPL_WSS);
+      const timeout = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
       ws.onopen = ()=>{ ws.send(JSON.stringify(askReq)); ws.send(JSON.stringify(bidReq)); };
       ws.onerror = ()=>{ clearTimeout(timeout); try{ws.close();}catch{}; resolve(null); };
       ws.onmessage = ev=>{
         try{
           const msg = JSON.parse(ev.data);
-          if (msg.id===1) gotAsk=msg;
-          if (msg.id===2) gotBid=msg;
-          if(!gotAsk || !gotBid) return;
+          if (msg.id===1) gotAsk = msg;
+          if (msg.id===2) gotBid = msg;
+          if (!gotAsk || !gotBid) return;
 
           clearTimeout(timeout); try{ws.close();}catch{};
 
           const askOffer = gotAsk?.result?.offers?.[0];
           const bidOffer = gotBid?.result?.offers?.[0];
 
-          const bestAsk = askOffer ? xrpPerBagFromOffer(askOffer) : null; // should be the lowest price
+          const bestAsk = askOffer ? xrpPerBagFromOffer(askOffer) : null; // lowest price
           const bestBid = bidOffer ? xrpPerBagFromOffer(bidOffer) : null; // highest price
 
           const vals = [bestAsk, bestBid].filter(v=>Number.isFinite(v) && v>0);
-          if(!vals.length) return resolve(null);
+          if (!vals.length) return resolve(null);
 
+          // if both exist but inverted (illiquid book), just take the average of the two numbers anyway
           const mid = (bestAsk && bestBid) ? (bestAsk + bestBid)/2 : vals[0];
+
           if (!(mid>0) || mid<1e-12 || mid>1e3) return resolve(null);
 
-          if (diagSpan){
-            const p=[];
-            if(bestAsk) p.push(`ask ${bestAsk.toLocaleString(undefined,{maximumFractionDigits:8})}`);
-            if(bestBid) p.push(`bid ${bestBid.toLocaleString(undefined,{maximumFractionDigits:8})}`);
-            p.push(`mid ${mid.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`);
-            diagSpan.textContent = `DEX ${p.join(' · ')}`;
-          }
+          const parts=[];
+          if(bestAsk) parts.push(`ask ${bestAsk.toLocaleString(undefined,{maximumFractionDigits:8})}`);
+          if(bestBid) parts.push(`bid ${bestBid.toLocaleString(undefined,{maximumFractionDigits:8})}`);
+          parts.push(`mid ${mid.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`);
+          diagSpan.textContent = `DEX ${parts.join(' · ')}`;
+
           resolve(mid);
         }catch{ resolve(null); }
       };
     });
 
     if (!midXrpPerBag || !Number.isFinite(midXrpPerBag) || midXrpPerBag<=0) return false;
-    if (PRICES.xrpUsd>0){
+    if (PRICES.xrpUsd > 0) {
       PRICES.bagUsd = PRICES.xrpUsd * midXrpPerBag; // USD/BAG
       PRICES.source = 'live-dex';
       return true;
@@ -453,33 +612,121 @@
     return false;
   }
 
-  /* cache + refresh + roll logic unchanged … but bump cache key usage below */
-
-  const CACHE_TTL_MS = 6*60*60*1000;
-  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS)?o.v:null; }catch{ return null; } }
-
-  function loadCache(){ const bag=cacheGet(CACHE_KEY); const xrp=cacheGet('xrp_usd'); let used=false;
+  function loadCache(){
+    const bag=cacheGet(CACHE_KEY);
+    const xrp=cacheGet('xrp_usd');
+    let used=false;
     if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; used=true; }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
 
   async function refreshPrices(){
-    const gotX = PRICES.xrpUsd>0 || await fetchXrpUsd();
-    let gotBag=false; try{ gotBag = await fetchBagUsdFromDEX(); }catch{}
-    if (gotBag && gotX) PRICES.source='live-dex';
-    else if (gotX){ PRICES.source='partial live'; loadCache(); }
-    else if (loadCache()){ PRICES.source='cached'; }
-    else PRICES.source='—';
+    let gotX = PRICES.xrpUsd>0;
+    if (!gotX) gotX = await fetchXrpUsd();
 
-    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0) cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0});
+    let gotBag = false;
+    try { gotBag = await fetchBagUsdFromDEX(); } catch {}
+
+    if (gotBag && gotX) PRICES.source = 'live-dex';
+    else if (gotX && (PRICES.bagUsd>0)) PRICES.source = 'partial live';
+    else if (loadCache()) PRICES.source = 'cached';
+    else PRICES.source = '—';
+
+    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
+      cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:Date.now()});
+    }
     updateLiveLine();
   }
 
-  /* init & UI listeners (same as before) … */
+  // ---------- Roll + payouts (visual demo) ----------
+  function emitResult(detail){
+    window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
+    const s = Number(detail.stakeBag)||0;
+    if (typeof window.showWin === 'function'){
+      if (detail.jackpot){
+        const gain=s*1.00, total=s*2.00;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
+      } else if (detail.kind==='normal'){
+        const gain=s*0.25, total=s*1.25;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
+      } else if (detail.kind==='point'){
+        const total=s*1.00;
+        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG`, duration:2600 });
+      }
+    }
+  }
+
+  rollBtn.addEventListener('click', async ()=>{
+    try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
+    if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
+
+    const usdEq = stakeUsdEquivalent();
+    if (usdEq < MIN_BET_USD){ toast('Minimum bet is $1 — stack heavier.'); return; }
+    clampIfNeeded(true);
+
+    rollBtn.disabled=true;
+
+    const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
+    const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
+    [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
+    const a=(Math.random()*6|0)+1, b=(Math.random()*6|0)+1;
+    await new Promise(r=>setTimeout(r,900));
+    [dieA,dieB].forEach(c=>c.classList.remove('rolling')); pose(dieA,a); pose(dieB,b);
+    const total=a+b; rollNumber.textContent=total; rollText.classList.remove('win','lose');
+
+    const stake = stakeInBAG();
+    const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag:stake };
+
+    if (point==null){
+      if (total===7 || total===11){
+        detail.kind='normal';
+        if ((Math.random()*JACKPOT_N|0)===0){ detail.jackpot=true; }
+        rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
+        emitResult(detail);
+      } else if (total===2 || total===3 || total===12){
+        rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
+        try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
+      } else {
+        point=total; pointVal.textContent=String(point);
+        pointBadge.style.display='inline-block';
+        stateText.textContent='Point phase — hit the Point before 7';
+        rollText.textContent=`Point set to ${point}. Roll again.`;
+      }
+    } else {
+      if (total===point){
+        detail.kind='point'; rollText.textContent=`POINT WIN — ${point}`; rollText.classList.add('win');
+        emitResult(detail);
+        point=null; pointBadge.style.display='none'; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+      } else if (total===7){
+        rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose');
+        try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
+        point=null; pointBadge.style.display='none'; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+      } else {
+        rollText.textContent=`Roll again — need ${point} (rolled ${total})`;
+      }
+    }
+
+    rollBtn.disabled=false;
+  });
+
+  // ---------- Init ----------
+  stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
+  unitSpan.textContent='XRP';
+  betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
+  curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
+
+  // clear old cache keys so bogus values don't persist
+  try {
+    ['bag_prices','bag_prices_v2','bag_prices_v3','bag_prices_v4','bag_prices_v5','bag_prices_v6','bag_prices_v7'].forEach(k=>localStorage.removeItem(k));
+  } catch {}
+
+  if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+  updatePayoutPreview();
 })();
 </script>
+
 
 <!-- Service worker -->
 <script>
@@ -490,3 +737,4 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
