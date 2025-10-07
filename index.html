@@ -264,7 +264,7 @@
             <div id="bagDiag" class="micro" style="opacity:.55;margin-top:4px;"></div>
           </div>
 
-          <!-- NEW payout preview -->
+          <!-- payout preview -->
           <div class="callout mono" id="payoutBox">
             <div class="payout-grid">
               <div class="row"><div class="lab"><strong>Point Win</strong> (1.00×):</div><div class="val" id="payoutPoint">—</div></div>
@@ -276,7 +276,6 @@
 
           <button id="rollBtn" class="btn-roll">Roll</button>
 
-          <!-- SOUND HINT -->
           <div class="micro" style="text-align:center;opacity:.7;margin-top:6px">
             If you don’t hear sound: tap Roll once, turn off Silent mode, and raise volume.
           </div>
@@ -378,7 +377,7 @@
     if (!AudioCtx) return null;
     const ac = new AudioCtx();
     const master = ac.createGain();
-    master.gain.value = 0.22; // master volume
+    master.gain.value = 0.22;
     master.connect(ac.destination);
     AC = ac; MASTER = master;
     ac.onstatechange = function(){
@@ -598,7 +597,7 @@
   // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const CACHE_KEY = 'bag_prices_v2';
+  const CACHE_KEY = 'bag_prices_v3';
 
   // ---------- HELPERS ----------
   const num = v => { const n=Number(v); return Number.isFinite(n)?n:NaN; };
@@ -634,19 +633,6 @@
     if (!qty) return 0;
     if (currentCurrency()==='BAG') return PRICES.bagUsd>0 ? qty * PRICES.bagUsd : 0;
     return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
-  }
-
-  // Convert XRPL book_offers.quality when XRP (drops) is involved
-  function qualityToRate({quality, paysXrp, getsXrp}) {
-    const q = Number(quality);
-    if (!Number.isFinite(q) || q <= 0) return null;
-    if (paysXrp && !getsXrp) {         // drops per BAG -> XRP per BAG
-      return q / 1_000_000;
-    }
-    if (!paysXrp && getsXrp) {         // BAG per drop -> BAG per XRP
-      return q * 1_000_000;
-    }
-    return q; // IOU/IOU
   }
 
   // ---------- PREVIEW ----------
@@ -730,13 +716,16 @@
   }
 
   async function fetchXrpUsd(){
-    try{ const r=await timedFetch(CG_XRP); if(!r.ok) throw new Error('HTTP '+r.status);
-      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd',v); return true; }
+    try{
+      const r=await timedFetch(CG_XRP);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const v=(await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd',v); return true; }
       throw new Error('bad payload');
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // XRPL DEX mid price → sets PRICES.bagUsd using orderbook bests (with drops conversion)
+  // XRPL DEX mid price → PRICES.bagUsd (correct drops math + sanity guard)
   async function fetchBagUsdFromDEX() {
     function bookReq(taker_gets, taker_pays, id) {
       return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
@@ -762,25 +751,35 @@
           if (msg.id === 1) gotAsk = msg;
           if (msg.id === 2) gotBid = msg;
           if (!gotAsk || !gotBid) return;
+
           clearTimeout(t); try{ws.close();}catch{};
 
-          let bestAsk = null, bestBid = null;
+          let askXrpPerBag = null, bidXrpPerBag = null;
+
           if (Array.isArray(gotAsk?.result?.offers) && gotAsk.result.offers.length){
-            const q = gotAsk.result.offers[0].quality; // drops per BAG
-            bestAsk = qualityToRate({ quality:q, paysXrp:true, getsXrp:false }); // XRP/BAG
+            // ask.quality = drops per BAG => XRP/BAG = drops/BAG / 1e6
+            const q = Number(gotAsk.result.offers[0].quality);
+            if (Number.isFinite(q) && q > 0) askXrpPerBag = q / 1_000_000;
           }
           if (Array.isArray(gotBid?.result?.offers) && gotBid.result.offers.length){
-            const q = gotBid.result.offers[0].quality; // BAG per drop
-            const bagPerXrp = qualityToRate({ quality:q, paysXrp:false, getsXrp:true }); // BAG/XRP
-            if (bagPerXrp && bagPerXrp > 0) bestBid = 1 / bagPerXrp; // XRP/BAG
+            // bid.quality = BAG per drop => BAG/XRP = BAG/drop * 1e6 => XRP/BAG = 1 / (BAG/XRP)
+            const q = Number(gotBid.result.offers[0].quality);
+            if (Number.isFinite(q) && q > 0) {
+              const bagPerXrp = q * 1_000_000;
+              if (bagPerXrp > 0) bidXrpPerBag = 1 / bagPerXrp;
+            }
           }
 
-          const vals = [bestAsk, bestBid].filter(v => Number.isFinite(v) && v > 0);
+          const vals = [askXrpPerBag, bidXrpPerBag].filter(v => Number.isFinite(v) && v > 0);
           if (!vals.length) return resolve(null);
-          resolve(vals.length === 2 ? (vals[0]+vals[1])/2 : vals[0]);
-        }catch{
-          resolve(null);
-        }
+
+          const mid = (vals.length === 2) ? (vals[0]+vals[1]) / 2 : vals[0];
+
+          // sanity guard against accidental inversion/garbage
+          if (!(mid > 0) || mid < 1e-12 || mid > 1e12) return resolve(null);
+
+          resolve(mid);
+        }catch{ resolve(null); }
       };
     });
 
@@ -788,6 +787,9 @@
     if (PRICES.xrpUsd > 0) {
       PRICES.bagUsd = PRICES.xrpUsd / midXrpPerBag;
       PRICES.source = 'live-dex';
+      if (diagSpan) {
+        diagSpan.textContent = `DEX mid ≈ ${midXrpPerBag.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`;
+      }
       return true;
     }
     return false;
@@ -811,7 +813,7 @@
       PRICES.source = 'live-dex';
     } else if (gotX) {
       PRICES.source = 'partial live';
-      if (!loadCache()) { /* no bag price at all */ }
+      if (!loadCache()) { /* no bag price */ }
     } else if (loadCache()) {
       PRICES.source = 'cached';
     } else {
@@ -846,7 +848,6 @@
     try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
 
-    // $1 USD minimum enforcement
     const usdEq = stakeUsdEquivalent();
     if (usdEq < MIN_BET_USD){
       toast('Minimum bet is $1 — stack heavier.');
@@ -856,7 +857,6 @@
 
     rollBtn.disabled=true;
 
-    // Animate dice
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
     const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
     [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
@@ -905,6 +905,9 @@
   unitSpan.textContent='XRP';
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
+
+  // clear any old cache keys once so bogus values don't persist
+  try { localStorage.removeItem('bag_prices'); localStorage.removeItem('bag_prices_v2'); } catch {}
 
   if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
   refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS);
