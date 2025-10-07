@@ -230,6 +230,19 @@
 
     <!-- LEFT: Demo & stake -->
     <div class="panel mock" id="bagDiceDemo">
+
+      <!-- CONNECT ROW (added) -->
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;
+                 color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+                 box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
+      </div>
+      <!-- /CONNECT ROW -->
+
       <div class="section-title">Stake & Prices</div>
 
       <div class="stake-box">
@@ -425,6 +438,48 @@
 })();
 </script>
 
+<!-- XAMAN-LITE CONNECT (added) -->
+<script>
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const btn = document.getElementById('connectBtn');
+  const status = document.getElementById('connectStatus');
+
+  function saveWallet(v){
+    try{ localStorage.setItem(WALLET_KEY, JSON.stringify(v||{})); }catch{}
+  }
+  function getWallet(){
+    try{ return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); }catch{ return null; }
+  }
+  function short(a){ return a ? a.slice(0,6)+'…'+a.slice(-6) : ''; }
+  function setConnected(addr){
+    saveWallet({ address: addr });
+    status.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+ short(addr) +'</span>';
+    btn.textContent = 'Disconnect';
+    window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail:{ address: addr }}));
+  }
+  function setDisconnected(){
+    saveWallet(null);
+    status.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+    btn.textContent = 'Connect Xaman';
+    window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+  }
+
+  // Try restore session
+  const w = getWallet();
+  if (w && w.address){ setConnected(w.address); }
+
+  btn.addEventListener('click', ()=>{
+    const cur = getWallet();
+    if (cur && cur.address){ setDisconnected(); return; }
+
+    // Minimal UX: ask for XRPL address (you can wire Xaman deep-link here later)
+    const addr = prompt('Connect Xaman: enter your XRPL address (r…)');
+    if (addr && /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(addr)){ setConnected(addr); }
+  });
+})();
+</script>
+
 <!-- GAME LOGIC + PRICES (unchanged from your working live version) -->
 <script>
 (function(){
@@ -471,6 +526,35 @@
   const VIEW_CACHE_KEY = 'bag_prices_v8';
   const LAST_LIVE_KEY = 'bag_last_live_v1';
 
+  // ---- Require connected wallet to play (added) ----
+  const WALLET_KEY = 'bag_wallet_v1';
+  let playLocked = true;
+
+  function isWalletConnected(){
+    try {
+      const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null');
+      return !!(w && w.address);
+    } catch { return false; }
+  }
+  function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
+  function recomputeRollEnabled(){
+    rollBtn.disabled = playLocked || !pricesReadyForCurrentCurrency();
+  }
+  function setPlayLock(lock){
+    playLocked = !!lock;
+    if (playLocked){
+      const msg = 'Connect wallet to play';
+      if (rollText) { rollText.textContent = msg; rollText.classList.remove('win','lose'); }
+    } else if (rollText && rollText.textContent === 'Connect wallet to play'){
+      rollText.textContent = 'Tap Roll';
+    }
+    recomputeRollEnabled();
+  }
+  window.addEventListener('bag:walletConnected', () => setPlayLock(false));
+  window.addEventListener('bag:walletDisconnected', () => setPlayLock(true));
+  setPlayLock(!isWalletConnected());
+  // ---- /wallet lock ----
+
   // ---------- HELPERS ----------
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
@@ -494,7 +578,6 @@
     finally{ clearTimeout(id); }
   }
   function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
-  function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
     if (!bet) return 0;
@@ -566,7 +649,8 @@
     }
     limitNote.textContent = note;
     clampIfNeeded(false);
-    rollBtn.disabled = !pricesReadyForCurrentCurrency();
+    // CHANGED: respect wallet lock + price readiness
+    recomputeRollEnabled();
   }
 
   // ---------- Prices ----------
@@ -732,6 +816,13 @@
   }
 
   rollBtn.addEventListener('click', async ()=>{
+    // ADDED: hard block if not connected
+    if (playLocked){ 
+      const t=document.querySelector('#connectBtn'); 
+      if(t) t.focus(); 
+      return; 
+    }
+
     try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
 
