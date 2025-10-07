@@ -34,8 +34,6 @@
 <meta name="apple-mobile-web-app-title" content="$BAG">
 
 <!-- Perf -->
-<link rel="preconnect" href="https://api.getthebag.io" crossorigin>
-<link rel="preconnect" href="https://bagproxy.bagtokenhq.workers.dev" crossorigin>
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
 <style>
@@ -556,7 +554,7 @@
 })();
 </script>
 
-<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY + $1 MIN ENFORCEMENT + DEX PRICING -->
+<!-- GAME LOGIC + PRICES (DEX ONLY) + $1 MIN ENFORCEMENT -->
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -567,10 +565,6 @@
   const MAX_BET_USD = 2000;
   const MIN_BET_USD = 1.00;   // $1 minimum enforced
 
-  const BAG_FEEDS = [
-    'https://api.getthebag.io/bag-price.json',
-    '/assets/bag-price.json'
-  ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
 
   // XRPL DEX mid-price (XRP per BAG) → BAG_USD = XRP_USD / (XRP per BAG)
@@ -711,40 +705,14 @@
   function updateLiveLine(){
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
-    const dotClass = (PRICES.source==='live' || PRICES.source==='live-dex') ? 'ok'
+    const dotClass = (PRICES.source==='live-dex') ? 'ok'
                       : PRICES.source==='partial live' ? 'warn'
                       : PRICES.source==='cached' ? 'warn' : 'err';
     liveDot.className = dotClass;
     liveNote.textContent = PRICES.source==='live-dex' ? ' (DEX)'
-                         : PRICES.source==='live' ? ' (live)'
                          : PRICES.source==='partial live' ? ' (partial live)'
                          : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
     updateConversions(); updateLimitUi(); updatePayoutPreview();
-  }
-
-  function resolveFromPayload(j){
-    const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
-    const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
-    const xrp_per_bag = pick(j?.bag_xrp,j?.xrp_bag,j?.xrpPerBag,j?.xrp_per_bag);
-    const bag_per_xrp = pick(j?.bag_per_xrp,j?.bagPerXrp,j?.BAG_per_XRP);
-    const ts = Number(j?.timestamp); if (ts>0) PRICES.ts=ts;
-    if(xrp_usd) PRICES.xrpUsd=xrp_usd;
-    if(usd){ PRICES.bagUsd=usd; return true; }
-    if(xrp_per_bag && PRICES.xrpUsd){ PRICES.bagUsd = xrp_per_bag*PRICES.xrpUsd; return true; }
-    if(bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp)*PRICES.xrpUsd; return true; }
-    return false;
-  }
-  function resolveFromText(txt){
-    const grab=k=>{ const m=txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?Number(m[1]):NaN; };
-    const usd=pick(grab('usd'),grab('USD'),grab('bag_usd'),grab('BAG_USD'),grab('price_usd'),grab('price'));
-    const xrp_usd=pick(grab('xrp_usd'),grab('XRP_USD'));
-    const bag_xrp=pick(grab('bag_xrp'),grab('xrp_bag'),grab('xrp_per_bag'));
-    const bag_per_xrp=pick(grab('bag_per_xrp'),grab('BAG_per_XRP'));
-    if(xrp_usd) PRICES.xrpUsd=xrp_usd;
-    if(usd){ PRICES.bagUsd=usd; return true; }
-    if(bag_xrp && PRICES.xrpUsd){ PRICES.bagUsd = bag_xrp*PRICES.xrpUsd; return true; }
-    if(bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp)*PRICES.xrpUsd; return true; }
-    return false;
   }
 
   async function fetchXrpUsd(){
@@ -768,7 +736,7 @@
       { currency: BAG_CODE, issuer: BAG_ISSUER }, 2
     );
 
-    const midXrpPerBag = await new Promise((resolve, reject) => {
+    const midXrpPerBag = await new Promise((resolve) => {
       let gotAsk, gotBid;
       const ws = new WebSocket(XRPL_WSS);
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
@@ -792,7 +760,9 @@
           const vals = [bestAsk, bestBid].filter(v => Number.isFinite(v) && v > 0);
           if (!vals.length) return resolve(null);
           resolve(vals.length === 2 ? (vals[0]+vals[1])/2 : vals[0]);
-        }catch{}
+        }catch{
+          resolve(null);
+        }
       };
     });
 
@@ -805,37 +775,25 @@
     return false;
   }
 
-  async function fetchBagUsd(){
-    let reason=''; for(const base of BAG_FEEDS){
-      try{
-        const r = await timedFetch(`${base}?ts=${Date.now()}`);
-        if(!r.ok){ reason=`${base} → HTTP ${r.status}`; continue; }
-        try{ const j=await r.clone().json(); if(resolveFromPayload(j)){ diagSpan.textContent=`BAG feed OK: ${base}`; return true; } reason=`${base} → no usable fields`;
-        }catch{ const t=await r.text(); if(resolveFromText(t)){ diagSpan.textContent=`BAG feed (text) OK: ${base}`; return true; } reason=`${base} → parse failed`; }
-      }catch(e){ reason=`${base} → ${e.message||'fetch error'}`; }
-    }
-    diagSpan.textContent = reason; return false;
-  }
-
   function loadCache(){ const bag=cacheGet('bag_prices'); const xrp=cacheGet('xrp_usd'); let used=false;
     if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
 
-  // Prefer DEX → fall back to feeds → cache
+  // DEX → cache (no OTC feeds)
   async function refreshPrices(){
     const hadX = PRICES.xrpUsd>0;
     const gotX = hadX || await fetchXrpUsd();
 
     let gotBag = false;
     try { gotBag = await fetchBagUsdFromDEX(); } catch {}
-    if (!gotBag) gotBag = await fetchBagUsd();
 
     if (gotBag && gotX) {
-      PRICES.source = (PRICES.source === 'live-dex') ? 'live-dex' : 'live';
-    } else if (gotBag || gotX) {
+      PRICES.source = 'live-dex';
+    } else if (gotX) {
       PRICES.source = 'partial live';
+      if (!loadCache()) { /* no bag price at all */ }
     } else if (loadCache()) {
       PRICES.source = 'cached';
     } else {
@@ -902,7 +860,7 @@
         rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
       } else {
-        point=total; pointVal.textContent=String(point); pointBadge.style.display='none';
+        point=total; pointVal.textContent=String(point);
         pointBadge.style.display='inline-block';
         stateText.textContent='Point phase — hit the Point before 7';
         rollText.textContent=`Point set to ${point}. Roll again.`;
