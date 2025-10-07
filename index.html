@@ -566,7 +566,7 @@
 
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
 
-  // XRPL DEX mid-price (XRP per BAG) → BAG_USD = XRP_USD / (XRP per BAG)
+  // XRPL DEX mid-price (XRP per BAG) → BAG_USD = XRP_USD * (XRP per BAG)
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
@@ -596,12 +596,18 @@
 
   // ---------- STATE ----------
   let point = null;
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const CACHE_KEY = 'bag_prices_v3';
+  const PRICES = (window.__PRICES__ = {
+    bagUsd: 0,
+    xrpUsd: 0,
+    xrpPerBag: 0,  // XRP per 1 BAG
+    bagPerXrp: 0,  // BAG per 1 XRP
+    source: '—',
+    ts: 0
+  });
+  const CACHE_KEY = 'bag_prices_v4';
 
   // ---------- HELPERS ----------
   const num = v => { const n=Number(v); return Number.isFinite(n)?n:NaN; };
-  const pick = (...xs) => xs.map(num).find(v=>v>0);
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
@@ -618,14 +624,12 @@
   }
   function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
   function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
+
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
     if (!bet) return 0;
     if (currentCurrency()==='BAG') return bet;
-    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
-      return bet * bagPerXrp;
-    }
+    if (PRICES.bagPerXrp>0) return bet * PRICES.bagPerXrp;
     return 0;
   }
   function stakeUsdEquivalent(){
@@ -694,10 +698,8 @@
 
   // ---------- Prices ----------
   function updateConversions(){
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
-      const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
-      liveConv.textContent = `1 BAG ≈ ${fmt(xrpPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerXrp)} BAG`;
+    if(PRICES.xrpPerBag>0 && PRICES.bagPerXrp>0){
+      liveConv.textContent = `1 BAG ≈ ${fmt(PRICES.xrpPerBag)} XRP · 1 XRP ≈ ${fmt(PRICES.bagPerXrp)} BAG`;
     } else {
       liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
     }
@@ -725,7 +727,7 @@
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // XRPL DEX mid price → PRICES.bagUsd (correct drops math + sanity guard)
+  // XRPL DEX mid price → direct rates (with drops math) → bagUsd
   async function fetchBagUsdFromDEX() {
     function bookReq(taker_gets, taker_pays, id) {
       return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
@@ -775,7 +777,7 @@
 
           const mid = (vals.length === 2) ? (vals[0]+vals[1]) / 2 : vals[0];
 
-          // sanity guard against accidental inversion/garbage
+          // sanity guard
           if (!(mid > 0) || mid < 1e-12 || mid > 1e12) return resolve(null);
 
           resolve(mid);
@@ -785,8 +787,10 @@
 
     if (!midXrpPerBag || !Number.isFinite(midXrpPerBag) || midXrpPerBag <= 0) return false;
     if (PRICES.xrpUsd > 0) {
-      PRICES.bagUsd = PRICES.xrpUsd / midXrpPerBag;
-      PRICES.source = 'live-dex';
+      PRICES.xrpPerBag = midXrpPerBag;
+      PRICES.bagPerXrp = 1 / midXrpPerBag;
+      PRICES.bagUsd    = PRICES.xrpUsd * midXrpPerBag; // correct direction
+      PRICES.source    = 'live-dex';
       if (diagSpan) {
         diagSpan.textContent = `DEX mid ≈ ${midXrpPerBag.toLocaleString(undefined,{maximumFractionDigits:8})} XRP/BAG`;
       }
@@ -796,7 +800,13 @@
   }
 
   function loadCache(){ const bag=cacheGet(CACHE_KEY); const xrp=cacheGet('xrp_usd'); let used=false;
-    if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
+    if(bag && Number(bag.bagUsd)>0){
+      PRICES.bagUsd=bag.bagUsd;
+      PRICES.xrpPerBag=Number(bag.xrpPerBag)||0;
+      PRICES.bagPerXrp=Number(bag.bagPerXrp)||0;
+      if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd;
+      PRICES.ts=bag.ts||PRICES.ts; used=true;
+    }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
@@ -821,7 +831,13 @@
     }
 
     if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
-      cacheSet(CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
+      cacheSet(CACHE_KEY,{
+        bagUsd:PRICES.bagUsd||0,
+        xrpUsd:PRICES.xrpUsd||0,
+        xrpPerBag:PRICES.xrpPerBag||0,
+        bagPerXrp:PRICES.bagPerXrp||0,
+        ts:PRICES.ts||0
+      });
     }
     updateLiveLine();
   }
@@ -906,8 +922,8 @@
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
-  // clear any old cache keys once so bogus values don't persist
-  try { localStorage.removeItem('bag_prices'); localStorage.removeItem('bag_prices_v2'); } catch {}
+  // clear any old cache keys so bogus values don't persist
+  try { localStorage.removeItem('bag_prices'); localStorage.removeItem('bag_prices_v2'); localStorage.removeItem('bag_prices_v3'); } catch {}
 
   if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
   refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS);
