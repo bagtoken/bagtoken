@@ -257,7 +257,16 @@
 
           <div>
             <div class="micro">Bet amount</div>
-            <div><input id="demoBet" class="mono" type="number" min="1" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px"> <span class="unit">XRP</span></div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <div>
+                <input id="demoBet" class="mono" type="number" min="1" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px"> <span class="unit">XRP</span>
+              </div>
+              <!-- USD mirror/input (added) -->
+              <div>
+                <span class="micro" style="margin-right:6px;opacity:.9">USD</span>
+                <input id="demoBetUsd" class="mono" type="number" min="1" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+              </div>
+            </div>
           </div>
 
           <div class="divider"></div>
@@ -480,7 +489,7 @@
 })();
 </script>
 
-<!-- GAME LOGIC + PRICES (unchanged from your working live version) -->
+<!-- GAME LOGIC + PRICES (unchanged from your working live version, with USD sync & display additions) -->
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -502,6 +511,7 @@
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
   const betInput = document.getElementById('demoBet');
+  const betUsdInput = document.getElementById('demoBetUsd'); // (added)
   const stateText = document.getElementById('stateText');
   const pointBadge = document.getElementById('pointBadge');
   const pointVal = document.getElementById('pointVal');
@@ -526,7 +536,7 @@
   const VIEW_CACHE_KEY = 'bag_prices_v8';
   const LAST_LIVE_KEY = 'bag_last_live_v1';
 
-  // ---- Require connected wallet to play (added) ----
+  // ---- Require connected wallet to play (added earlier) ----
   const WALLET_KEY = 'bag_wallet_v1';
   let playLocked = true;
 
@@ -563,6 +573,10 @@
     if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
+  function usd(n){
+    if (!Number.isFinite(n)) return '$—';
+    return '$' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k, ttlMs){
     try{
@@ -578,6 +592,12 @@
     finally{ clearTimeout(id); }
   }
   function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+
+  // Price helpers for unit conversions
+  function unitUsdPrice(){
+    return currentCurrency()==='BAG' ? PRICES.bagUsd||0 : PRICES.xrpUsd||0;
+  }
+
   function stakeInBAG(){
     const bet = Math.max(0, parseFloat(betInput.value||0));
     if (!bet) return 0;
@@ -595,22 +615,53 @@
     return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
   }
 
+  // ---------- USD <-> token sync (added) ----------
+  let syncing = false;
+  function syncUsdFromToken(){
+    if (syncing) return;
+    const p = unitUsdPrice();
+    if (!(p>0)) return;
+    const qty = parseFloat(betInput.value||'0');
+    const val = (Number.isFinite(qty) ? qty*p : 0);
+    syncing = true;
+    betUsdInput.value = val>0 ? String(val) : '';
+    syncing = false;
+  }
+  function syncTokenFromUsd(){
+    if (syncing) return;
+    const p = unitUsdPrice();
+    if (!(p>0)) return;
+    const usdVal = parseFloat(betUsdInput.value||'0');
+    const qty = (Number.isFinite(usdVal) ? usdVal/p : 0);
+    syncing = true;
+    betInput.value = qty>0 ? String(qty) : '';
+    syncing = false;
+    clampIfNeeded(false);
+    updatePayoutPreview();
+  }
+
   // ---------- PREVIEW ----------
   function updatePayoutPreview(){
     const s = stakeInBAG();
+    const sUsd = PRICES.bagUsd>0 ? s*PRICES.bagUsd : 0;
+
     if (s>0){
-      const ptTotal = s*1.00;
-      const nmTotal = s*1.25, nmGain = s*0.25;
-      const jpTotal = s*2.00, jpGain = s*1.00;
-      payoutPoint.textContent = `${fmt(ptTotal)} BAG`;
-      payoutNormal.textContent = `${fmt(nmTotal)} BAG`;
-      payoutNormalGain.textContent = `(gain +${fmt(nmGain)} BAG)`;
-      payoutJackpot.textContent = `${fmt(jpTotal)} BAG`;
-      payoutJackpotGain.textContent = `(gain +${fmt(jpGain)} BAG)`;
+      const ptTotal = s*1.00, ptUsd = sUsd*1.00;
+      const nmTotal = s*1.25, nmGain = s*0.25, nmUsd = sUsd*1.25, nmGainUsd = sUsd*0.25;
+      const jpTotal = s*2.00, jpGain = s*1.00, jpUsd = sUsd*2.00, jpGainUsd = sUsd*1.00;
+
+      payoutPoint.textContent = `${fmt(ptTotal)} BAG (${usd(ptUsd)})`;
+      payoutNormal.textContent = `${fmt(nmTotal)} BAG (${usd(nmUsd)})`;
+      payoutNormalGain.textContent = `(gain +${fmt(nmGain)} BAG / ${usd(nmGainUsd)})`;
+      payoutJackpot.textContent = `${fmt(jpTotal)} BAG (${usd(jpUsd)})`;
+      payoutJackpotGain.textContent = `(gain +${fmt(jpGain)} BAG / ${usd(jpGainUsd)})`;
     } else {
       payoutPoint.textContent = payoutNormal.textContent = payoutJackpot.textContent = '—';
       payoutNormalGain.textContent = payoutJackpotGain.textContent = '';
     }
+
+    // keep USD mirror in sync
+    syncUsdFromToken();
   }
 
   // ---------- Limits ----------
@@ -633,6 +684,8 @@
     if (!maxQty) return;
     let val = Math.max(0, parseFloat(betInput.value||0));
     if (val > maxQty){ betInput.value=String(maxQty); if(showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`); }
+    // also sync USD box after clamping
+    syncUsdFromToken();
   }
   function updateLimitUi(){
     let note = `Min $${MIN_BET_USD.toLocaleString()} · Max $${MAX_BET_USD.toLocaleString()}`;
@@ -649,7 +702,7 @@
     }
     limitNote.textContent = note;
     clampIfNeeded(false);
-    // CHANGED: respect wallet lock + price readiness
+    // respect wallet lock + price readiness
     recomputeRollEnabled();
   }
 
@@ -783,6 +836,7 @@
       if (currentCurrency()==='XRP'){ betInput.value = '1'; }
       // when user flips to BAG, set 1 XRP worth of BAG
       curToggle.addEventListener('change', ()=>{
+        unitSpan.textContent=currentCurrency();
         if (currentCurrency()==='BAG'){
           const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
           if (bagPerXrp>0) betInput.value = String(bagPerXrp);
@@ -794,6 +848,9 @@
       }, { once:true });
       updatePayoutPreview();
       updateLimitUi();
+    } else {
+      // Keep USD mirror in sync on subsequent price refreshes
+      syncUsdFromToken();
     }
   }
 
@@ -801,22 +858,27 @@
   function emitResult(detail){
     window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
     const s = Number(detail.stakeBag)||0;
+    const gainB = detail.jackpot ? s*1.00 : (detail.kind==='normal' ? s*0.25 : 0);
+    const totalB =
+      detail.jackpot ? s*2.00 :
+      detail.kind==='normal' ? s*1.25 :
+      detail.kind==='point' ? s*1.00 : 0;
+    const gainU = PRICES.bagUsd>0 ? gainB*PRICES.bagUsd : 0;
+    const totalU = PRICES.bagUsd>0 ? totalB*PRICES.bagUsd : 0;
+
     if (typeof window.showWin === 'function'){
       if (detail.jackpot){
-        const gain=s*1.00, total=s*2.00;
-        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
+        window.showWin({ message:'WIN', subtext:`+${fmt(gainB)} BAG (${usd(gainU)}) · PAYOUT +${fmt(totalB)} BAG (${usd(totalU)})`, duration:2600 });
       } else if (detail.kind==='normal'){
-        const gain=s*0.25, total=s*1.25;
-        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
+        window.showWin({ message:'WIN', subtext:`+${fmt(gainB)} BAG (${usd(gainU)}) · PAYOUT +${fmt(totalB)} BAG (${usd(totalU)})`, duration:2600 });
       } else if (detail.kind==='point'){
-        const total=s*1.00;
-        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG`, duration:2600 });
+        window.showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(totalB)} BAG (${usd(totalU)})`, duration:2600 });
       }
     }
   }
 
   rollBtn.addEventListener('click', async ()=>{
-    // ADDED: hard block if not connected
+    // hard block if not connected
     if (playLocked){ 
       const t=document.querySelector('#connectBtn'); 
       if(t) t.focus(); 
@@ -879,7 +941,9 @@
   stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
   unitSpan.textContent='XRP';
   betInput.value = '1'; // default to 1 XRP on load
+  betUsdInput.value = '1'; // mirrors 1 XRP on load (will be corrected after price fetch)
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
+  betUsdInput.addEventListener('input', ()=>{ syncTokenFromUsd(); updateLimitUi(); }); // allow USD entry
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
   // clear older cache keys
