@@ -133,7 +133,7 @@
   .cube.show-2{transform:rotateX(0) rotateY(-90deg)}
   .cube.show-3{transform:rotateX(0) rotateY(-180deg)}
   .cube.show-4{transform:rotateX(0) rotateY(90deg)}
-  .cube.show-5{transform:rotateX(-90deg) rotateY(0)}
+  .cube.show-5{transform:rotateX(90deg) rotateY(0)}
   .cube.show-6{transform:rotateX(90deg) rotateY(0)}
 
   .btn-roll{
@@ -556,7 +556,7 @@
 })();
 </script>
 
-<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY + $1 MIN ENFORCEMENT -->
+<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY + $1 MIN ENFORCEMENT + DEX PRICING -->
 <script>
 (function(){
   // ---------- CONFIG ----------
@@ -565,13 +565,18 @@
   const FETCH_TIMEOUT_MS = 8000;
   const CACHE_TTL_MS = 6*60*60*1000;
   const MAX_BET_USD = 2000;
-  const MIN_BET_USD = 1.00;   // << $1 minimum enforced
+  const MIN_BET_USD = 1.00;   // $1 minimum enforced
 
   const BAG_FEEDS = [
     'https://api.getthebag.io/bag-price.json',
     '/assets/bag-price.json'
   ];
   const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
+
+  // XRPL DEX mid-price (XRP per BAG) → BAG_USD = XRP_USD / (XRP per BAG)
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
 
   // ---------- UI ----------
   const rollBtn = document.getElementById('rollBtn');
@@ -706,11 +711,17 @@
   function updateLiveLine(){
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
-    const dotClass = PRICES.source==='live' ? 'ok' : PRICES.source==='partial live' ? 'warn' : PRICES.source==='cached' ? 'warn' : 'err';
+    const dotClass = (PRICES.source==='live' || PRICES.source==='live-dex') ? 'ok'
+                      : PRICES.source==='partial live' ? 'warn'
+                      : PRICES.source==='cached' ? 'warn' : 'err';
     liveDot.className = dotClass;
-    liveNote.textContent = PRICES.source==='live' ? ' (live)' : PRICES.source==='partial live' ? ' (partial live)' : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
+    liveNote.textContent = PRICES.source==='live-dex' ? ' (DEX)'
+                         : PRICES.source==='live' ? ' (live)'
+                         : PRICES.source==='partial live' ? ' (partial live)'
+                         : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
     updateConversions(); updateLimitUi(); updatePayoutPreview();
   }
+
   function resolveFromPayload(j){
     const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
     const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
@@ -735,12 +746,65 @@
     if(bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp)*PRICES.xrpUsd; return true; }
     return false;
   }
+
   async function fetchXrpUsd(){
     try{ const r=await timedFetch(CG_XRP); if(!r.ok) throw new Error('HTTP '+r.status);
       const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd',v); return true; }
       throw new Error('bad payload');
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
+
+  // XRPL DEX mid price → sets PRICES.bagUsd using orderbook bests
+  async function fetchBagUsdFromDEX() {
+    function bookReq(taker_gets, taker_pays, id) {
+      return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
+    }
+    const ask = bookReq( // asks: sell BAG, receive XRP
+      { currency: BAG_CODE, issuer: BAG_ISSUER },
+      { currency: 'XRP' }, 1
+    );
+    const bid = bookReq( // bids: buy BAG, pay XRP
+      { currency: 'XRP' },
+      { currency: BAG_CODE, issuer: BAG_ISSUER }, 2
+    );
+
+    const midXrpPerBag = await new Promise((resolve, reject) => {
+      let gotAsk, gotBid;
+      const ws = new WebSocket(XRPL_WSS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
+      ws.onopen = () => { ws.send(JSON.stringify(ask)); ws.send(JSON.stringify(bid)); };
+      ws.onerror = () => { clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev) => {
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg.id === 1) gotAsk = msg;
+          if (msg.id === 2) gotBid = msg;
+          if (!gotAsk || !gotBid) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          let bestAsk = null, bestBid = null;
+          if (Array.isArray(gotAsk?.result?.offers) && gotAsk.result.offers.length){
+            bestAsk = Number(gotAsk.result.offers[0].quality); // XRP per BAG
+          }
+          if (Array.isArray(gotBid?.result?.offers) && gotBid.result.offers.length){
+            const q = Number(gotBid.result.offers[0].quality); // BAG per XRP
+            if (q > 0) bestBid = 1 / q; // → XRP per BAG
+          }
+          const vals = [bestAsk, bestBid].filter(v => Number.isFinite(v) && v > 0);
+          if (!vals.length) return resolve(null);
+          resolve(vals.length === 2 ? (vals[0]+vals[1])/2 : vals[0]);
+        }catch{}
+      };
+    });
+
+    if (!midXrpPerBag || !Number.isFinite(midXrpPerBag) || midXrpPerBag <= 0) return false;
+    if (PRICES.xrpUsd > 0) {
+      PRICES.bagUsd = PRICES.xrpUsd / midXrpPerBag;
+      PRICES.source = 'live-dex';
+      return true;
+    }
+    return false;
+  }
+
   async function fetchBagUsd(){
     let reason=''; for(const base of BAG_FEEDS){
       try{
@@ -752,17 +816,35 @@
     }
     diagSpan.textContent = reason; return false;
   }
+
   function loadCache(){ const bag=cacheGet('bag_prices'); const xrp=cacheGet('xrp_usd'); let used=false;
     if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
     if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
     return used;
   }
+
+  // Prefer DEX → fall back to feeds → cache
   async function refreshPrices(){
-    const gotBag = await fetchBagUsd();
     const hadX = PRICES.xrpUsd>0;
     const gotX = hadX || await fetchXrpUsd();
-    PRICES.source = gotBag && gotX ? 'live' : (gotBag || gotX) ? 'partial live' : loadCache() ? 'cached' : '—';
-    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0) cacheSet('bag_prices',{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
+
+    let gotBag = false;
+    try { gotBag = await fetchBagUsdFromDEX(); } catch {}
+    if (!gotBag) gotBag = await fetchBagUsd();
+
+    if (gotBag && gotX) {
+      PRICES.source = (PRICES.source === 'live-dex') ? 'live-dex' : 'live';
+    } else if (gotBag || gotX) {
+      PRICES.source = 'partial live';
+    } else if (loadCache()) {
+      PRICES.source = 'cached';
+    } else {
+      PRICES.source = '—';
+    }
+
+    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
+      cacheSet('bag_prices',{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
+    }
     updateLiveLine();
   }
 
@@ -788,13 +870,12 @@
     try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
 
-    // ----- $1 USD minimum enforcement -----
+    // $1 USD minimum enforcement
     const usdEq = stakeUsdEquivalent();
     if (usdEq < MIN_BET_USD){
       toast('Minimum bet is $1 — stack heavier.');
       return;
     }
-    // Optional clamp to max after the min check
     clampIfNeeded(true);
 
     rollBtn.disabled=true;
@@ -821,7 +902,8 @@
         rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
       } else {
-        point=total; pointVal.textContent=String(point); pointBadge.style.display='inline-block';
+        point=total; pointVal.textContent=String(point); pointBadge.style.display='none';
+        pointBadge.style.display='inline-block';
         stateText.textContent='Point phase — hit the Point before 7';
         rollText.textContent=`Point set to ${point}. Roll again.`;
       }
