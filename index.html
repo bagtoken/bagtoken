@@ -75,7 +75,7 @@
   .btn-buy:hover{filter:brightness(1.05);box-shadow:0 6px 0 #b08a19, 0 22px 40px rgba(255,225,117,.26), inset 0 1px 0 rgba(255,255,255,.4)}
   .btn-buy:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315, 0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
 
-  /* Game header (image + title above game) */
+  /* Game header */
   .game-header{text-align:center;padding:36px 10px 14px}
   .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
@@ -93,19 +93,21 @@
 
   .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
 
-  /* Stake/price box */
   .stake-box{padding:14px}
   .stack{display:grid;gap:10px}
   .choice{display:flex;gap:10px;flex-wrap:wrap}
   .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
-  .muted{color:#cfd6cf}
   .micro{font-size:.85rem;color:#a8b5ab}
+  .muted{color:#cfd6cf}
   .divider{height:1px;background:#123221;margin:10px 0}
 
-  /* Result / payout */
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+  .payout-grid{display:grid;gap:4px}
+  .payout-grid .row{display:flex;justify-content:space-between}
+  .payout-grid .lab{color:#cfd6cf}
+  .payout-grid .val{font-variant-numeric:tabular-nums}
 
   /* Dice visuals */
   .dice-area{margin-top:12px;display:flex;gap:16px;justify-content:center;align-items:center;perspective:700px;height:96px}
@@ -146,7 +148,7 @@
 
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.25rem}
-  .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e06767}
+  .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
   .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}
 
   /* Litepaper */
@@ -261,11 +263,14 @@
             <div id="bagDiag" class="micro" style="opacity:.55;margin-top:4px;"></div>
           </div>
 
+          <!-- NEW payout preview -->
           <div class="callout mono" id="payoutBox">
-            <div><strong>Payout on win</strong>: <span id="payoutTotal">—</span> (incl. stake)</div>
-            <div>Profit on win: <span id="payoutProfit">—</span></div>
-            <div>Total (USD est.): <span id="payoutUSD">—</span></div>
-            <div>House edge (Pass Line): 1.41%</div>
+            <div class="payout-grid">
+              <div class="row"><div class="lab"><strong>Point Win</strong> (1.00×):</div><div class="val" id="payoutPoint">—</div></div>
+              <div class="row"><div class="lab"><strong>Normal Win</strong> (1.25×):</div><div class="val" id="payoutNormal">— <span class="micro" id="payoutNormalGain" style="opacity:.9"></span></div></div>
+              <div class="row"><div class="lab"><strong>Jackpot</strong> (2.00×):</div><div class="val" id="payoutJackpot">— <span class="micro" id="payoutJackpotGain" style="opacity:.9"></span></div></div>
+            </div>
+            <div class="micro" style="margin-top:6px;opacity:.85;">House edge (Pass Line): 1.41%</div>
           </div>
 
           <button id="rollBtn" class="btn-roll">Roll</button>
@@ -309,8 +314,15 @@
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
         <li><b>Come-out:</b> 7/11 win · 2/3/12 lose · else set the <b>Point</b></li>
         <li><b>Point phase:</b> roll until the point reappears (win) or 7 (lose)</li>
-        <li>Payout: <b>1:1 in $BAG</b> (even money)</li>
       </ul>
+
+      <h4 style="margin:12px 0 6px;">Payouts:</h4>
+      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+        <li><b>Point Win:</b> get your bet back (1.00×, no gain).</li>
+        <li><b>Normal Win (7/11):</b> 1.25× payout (+0.25× gain).</li>
+        <li><b>Jackpot:</b> 2.00× payout (+1.00× gain).</li>
+      </ul>
+
       <p class="micro" style="margin-top:10px">No wallet connection yet. Visual demo only while development continues.</p>
     </div>
 
@@ -348,132 +360,19 @@
   </div>
 </div>
 
-<!-- AUDIO ENGINE (shared, unlocked on first click) -->
+<!-- AUDIO ENGINE -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC = null, MASTER = null;
+  function getAC(){ if(!AudioCtx) return null; if(AC) return AC; AC = new AudioCtx(); MASTER = AC.createGain(); MASTER.gain.value=0.22; MASTER.connect(AC.destination); return AC; }
+  function ensure(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended') ac.resume(); return ac; }
+  function unlock(){ const ac=ensure(); if(!ac) return; const o=ac.createOscillator(); const g=ac.createGain(); g.gain.value=0; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01); }
 
-  function getAC(){
-    if (!AudioCtx) return null;
-    if (AC) return AC;
-    AC = new AudioCtx();
-    MASTER = AC.createGain();
-    MASTER.gain.value = 0.22; // master volume
-    MASTER.connect(AC.destination);
-    return AC;
-  }
-  function ensure(){
-    const ac = getAC(); if (!ac) return null;
-    if (ac.state === 'suspended') ac.resume();
-    return ac;
-  }
-  function unlock(){
-    const ac = ensure(); if (!ac) return;
-    // brief silent blip to satisfy mobile gesture requirement
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    g.gain.value = 0;
-    o.connect(g).connect(MASTER);
-    o.start();
-    o.stop(ac.currentTime + 0.01);
-  }
-
-  // --- helpers ---
-  function makeNoise(ac, dur=0.08){
-    // white noise burst (band-passed) for dice tick / texture
-    const len = Math.max(1, Math.floor(dur * ac.sampleRate));
-    const buf = ac.createBuffer(1, len, ac.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i=0;i<len;i++) data[i] = (Math.random()*2-1) * 0.9;
-
-    const src = ac.createBufferSource(); src.buffer = buf;
-    const bp = ac.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1200;
-    bp.Q.value = 2.0;
-
-    const g = ac.createGain();
-    g.gain.value = 0;
-
-    src.connect(bp).connect(g);
-    return { src, g };
-  }
-
-  // WIN: simple bright triad
-  function chime(){
-    const ac = ensure(); if (!ac) return;
-    const now = ac.currentTime;
-    const notes = [880, 1175, 1760];
-    notes.forEach((f,i)=>{
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.type='triangle'; o.frequency.value=f;
-      g.gain.setValueAtTime(0.0001, now+i*0.02);
-      g.gain.linearRampToValueAtTime(0.18,  now+i*0.02+0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, now+i*0.02+0.28);
-      o.connect(g).connect(MASTER);
-      o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
-    });
-  }
-
-  // LOSE: clearer subtle nudge (noise “tick” + short downward blip through light compression)
-  function nudge(){
-    const ac = ensure(); if (!ac) return;
-    const now = ac.currentTime;
-
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -26;
-    comp.knee.value = 16;
-    comp.ratio.value = 3.5;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.08;
-    comp.connect(MASTER);
-
-    // 1) Short noise tick
-    const { src: nSrc, g: nGain } = makeNoise(ac, 0.06);
-    nGain.connect(comp);
-    nGain.gain.setValueAtTime(0.0001, now);
-    nGain.gain.linearRampToValueAtTime(0.12, now + 0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    nSrc.start(now);
-    nSrc.stop(now + 0.09);
-
-    // 2) Downward sine blip
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(420, now);
-    o.frequency.exponentialRampToValueAtTime(200, now + 0.18);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.10, now + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    o.connect(g).connect(comp);
-    o.start(now);
-    o.stop(now + 0.24);
-  }
-
-  // DICE: soft crackle/roll texture during animation
-  function dice(){
-    const ac = ensure(); if (!ac) return;
-    const now = ac.currentTime;
-
-    // three tiny ticks spaced over ~0.2s
-    for (let i=0;i<3;i++){
-      const t = now + i*0.06;
-      const { src, g } = makeNoise(ac, 0.05);
-      const hp = ac.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 900;
-      src.connect(hp).connect(g).connect(MASTER);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(0.08, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-      src.start(t);
-      src.stop(t + 0.1);
-    }
-  }
-
+  function makeNoise(ac,dur=0.08){ const len=Math.max(1,Math.floor(dur*ac.sampleRate)); const buf=ac.createBuffer(1,len,ac.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9; const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0; const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g); return {src,g}; }
+  function chime(){ const ac=ensure(); if(!ac) return; const now=ac.currentTime; const notes=[880,1175,1760]; notes.forEach((f,i)=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(0.0001, now+i*0.02); g.gain.linearRampToValueAtTime(0.18, now+i*0.02+0.03); g.gain.exponentialRampToValueAtTime(0.0001, now+i*0.02+0.28); o.connect(g).connect(MASTER); o.start(now+i*0.02); o.stop(now+i*0.02+0.3); }); }
+  function nudge(){ const ac=ensure(); if(!ac) return; const now=ac.currentTime; const comp=ac.createDynamicsCompressor(); comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08; comp.connect(MASTER); const {src:nSrc,g:nGain}=makeNoise(ac,0.06); nGain.connect(comp); nGain.gain.setValueAtTime(0.0001,now); nGain.gain.linearRampToValueAtTime(0.12,now+0.008); nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08); nSrc.start(now); nSrc.stop(now+0.09); const o=ac.createOscillator(); const g=ac.createGain(); o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18); g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.10,now+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+0.22); o.connect(g).connect(comp); o.start(now); o.stop(now+0.24); }
+  function dice(){ const ac=ensure(); if(!ac) return; const now=ac.currentTime; for(let i=0;i<3;i++){ const t=now+i*0.06; const {src,g}=makeNoise(ac,0.05); const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=900; src.connect(hp).connect(g).connect(MASTER); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.08,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.09); src.start(t); src.stop(t+0.1); } }
   window.__bagAudio = { unlock, chime, nudge, dice };
 })();
 </script>
@@ -481,134 +380,52 @@
 <!-- WIN overlay logic -->
 <script>
 (function(){
-  const overlay = document.getElementById('win-overlay');
-  const canvas  = document.getElementById('win-canvas');
-  const ctx = canvas.getContext('2d');
-  const closeBtn = document.getElementById('win-close');
-  const sub = document.getElementById('win-sub');
-  const title = document.getElementById('win-text');
+  const overlay=document.getElementById('win-overlay');
+  const canvas=document.getElementById('win-canvas');
+  const ctx=canvas.getContext('2d');
+  const closeBtn=document.getElementById('win-close');
+  const sub=document.getElementById('win-sub');
+  const title=document.getElementById('win-text');
+  let rafId=null, particles=[], start=0, dur=2000;
 
-  let rafId=null, particles=[], start=0, dur=2000, running=false;
-
-  function sizeCanvas(){
-    const dpr = Math.min(window.devicePixelRatio||1, 2);
-    canvas.width = Math.floor(innerWidth*dpr);
-    canvas.height = Math.floor(innerHeight*dpr);
-    canvas.style.width = innerWidth+'px';
-    canvas.style.height = innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
+  function sizeCanvas(){ const dpr=Math.min(window.devicePixelRatio||1,2); canvas.width=Math.floor(innerWidth*dpr); canvas.height=Math.floor(innerHeight*dpr); canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   sizeCanvas(); addEventListener('resize', sizeCanvas);
 
-  function rand(n){ return Math.random()*n }
-  function choose(a){ return a[(Math.random()*a.length)|0] }
+  function spawnConfetti(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++){ const x=innerWidth*0.25+Math.random()*innerWidth*0.5; const y=innerHeight*0.35+Math.random()*innerHeight*0.1; const speed=2+Math.random()*4; particles.push({x,y,vx:(Math.random()-.5)*speed*1.2,vy:-(3+Math.random()*5),g:0.12+Math.random()*0.2,rot:Math.random()*6.28,vr:(Math.random()-.5)*0.2,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); } }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz; if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
+  function animate(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(animate); } else { stop(); } }
+  function startFx(){ if(matchMedia('(prefers-reduced-motion: reduce)').matches) return; start=0; dur=2200; canvas.style.display='block'; spawnConfetti(180); rafId=requestAnimationFrame(animate); }
+  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
+  function show(){ overlay.style.display='grid'; addEventListener('keydown', e=>{ if(e.key==='Escape') hide(); }, {once:true}); }
+  function hide(){ overlay.style.display='none'; stop(); }
+  closeBtn.addEventListener('click', hide);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  function spawnConfetti(count){
-    particles.length = 0;
-    const colors = ['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<count;i++){
-      const x = innerWidth*0.25 + Math.random()*innerWidth*0.5;
-      const y = innerHeight*0.35 + Math.random()*innerHeight*0.1;
-      const speed = 2 + Math.random()*4;
-      particles.push({
-        x, y,
-        vx:(Math.random()-.5)*speed*1.2,
-        vy:-(3+Math.random()*5),
-        g: 0.12 + Math.random()*0.2,
-        rot: rand(Math.PI*2),
-        vr: (Math.random()-.5)*0.2,
-        sz: 6 + Math.random()*10,
-        col: choose(colors),
-        shape: Math.random()<.4 ? 'circle' : (Math.random()<.5 ? 'square' : 'tri')
-      });
-    }
-  }
-
-  function drawConfetti(){
-    ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{
-      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.rot += p.vr;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.col;
-      const s = p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
-
-  function animate(ts){
-    if(!start) start = ts;
-    const elapsed = ts - start;
-    drawConfetti();
-    if(elapsed < dur){ rafId = requestAnimationFrame(animate); }
-    else { stopConfetti(); }
-  }
-
-  function startConfetti(){
-    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    start = 0; dur = 2200; running = true;
-    canvas.style.display='block';
-    spawnConfetti(180);
-    rafId = requestAnimationFrame(animate);
-  }
-  function stopConfetti(){
-    running = false;
-    cancelAnimationFrame(rafId);
-    ctx.clearRect(0,0,innerWidth,innerHeight);
-    canvas.style.display='none';
-  }
-
-  function playChime(){
-    try{ if (window.__bagAudio) __bagAudio.chime(); }catch(e){}
-  }
-
-  function showOverlay(){
-    overlay.style.display='grid';
-    const esc = (e)=>{ if(e.key==='Escape'){ hideOverlay() } };
-    addEventListener('keydown', esc, { once:true });
-  }
-  function hideOverlay(){
-    overlay.style.display='none';
-    stopConfetti();
-  }
-  closeBtn.addEventListener('click', hideOverlay);
-  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) hideOverlay() });
-
-  window.showWin = function(opts={}){
-    const { message='WIN', subtext='Nice roll', duration=1800, sound=true } = opts;
-    title.textContent = message;
-    sub.textContent = subtext;
-    showOverlay();
-    startConfetti();
-    if(sound) playChime();
-    clearTimeout(window.__winTimer);
-    window.__winTimer = setTimeout(hideOverlay, Math.max(1000, duration));
-  };
+  window.showWin = function(opts={}){ const {message='WIN', subtext='Nice roll', duration=1800, sound=true}=opts; title.textContent=message; sub.textContent=subtext; show(); startFx(); if(sound){ try{ window.__bagAudio && __bagAudio.chime(); }catch(e){} } clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1000,duration)); };
 })();
 </script>
 
+<!-- GAME LOGIC + PRICES + NEW PAYOUT POLICY -->
 <script>
 (function(){
   // ---------- CONFIG ----------
-  const BAG_FEEDS = [
-    'https://api.getthebag.io/bag-price.json',      // primary
-    'https://getthebag.io/assets/bag-price.json'    // same-origin fallback
-  ];
-  const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
+  const JACKPOT_N = 100;      // client-side visual jackpot chance on normal come-out wins
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
-  const MAX_BET_USD = 2000;                // per-play cap (USD)
+  const CACHE_TTL_MS = 6*60*60*1000;
+  const MAX_BET_USD = 2000;
+
+  const BAG_FEEDS = [
+    'https://api.getthebag.io/bag-price.json',
+    '/assets/bag-price.json'
+  ];
+  const CG_XRP = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
 
   // ---------- UI ----------
   const rollBtn = document.getElementById('rollBtn');
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
   const betInput = document.getElementById('demoBet');
-  const payoutTotal = document.getElementById('payoutTotal');
-  const payoutProfit = document.getElementById('payoutProfit');
-  const payoutUSD = document.getElementById('payoutUSD');
   const stateText = document.getElementById('stateText');
   const pointBadge = document.getElementById('pointBadge');
   const pointVal = document.getElementById('pointVal');
@@ -621,38 +438,19 @@
   const liveConv = document.getElementById('liveConv');
   const diagSpan = document.getElementById('bagDiag');
 
-  // Tiny helper UI under the bet input
-  let limitNote = document.getElementById('limitNote');
-  let limitToast = document.getElementById('limitToast');
-  (function ensureLimitUi(){
-    if (!betInput) return;
-    const holder = betInput.closest('div');
-    const container = holder?.parentElement;
-    if (container) {
-      if (!limitNote) {
-        limitNote = document.createElement('div');
-        limitNote.id = 'limitNote';
-        limitNote.className = 'micro';
-        limitNote.style.marginTop = '6px';
-        container.appendChild(limitNote);
-      }
-      if (!limitToast) {
-        limitToast = document.createElement('div');
-        limitToast.id = 'limitToast';
-        limitToast.className = 'micro';
-        limitToast.style.cssText = 'margin-top:4px;color:#e25b5b;display:none;';
-        container.appendChild(limitToast);
-      }
-    }
-  })();
+  const payoutPoint = document.getElementById('payoutPoint');
+  const payoutNormal = document.getElementById('payoutNormal');
+  const payoutNormalGain = document.getElementById('payoutNormalGain');
+  const payoutJackpot = document.getElementById('payoutJackpot');
+  const payoutJackpotGain = document.getElementById('payoutJackpotGain');
 
   // ---------- STATE ----------
   let point = null;
-  const PRICES = { bagUsd: 0, xrpUsd: 0, source: '—', ts: 0 };
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
 
   // ---------- HELPERS ----------
-  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
-  const pick = (...xs) => xs.map(num).find(v => v > 0);
+  const num = v => { const n=Number(v); return Number.isFinite(n)?n:NaN; };
+  const pick = (...xs) => xs.map(num).find(v=>v>0);
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
@@ -660,131 +458,79 @@
     if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
     return n.toLocaleString(undefined, {maximumFractionDigits:10});
   }
-  function toast(msg){
-    if (!limitToast) return;
-    limitToast.textContent = msg || '';
-    limitToast.style.display = msg ? 'block' : 'none';
-    if (msg){
-      limitToast.style.opacity = '1';
-      setTimeout(()=>{ limitToast.style.transition='opacity .6s'; limitToast.style.opacity='0'; }, 1200);
-      setTimeout(()=>{ limitToast.style.display='none'; limitToast.style.transition=''; limitToast.style.opacity=''; }, 1900);
-    }
-  }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS) ? o.v : null; }catch{ return null; } }
+  function cacheGet(k){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); return (o && Date.now()-o.t<=CACHE_TTL_MS)?o.v:null; }catch{ return null; } }
   async function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
     const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
     try{ return await fetch(url,{...opts,headers:{Accept:'application/json'},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
     finally{ clearTimeout(id); }
   }
-  function resolveFromPayload(j){
-    const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
-    const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
-    const xrp_per_bag = pick(j?.bag_xrp,j?.xrp_bag,j?.xrpPerBag,j?.xrp_per_bag);
-    const bag_per_xrp = pick(j?.bag_per_xrp,j?.bagPerXrp,j?.BAG_per_XRP);
-    const ts = Number(j?.timestamp); if (ts>0) PRICES.ts = ts;
-    if (xrp_usd) PRICES.xrpUsd = xrp_usd;
-    if (usd){ PRICES.bagUsd = usd; return true; }
-    if (xrp_per_bag && PRICES.xrpUsd){ PRICES.bagUsd = xrp_per_bag * PRICES.xrpUsd; return true; }
-    if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
-    return false;
-  }
-  function resolveFromText(txt){
-    const grab = k => { const m = txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?Number(m[1]):NaN; };
-    const usd = pick(grab('usd'),grab('USD'),grab('bag_usd'),grab('BAG_USD'),grab('price_usd'),grab('price'));
-    const xrp_usd = pick(grab('xrp_usd'),grab('XRP_USD'));
-    const bag_xrp = pick(grab('bag_xrp'),grab('xrp_bag'),grab('xrp_per_bag'));
-    const bag_per_xrp = pick(grab('bag_per_xrp'),grab('BAG_per_XRP'));
-    if (xrp_usd) PRICES.xrpUsd = xrp_usd;
-    if (usd){ PRICES.bagUsd = usd; return true; }
-    if (bag_xrp && PRICES.xrpUsd){ PRICES.bagUsd = bag_xrp * PRICES.xrpUsd; return true; }
-    if (bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp) * PRICES.xrpUsd; return true; }
-    return false;
-  }
-
-  // ---------- FETCHERS ----------
-  async function fetchXrpUsd(){
-    try{
-      const r = await timedFetch(CG_XRP);
-      if (!r.ok) throw new Error('HTTP '+r.status);
-      const v = (await r.json())?.ripple?.usd;
-      if (Number(v) > 0){ PRICES.xrpUsd = v; cacheSet('xrp_usd', v); return true; }
-      throw new Error('bad payload');
-    }catch(e){ if (diagSpan) diagSpan.textContent = 'XRP feed: '+(e.message||'error'); return false; }
-  }
-  async function fetchBagUsd(){
-    let reason = '';
-    for (const base of BAG_FEEDS){
-      try{
-        const url = `${base}?ts=${Date.now()}`;
-        const r = await timedFetch(url);
-        if (!r.ok){ reason = `${base} → HTTP ${r.status}`; continue; }
-        try{
-          const j = await r.clone().json();
-          if (resolveFromPayload(j)){ if (diagSpan) diagSpan.textContent=`BAG feed OK: ${base}`; return true; }
-          reason = `${base} → no usable fields`;
-        }catch{
-          const t = await r.text();
-          if (resolveFromText(t)){ if (diagSpan) diagSpan.textContent=`BAG feed (text) OK: ${base}`; return true; }
-          reason = `${base} → parse failed`;
-        }
-      }catch(e){ reason = `${base} → ${e.message||'fetch error'}`; }
-    }
-    if (diagSpan) diagSpan.textContent = reason;
-    return false;
-  }
-  function loadCache(){
-    const bag = cacheGet('bag_prices'); const xrp = cacheGet('xrp_usd'); let used=false;
-    if (bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts = bag.ts||PRICES.ts; used=true; }
-    if (!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
-    return used;
-  }
-
-  // ---------- Limit logic (AUTO-CLAMP) ----------
-  function maxForCurrency(){
-    const cur = currentCurrency();
-    if (cur === 'BAG') {
-      return PRICES.bagUsd > 0 ? MAX_BET_USD / PRICES.bagUsd : 0;
-    } else {
-      return PRICES.xrpUsd > 0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
-    }
-  }
-  function betUsdEstimate(){
-    const bet = Math.max(0, parseFloat(betInput.value || 0));
+  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+  function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
+  function stakeInBAG(){
+    const bet = Math.max(0, parseFloat(betInput.value||0));
     if (!bet) return 0;
-    return currentCurrency()==='BAG'
-      ? (PRICES.bagUsd>0 ? bet * PRICES.bagUsd : 0)
-      : (PRICES.xrpUsd>0 ? bet * PRICES.xrpUsd : 0);
-  }
-  function clampIfNeeded(showToast=true){
-    const maxQty = maxForCurrency();
-    if (!maxQty) return;
-    let val = Math.max(0, parseFloat(betInput.value || 0));
-    if (val > maxQty) {
-      betInput.value = String(maxQty);
-      if (showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`);
+    if (currentCurrency()==='BAG') return bet;
+    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+      return bet * bagPerXrp;
     }
+    return 0;
+  }
+
+  // ---------- PREVIEW ----------
+  function updatePayoutPreview(){
+    const s = stakeInBAG();
+    if (s>0){
+      const ptTotal = s*1.00;
+      const nmTotal = s*1.25, nmGain = s*0.25;
+      const jpTotal = s*2.00, jpGain = s*1.00;
+      payoutPoint.textContent = `${fmt(ptTotal)} BAG`;
+      payoutNormal.textContent = `${fmt(nmTotal)} BAG`;
+      payoutNormalGain.textContent = `(gain +${fmt(nmGain)} BAG)`;
+      payoutJackpot.textContent = `${fmt(jpTotal)} BAG`;
+      payoutJackpotGain.textContent = `(gain +${fmt(jpGain)} BAG)`;
+    } else {
+      payoutPoint.textContent = payoutNormal.textContent = payoutJackpot.textContent = '—';
+      payoutNormalGain.textContent = payoutJackpotGain.textContent = '';
+    }
+  }
+
+  // ---------- Limits ----------
+  let limitNote, limitToast;
+  (function ensureLimitUi(){
+    const holder=betInput.closest('div'); const container=holder?.parentElement;
+    if(container){
+      limitNote=document.createElement('div'); limitNote.className='micro'; limitNote.style.marginTop='6px'; container.appendChild(limitNote);
+      limitToast=document.createElement('div'); limitToast.className='micro'; limitToast.style.cssText='margin-top:4px;color:#e25b5b;display:none;'; container.appendChild(limitToast);
+    }
+  })();
+  function toast(msg){
+    limitToast.textContent = msg||''; limitToast.style.display = msg?'block':'none';
+    if(msg){ limitToast.style.opacity='1'; setTimeout(()=>{ limitToast.style.transition='opacity .6s'; limitToast.style.opacity='0'; },1200); setTimeout(()=>{ limitToast.style.display='none'; limitToast.style.transition=''; limitToast.style.opacity=''; },1900); }
+  }
+  function maxForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0); }
+  function clampIfNeeded(showToast=true){
+    const maxQty = maxForCurrency(); if (!maxQty) return;
+    let val = Math.max(0, parseFloat(betInput.value||0));
+    if (val > maxQty){ betInput.value=String(maxQty); if(showToast) toast(`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`); }
   }
   function updateLimitUi(){
     let note = `Max $${MAX_BET_USD.toLocaleString()}`;
-    const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD / PRICES.xrpUsd : 0;
-    const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD / PRICES.bagUsd : 0;
-    const parts = [];
-    if (maxXrp) parts.push(`${fmt(maxXrp)} XRP`);
-    if (maxBag) parts.push(`${fmt(maxBag)} BAG`);
+    const maxXrp = PRICES.xrpUsd>0 ? MAX_BET_USD/PRICES.xrpUsd : 0;
+    const maxBag = PRICES.bagUsd>0 ? MAX_BET_USD/PRICES.bagUsd : 0;
+    const parts=[]; if(maxXrp) parts.push(`${fmt(maxXrp)} XRP`); if(maxBag) parts.push(`${fmt(maxBag)} BAG`);
     if (parts.length) note += ` ≈ ${parts.join(' or ')}`;
-    if (limitNote) limitNote.textContent = note;
-
+    limitNote.textContent = note;
     clampIfNeeded(false);
     rollBtn.disabled = !pricesReadyForCurrentCurrency();
-    betInput.style.borderColor = '#1b4a2f';
   }
 
-  // ---------- UI updates ----------
+  // ---------- Prices ----------
   function updateConversions(){
-    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const xrpPerBag = PRICES.bagUsd / PRICES.xrpUsd;
-      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+      const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
       liveConv.textContent = `1 BAG ≈ ${fmt(xrpPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerXrp)} BAG`;
     } else {
       liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
@@ -793,126 +539,153 @@
   function updateLiveLine(){
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
-    const dotClass = PRICES.source==='live' ? 'ok' :
-                     PRICES.source==='partial live' ? 'warn' :
-                     PRICES.source==='cached' ? 'warn' : 'err';
+    const dotClass = PRICES.source==='live' ? 'ok' : PRICES.source==='partial live' ? 'warn' : PRICES.source==='cached' ? 'warn' : 'err';
     liveDot.className = dotClass;
-    liveNote.textContent =
-      PRICES.source==='live' ? ' (live)' :
-      PRICES.source==='partial live' ? ' (partial live)' :
-      PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
-    updateConversions();
-    updateLimitUi();
-    updatePayoutPreview();
+    liveNote.textContent = PRICES.source==='live' ? ' (live)' : PRICES.source==='partial live' ? ' (partial live)' : PRICES.source==='cached' ? ' (cached)' : ' (unavailable)';
+    updateConversions(); updateLimitUi(); updatePayoutPreview();
   }
-  function currentCurrency(){
-    const el = curToggle.querySelector('input[name="betCur"]:checked');
-    return el ? el.value : 'XRP';
+  function resolveFromPayload(j){
+    const usd = pick(j?.usd,j?.USD,j?.bag_usd,j?.BAG_USD,j?.price_usd,j?.priceUSD,j?.price);
+    const xrp_usd = pick(j?.xrp_usd,j?.XRP_USD,j?.xrpPriceUsd);
+    const xrp_per_bag = pick(j?.bag_xrp,j?.xrp_bag,j?.xrpPerBag,j?.xrp_per_bag);
+    const bag_per_xrp = pick(j?.bag_per_xrp,j?.bagPerXrp,j?.BAG_per_XRP);
+    const ts = Number(j?.timestamp); if (ts>0) PRICES.ts=ts;
+    if(xrp_usd) PRICES.xrpUsd=xrp_usd;
+    if(usd){ PRICES.bagUsd=usd; return true; }
+    if(xrp_per_bag && PRICES.xrpUsd){ PRICES.bagUsd = xrp_per_bag*PRICES.xrpUsd; return true; }
+    if(bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp)*PRICES.xrpUsd; return true; }
+    return false;
   }
-  function pricesReadyForCurrentCurrency(){
-    return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0;
+  function resolveFromText(txt){
+    const grab=k=>{ const m=txt.match(new RegExp(`"${k}"\\s*:\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)`)); return m?Number(m[1]):NaN; };
+    const usd=pick(grab('usd'),grab('USD'),grab('bag_usd'),grab('BAG_USD'),grab('price_usd'),grab('price'));
+    const xrp_usd=pick(grab('xrp_usd'),grab('XRP_USD'));
+    const bag_xrp=pick(grab('bag_xrp'),grab('xrp_bag'),grab('xrp_per_bag'));
+    const bag_per_xrp=pick(grab('bag_per_xrp'),grab('BAG_per_XRP'));
+    if(xrp_usd) PRICES.xrpUsd=xrp_usd;
+    if(usd){ PRICES.bagUsd=usd; return true; }
+    if(bag_xrp && PRICES.xrpUsd){ PRICES.bagUsd = bag_xrp*PRICES.xrpUsd; return true; }
+    if(bag_per_xrp && PRICES.xrpUsd){ PRICES.bagUsd = (1/bag_per_xrp)*PRICES.xrpUsd; return true; }
+    return false;
   }
-  function stakeInBAG(){
-    const bet = Math.max(0, parseFloat(betInput.value || 0));
-    if (!bet) return 0;
-    if (currentCurrency() === 'BAG') return bet;
-    if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
-      return bet * bagPerXrp;
+  async function fetchXrpUsd(){
+    try{ const r=await timedFetch(CG_XRP); if(!r.ok) throw new Error('HTTP '+r.status);
+      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=v; cacheSet('xrp_usd',v); return true; }
+      throw new Error('bad payload');
+    }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
+  }
+  async function fetchBagUsd(){
+    let reason=''; for(const base of BAG_FEEDS){
+      try{
+        const r = await timedFetch(`${base}?ts=${Date.now()}`);
+        if(!r.ok){ reason=`${base} → HTTP ${r.status}`; continue; }
+        try{ const j=await r.clone().json(); if(resolveFromPayload(j)){ diagSpan.textContent=`BAG feed OK: ${base}`; return true; } reason=`${base} → no usable fields`;
+        }catch{ const t=await r.text(); if(resolveFromText(t)){ diagSpan.textContent=`BAG feed (text) OK: ${base}`; return true; } reason=`${base} → parse failed`; }
+      }catch(e){ reason=`${base} → ${e.message||'fetch error'}`; }
     }
-    return 0;
+    diagSpan.textContent = reason; return false;
   }
-  function updatePayoutPreview(){
-    const s = stakeInBAG();
-    if (s > 0){
-      const total = s*2, profit=s, usd = PRICES.bagUsd>0 ? total*PRICES.bagUsd : 0;
-      payoutTotal.textContent  = `${fmt(total)} BAG`;
-      payoutProfit.textContent = `${fmt(profit)} BAG`;
-      payoutUSD.textContent    = usd>0 ? `$${fmt(usd)}` : '—';
-    } else {
-      payoutTotal.textContent='—'; payoutProfit.textContent='—'; payoutUSD.textContent='—';
-    }
+  function loadCache(){ const bag=cacheGet('bag_prices'); const xrp=cacheGet('xrp_usd'); let used=false;
+    if(bag && Number(bag.bagUsd)>0){ PRICES.bagUsd=bag.bagUsd; if(Number(bag.xrpUsd)>0) PRICES.xrpUsd=bag.xrpUsd; PRICES.ts=bag.ts||PRICES.ts; used=true; }
+    if(!PRICES.xrpUsd && Number(xrp)>0){ PRICES.xrpUsd=xrp; used=true; }
+    return used;
   }
-
-  // ---------- Orchestration ----------
   async function refreshPrices(){
     const gotBag = await fetchBagUsd();
-    const hadX   = PRICES.xrpUsd>0;
-    const gotX   = hadX || await fetchXrpUsd();
+    const hadX = PRICES.xrpUsd>0;
+    const gotX = hadX || await fetchXrpUsd();
     PRICES.source = gotBag && gotX ? 'live' : (gotBag || gotX) ? 'partial live' : loadCache() ? 'cached' : '—';
-
-    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0){
-      cacheSet('bag_prices', {bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
-    }
+    if (PRICES.bagUsd>0 || PRICES.xrpUsd>0) cacheSet('bag_prices',{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0,ts:PRICES.ts||0});
     updateLiveLine();
   }
 
-  // ---------- Events ----------
-  betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
-  curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
+  // ---------- Roll + payouts (visual demo) ----------
+  function emitResult(detail){
+    window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
+    // Overlay messages per policy
+    const s = Number(detail.stakeBag)||0;
+    if (typeof window.showWin === 'function'){
+      if (detail.jackpot){
+        const gain=s*1.00, total=s*2.00;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG` });
+      } else if (detail.kind==='normal'){
+        const gain=s*0.25, total=s*1.25;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG` });
+      } else if (detail.kind==='point'){
+        const total=s*1.00;
+        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG` });
+      }
+    }
+  }
 
   rollBtn.addEventListener('click', async ()=>{
-    // unlock audio + play dice texture during the user gesture
-    try{ if (window.__bagAudio){ __bagAudio.unlock(); __bagAudio.dice(); } }catch(e){}
-
-    if (!pricesReadyForCurrentCurrency()){
-      toast('Waiting for live price…'); return;
-    }
+    try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
+    if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
     clampIfNeeded(true);
-
     rollBtn.disabled=true;
+
+    // Animate dice
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
-    const resetCube = el => { el.className='cube'; };
-    const poseCube  = (el,v)=>{ el.classList.add('show-'+v); };
+    const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
     [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
-    const a=Math.floor(Math.random()*6)+1, b=Math.floor(Math.random()*6)+1;
+    const a=(Math.random()*6|0)+1, b=(Math.random()*6|0)+1;
     await new Promise(r=>setTimeout(r,900));
-    [dieA,dieB].forEach(c=>c.classList.remove('rolling'));
-    poseCube(dieA,a); poseCube(dieB,b);
-    const total=a+b; rollNumber.textContent=total;
-    rollText.classList.remove('win','lose');
+    [dieA,dieB].forEach(c=>c.classList.remove('rolling')); pose(dieA,a); pose(dieB,b);
+    const total=a+b; rollNumber.textContent=total; rollText.classList.remove('win','lose');
+
+    const stake = stakeInBAG();
+    const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag:stake };
 
     if (point==null){
-      if (total===7||total===11){
+      if (total===7 || total===11){
+        // Normal win (1.25x). Optional client jackpot chance:
+        detail.kind='normal';
+        if ((Math.random()*JACKPOT_N|0)===0){ detail.jackpot=true; }
         rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
-        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'WIN', subtext:`+${fmt(s)} BAG` }); }catch(e){}
-      }
-      else if (total===2||total===3||total===12){
+        emitResult(detail);
+      } else if (total===2 || total===3 || total===12){
         rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
-        try{ if (window.__bagAudio) __bagAudio.nudge(); }catch(e){}
+        try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
+      } else {
+        point=total; pointVal.textContent=String(point); pointBadge.style.display='inline-block';
+        stateText.textContent='Point phase — hit the Point before 7';
+        rollText.textContent=`Point set to ${point}. Roll again.`;
       }
-      else {
-        point=total; rollText.textContent=`Point set to ${point}. Roll again.`; stateText.textContent='Point phase — hit the Point before 7'; pointVal.textContent=String(point); pointBadge.style.display='inline-block'; rollBtn.disabled=false; return;
-      }
-    }else{
+    } else {
       if (total===point){
-        rollText.textContent=`WIN — hit the Point ${point}`; rollText.classList.add('win');
-        try{ const s = stakeInBAG(); if (s>0 && typeof showWin==='function') showWin({ message:'POINT!', subtext:`+${fmt(s)} BAG` }); }catch(e){}
-        point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
-      }
-      else if (total===7){
+        detail.kind='point'; rollText.textContent=`POINT WIN — ${point}`; rollText.classList.add('win');
+        emitResult(detail);
+        point=null; pointBadge.style.display='none'; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+      } else if (total===7){
         rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose');
-        try{ if (window.__bagAudio) __bagAudio.nudge(); }catch(e){}
-        point=null; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
-      }
-      else {
+        try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
+        point=null; pointBadge.style.display='none'; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+      } else {
         rollText.textContent=`Roll again — need ${point} (rolled ${total})`;
       }
     }
+
     rollBtn.disabled=false;
   });
 
   // ---------- Init ----------
   stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
   unitSpan.textContent='XRP';
+  betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
+  curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
+
   if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
-  refreshPrices();
-  setInterval(refreshPrices, PRICE_REFRESH_MS);
+  refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS);
+  updatePayoutPreview();
 })();
+</script>
+
+<!-- Service worker (optional, safe no-op) -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+}
 </script>
 
 </body>
 </html>
-
-
-
