@@ -275,6 +275,11 @@
 
           <button id="rollBtn" class="btn-roll">Roll</button>
 
+          <!-- SOUND HINT -->
+          <div class="micro" style="text-align:center;opacity:.7;margin-top:6px">
+            If you don’t hear sound: tap Roll once, turn off Silent mode, and raise volume.
+          </div>
+
           <div class="dice-area">
             <div class="cube" id="dieA">
               <div class="face one"><div class="pip c"></div></div>
@@ -375,9 +380,7 @@
     master.gain.value = 0.22; // master volume
     master.connect(ac.destination);
     AC = ac; MASTER = master;
-    // iOS: listen for state changes
     ac.onstatechange = function(){
-      // console.log('[audio] state:', ac.state);
       if (ac.state === 'suspended') tryResume();
     };
     return ac;
@@ -389,7 +392,6 @@
   }
 
   function silentTick(ac){
-    // brief silent blip to “touch” the graph (helps iOS wake up)
     const o = ac.createOscillator();
     const g = ac.createGain();
     g.gain.value = 0.00001;
@@ -414,7 +416,6 @@
     tryResume();
   }
 
-  // Public: call on any button that should ensure sound
   async function ensureInteractive(){
     const ac = getAC();
     if (!ac) return null;
@@ -424,7 +425,6 @@
     return ac;
   }
 
-  // Old API preserved
   function unlock(){ ensureInteractive(); }
 
   function makeNoise(ac, dur=0.08){
@@ -504,20 +504,18 @@
     }
   }
 
-  // --- Global resume hooks (cover iOS/background/idle cases) ---
   const INTERACT_EVENTS = ['pointerdown','mousedown','touchstart','keydown','click'];
   INTERACT_EVENTS.forEach(ev => addEventListener(ev, markInteract, { passive:true, capture:true }));
   addEventListener('visibilitychange', ()=>{ if (!document.hidden) tryResume(); });
   addEventListener('pageshow', ()=>{ tryResume(); });
   addEventListener('focus', ()=>{ tryResume(); });
 
-  // Watchdog: if recently interacted and context slips to suspended, nudge it
   function startWatchdog(){
     if (watchdogTimer) return;
     watchdogTimer = setInterval(()=>{
       const ac = AC;
       if (!ac) return;
-      const activeRecently = Date.now() - lastInteractTs < 30_000; // 30s
+      const activeRecently = Date.now() - lastInteractTs < 30_000;
       if (activeRecently && ac.state === 'suspended') tryResume();
     }, 1500);
   }
@@ -752,18 +750,17 @@
   // ---------- Roll + payouts (visual demo) ----------
   function emitResult(detail){
     window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
-    // Overlay messages per policy
     const s = Number(detail.stakeBag)||0;
     if (typeof window.showWin === 'function'){
       if (detail.jackpot){
         const gain=s*1.00, total=s*2.00;
-        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG` });
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
       } else if (detail.kind==='normal'){
         const gain=s*0.25, total=s*1.25;
-        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG` });
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · PAYOUT +${fmt(total)} BAG`, duration:2600 });
       } else if (detail.kind==='point'){
         const total=s*1.00;
-        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG` });
+        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG`, duration:2600 });
       }
     }
   }
@@ -788,7 +785,6 @@
 
     if (point==null){
       if (total===7 || total===11){
-        // Normal win (1.25x). Optional client jackpot chance:
         detail.kind='normal';
         if ((Math.random()*JACKPOT_N|0)===0){ detail.jackpot=true; }
         rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
@@ -839,4 +835,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
