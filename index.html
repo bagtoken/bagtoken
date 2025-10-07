@@ -468,7 +468,7 @@
   // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const CACHE_KEY = 'bag_prices_v4';
+  const CACHE_KEY = 'bag_prices_v5';
 
   // ---------- HELPERS ----------
   function fmt(n){
@@ -594,18 +594,22 @@
     }catch(e){ diagSpan.textContent='XRP feed: '+(e.message||'error'); return false; }
   }
 
-  // XRPL DEX mid price (correct quality handling)
+  // ✅ XRPL DEX mid price (correct book directions + drops handling)
   async function fetchBagUsdFromDEX() {
     function bookReq(taker_gets, taker_pays, id) {
       return { id, command: 'book_offers', taker_gets, taker_pays, limit: 5 };
     }
-    const askReq = bookReq( // asks: sell BAG, receive XRP
-      { currency: BAG_CODE, issuer: BAG_ISSUER },
-      { currency: 'XRP' }, 1
-    );
-    const bidReq = bookReq( // bids: buy BAG, pay XRP
+    // ASK: sellers of BAG receive XRP
+    const askReq = bookReq(
       { currency: 'XRP' },
-      { currency: BAG_CODE, issuer: BAG_ISSUER }, 2
+      { currency: BAG_CODE, issuer: BAG_ISSUER },
+      1
+    );
+    // BID: buyers of BAG pay XRP
+    const bidReq = bookReq(
+      { currency: BAG_CODE, issuer: BAG_ISSUER },
+      { currency: 'XRP' },
+      2
     );
 
     const midXrpPerBag = await new Promise((resolve) => {
@@ -626,12 +630,13 @@
           let bestAsk=null, bestBid=null;
 
           if (Array.isArray(gotAsk?.result?.offers) && gotAsk.result.offers.length){
-            // ASK book: quality = BAG per drop -> XRP/BAG = 1 / (quality * 1e6)
+            // quality = taker_pays / taker_gets -> BAG / drops
+            // XRP/BAG = 1 / (quality * 1e6)
             const q = Number(gotAsk.result.offers[0].quality);
             if (Number.isFinite(q) && q>0) bestAsk = 1 / (q * 1_000_000);
           }
           if (Array.isArray(gotBid?.result?.offers) && gotBid.result.offers.length){
-            // BID book: quality = drops per BAG -> XRP/BAG = quality / 1e6
+            // quality = drops / BAG -> XRP/BAG = quality / 1e6
             const q = Number(gotBid.result.offers[0].quality);
             if (Number.isFinite(q) && q>0) bestBid = q / 1_000_000;
           }
@@ -641,7 +646,8 @@
 
           const mid = (vals.length === 2) ? (vals[0]+vals[1]) / 2 : vals[0];
 
-          if (!(mid > 0) || mid < 1e-12 || mid > 1e12) return resolve(null);
+          // sanity bounds (avoid inverted/garbage)
+          if (!(mid > 0) || mid < 1e-12 || mid > 1e3) return resolve(null);
 
           if (diagSpan){
             const parts=[];
@@ -772,7 +778,13 @@
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); });
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
-  try { localStorage.removeItem('bag_prices'); localStorage.removeItem('bag_prices_v2'); localStorage.removeItem('bag_prices_v3'); } catch {}
+  // clear old cache keys so bogus values don't persist
+  try {
+    localStorage.removeItem('bag_prices');
+    localStorage.removeItem('bag_prices_v2');
+    localStorage.removeItem('bag_prices_v3');
+    localStorage.removeItem('bag_prices_v4');
+  } catch {}
 
   if (loadCache()){ PRICES.source='cached'; updateLiveLine(); }
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
