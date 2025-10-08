@@ -254,6 +254,12 @@
                    box-shadow:0 3px 0 #b08a19;cursor:pointer;">
             Start Session
           </button>
+          <button id="topUpBtn"
+            style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;
+                   color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+                   box-shadow:0 3px 0 #b08a19;cursor:pointer;display:none;">
+            Top Up
+          </button>
           <button id="endSessionBtn"
             style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">
             End
@@ -531,7 +537,7 @@
   function sizeCanvas(){
     const dpr=Math.min(window.devicePixelRatio||1,2);
     canvas.width=Math.floor(innerWidth*dpr);
-    canvas.height=Math.floor(innerHeight*dpr);
+    canvas.height=Math.floor(Math.max(1,innerHeight*dpr));
     canvas.style.width=innerWidth+'px';
     canvas.style.height=innerHeight+'px';
     ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -785,7 +791,7 @@
 })();
 </script>
 
-<!-- TAB SESSION: one-time deposit, per-roll balance -->
+<!-- TAB SESSION: one-time deposit, per-roll balance (+Top Up) -->
 <script>
 (function(){
   const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
@@ -796,6 +802,7 @@
   const $ = s => document.querySelector(s);
   const statusEl = $('#sessionStatus');
   const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
   const endBtn = $('#endSessionBtn');
 
   const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
@@ -820,10 +827,12 @@
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
       statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
       startBtn.style.display = 'none';
+      topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
     } else {
       statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
       startBtn.style.display = 'inline-block';
+      topUpBtn.style.display = 'none';
       endBtn.style.display = 'none';
     }
   }
@@ -855,7 +864,7 @@
     });
   }
 
-  async function startSession(){
+  async function startSession(mode){
     if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
     const PRICES = window.__PRICES__ || {};
     if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
@@ -868,7 +877,9 @@
     if (!w || !w.address){ alert('Connect Xaman first'); return; }
 
     const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
-    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    const actionBtn = mode==='topup' ? topUpBtn : startBtn;
+    const origText = actionBtn.textContent;
+    actionBtn.disabled = true; actionBtn.textContent = mode==='topup' ? 'Topping…' : 'Opening…';
 
     try{
       const { created } = await xumm.payload.createAndSubscribe({
@@ -876,7 +887,7 @@
           TransactionType: 'Payment',
           Destination: TREASURY,
           Amount: String(drops),
-          Memos: [{Memo:{MemoType: btoa('BAG'), MemoData: btoa('DICE_SESSION')}}]
+          Memos: [{Memo:{MemoType: btoa('BAG'), MemoData: btoa(mode==='topup'?'DICE_TOPUP':'DICE_SESSION')}}]
         },
         options: { submit: true, expire: 300 }
       }, ()=>{});
@@ -890,15 +901,21 @@
       const tx = await waitForTx(txid, 45000);
       if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
 
-      const bag = (depositUsd / PRICES.bagUsd);
-      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      const bagAdd = (depositUsd / PRICES.bagUsd);
+      const existing = read();
+      if (existing && existing.addr === w.address){
+        const newBag = (Number(existing.bag)||0) + bagAdd;
+        write({ ...existing, bag: newBag, ts: Date.now(), last_topup_tx: txid });
+      } else {
+        write({ addr: w.address, bag: bagAdd, ts: Date.now(), tx: txid });
+      }
       render();
-      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      window.dispatchEvent(new CustomEvent(mode==='topup' ? 'bag:sessionToppedUp' : 'bag:sessionStarted', { detail: { bag_added: bagAdd, txid } }));
     } catch(e){
-      console.warn('Session start failed', e);
-      alert('Session not started (cancelled or error).');
+      console.warn('Session open/top-up failed', e);
+      alert((mode==='topup'?'Top up':'Session start')+' not completed (cancelled or error).');
     } finally {
-      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+      actionBtn.disabled = false; actionBtn.textContent = origText;
     }
   }
 
@@ -909,7 +926,8 @@
     window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} }));
   }
 
-  startBtn?.addEventListener('click', startSession);
+  startBtn?.addEventListener('click', ()=>startSession('start'));
+  topUpBtn?.addEventListener('click', ()=>startSession('topup'));
   endBtn?.addEventListener('click', endSession);
 
   window.addEventListener('bag:pricesUpdated', render);
