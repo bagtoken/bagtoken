@@ -695,6 +695,65 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
 })();
 </script>
 
+<!-- DEMO wallet connect handler -->
+<script>
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if(!btn || !statusEl) return;
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+  const short = (a) => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
+
+  function render(){
+    const w = read();
+    if (w && w.address) {
+      statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+short(w.address)+'</span>';
+      btn.textContent = 'Disconnect';
+    } else {
+      statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+      btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  render();
+
+  btn.addEventListener('click', ()=>{
+    const w = read();
+
+    // If already connected -> disconnect
+    if (w && w.address) {
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+      return;
+    }
+
+    // DEMO connect: ask for XRPL classic address (display only)
+    let addr = prompt('Paste your XRPL address (starts with "r"). Demo display only.');
+    if (!addr) return;
+    addr = addr.trim();
+
+    // Simple classic-address check
+    if (!/^r[1-9A-HJ-NP-Za-km-z]{25,35}$/.test(addr)) {
+      alert('That does not look like a classic XRPL address.');
+      return;
+    }
+
+    write({ address: addr, ts: Date.now(), kind: 'demo' });
+    window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: addr }}));
+    render();
+  });
+
+  // On load, ensure state reflects storage
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+})();
+</script>
+
+ 
 <!-- GAME LOGIC + PRICES (updated only where noted) -->
 <script>
 (function(){
@@ -1201,3 +1260,4 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
