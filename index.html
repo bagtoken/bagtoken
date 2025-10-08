@@ -36,6 +36,9 @@
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
+<!-- Xaman SDK (browser) -->
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
 <style>
   *{box-sizing:border-box}
   :root{
@@ -601,6 +604,97 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
 })();
 </script>
 
+<!-- Wallet Connect + Real-Play Hook (keeps demo unlocked) -->
+<script>
+(function(){
+  const XAMAN_API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+  const XRPL_NETWORK = 'MAINNET';
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  // Keep demo unlocked by default; flip to true to require signed wager before roll
+  window.__REAL_PLAY__ = false;
+
+  const connectBtn = document.getElementById('connectBtn');
+  const connectStatus = document.getElementById('connectStatus');
+  const WALLET_KEY = 'bag_wallet_v1';
+
+  if (!window.Xumm) {
+    console.warn('Xaman SDK not present');
+    return;
+  }
+
+  const xumm = new Xumm(XAMAN_API_KEY);
+  window.__xumm = xumm;
+
+  function short(a){ return a ? a.slice(0,6)+'…'+a.slice(-4) : ''; }
+  function setStatus(addr){
+    if (addr){
+      connectStatus.innerHTML = `Wallet: <span style="color:#2fbf6b">${short(addr)}</span>`;
+      connectBtn.textContent = 'Disconnect';
+    } else {
+      connectStatus.innerHTML = `Wallet: <span style="color:#e8a85c">not connected</span>`;
+      connectBtn.textContent = 'Connect Xaman';
+    }
+  }
+
+  async function storeSignedIn(){
+    try{
+      const acct = await xumm.user.account;
+      if (acct){
+        localStorage.setItem(WALLET_KEY, JSON.stringify({ address: acct }));
+        window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail:{ address: acct } }));
+        setStatus(acct);
+        return acct;
+      }
+    }catch(e){}
+    return null;
+  }
+  function clearSignedIn(){
+    try{ localStorage.removeItem(WALLET_KEY); }catch{}
+    window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+    setStatus(null);
+  }
+
+  xumm.on('success', storeSignedIn);
+  xumm.on('retrieved', storeSignedIn);
+  xumm.on('loggedout', clearSignedIn);
+  xumm.on('ready', storeSignedIn);
+
+  connectBtn.addEventListener('click', async ()=>{
+    try{
+      const acct = await xumm.user.account.catch(()=>null);
+      if (acct){ await xumm.logout(); }
+      else { await xumm.authorize(); }
+    }catch(e){ console.warn('connect error', e); }
+  });
+
+  async function signWager({ currency, amount, memo }){
+    let txjson;
+    if (currency === 'XRP'){
+      const drops = Math.round(Number(amount) * 1_000_000);
+      txjson = { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops) };
+    } else {
+      txjson = { TransactionType:'Payment', Destination: TREASURY, Amount:{ currency:BAG_CODE, issuer:BAG_ISSUER, value:String(amount) } };
+    }
+    const { created, resolved } = await xumm.payload.createAndSubscribe(
+      { txjson, options:{ force_network: XRPL_NETWORK }, custom_meta:{ identifier:`bagdice:${Date.now()}`, instruction: memo || 'Approve wager for $BAG Dice' } },
+      ev => { if ('signed' in ev.data) return ev; }
+    );
+    const res = await resolved;
+    if (!res?.signed) throw new Error('Wager rejected');
+    const txid = res.response?.txid || res.txid || res?.payloadResponse?.txid;
+    return { txid, created };
+  }
+
+  window.__bagRealPlay = {
+    enabled: ()=> !!window.__REAL_PLAY__,
+    signWager
+  };
+})();
+</script>
+
 <!-- GAME LOGIC + PRICES (updated only where noted) -->
 <script>
 (function(){
@@ -992,6 +1086,23 @@ function emitResult(detail){
       });
     }
   }
+
+  // notify backend of win (non-blocking; safe if API not present)
+  try{
+    fetch('/api/payout', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        game:'bag-dice',
+        phase: detail.phase,
+        kind: detail.kind,
+        jackpot: !!detail.jackpot,
+        stake_bag: Number(detail.stakeBag)||0,
+        bag_usd: PRICES.bagUsd||0,
+        xrp_usd: PRICES.xrpUsd||0
+      })
+    }).catch(()=>{});
+  }catch(e){}
 }
 
 
@@ -1006,6 +1117,22 @@ function emitResult(detail){
     clampIfNeeded(true);
 
     rollBtn.disabled=true;
+
+    // OPTIONAL: require signed wager first when __REAL_PLAY__ = true
+    const useReal = window.__bagRealPlay && window.__bagRealPlay.enabled && window.__bagRealPlay.enabled() && isWalletConnected();
+    if (useReal){
+      try{
+        const cur = currentCurrency();               // 'XRP' or 'BAG'
+        const qty = Math.max(0, parseFloat(betInput.value||0));
+        await window.__bagRealPlay.signWager({
+          currency: cur,
+          amount: qty,
+          memo: `Wager ${fmt(qty)} ${cur} ($${usdEq.toFixed(2)}) — $BAG Dice`
+        });
+      }catch(e){
+        toast('Wager cancelled'); rollBtn.disabled=false; return;
+      }
+    }
 
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
     const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
@@ -1074,5 +1201,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
-
