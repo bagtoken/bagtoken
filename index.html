@@ -391,20 +391,116 @@
   </div>
 </div>
 
-<!-- AUDIO ENGINE (restored) -->
+<!-- AUDIO ENGINE -->
 <script>
-/* (unchanged audio code from your message) */
+(function(){
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC = null, MASTER = null, lastInteractTs = 0, watchdogTimer = null;
+
+  function makeAC(){
+    if (!AudioCtx) return null;
+    const ac = new AudioCtx();
+    const master = ac.createGain();
+    master.gain.value = 0.22;
+    master.connect(ac.destination);
+    AC = ac; MASTER = master;
+    ac.onstatechange = function(){ if (ac.state === 'suspended') tryResume(); };
+    return ac;
+  }
+  function getAC(){ if (AC && AC.state !== 'closed') return AC; return makeAC(); }
+  function silentTick(ac){
+    const o = ac.createOscillator(); const g = ac.createGain();
+    g.gain.value = 0.00001; o.connect(g).connect(MASTER);
+    o.start(); o.stop(ac.currentTime + 0.01);
+  }
+  async function tryResume(){
+    const ac=getAC(); if(!ac) return;
+    if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} }
+    if(ac.state==='running'){ silentTick(ac); }
+  }
+  function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
+  async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
+  function unlock(){ ensureInteractive(); }
+
+  function makeNoise(ac, dur=0.08){
+    const len=Math.max(1,Math.floor(dur*ac.sampleRate));
+    const buf=ac.createBuffer(1,len,ac.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
+    const g=ac.createGain(); g.gain.value=0;
+    src.connect(bp).connect(g);
+    return {src,g};
+  }
+  function chime(){
+    const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; }
+    const now=ac.currentTime; const notes=[880,1175,1760];
+    notes.forEach((f,i)=>{
+      const o=ac.createOscillator(); const g=ac.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,now+i*0.02);
+      g.gain.linearRampToValueAtTime(0.18,now+i*0.02+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,now+i*0.02+0.28);
+      o.connect(g).connect(MASTER);
+      o.start(now+i*0.02); o.stop(now+i*0.02+0.3);
+    });
+  }
+  function nudge(){
+    const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; }
+    const now=ac.currentTime;
+    const comp=ac.createDynamicsCompressor();
+    comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08;
+    comp.connect(MASTER);
+    const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
+    nGain.connect(comp);
+    nGain.gain.setValueAtTime(0.0001,now);
+    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    nSrc.start(now); nSrc.stop(now+0.09);
+    const o=ac.createOscillator(); const g=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(420,now);
+    o.frequency.exponentialRampToValueAtTime(200,now+0.18);
+    g.gain.setValueAtTime(0.0001,now);
+    g.gain.linearRampToValueAtTime(0.10,now+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
+    o.connect(g).connect(comp); o.start(now); o.stop(now+0.24);
+  }
+  function dice(){
+    const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; }
+    const now=ac.currentTime;
+    for(let i=0;i<3;i++){
+      const t=now+i*0.06;
+      const {src,g}=makeNoise(ac,0.05);
+      const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=900;
+      src.connect(hp).connect(g).connect(MASTER);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(0.08,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+      src.start(t); src.stop(t+0.1);
+    }
+  }
+
+  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
+  INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
+  addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
+  addEventListener('pageshow',()=>{ tryResume(); });
+  addEventListener('focus',()=>{ tryResume(); });
+
+  function startWatchdog(){
+    if(watchdogTimer) return;
+    watchdogTimer=setInterval(()=>{
+      const ac=AC; if(!ac) return;
+      const active=Date.now()-lastInteractTs<30_000;
+      if(active && ac.state==='suspended') tryResume();
+    },1500);
+  }
+  startWatchdog();
+
+  window.__bagAudio={unlock,ensureInteractive,chime,nudge,dice};
+})();
 </script>
 
-<!-- WIN overlay logic (restored) -->
-<script>
-/* (unchanged overlay code from your message) */
-</script>
-
-<!-- XAMAN-LITE CONNECT (unchanged) -->
-<script>
-/* (unchanged connect code from your message) */
-</script>
 
 <!-- GAME LOGIC + PRICES (updated only where noted) -->
 <script>
@@ -871,6 +967,7 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
 
 
