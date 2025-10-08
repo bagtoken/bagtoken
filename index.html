@@ -501,6 +501,105 @@
 })();
 </script>
 
+<!-- WIN overlay logic -->
+<script>
+(function(){
+  const overlay=document.getElementById('win-overlay');
+  const canvas=document.getElementById('win-canvas');
+  const ctx=canvas.getContext('2d');
+  const closeBtn=document.getElementById('win-close');
+  const sub=document.getElementById('win-sub');
+  const title=document.getElementById('win-text');
+
+  let rafId=null, particles=[], start=0, dur=2000;
+
+  function sizeCanvas(){
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=Math.floor(innerWidth*dpr);
+    canvas.height=Math.floor(innerHeight*dpr);
+    canvas.style.width=innerWidth+'px';
+    canvas.style.height=innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  sizeCanvas(); addEventListener('resize', sizeCanvas);
+
+  function spawnConfetti(n){
+    particles.length=0;
+    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++){
+      const x=innerWidth*0.25+Math.random()*innerWidth*0.5;
+      const y=innerHeight*0.35+Math.random()*innerHeight*0.1;
+      const speed=2+Math.random()*4;
+      particles.push({
+        x,y,
+        vx:(Math.random()-.5)*speed*1.2,
+        vy:-(3+Math.random()*5),
+        g:0.12+Math.random()*0.2,
+        rot:Math.random()*6.28,
+        vr:(Math.random()-.5)*0.2,
+        sz:6+Math.random()*10,
+        col:colors[(Math.random()*colors.length)|0],
+        shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')
+      });
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col;
+      const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
+
+  function animate(ts){
+    if(!start) start=ts;
+    draw();
+    if(ts-start<dur){ rafId=requestAnimationFrame(animate); }
+    else { stop(); }
+  }
+
+  function startFx(){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    start=0; dur=2200;
+    canvas.style.display='block';
+    spawnConfetti(180);
+    rafId=requestAnimationFrame(animate);
+  }
+
+  function stop(){
+    cancelAnimationFrame(rafId);
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    canvas.style.display='none';
+  }
+
+  function show(){
+    overlay.style.display='grid';
+    addEventListener('keydown', e=>{ if(e.key==='Escape') hide(); }, {once:true});
+  }
+  function hide(){ overlay.style.display='none'; stop(); }
+
+  closeBtn.addEventListener('click', hide);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+
+  // Public API for the game logic
+  window.showWin = function(opts={}){
+    const {message='WIN', subtext='Nice roll', duration=1800, sound=true}=opts;
+    title.textContent=message;
+    sub.textContent=subtext;
+    show();
+    startFx();
+    if(sound){ try{ window.__bagAudio && __bagAudio.chime(); }catch(e){} }
+    clearTimeout(window.__winTimer);
+    window.__winTimer=setTimeout(hide, Math.max(1000,duration));
+  };
+})();
+</script>
 
 <!-- GAME LOGIC + PRICES (updated only where noted) -->
 <script>
@@ -552,8 +651,7 @@
   // ---- Require connected wallet to play (unchanged) ----
   const WALLET_KEY = 'bag_wallet_v1';
   let playLocked = true;
- const DEMO_PLAY = true;   // <-- allow play without a wallet (demo mode)
-
+  const DEMO_PLAY = true;   // <-- allow play without a wallet (demo mode)
 
   function isWalletConnected(){
     try { const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); return !!(w && w.address); }
@@ -571,13 +669,10 @@
     }
     recomputeRollEnabled();
   }
-window.addEventListener('bag:walletConnected', () => setPlayLock(false));
-window.addEventListener('bag:walletDisconnected', () => DEMO_PLAY ? setPlayLock(false) : setPlayLock(true));
-
-// Initial lock state: keep unlocked if demo mode is on
-setPlayLock(DEMO_PLAY ? false : !isWalletConnected());
-
-  // ---- /wallet lock ----
+  window.addEventListener('bag:walletConnected', () => setPlayLock(false));
+  window.addEventListener('bag:walletDisconnected', () => DEMO_PLAY ? setPlayLock(false) : setPlayLock(true));
+  // Initial lock state: keep unlocked if demo mode is on
+  setPlayLock(DEMO_PLAY ? false : !isWalletConnected());
 
   // ---------- HELPERS ----------
   function fmt(n){
@@ -652,7 +747,6 @@ setPlayLock(DEMO_PLAY ? false : !isWalletConnected());
       usdInput.value = usd.toFixed(2);
       toast(`Clamped to $${usd.toFixed(2)}`);
     }
-    // convert USD -> currency amount
     if (currentCurrency()==='XRP' && PRICES.xrpUsd>0){
       betInput.value = (usd / PRICES.xrpUsd).toString();
     } else if (currentCurrency()==='BAG' && PRICES.bagUsd>0){
@@ -945,11 +1039,10 @@ setPlayLock(DEMO_PLAY ? false : !isWalletConnected());
   // ---------- Init ----------
   stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
   unitSpan.textContent='XRP';
-  betInput.value = '1'; // default to 1 XRP on load
-  if (usdInput) usdInput.value = ''; // will fill after prices
+  betInput.value = '1';
+  if (usdInput) usdInput.value = '';
   curToggle.addEventListener('change', ()=>{ unitSpan.textContent=currentCurrency(); clampIfNeeded(true); updatePayoutPreview(); updateLimitUi(); });
 
-  // clear older cache keys
   try { ['bag_prices','bag_prices_v2','bag_prices_v3','bag_prices_v4','bag_prices_v5','bag_prices_v6','bag_prices_v7'].forEach(k=>localStorage.removeItem(k)); } catch {}
 
   if (loadViewCache()){ PRICES.source='last-live'; updateLiveLine(); }
@@ -967,8 +1060,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
-
-
-
-
