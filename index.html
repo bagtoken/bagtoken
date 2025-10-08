@@ -234,7 +234,7 @@
     <!-- LEFT: Demo & stake -->
     <div class="panel mock" id="bagDiceDemo">
 
-      <!-- CONNECT ROW (added) -->
+      <!-- CONNECT ROW -->
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
         <button id="connectBtn"
@@ -244,7 +244,22 @@
           Connect Xaman
         </button>
       </div>
-      <!-- /CONNECT ROW -->
+      <!-- SESSION ROW (tab play) -->
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="startSessionBtn"
+            style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;
+                   color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+                   box-shadow:0 3px 0 #b08a19;cursor:pointer;">
+            Start Session
+          </button>
+          <button id="endSessionBtn"
+            style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">
+            End
+          </button>
+        </div>
+      </div>
 
       <div class="section-title">Stake & Prices</div>
 
@@ -260,7 +275,6 @@
 
           <div>
             <div class="micro">Bet amount</div>
-            <!-- INLINE BET + USD ROW -->
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div>
                 <input id="demoBet" class="mono" type="number" min="0" step="any" value="1"
@@ -274,7 +288,6 @@
                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
               </div>
             </div>
-            <!-- /INLINE ROW -->
           </div>
 
           <div class="divider"></div>
@@ -293,7 +306,6 @@
             <div id="bagDiag" class="micro" style="opacity:.55;margin-top:4px;"></div>
           </div>
 
-          <!-- payout preview -->
           <div class="callout mono" id="payoutBox">
             <div class="payout-grid">
               <div class="row"><div class="lab"><strong>Point Win</strong> (1.00×):</div><div class="val" id="payoutPoint">—</div></div>
@@ -590,9 +602,8 @@
   closeBtn.addEventListener('click', hide);
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  // Public API for the game logic
   window.showWin = function(opts={}){
-const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
+    const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     title.textContent=message;
     sub.textContent=subtext;
     show();
@@ -613,7 +624,7 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
 
-  // Keep demo unlocked by default; flip to true to require signed wager before roll
+  // Keep demo unlocked; set to true later to force per-roll sign if desired
   window.__REAL_PLAY__ = false;
 
   const connectBtn = document.getElementById('connectBtn');
@@ -695,8 +706,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
 })();
 </script>
 
-<script src="https://xumm.app/assets/cdn/xumm.min.js"></script>
- 
 <!-- Xaman wallet connect handler (auto) -->
 <script>
 (function(){
@@ -705,7 +714,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   const statusEl = document.getElementById('connectStatus');
   if (!btn || !statusEl || typeof Xumm === 'undefined') return;
 
-  // Use your Xaman (Xumm) API key
   const XAMAN_API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
   const xumm = new Xumm(XAMAN_API_KEY);
 
@@ -728,16 +736,13 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   async function connectXaman(){
     btn.disabled = true;
     try {
-      // Triggers QR/deeplink; resolves when the user approves in Xaman
       const auth = await xumm.authorize();
-      // Account will be available after success:
       const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
       if (!acct) throw new Error('No account returned');
       write({ address: acct, ts: Date.now(), kind: 'xaman' });
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: acct }}));
       render();
     } catch (e) {
-      // User cancelled or error; keep UI as-is
       console.warn('Xaman connect failed/cancelled', e);
     } finally {
       btn.disabled = false;
@@ -755,7 +760,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
   });
 
-  // If the user returns from Xaman and the SDK signals success, capture the account
   xumm.on('success', () => {
     const acct = xumm?.user?.account;
     if (acct){
@@ -765,11 +769,9 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
   });
 
-  // Auto-restore session on load if already connected previously
   xumm.on('ready', () => {
     const w = read();
     if (w && w.address){
-      // Already connected previously
       render();
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: w.address }}));
     } else {
@@ -777,53 +779,155 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
   });
 
-  // Keep status fresh on tab focus
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
 
   render();
 })();
 </script>
 
-
-  render();
-
-  btn.addEventListener('click', ()=>{
-    const w = read();
-
-    // If already connected -> disconnect
-    if (w && w.address) {
-      clear();
-      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
-      render();
-      return;
-    }
-
-    // DEMO connect: ask for XRPL classic address (display only)
-    let addr = prompt('Paste your XRPL address (starts with "r"). Demo display only.');
-    if (!addr) return;
-    addr = addr.trim();
-
-    // Simple classic-address check
-    if (!/^r[1-9A-HJ-NP-Za-km-z]{25,35}$/.test(addr)) {
-      alert('That does not look like a classic XRPL address.');
-      return;
-    }
-
-    write({ address: addr, ts: Date.now(), kind: 'demo' });
-    window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: addr }}));
-    render();
-  });
-
-  // On load, ensure state reflects storage
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
-})();
-</script>
-
- 
-<!-- GAME LOGIC + PRICES (updated only where noted) -->
+<!-- TAB SESSION: one-time deposit, per-roll balance -->
 <script>
 (function(){
-  // ---------- CONFIG ----------
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 10;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      startBtn.style.display = 'none';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const PRICES = window.__PRICES__ || {bagUsd:0,xrpUsd:0};
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{};
+            resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: {
+          TransactionType: 'Payment',
+          Destination: TREASURY,
+          Amount: String(drops),
+          Memos: [{Memo:{MemoType: btoa('BAG'), MemoData: btoa('DICE_SESSION')}}]
+        },
+        options: { submit: true, expire: 300 }
+      }, ()=>{});
+
+      if (created?.next?.always){ /* handled by SDK */ }
+
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+    } catch(e){
+      console.warn('Session start failed', e);
+      alert('Session not started (cancelled or error).');
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  function endSession(){
+    const s = read();
+    clear();
+    render();
+    window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} }));
+  }
+
+  startBtn?.addEventListener('click', startSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
+</script>
+
+<!-- GAME LOGIC + PRICES -->
+<script>
+(function(){
   const JACKPOT_N = 100;
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
@@ -837,12 +941,11 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
 
-  // ---------- UI ----------
   const rollBtn = document.getElementById('rollBtn');
   const rollNumber = document.getElementById('rollNumber');
   const rollText = document.getElementById('rollText');
   const betInput = document.getElementById('demoBet');
-  const usdInput = document.getElementById('usdBet');           /* NEW */
+  const usdInput = document.getElementById('usdBet');
   const stateText = document.getElementById('stateText');
   const pointBadge = document.getElementById('pointBadge');
   const pointVal = document.getElementById('pointVal');
@@ -861,16 +964,14 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   const payoutJackpot = document.getElementById('payoutJackpot');
   const payoutJackpotGain = document.getElementById('payoutJackpotGain');
 
-  // ---------- STATE ----------
   let point = null;
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
   const VIEW_CACHE_KEY = 'bag_prices_v8';
   const LAST_LIVE_KEY = 'bag_last_live_v1';
 
-  // ---- Require connected wallet to play (unchanged) ----
   const WALLET_KEY = 'bag_wallet_v1';
   let playLocked = true;
-  const DEMO_PLAY = true;   // <-- allow play without a wallet (demo mode)
+  const DEMO_PLAY = true;
 
   function isWalletConnected(){
     try { const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); return !!(w && w.address); }
@@ -890,10 +991,8 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   }
   window.addEventListener('bag:walletConnected', () => setPlayLock(false));
   window.addEventListener('bag:walletDisconnected', () => DEMO_PLAY ? setPlayLock(false) : setPlayLock(true));
-  // Initial lock state: keep unlocked if demo mode is on
   setPlayLock(DEMO_PLAY ? false : !isWalletConnected());
 
-  // ---------- HELPERS ----------
   function fmt(n){
     if (!Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
@@ -938,9 +1037,7 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     return PRICES.xrpUsd>0 ? qty * PRICES.xrpUsd : 0;
   }
 
-  // ---------- USD <-> BET SYNC ----------
   let editingUsd = false;
-  let editingBet = false;
 
   function clampUsd(u){
     if (!Number.isFinite(u)) return 0;
@@ -950,7 +1047,7 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
   }
 
   function updateUsdFromBet(){
-    if (editingUsd) return; // don't fight the user
+    if (editingUsd) return;
     const usd = stakeUsdEquivalent();
     if (usdInput){
       if (usd>0) usdInput.value = usd.toFixed(2);
@@ -986,11 +1083,9 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     updateBetFromUsd();
   });
 
-  betInput.addEventListener('focus', ()=>{ editingBet = true; });
-  betInput.addEventListener('blur', ()=>{ editingBet = false; updateUsdFromBet(); });
+  betInput.addEventListener('blur', ()=>{ updateUsdFromBet(); });
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); updateUsdFromBet(); });
 
-  // ---------- PREVIEW ----------
   function updatePayoutPreview(){
     const s = stakeInBAG();
     const usd = stakeUsdEquivalent();
@@ -1009,7 +1104,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
   }
 
-  // ---------- Limits ----------
   let limitNote, limitToast;
   (function ensureLimitUi(){
     const holder=betInput.closest('div'); const container=holder?.parentElement?.parentElement || holder?.parentElement;
@@ -1049,7 +1143,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     updateUsdFromBet();
   }
 
-  // ---------- Prices ----------
   function updateConversions(){
     if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
       const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
@@ -1066,6 +1159,7 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     liveDot.className = dotClass;
     liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
     updateConversions(); updateLimitUi(); updatePayoutPreview();
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
   async function fetchXrpUsd(){
@@ -1083,7 +1177,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     if (typeof a==='string') return Number(a)/1_000_000;
     if (typeof a==='object'){
       if (a.currency === 'XRP' && a.value!=null) return Number(a.value);
-      if (a.value!=null && a.currency==='XRP') return Number(a.value);
     }
     return null;
   }
@@ -1162,7 +1255,6 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
     updateLiveLine();
 
-    // After first good price, set defaults:
     if (PRICES.xrpUsd>0 && PRICES.bagUsd>0 && !window.__defaultsSet){
       window.__defaultsSet = true;
       if (currentCurrency()==='XRP'){ betInput.value = '1'; }
@@ -1181,58 +1273,48 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
     }
   }
 
-  // ---------- Roll + payouts (visual demo) ----------
-function emitResult(detail){
-  window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
-  const s = Number(detail.stakeBag)||0;
-  const usd = stakeUsdEquivalent();
+  function emitResult(detail){
+    window.dispatchEvent(new CustomEvent('bag:rollResult', { detail }));
+    const s = Number(detail.stakeBag)||0;
+    const usd = stakeUsdEquivalent();
 
-  if (typeof window.showWin === 'function'){
-    if (detail.jackpot){
-      const gain=s*1.00, total=s*2.00;
-      showWin({
-        message:'WIN',
-        subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*2)}`,
-        duration:8000 // JACKPOT: 8s
-      });
-    } else if (detail.kind==='normal'){
-      const gain=s*0.25, total=s*1.25;
-      showWin({
-        message:'WIN',
-        subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*1.25)}`,
-        duration:6000 // NORMAL WIN: 6s
-      });
-    } else if (detail.kind==='point'){
-      const total=s*1.00;
-      showWin({
-        message:'POINT WIN',
-        subtext:`PAYOUT ${fmt(total)} BAG · ${fmtUsd(usd)}`,
-        duration:4000 // POINT WIN: 4s
-      });
+    if (typeof window.showWin === 'function'){
+      if (detail.jackpot){
+        const gain=s*1.00;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*2)}`, duration:8000 });
+      } else if (detail.kind==='normal'){
+        const gain=s*0.25;
+        showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*1.25)}`, duration:6000 });
+      } else if (detail.kind==='point'){
+        const total=s*1.00;
+        showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG · ${fmtUsd(usd)}`, duration:4000 });
+      }
     }
+
+    try{
+      fetch('/api/payout', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          game:'bag-dice',
+          phase: detail.phase,
+          kind: detail.kind,
+          jackpot: !!detail.jackpot,
+          stake_bag: Number(detail.stakeBag)||0,
+          bag_usd: PRICES.bagUsd||0,
+          xrp_usd: PRICES.xrpUsd||0
+        })
+      }).catch(()=>{});
+    }catch(e){}
   }
 
-  // notify backend of win (non-blocking; safe if API not present)
-  try{
-    fetch('/api/payout', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        game:'bag-dice',
-        phase: detail.phase,
-        kind: detail.kind,
-        jackpot: !!detail.jackpot,
-        stake_bag: Number(detail.stakeBag)||0,
-        bag_usd: PRICES.bagUsd||0,
-        xrp_usd: PRICES.xrpUsd||0
-      })
-    }).catch(()=>{});
-  }catch(e){}
-}
-
-
+  // *** NO PER-ROLL SIGNING: spend/credit from session ***
   rollBtn.addEventListener('click', async ()=>{
-    if (playLocked){ const t=document.querySelector('#connectBtn'); if(t) t.focus(); return; }
+    if (!(window.__bagSession && __bagSession.active())) {
+      const t=document.querySelector('#startSessionBtn'); if(t) t.focus();
+      alert('Start a session first (one-time sign).');
+      return;
+    }
 
     try{ window.__bagAudio && __bagAudio.unlock(); window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()){ toast('Waiting for live price…'); return; }
@@ -1241,23 +1323,26 @@ function emitResult(detail){
     if (usdEq < MIN_BET_USD){ toast('Minimum bet is $1 — stack heavier.'); return; }
     clampIfNeeded(true);
 
-    rollBtn.disabled=true;
-
-    // OPTIONAL: require signed wager first when __REAL_PLAY__ = true
-    const useReal = window.__bagRealPlay && window.__bagRealPlay.enabled && window.__bagRealPlay.enabled() && isWalletConnected();
-    if (useReal){
-      try{
-        const cur = currentCurrency();               // 'XRP' or 'BAG'
-        const qty = Math.max(0, parseFloat(betInput.value||0));
-        await window.__bagRealPlay.signWager({
-          currency: cur,
-          amount: qty,
-          memo: `Wager ${fmt(qty)} ${cur} ($${usdEq.toFixed(2)}) — $BAG Dice`
-        });
-      }catch(e){
-        toast('Wager cancelled'); rollBtn.disabled=false; return;
+    const stakeBag = (function(){
+      const bet = Math.max(0, parseFloat(betInput.value||0));
+      if (!bet) return 0;
+      if (currentCurrency()==='BAG') return bet;
+      if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
+        return bet * bagPerXrp;
       }
+      return 0;
+    })();
+
+    const sess = __bagSession.get();
+    if (!(sess && sess.bag >= stakeBag && stakeBag>0)){
+      toast('Not enough session balance. Start or top up.');
+      return;
     }
+
+    if (!__bagSession.spend(stakeBag)){ toast('Balance race condition.'); return; }
+
+    rollBtn.disabled=true;
 
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
     const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
@@ -1267,15 +1352,18 @@ function emitResult(detail){
     [dieA,dieB].forEach(c=>c.classList.remove('rolling')); pose(dieA,a); pose(dieB,b);
     const total=a+b; rollNumber.textContent=total; rollText.classList.remove('win','lose');
 
-    const stake = stakeInBAG();
-    const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag:stake };
+    const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag };
 
     if (point==null){
       if (total===7 || total===11){
         detail.kind='normal';
         if ((Math.random()*JACKPOT_N|0)===0){ detail.jackpot=true; }
         rollText.textContent=`Come-out WIN — ${total}`; rollText.classList.add('win');
+
+        const payout = detail.jackpot ? (stakeBag*2.00) : (stakeBag*1.25);
+        __bagSession.credit(payout);
         emitResult(detail);
+
       } else if (total===2 || total===3 || total===12){
         rollText.textContent=`Come-out LOSE — ${total}`; rollText.classList.add('lose');
         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
@@ -1285,11 +1373,18 @@ function emitResult(detail){
         stateText.textContent='Point phase — hit the Point before 7';
         rollText.textContent=`Point set to ${point}. Roll again.`;
       }
+
     } else {
       if (total===point){
-        detail.kind='point'; rollText.textContent=`POINT WIN — ${point}`; rollText.classList.add('win');
+        detail.kind='point';
+        rollText.textContent=`POINT WIN — ${point}`; rollText.classList.add('win');
+
+        const payout = stakeBag*1.00;
+        __bagSession.credit(payout);
         emitResult(detail);
+
         point=null; pointBadge.style.display='none'; stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+
       } else if (total===7){
         rollText.textContent=`LOSE — seven out`; rollText.classList.add('lose');
         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
@@ -1302,7 +1397,6 @@ function emitResult(detail){
     rollBtn.disabled=false;
   });
 
-  // ---------- Init ----------
   stateText.textContent='Come-out roll — 7/11 win · 2/3/12 lose'; pointBadge.style.display='none';
   unitSpan.textContent='XRP';
   betInput.value = '1';
@@ -1326,5 +1420,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
-
