@@ -695,22 +695,28 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
 })();
 </script>
 
-<!-- DEMO wallet connect handler -->
+<script src="https://xumm.app/assets/cdn/xumm.min.js"></script>
+ 
+<!-- Xaman wallet connect handler (auto) -->
 <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
   const btn = document.getElementById('connectBtn');
   const statusEl = document.getElementById('connectStatus');
-  if(!btn || !statusEl) return;
+  if (!btn || !statusEl || typeof Xumm === 'undefined') return;
 
-  const read = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  // Use your Xaman (Xumm) API key
+  const XAMAN_API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+  const xumm = new Xumm(XAMAN_API_KEY);
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
   const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
   const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
   const short = (a) => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
 
   function render(){
     const w = read();
-    if (w && w.address) {
+    if (w && w.address){
       statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+short(w.address)+'</span>';
       btn.textContent = 'Disconnect';
     } else {
@@ -718,6 +724,66 @@ const { message='WIN', subtext='Nice roll', duration=4000, sound=true } = opts;
       btn.textContent = 'Connect Xaman';
     }
   }
+
+  async function connectXaman(){
+    btn.disabled = true;
+    try {
+      // Triggers QR/deeplink; resolves when the user approves in Xaman
+      const auth = await xumm.authorize();
+      // Account will be available after success:
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      write({ address: acct, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: acct }}));
+      render();
+    } catch (e) {
+      // User cancelled or error; keep UI as-is
+      console.warn('Xaman connect failed/cancelled', e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    const w = read();
+    if (w && w.address){
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  // If the user returns from Xaman and the SDK signals success, capture the account
+  xumm.on('success', () => {
+    const acct = xumm?.user?.account;
+    if (acct){
+      write({ address: acct, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: acct }}));
+      render();
+    }
+  });
+
+  // Auto-restore session on load if already connected previously
+  xumm.on('ready', () => {
+    const w = read();
+    if (w && w.address){
+      // Already connected previously
+      render();
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: w.address }}));
+    } else {
+      render();
+    }
+  });
+
+  // Keep status fresh on tab focus
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+})();
+</script>
+
 
   render();
 
@@ -1260,4 +1326,5 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
