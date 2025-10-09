@@ -500,7 +500,7 @@
 })();
 </script>
 
-<!-- Xaman wallet connect handler (robust init, no layout change) -->
+<!-- Xaman wallet connect handler (fixed: safeShort + hardened init) -->
 <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
@@ -508,48 +508,70 @@
 
   const btn = document.getElementById('connectBtn');
   const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
 
   const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
   const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
   const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
-  const short = (a) => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
+
+  function safeShort(a){
+    try{
+      const s = a == null ? '' : String(a);
+      if (!s) return '';
+      return s.slice(0,6) + '…' + s.slice(-4);
+    }catch{ return ''; }
+  }
 
   function render(){
-    const w = read();
-    if (w && w.address){
-      statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+short(w.address)+'</span>';
-      btn.textContent = 'Disconnect';
-    } else {
-      statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+    try{
+      const w = read();
+      if (w && w.address){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(w.address)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      console.warn('[bag] render failed', e);
+      statusEl.textContent = 'Wallet: error';
       btn.textContent = 'Connect Xaman';
     }
   }
 
-  let xumm = null, ready = false, initTries = 0;
-  function tryInit(){
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
     if (ready) return true;
     if (typeof window.Xumm === 'function'){
       xumm = new Xumm(API_KEY);
       ready = true;
-      // if wallet already saved, emit connected so gameplay unlocks
+
+      // If we already have a stored address, unlock gameplay immediately.
       const w = read();
-      if (w?.address) {
-        window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: w.address }}));
+      if (w?.address){
+        window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(w.address) }}));
       }
-      // subscribe to Xumm events
+
       xumm.on('success', () => {
-        const acct = xumm?.user?.account;
-        if (acct){ write({ address: acct, ts: Date.now(), kind: 'xaman' }); window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: acct }})); render(); }
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
+            render();
+          }
+        }catch(e){ console.warn('[bag] success handler error', e); }
       });
+
       xumm.on('ready', () => { render(); });
       return true;
     }
-    if (initTries++ < 50) { setTimeout(tryInit, 200); }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
     return false;
   }
 
   async function connectXaman(){
-    if (!ready && !tryInit()){
+    if (!ready && !initIfSdk()){
       alert('Loading Xaman… try again in a moment.');
       return;
     }
@@ -558,11 +580,12 @@
       const auth = await xumm.authorize();
       const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
       if (!acct) throw new Error('No account returned');
-      write({ address: acct, ts: Date.now(), kind: 'xaman' });
-      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: acct }}));
+      write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
       render();
     } catch (e) {
       console.warn('Xaman connect failed/cancelled', e);
+      // leave UI as-is
     } finally {
       btn.disabled = false;
     }
@@ -581,8 +604,9 @@
 
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
 
+  // First paint
   render();
-  tryInit();
+  initIfSdk();
 })();
 </script>
 
@@ -1150,3 +1174,4 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
