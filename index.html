@@ -270,23 +270,13 @@
       <!-- CONNECT ROW -->
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button id="connectBtn"
-            style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;
-                   color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
-                   box-shadow:0 4px 0 #b08a19;cursor:pointer;">
-            Connect Xaman
-          </button>
-
-          <!-- 🔹 Practice Mode toggle button (added) -->
-          <button id="demoToggleBtn"
-            style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;
-                   background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;">
-            Practice Mode
-          </button>
-        </div>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;
+                 color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+                 box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
       </div>
-
       <!-- SESSION ROW -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
@@ -579,7 +569,7 @@
     btn.disabled = true;
     try {
       const auth = await xumm.authorize();
-      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      const acct = (xumm && xumm.user and xumm.user.account) || auth?.me?.account || null;
       if (!acct) throw new Error('No account returned');
       write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
@@ -683,8 +673,7 @@
     });
   }
 
-  // startSession / topUp / endSession stay the same as your last version
-  // -------------- BEGIN unchanged session logic --------------
+  // startSession / topUp / endSession
   async function startSession(){
     if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
     const PRICES = window.__PRICES__ || {};
@@ -701,13 +690,13 @@
         txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
           Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('DICE_SESSION')}}] },
         options: { submit:true, expire:300 }
-      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      }, ev => { if (ev?.data and 'signed' in ev.data) return ev; });
       const res = await resolved;
       if (!res?.signed) throw new Error('User declined in Xaman');
-      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      const txid = res.response?.txid or res?.meta?.txid or res?.created?.reference;
       if (!txid) throw new Error('No txid returned');
       const validated = await waitForTx(txid, 60000);
-      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      if (!validated or validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
       const bag = (depositUsd / PRICES.bagUsd);
       write({ addr: w.address, bag, ts: Date.now(), tx: txid });
       render();
@@ -822,16 +811,25 @@
   let playLocked = true;
   const DEMO_PLAY = true;
 
+  // NEW: detect practice mode from wrapper
+  const PRACTICE = !!window.__BAG_PRACTICE;
+
   function isWalletConnected(){ try { const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); return !!(w && w.address); } catch { return false; } }
   function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
-  function recomputeRollEnabled(){ rollBtn.disabled = playLocked || !pricesReadyForCurrentCurrency(); }
+  function recomputeRollEnabled(){
+    // In practice mode, always enable rolling (even if prices aren't ready)
+    if (PRACTICE) { rollBtn.disabled = false; return; }
+    rollBtn.disabled = playLocked || !pricesReadyForCurrentCurrency();
+  }
   function setPlayLock(lock){
     playLocked = !!lock;
-    if (playLocked){
-      const msg = 'Connect wallet to play';
-      if (rollText) { rollText.textContent = msg; rollText.classList.remove('win','lose'); }
-    } else if (rollText && rollText.textContent === 'Connect wallet to play'){
-      rollText.textContent = 'Tap Roll';
+    if (!PRACTICE){
+      if (playLocked){
+        const msg = 'Connect wallet to play';
+        if (rollText) { rollText.textContent = msg; rollText.classList.remove('win','lose'); }
+      } else if (rollText && rollText.textContent === 'Connect wallet to play'){
+        rollText.textContent = 'Tap Roll';
+      }
     }
     recomputeRollEnabled();
   }
@@ -878,6 +876,8 @@
       const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd;
       return bet * bagPerXrp;
     }
+    // Practice fallback: if prices missing and currency is XRP, treat 1 XRP ≈ 1 BAG (demo-only)
+    if (PRACTICE && currentCurrency()==='XRP') return bet;
     return 0;
   }
   function stakeUsdEquivalent(){
@@ -936,10 +936,10 @@
       limitToast=document.createElement('div'); limitToast.className='micro'; limitToast.style.cssText='margin-top:4px;color:#e25b5b;display:none;'; container.appendChild(limitToast);
     }
   })();
-  function maxForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? 2000/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? 2000/PRICES.xrpUsd : 0); }
-  function minForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? 1/PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? 1/PRICES.xrpUsd : 0); }
+  function maxForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? 2000/PRICES.bagUsd : (PRACTICE?Infinity:0)) : (PRICES.xrpUsd>0 ? 2000/PRICES.xrpUsd : (PRACTICE?Infinity:0)); }
+  function minForCurrency(){ return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? 1/PRICES.bagUsd : (PRACTICE?0:0)) : (PRICES.xrpUsd>0 ? 1/PRICES.xrpUsd : (PRACTICE?0:0)); }
   function clampIfNeeded(showToast=true){
-    const maxQty = maxForCurrency(); if (!maxQty) return;
+    const maxQty = maxForCurrency(); if (!maxQty || !isFinite(maxQty)) return;
     let val = Math.max(0, parseFloat(betInput.value||0));
     if (val > maxQty){ betInput.value=String(maxQty); if(showToast){ limitToast.textContent=`Bet reduced to max: ${fmt(maxQty)} ${currentCurrency()}`; limitToast.style.display='block'; setTimeout(()=>{ limitToast.style.display='none'; },1600); } }
   }
@@ -957,7 +957,7 @@
       note += ` · ${[minTxt,maxTxt].filter(Boolean).join(' · ')}`;
     }
     limitNote.textContent = note;
-    clampIfNeeded(false); recomputeRollEnabled(); updateUsdFromBet();
+    recomputeRollEnabled(); updateUsdFromBet();
   }
 
   function updateConversions(){
@@ -1005,7 +1005,7 @@
     if(Number(cached)>0){ PRICES.xrpUsd=Number(cached); return true; }
     return false;
   }
-  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object'){ if (a.currency === 'XRP' && a.value!=null) return Number(a.value); } return null; }
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object'){ if (a.currency === 'XRP' and a.value!=null) return Number(a.value); } return null; }
   function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
 
   async function fetchBagUsdFromAMM(){
@@ -1018,7 +1018,7 @@
       ws.onmessage = (ev)=>{
         try{
           const msg = JSON.parse(ev.data);
-          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          if (msg.id!==1 || !msg.result or !msg.result.amm) return;
           clearTimeout(t); try{ws.close();}catch{};
           const amm = msg.result.amm;
           const bagBal = parseIouAmount(amm.amount);
@@ -1073,9 +1073,9 @@
     const s = Number(detail.stakeBag)||0;
     const usd = stakeUsdEquivalent();
     if (typeof window.showWin === 'function'){
-      if (detail.jackpot){ const gain=s*1.00; showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*2)}`, duration:8000 }); }
-      else if (detail.kind==='normal'){ const gain=s*0.25; showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*1.25)}`, duration:6000 }); }
-      else if (detail.kind==='point'){ const total=s*1.00; showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG · ${fmtUsd(usd)}`, duration:4000 }); }
+      if (detail.jackpot){ const gain=s*1.00; showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG${usd?` · ${fmtUsd(usd)} → ${fmtUsd(usd*2)}`:''}`, duration:8000 }); }
+      else if (detail.kind==='normal'){ const gain=s*0.25; showWin({ message:'WIN', subtext:`+${fmt(gain)} BAG${usd?` · ${fmtUsd(usd)} → ${fmtUsd(usd*1.25)}`:''}`, duration:6000 }); }
+      else if (detail.kind==='point'){ const total=s*1.00; showWin({ message:'POINT WIN', subtext:`PAYOUT ${fmt(total)} BAG${usd?` · ${fmtUsd(usd)}`:''}`, duration:4000 }); }
     }
     try{
       fetch('/api/payout', {
@@ -1087,12 +1087,68 @@
   }
 
   rollBtn.addEventListener('click', async ()=>{
+    // Sound & spin always
+    try{ window.__bagAudio && __bagAudio.dice(); }catch(e){}
+
+    // PRACTICE: bypass price gating and min $1 requirement
+    if (PRACTICE){
+      // compute stake in BAG with fallback if prices missing
+      let stakeBag = stakeInBAG();
+      if (!(stakeBag>0)) {
+        const q = Math.max(0, parseFloat(betInput.value||0));
+        stakeBag = q || 1; // ensure non-zero demo stake for flow
+      }
+
+      // Attempt to spend demo balance (wrapper provides demo session)
+      if (window.__bagSession && __bagSession.active()){
+        if (!__bagSession.spend(stakeBag)) {
+          alert('Not enough demo BAG — reduce bet.');
+          return;
+        }
+      }
+
+      // Animate dice
+      rollBtn.disabled=true;
+      const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
+      const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
+      [dieA,dieB].forEach(c=>{ resetCube(c); c.classList.add('rolling'); });
+      const a=(Math.random()*6|0)+1, b=(Math.random()*6|0)+1;
+      await new Promise(r=>setTimeout(r,900));
+      [dieA,dieB].forEach(c=>c.classList.remove('rolling')); pose(dieA,a); pose(dieB,b);
+      const total=a+b; document.getElementById('rollNumber').textContent=total; const rt=document.getElementById('rollText'); rt.classList.remove('win','lose');
+
+      const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag };
+
+      if (point==null){
+        if (total===7 || total===11){
+          detail.kind='normal'; if ((Math.random()*100|0)===0){ detail.jackpot=true; }
+          rt.textContent=`Come-out WIN — ${total}`; rt.classList.add('win');
+          const payout = detail.jackpot ? (stakeBag*2.00) : (stakeBag*1.25); __bagSession && __bagSession.credit && __bagSession.credit(payout); emitResult(detail);
+        } else if (total===2 || total===3 || total===12){
+          rt.textContent=`Come-out LOSE — ${total}`; rt.classList.add('lose');
+        } else { point=total; document.getElementById('pointVal').textContent=String(point);
+          document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Point phase — hit the Point before 7';
+          rt.textContent=`Point set to ${point}. Roll again.`; }
+      } else {
+        if (total===point){
+          detail.kind='point'; rt.textContent=`POINT WIN — ${point}`; rt.classList.add('win');
+          const payout = stakeBag*1.00; __bagSession && __bagSession.credit && __bagSession.credit(payout); emitResult(detail);
+          point=null; document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+        } else if (total===7){
+          rt.textContent=`LOSE — seven out`; rt.classList.add('lose');
+          point=null; document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+        } else { rt.textContent=`Roll again — need ${point} (rolled ${total})`; }
+      }
+      rollBtn.disabled=false;
+      return;
+    }
+
+    // LIVE mode (unchanged)
     if (!(window.__bagSession && __bagSession.active())) {
       const t=document.querySelector('#startSessionBtn'); if(t) t.focus();
       alert('Start a session first (one-time sign).');
       return;
     }
-    try{ window.__bagAudio && __bagAudio.dice(); }catch(e){}
     if (!pricesReadyForCurrentCurrency()) return;
 
     const usdEq = (function(){ const q=parseFloat(betInput.value||0)||0; if(!q) return 0;
@@ -1154,8 +1210,6 @@
   if (loadViewCache()){ PRICES.source='last-live'; updateLiveLine(); }
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
   updatePayoutPreview();
-
-  /* Removed manual refresh button */
 })();
 </script>
 
@@ -1166,20 +1220,6 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- 🔹 Practice Mode toggle script (added) -->
-<script>
-(function(){
-  const btn = document.getElementById('demoToggleBtn');
-  if (!btn) return;
-  btn.addEventListener('click', ()=>{
-    const u = new URL(location.href);
-    const isOn = u.searchParams.get('demo') === '1';
-    if (isOn) u.searchParams.delete('demo'); else u.searchParams.set('demo','1');
-    location.href = u.toString();
-  });
-})();
-</script>
-
 <!-- $BAG Dice — Practice Mode Wrapper -->
 <script>
 (function(){
@@ -1187,6 +1227,9 @@ if ('serviceWorker' in navigator) {
   const pathDemo = location.pathname.toLowerCase().includes('/demo');
   const demoMode = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
   if (!demoMode) return;
+
+  // Expose practice flag to game logic
+  window.__BAG_PRACTICE = true;
 
   const badge = document.getElementById('demo-badge');
   if (badge) badge.style.display = 'block';
@@ -1271,6 +1314,10 @@ if ('serviceWorker' in navigator) {
 
   const st = document.getElementById('stateText');
   if (st) st.textContent = 'Practice Mode — off-ledger rolls. Connect when ready to play live';
+
+  // Ensure roll is clickable immediately in practice
+  const roll = document.getElementById('rollBtn');
+  if (roll) roll.disabled = false;
 })();
 </script>
 
