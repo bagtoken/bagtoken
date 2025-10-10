@@ -260,6 +260,13 @@
     <!-- LEFT: Demo & stake -->
     <div class="panel mock" id="bagDiceDemo">
 
+      <!-- PRACTICE MODE BADGE -->
+      <div id="demo-badge" style="display:none;position:relative;margin:6px 0 10px 0;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.3px;">
+        <span style="padding:6px 10px;border:1px solid #aaa;border-radius:6px;opacity:.9;">
+          PRACTICE MODE — No real bets or payouts
+        </span>
+      </div>
+
       <!-- CONNECT ROW -->
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
@@ -667,7 +674,6 @@
   }
 
   // startSession / topUp / endSession stay the same as your last version
-  // (omitted here for brevity to keep focus on the connect fix)
   // -------------- BEGIN unchanged session logic --------------
   async function startSession(){
     if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
@@ -995,7 +1001,7 @@
   async function fetchBagUsdFromAMM(){
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket(XRPL_WSS);
+      const ws = new WebSocket('wss://s1.ripple.com');
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
@@ -1148,6 +1154,100 @@
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
 }
+</script>
+
+<!-- $BAG Dice — Practice Mode Wrapper -->
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const pathDemo = location.pathname.toLowerCase().includes('/demo');
+  const demoMode = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
+  if (!demoMode) return;
+
+  const badge = document.getElementById('demo-badge');
+  if (badge) badge.style.display = 'block';
+
+  const $ = (s)=>document.querySelector(s);
+  const statusEl  = $('#sessionStatus');
+  const startBtn  = $('#startSessionBtn');
+  const topUpBtn  = $('#topUpBtn');
+  const endBtn    = $('#endSessionBtn');
+  const connectEl = $('#connectBtn');
+
+  const DEMO_KEY = '__bag_demo_bag_v1';
+  const START_BAG = 1000;
+  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
+
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function renderDemoSession(){
+    const bag = getBal();
+    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
+    if (statusEl){
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
+    }
+    if (startBtn) startBtn.style.display = 'none';
+    if (topUpBtn)  topUpBtn.style.display  = 'none';
+    if (endBtn)    endBtn.style.display     = 'none';
+  }
+  renderDemoSession();
+  window.addEventListener('bag:pricesUpdated', renderDemoSession);
+
+  if (connectEl) connectEl.style.opacity = '0.9';
+
+  window.__bagSession = {
+    active: () => true,
+    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
+    set: () => {},
+    spend(bag){
+      const b = getBal();
+      if (!(bag>0) || b < bag) return false;
+      setBal(b - bag); renderDemoSession(); return true;
+    },
+    credit(bag){
+      if (!(bag>0)) return false;
+      setBal(getBal() + bag); renderDemoSession(); return true;
+    }
+  };
+
+  function toast(msg){
+    try{ if (window.__bagAudio) __bagAudio.nudge(); }catch(e){}
+    try{
+      let t = document.getElementById('bag-demo-toast');
+      if (!t){
+        t = document.createElement('div');
+        t.id = 'bag-demo-toast';
+        t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:#0b2217;color:#eaf3ed;border:1px solid #1b4a2f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 13px system-ui;z-index:2147483647';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(window.__bagDemoToastTimer);
+      window.__bagDemoToastTimer = setTimeout(()=>{ t.style.display='none'; }, 2200);
+    }catch{}
+  }
+
+  window.addEventListener('bag:rollResult', (ev)=>{
+    const d = ev?.detail || {};
+    if (d.kind === 'normal' || d.kind === 'point' || d.jackpot){
+      const mult = d.jackpot ? '2×' : (d.kind==='normal' ? '1.25×' : '1.00×');
+      toast(`That roll pays ${mult} on-ledger. Connect when ready to play live`);
+    }
+  });
+
+  const st = document.getElementById('stateText');
+  if (st) st.textContent = 'Practice Mode — off-ledger rolls. Connect when ready to play live';
+})();
 </script>
 
 </body>
