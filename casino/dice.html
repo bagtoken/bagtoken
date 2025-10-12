@@ -668,7 +668,9 @@
 
   function isWalletConnected(){ try { const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); return !!(w && w.address); } catch { return false; } }
   function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
-  function recomputeRollEnabled(){ rollBtn.disabled = playLocked || !pricesReadyForCurrentCurrency(); }
+function recomputeRollEnabled(){
+  rollBtn.disabled = playLocked || (!DEMO_PLAY && !pricesReadyForCurrentCurrency());
+}
   function setPlayLock(lock){
     playLocked = !!lock;
     if (playLocked){
@@ -930,25 +932,31 @@
     }catch(e){}
   }
 
-  rollBtn.addEventListener('click', async ()=>{
-  // ✅ Allow rolling even with no wallet/session (demo-friendly)
-  const demoEnabled = true;
-  if (!demoEnabled && !(window.__bagSession && __bagSession.active())) {
-    const t=document.querySelector('#startSessionBtn'); if(t) t.focus();
-    alert('Start a session first (one-time sign).');
-    return;
-  }
+rollBtn.addEventListener('click', async ()=>{
+    // ✅ Demo override — allow rolling without wallet or session
+    const demoMode = true;
+    if (!demoMode && !(window.__bagSession && __bagSession.active())) {
+      const t=document.querySelector('#startSessionBtn'); if(t) t.focus();
+      alert('Start a session first (one-time sign).');
+      return;
+    }
+
 
     try{ window.__bagAudio && __bagAudio.dice(); }catch(e){}
-    if (!pricesReadyForCurrentCurrency()) return;
+if (!demoMode && !pricesReadyForCurrentCurrency()) return;
 
     const usdEq = (function(){ const q=parseFloat(betInput.value||0)||0; if(!q) return 0;
       return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? q*PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? q*PRICES.xrpUsd : 0); })();
-    if (usdEq < 1){ return; }
+if (!demoMode && usdEq < 1){ return; }
     const stakeBag = (function(){ const bet = Math.max(0, parseFloat(betInput.value||0)); if (!bet) return 0;
       if (currentCurrency()==='BAG') return bet; if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd; return bet * bagPerXrp; } return 0; })();
-    const sess = __bagSession.get(); if (!(sess && sess.bag >= stakeBag && stakeBag>0)) return;
-    if (!__bagSession.spend(stakeBag)) return;
+let spent = true;
+if (!demoMode) {
+  const sess = __bagSession.get();
+  if (!(sess && sess.bag >= stakeBag && stakeBag > 0)) return;
+  spent = __bagSession.spend(stakeBag);
+  if (!spent) return;
+}
 
     rollBtn.disabled=true;
     const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
