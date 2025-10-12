@@ -25,7 +25,7 @@
   }
   button,[role="button"],a.btn{touch-action:manipulation;font-size:16px}
 
-  /* Back button in the same place as other pages */
+  /* Back button in same place/type as Dice */
   .topbar{width:min(1120px,94vw);display:flex;align-items:center;justify-content:flex-start;margin:14px 0 6px}
   .btn{
     background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1e231d;
@@ -108,7 +108,7 @@
 </style>
 </head>
 <body>
-  <!-- Back to Casino (same spot/type as other pages) -->
+  <!-- Back to Casino (same spot/type as Dice) -->
   <div class="topbar">
     <a class="btn" href="/casino/index.html">Back to Casino</a>
   </div>
@@ -171,7 +171,7 @@
     </section>
   </main>
 
-  <!-- Payouts card (3 items to match Dice-style simplicity) -->
+  <!-- Payouts card: Option 1 (Label + Mult) -->
   <section class="section">
     <article class="card" aria-labelledby="payoutTitle">
       <h3 id="payoutTitle">Payouts</h3>
@@ -180,9 +180,9 @@
         <div class="payhead">Stacking</div><div>Multiple line wins add together</div>
       </div>
       <div class="paygrid" style="margin-top:10px">
-        <div class="payhead">7️⃣</div><div>10× bet</div>
-        <div class="payhead">💎</div><div>6× bet</div>
-        <div class="payhead">🪙</div><div>4× bet</div>
+        <div class="payhead">7️⃣ Jackpot</div><div>2× bet</div>
+        <div class="payhead">💎 Win</div><div>1.25× bet</div>
+        <div class="payhead">🪙 Scratch</div><div>1.0× bet</div>
       </div>
     </article>
   </section>
@@ -210,7 +210,8 @@
   };
 
   // ---------- Symbols (emoji) ----------
-  const SYM = ["7️⃣","💎","🪙","👜","▬","🍒"]; // fillers still appear, only top 3 pay
+  // Full symbol pool (some are filler only). Only 7️⃣, 💎, 🪙 pay.
+  const SYM = ["7️⃣","💎","🪙","👜","▬","🍒"];
 
   // ---------- DOM refs ----------
   const strips=[...document.querySelectorAll('.strip')];
@@ -242,15 +243,14 @@
   const fillStrip=(strip,arr)=>{strip.innerHTML=''; arr.forEach(s=>strip.appendChild(makeCell(s)));};
 
   function initReelsVisible(){
-    const starter=["🍒","▬","🪙"];
+    const starter=["🍒","▬","🪙"]; // visible placeholders
     for(const strip of strips){ fillStrip(strip, starter); strip.style.transition='none'; strip.style.transform='translateY(0)'; }
     requestAnimationFrame(()=>{ for(const strip of strips){ strip.style.transition='transform 2600ms cubic-bezier(.07,.95,.05,1)'; }});
   }
-  // initialize whether or not load already fired
-  if (document.readyState === 'complete' || document.readyState === 'interactive') { initReelsVisible(); }
-  else { window.addEventListener('load', initReelsVisible); }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') initReelsVisible();
+  else window.addEventListener('load', initReelsVisible);
 
-  // ---------- Pricing (like Dice) ----------
+  // ---------- Pricing ----------
   const fmt=n=>(n==null)?'—':(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
   const fmtUsd=n=>(n==null)?'—':'$'+(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
 
@@ -265,7 +265,13 @@
 
   async function withTimeout(promise,ms=4000){let t;const timeout=new Promise((_,rej)=>t=setTimeout(()=>rej(new Error('timeout')),ms));try{return await Promise.race([promise,timeout]);}finally{clearTimeout(t);}}
   async function fetchXrpUsd(){const r=await withTimeout(fetch(ENDPOINTS.xrpUsd,{cache:'no-store'}));const j=await r.json();return j?.ripple?.usd ?? null;}
-  async function fetchBagSpot(){const r=await withTimeout(fetch(ENDPOINTS.bagSpot,{cache:'no-store'}));const j=await r.json();if(j && typeof j.price_xrp==='number')return j.price_xrp;if(j && typeof j.bag_per_xrp==='number'&&j.bag_per_xrp>0)return 1/j.bag_per_xrp;return null;}
+  async function fetchBagSpot(){
+    const r=await withTimeout(fetch(ENDPOINTS.bagSpot,{cache:'no-store'}));
+    const j=await r.json();
+    if(j && typeof j.price_xrp==='number')return j.price_xrp;
+    if(j && typeof j.bag_per_xrp==='number' && j.bag_per_xrp>0)return 1/j.bag_per_xrp;
+    return null;
+  }
   async function refreshPrices(){
     let demo=false;
     try{
@@ -307,18 +313,19 @@
   refreshPrices(); setInterval(refreshPrices,30000);
 
   // ---------- RNG / payouts (3 paylines only) ----------
-  const DEMO_HIT_RATE=0.495;
-  const PAY_SYMS=["🪙","💎","7️⃣"];                 // only these symbols pay
-  const PAYS={"7️⃣":10,"💎":6,"🪙":4};            // 3 payouts only
   const ROWS=[[[0,0],[0,1],[0,2]],[[1,0],[1,1],[1,2]],[[2,0],[2,1],[2,2]]];
+
+  // Only these three pay; others are filler
+  const PAY_SYMS = ["🪙","💎","7️⃣"];                // frequency order (scratch most common)
+  const PAYS     = { "7️⃣": 2.0, "💎": 1.25, "🪙": 1.0 };
 
   const rng=()=>SYM[(Math.random()*SYM.length)|0];
 
   function demoServer(stake){
-    const winSpin=Math.random()<DEMO_HIT_RATE;
+    const winSpin = Math.random() < 0.495; // Dice-like feel
     if(winSpin){
-      // weight lower pays higher frequency like Dice feel
-      const weights=[16,8,4]; // 🪙 most common, then 💎, then 7️⃣
+      // scratch common, small win sometimes, jackpot rare
+      const weights=[18,7,2]; // 🪙, 💎, 7️⃣
       const tot=weights.reduce((a,b)=>a+b,0);
       let r=Math.random()*tot, idx=0;
       for(let i=0;i<weights.length;i++){ if((r-=weights[i])<=0){ idx=i; break; } }
@@ -329,16 +336,16 @@
       set3(...ROWS[line]);
       return {result:g,totalPayout:PAYS[sym]*stake,stake};
     }else{
-      // ensure no 3-in-row
+      // ensure no paying 3-in-row
       let tries=0;
       while(true){
         const g=[[rng(),rng(),rng()],[rng(),rng(),rng()],[rng(),rng(),rng()]];
-        let win=false;
+        let paying=false;
         for(const L of ROWS){
-          const [a,b,c]=L;
-          if(g[a[0]][a[1]]===g[b[0]][b[1]] && g[b[0]][b[1]]===g[c[0]][c[1]] && PAYS[g[a[0]][a[1]]]){ win=true; break; }
+          const [a,b,c]=L, sA=g[a[0]][a[1]];
+          if(sA===g[b[0]][b[1]] && sA===g[c[0]][c[1]] && PAYS[sA]){ paying=true; break; }
         }
-        if(!win || tries++>20) return {result:g,totalPayout:0,stake};
+        if(!paying || tries++>20) return {result:g,totalPayout:0,stake};
       }
     }
   }
@@ -346,13 +353,13 @@
   // ---------- Animation ----------
   async function animateToGrid(rows){
     const cols=[0,1,2].map(ci=>[rows[0][ci],rows[1][ci],rows[2][ci]]);
-    const fillerLen=14;
+    const fillerLen=14; // long spin
     await Promise.all(cols.map((colSyms,ci)=>new Promise(resolve=>{
       const strip=strips[ci];
       const filler=Array.from({length:fillerLen},_=>rng());
       const stack=[...filler,...colSyms];
       fillStrip(strip,stack);
-      const total=(stack.length-3)*93;
+      const total=(stack.length-3)*CELL_H;
       requestAnimationFrame(()=>{
         strip.style.transform=`translateY(-${total}px)`;
         strip.addEventListener('transitionend',()=>{
@@ -365,7 +372,7 @@
     })));
   }
 
-  // ---------- Spin flow (ensures button works) ----------
+  // ---------- Spin flow with push labeling ----------
   spinBtn.addEventListener('click', async ()=>{
     const stake=+betEl.textContent;
     spinBtn.disabled=true; winEl.textContent='…';
@@ -386,15 +393,20 @@
       winEl.textContent=payout;
 
       const mult=stake? (payout/stake) : 0;
-      lastResult.textContent=payout>0?'Win ✅':'Lose ❌';
+      lastResult.textContent=(mult>1)?'Win ✅':(mult===1?'Scratch ⏸️':'Lose ❌');
       lastMult.textContent=mult?`${mult.toFixed(2)}×`:'0×';
       lastProfit.textContent=(payout-stake).toString();
 
-      if(payout>0){
+      if(mult>1){
         sWin.currentTime=0; sWin.play().catch(()=>{});
-        cabinet.classList.add('win-glow'); badge.textContent=(mult>=6)?'BIG WIN! 🎉':'WIN! 🎉'; overlay.classList.add('show');
+        cabinet.classList.add('win-glow'); badge.textContent=(mult>=2)?'JACKPOT! 🎉':'WIN! 🎉'; overlay.classList.add('show');
         setTimeout(()=>overlay.classList.remove('show'),1400);
         setTimeout(()=>cabinet.classList.remove('win-glow'),1600);
+      }else if(mult===1){
+        sWin.currentTime=0; sWin.play().catch(()=>{}); // soft chime still fine for push
+        cabinet.classList.add('win-glow'); badge.textContent='SCRATCH'; overlay.classList.add('show');
+        setTimeout(()=>overlay.classList.remove('show'),900);
+        setTimeout(()=>cabinet.classList.remove('win-glow'),1000);
       }else{
         sLose.currentTime=0; sLose.play().catch(()=>{});
       }
@@ -407,15 +419,16 @@
       try{ sSpin.pause(); sSpin.currentTime=0; }catch(_){}
       const data=demoServer(+betEl.textContent);
       await animateToGrid(data.result);
-      const payout=data.totalPayout;
-      winEl.textContent=payout;
+      const payout=data.totalPayout; winEl.textContent=payout;
 
       const mult=payout/(+betEl.textContent||1);
-      lastResult.textContent=payout>0?'Win ✅':'Lose ❌';
+      lastResult.textContent=(mult>1)?'Win ✅':(mult===1?'Scratch ⏸️':'Lose ❌');
       lastMult.textContent=mult?`${mult.toFixed(2)}×`:'0×';
       lastProfit.textContent=(payout-(+betEl.textContent||0)).toString();
 
-      if(payout>0){ sWin.currentTime=0; sWin.play().catch(()=>{});} else { sLose.currentTime=0; sLose.play().catch(()=>{}); }
+      if(mult>1){ sWin.currentTime=0; sWin.play().catch(()=>{}); }
+      else if(mult===1){ sWin.currentTime=0; sWin.play().catch(()=>{}); }
+      else { sLose.currentTime=0; sLose.play().catch(()=>{}); }
 
       balance=balance - data.stake + data.totalPayout;
       balEl.textContent=balance; renderUsd();
