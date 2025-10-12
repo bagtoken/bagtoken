@@ -25,8 +25,10 @@
   }
   button,[role="button"],a.btn{touch-action:manipulation;font-size:16px}
 
-  /* Back button (same place/type as Dice) */
-  .topbar{width:min(1120px,94vw);display:flex;align-items:center;justify-content:flex-start;margin:14px 0 6px}
+  /* Topbar: back (left) + wallet/session (right) */
+  .topbar{
+    width:min(1120px,94vw);display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;gap:10px
+  }
   .btn{
     background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1e231d;
     font-weight:800;border:none;border-radius:12px;padding:12px 22px;
@@ -35,6 +37,10 @@
   }
   .btn:active{transform:translateY(1px)}
   .btn[disabled]{opacity:.55;cursor:not-allowed;box-shadow:none}
+  .btn.slim{padding:10px 14px}
+
+  .wallet-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tag{background:var(--panel);border:1px solid var(--stroke);border-radius:10px;padding:8px 10px;font-size:13px;opacity:.9}
 
   /* Header */
   header{width:min(1120px,94vw);margin:6px 0 10px;text-align:center}
@@ -109,9 +115,14 @@
 </style>
 </head>
 <body>
-  <!-- Back to Casino (same place/type, with ⬅️) -->
+  <!-- Back + Wallet/Session -->
   <div class="topbar">
     <a class="btn" href="/casino/index.html">⬅️ Back to Casino</a>
+    <div class="wallet-row">
+      <span id="addrTag" class="tag" title="Connected address" style="display:none"></span>
+      <button id="btnConnect" class="btn slim">Connect Xaman</button>
+      <button id="btnSession" class="btn slim" disabled>Start Session</button>
+    </div>
   </div>
 
   <header>
@@ -177,17 +188,17 @@
     <article class="card" aria-labelledby="howTitle">
       <h3 id="howTitle">How it plays</h3>
       <ol style="margin:0 0 8px 20px;padding:0;line-height:1.6">
+        <li>Connect with <strong>Xaman</strong>, then <strong>Start Session</strong>.</li>
         <li>Select currency: <strong>BAG</strong> or <strong>XRP</strong>.</li>
-        <li>Set your <strong>Bet</strong>.</li>
-        <li>Press <strong>SPIN</strong>. Reels stop on a 3×3 grid.</li>
+        <li>Set your <strong>Bet</strong> and press <strong>SPIN</strong>.</li>
         <li>There are <strong>3 paylines</strong> (the horizontal rows). Multiple line wins add together.</li>
         <li>Match three of a kind on a payline to get a payout.</li>
       </ol>
-      <div class="muted">Note: Pricing displays BAG↔XRP↔USD in real time. Demo mode uses sample odds until backend is connected.</div>
+      <div class="muted">Pricing displays BAG↔XRP↔USD in real time. Until your backend is wired, spins use demo odds.</div>
     </article>
   </section>
 
-  <!-- Payouts (Dice-style, thorough) -->
+  <!-- Payouts -->
   <section class="section">
     <article class="card" aria-labelledby="payoutTitle">
       <h3 id="payoutTitle">Payouts</h3>
@@ -249,6 +260,41 @@
   [sSpin,sWin,sLose].forEach(a=>a.muted=true);
   const unlockAudio=()=>{[sSpin,sWin,sLose].forEach(a=>{try{a.muted=false;a.play().then(()=>a.pause()).catch(()=>{});}catch(e){}});window.removeEventListener('pointerdown',unlockAudio);};
   window.addEventListener('pointerdown',unlockAudio,{once:true});
+
+  // ---------- Wallet / Session (stubs you can wire) ----------
+  let wallet = { address: null, sessionId: null };
+  const btnConnect = document.getElementById('btnConnect');
+  const btnSession = document.getElementById('btnSession');
+  const addrTag   = document.getElementById('addrTag');
+
+  // Example stub for Xaman connect
+  async function connectXaman(){
+    // TODO: replace with real Xaman connect; keep this UX the same
+    // e.g., const res = await xaman.connect(); wallet.address = res.address;
+    wallet.address = wallet.address || 'rDemoXamanAddress...';
+    localStorage.setItem('bag_wallet_addr', wallet.address);
+    addrTag.textContent = wallet.address.slice(0,6)+'…'+wallet.address.slice(-6);
+    addrTag.style.display = 'inline-block';
+    btnSession.disabled = false;
+  }
+
+  // Example stub for starting a session (JWT/nonce flow etc.)
+  async function startSession(){
+    // TODO: replace with backend call that verifies ownership and returns a session
+    wallet.sessionId = 'sess_'+Math.random().toString(36).slice(2);
+    localStorage.setItem('bag_session_id', wallet.sessionId);
+    btnSession.textContent = 'Session Active';
+    btnSession.disabled = true;
+  }
+
+  // Restore from storage if present
+  (function restore(){
+    const a = localStorage.getItem('bag_wallet_addr'); if(a){ wallet.address=a; addrTag.textContent=a.slice(0,6)+'…'+a.slice(-6); addrTag.style.display='inline-block'; btnSession.disabled=false; }
+    const s = localStorage.getItem('bag_session_id'); if(s){ wallet.sessionId=s; btnSession.textContent='Session Active'; btnSession.disabled=true; }
+  })();
+
+  btnConnect.addEventListener('click', connectXaman);
+  btnSession.addEventListener('click', startSession);
 
   // ---------- State ----------
   let balance=10000, currency='BAG';
@@ -317,13 +363,9 @@
     const bet=+betEl.textContent;
     let betUsd='—',balUsd='—',winUsd='—';
     if(currency==='BAG'&&prices.bagUsd){
-      betUsd=fmtUsd(bet*prices.bagUsd);
-      balUsd=fmtUsd(balance*prices.bagUsd);
-      winUsd=fmtUsd((+winEl.textContent||0)*prices.bagUsd);
+      betUsd=fmtUsd(bet*prices.bagUsd); balUsd=fmtUsd(balance*prices.bagUsd); winUsd=fmtUsd((+winEl.textContent||0)*prices.bagUsd);
     }else if(currency==='XRP'&&prices.xrpUsd){
-      betUsd=fmtUsd(bet*prices.xrpUsd);
-      balUsd=fmtUsd(balance*prices.xrpUsd);
-      winUsd=fmtUsd((+winEl.textContent||0)*prices.xrpUsd);
+      betUsd=fmtUsd(bet*prices.xrpUsd); balUsd=fmtUsd(balance*prices.xrpUsd); winUsd=fmtUsd((+winEl.textContent||0)*prices.xrpUsd);
     }
     betUsdEl.textContent=betUsd; balUsdEl.textContent=balUsd; winUsdEl.textContent=winUsd;
   }
@@ -389,7 +431,7 @@
     })));
   }
 
-  // ---------- Spin flow (with push labeling) ----------
+  // ---------- Spin flow (with sounds & push labeling) ----------
   spinBtn.addEventListener('click', async ()=>{
     const stake=+betEl.textContent;
     spinBtn.disabled=true; winEl.textContent='…';
@@ -397,9 +439,10 @@
 
     try{
       sSpin.currentTime=0; sSpin.loop=true; sSpin.play().catch(()=>{});
+      // If you have a real backend, include wallet.address & sessionId here
       const res=await fetch('/api/slots/spin',{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({address:window?.wallet?.address ?? 'demo',stake,currency})
+        body:JSON.stringify({address:wallet.address ?? 'demo',sessionId:wallet.sessionId ?? null,stake,currency})
       }).catch(()=>null);
       const data=(res && res.ok)? await res.json() : demoServer(stake);
 
