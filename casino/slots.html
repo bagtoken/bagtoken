@@ -27,8 +27,11 @@
 
   /* Topbar: back (left) + wallet/session (right) */
   .topbar{
-    width:min(1120px,94vw);display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;gap:10px
+    width:min(1120px,94vw);display:flex;align-items:center;justify-content:flex-start;margin:14px 0 6px;gap:10px
   }
+  .wallet-row{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tag{background:var(--panel);border:1px solid var(--stroke);border-radius:10px;padding:8px 10px;font-size:13px;opacity:.9}
+
   .btn{
     background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1e231d;
     font-weight:800;border:none;border-radius:12px;padding:12px 22px;
@@ -38,9 +41,6 @@
   .btn:active{transform:translateY(1px)}
   .btn[disabled]{opacity:.55;cursor:not-allowed;box-shadow:none}
   .btn.slim{padding:10px 14px}
-
-  .wallet-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .tag{background:var(--panel);border:1px solid var(--stroke);border-radius:10px;padding:8px 10px;font-size:13px;opacity:.9}
 
   /* Header */
   header{width:min(1120px,94vw);margin:6px 0 10px;text-align:center}
@@ -64,9 +64,16 @@
   .cabinet{
     width:min(860px,100%);background:linear-gradient(180deg,var(--cabinet),var(--cabinet2));
     border:8px solid var(--rim);border-radius:18px;padding:20px;
-    box-shadow:0 26px 120px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.04)
+    box-shadow:0 26px 120px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.04); position:relative
   }
   .cabinet.win-glow{box-shadow:0 0 0 3px rgba(242,199,107,.55),0 60px 160px rgba(242,199,107,.35),inset 0 0 0 1px rgba(255,255,255,.05)}
+  .cabinet.shake{animation:shake .6s ease}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    20%{transform:translateX(-6px)} 40%{transform:translateX(6px)}
+    60%{transform:translateX(-4px)} 80%{transform:translateX(4px)}
+  }
+
   .top-arch{
     text-align:center;padding:12px 0 8px;margin-bottom:12px;border-radius:12px;
     background:linear-gradient(180deg,#163722,#0f2618);border:1px solid var(--bezel);
@@ -79,13 +86,14 @@
     background:#0b140d;border:3px solid var(--bezel);border-radius:12px;padding:16px;position:relative;overflow:hidden
   }
   .reel{height:280px;border-radius:12px;background:linear-gradient(180deg,#0f1a12,#08100b);border:1px solid #1c2b1e;position:relative;overflow:hidden}
-  .strip{position:absolute;left:0;right:0;top:0;transition:transform 2600ms cubic-bezier(.07,.95,.05,1)}
+  .strip{position:absolute;left:0;right:0;top:0;transition:transform 2800ms cubic-bezier(.07,.95,.05,1)}
   .cell{height:93px;display:flex;align-items:center;justify-content:center;font-size:64px;text-shadow:0 3px 0 #0008, 0 0 8px #0f0a}
 
-  /* Win overlay */
+  /* Win overlay + confetti canvas */
   .win-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:radial-gradient(800px 400px at 50% 50%, rgba(242,199,107,.18), transparent 60%);pointer-events:none}
   .win-overlay.show{display:flex}
   .badge{font-weight:900;font-size:44px;letter-spacing:.08em;padding:12px 18px;border-radius:14px;color:#132016;background:linear-gradient(180deg,#ffe6a8,#eac070);box-shadow:0 8px 40px rgba(242,199,107,.35)}
+  canvas.confetti{position:absolute;inset:0;pointer-events:none}
 
   /* Big SPIN under rows */
   .spinBigWrap{display:flex;justify-content:center;margin:14px 0 6px}
@@ -115,7 +123,7 @@
 </style>
 </head>
 <body>
-  <!-- Back + Wallet/Session -->
+  <!-- Back (left) + Wallet/Session (right) -->
   <div class="topbar">
     <a class="btn" href="/casino/index.html">⬅️ Back to Casino</a>
     <div class="wallet-row">
@@ -146,6 +154,7 @@
         <div class="reel"><div class="strip" data-col="0"></div></div>
         <div class="reel"><div class="strip" data-col="1"></div></div>
         <div class="reel"><div class="strip" data-col="2"></div></div>
+        <canvas id="confetti" class="confetti"></canvas>
         <div class="win-overlay" id="winOverlay"><div class="badge" id="winBadge">WIN! 🎉</div></div>
       </div>
 
@@ -238,8 +247,9 @@
   };
 
   // ---------- Symbols (emoji) ----------
-  // Full pool (filler + pay). Only 7️⃣, 💎, 🪙 pay.
-  const SYM = ["7️⃣","💎","🪙","👜","▬","🍒"];
+  const SYM = ["7️⃣","💎","🪙","👜","▬","🍒"]; // fillers + pay
+  const PAY_SYMS=["🪙","💎","7️⃣"];            // scratch common
+  const PAYS    ={ "7️⃣":2.0, "💎":1.25, "🪙":1.0 };
 
   // ---------- DOM refs ----------
   const strips=[...document.querySelectorAll('.strip')];
@@ -255,65 +265,54 @@
 
   const xrpUsdEl=document.getElementById('xrpUsd'), bagXrpEl=document.getElementById('bagXrp'), bagUsdEl=document.getElementById('bagUsd'), pxTimeEl=document.getElementById('pxTime'), pxDemoEl=document.getElementById('pxDemo');
 
-  // Sounds + unlock
   const sSpin=document.getElementById('sSpin'), sWin=document.getElementById('sWin'), sLose=document.getElementById('sLose');
   [sSpin,sWin,sLose].forEach(a=>a.muted=true);
   const unlockAudio=()=>{[sSpin,sWin,sLose].forEach(a=>{try{a.muted=false;a.play().then(()=>a.pause()).catch(()=>{});}catch(e){}});window.removeEventListener('pointerdown',unlockAudio);};
   window.addEventListener('pointerdown',unlockAudio,{once:true});
 
-  // ---------- Wallet / Session (stubs you can wire) ----------
+  // Wallet / Session stubs (wire to real Xaman later)
   let wallet = { address: null, sessionId: null };
   const btnConnect = document.getElementById('btnConnect');
   const btnSession = document.getElementById('btnSession');
   const addrTag   = document.getElementById('addrTag');
 
-  // Example stub for Xaman connect
   async function connectXaman(){
-    // TODO: replace with real Xaman connect; keep this UX the same
-    // e.g., const res = await xaman.connect(); wallet.address = res.address;
     wallet.address = wallet.address || 'rDemoXamanAddress...';
     localStorage.setItem('bag_wallet_addr', wallet.address);
     addrTag.textContent = wallet.address.slice(0,6)+'…'+wallet.address.slice(-6);
     addrTag.style.display = 'inline-block';
     btnSession.disabled = false;
   }
-
-  // Example stub for starting a session (JWT/nonce flow etc.)
   async function startSession(){
-    // TODO: replace with backend call that verifies ownership and returns a session
     wallet.sessionId = 'sess_'+Math.random().toString(36).slice(2);
     localStorage.setItem('bag_session_id', wallet.sessionId);
     btnSession.textContent = 'Session Active';
     btnSession.disabled = true;
   }
-
-  // Restore from storage if present
   (function restore(){
     const a = localStorage.getItem('bag_wallet_addr'); if(a){ wallet.address=a; addrTag.textContent=a.slice(0,6)+'…'+a.slice(-6); addrTag.style.display='inline-block'; btnSession.disabled=false; }
     const s = localStorage.getItem('bag_session_id'); if(s){ wallet.sessionId=s; btnSession.textContent='Session Active'; btnSession.disabled=true; }
   })();
-
   btnConnect.addEventListener('click', connectXaman);
   btnSession.addEventListener('click', startSession);
 
-  // ---------- State ----------
+  // State
   let balance=10000, currency='BAG';
   let prices={xrpUsd:null, bagXrp:null, bagUsd:null};
   const CELL_H=93;
 
-  // ---------- Reels (visible immediately) ----------
+  // Reels init (prevent blank)
   const makeCell=s=>{const d=document.createElement('div'); d.className='cell'; d.textContent=s; return d;};
   const fillStrip=(strip,arr)=>{strip.innerHTML=''; arr.forEach(s=>strip.appendChild(makeCell(s)));};
-
   function initReelsVisible(){
-    const starter=["🍒","▬","🪙"]; // placeholders so nothing looks blank
+    const starter=["🍒","▬","🪙"];
     for(const strip of strips){ fillStrip(strip, starter); strip.style.transition='none'; strip.style.transform='translateY(0)'; }
-    requestAnimationFrame(()=>{ for(const strip of strips){ strip.style.transition='transform 2600ms cubic-bezier(.07,.95,.05,1)'; }});
+    requestAnimationFrame(()=>{ for(const strip of strips){ strip.style.transition='transform 2800ms cubic-bezier(.07,.95,.05,1)'; }});
   }
   if (document.readyState === 'complete' || document.readyState === 'interactive') initReelsVisible();
   else window.addEventListener('load', initReelsVisible);
 
-  // ---------- Pricing ----------
+  // Pricing
   const fmt=n=>(n==null)?'—':(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
   const fmtUsd=n=>(n==null)?'—':'$'+(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
 
@@ -371,19 +370,13 @@
   }
   refreshPrices(); setInterval(refreshPrices,30000);
 
-  // ---------- RNG / payouts (3 paylines only) ----------
+  // RNG / payouts (3 paylines only)
   const ROWS=[[[0,0],[0,1],[0,2]],[[1,0],[1,1],[1,2]],[[2,0],[2,1],[2,2]]];
-
-  // Only these three pay; others are filler
-  const PAY_SYMS=["🪙","💎","7️⃣"];            // frequency order (scratch common)
-  const PAYS    ={ "7️⃣":2.0, "💎":1.25, "🪙":1.0 };
-
   const rng=()=>SYM[(Math.random()*SYM.length)|0];
 
   function demoServer(stake){
-    const winSpin=Math.random()<0.495; // Dice-like feel
+    const winSpin=Math.random()<0.495;
     if(winSpin){
-      // scratch common, small win sometimes, jackpot rare
       const weights=[18,7,2]; // 🪙, 💎, 7️⃣
       const tot=weights.reduce((a,b)=>a+b,0);
       let r=Math.random()*tot, idx=0;
@@ -395,7 +388,6 @@
       set3(...ROWS[line]);
       return {result:g,totalPayout:PAYS[sym]*stake,stake};
     }else{
-      // ensure no paying 3-in-row
       let tries=0;
       while(true){
         const g=[[rng(),rng(),rng()],[rng(),rng(),rng()],[rng(),rng(),rng()]];
@@ -409,10 +401,38 @@
     }
   }
 
-  // ---------- Animation ----------
+  // Confetti
+  const confettiCanvas = document.getElementById('confetti');
+  const ctx = confettiCanvas.getContext('2d');
+  function fitConfetti(){ const r = confettiCanvas.getBoundingClientRect(); confettiCanvas.width = r.width * devicePixelRatio; confettiCanvas.height = r.height * devicePixelRatio; }
+  new ResizeObserver(fitConfetti).observe(confettiCanvas); fitConfetti();
+
+  function runConfetti(burst=80){
+    const W=confettiCanvas.width, H=confettiCanvas.height;
+    const parts = Array.from({length:burst}, ()=>({
+      x: Math.random()*W, y: -20, vy: 2+Math.random()*3, vx: (Math.random()-.5)*2,
+      s: 4+Math.random()*6, r: Math.random()*Math.PI, vr:(Math.random()-.5)*0.2,
+      c: Math.random()>.5 ? '#f2c76b' : '#ffdfa0'
+    }));
+    let t=0, raf;
+    function step(){
+      ctx.clearRect(0,0,W,H);
+      for(const p of parts){
+        p.vy += 0.06; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+        ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s);
+        ctx.restore();
+      }
+      t++;
+      if(t<120) raf=requestAnimationFrame(step); else ctx.clearRect(0,0,W,H);
+    }
+    cancelAnimationFrame(raf); step();
+  }
+
+  // Animation
   async function animateToGrid(rows){
     const cols=[0,1,2].map(ci=>[rows[0][ci],rows[1][ci],rows[2][ci]]);
-    const fillerLen=14; // long spin
+    const fillerLen=16; // longer spin
     await Promise.all(cols.map((colSyms,ci)=>new Promise(resolve=>{
       const strip=strips[ci];
       const filler=Array.from({length:fillerLen},_=>rng());
@@ -424,22 +444,20 @@
         strip.addEventListener('transitionend',()=>{
           fillStrip(strip,colSyms);
           strip.style.transition='none'; strip.style.transform='translateY(0)';
-          strip.getBoundingClientRect(); strip.style.transition='transform 2600ms cubic-bezier(.07,.95,.05,1)';
+          strip.getBoundingClientRect(); strip.style.transition='transform 2800ms cubic-bezier(.07,.95,.05,1)';
           resolve();
         },{once:true});
       });
     })));
   }
 
-  // ---------- Spin flow (with sounds & push labeling) ----------
+  // Spin flow (sounds + celebrations)
   spinBtn.addEventListener('click', async ()=>{
     const stake=+betEl.textContent;
     spinBtn.disabled=true; winEl.textContent='…';
-    overlay.classList.remove('show'); cabinet.classList.remove('win-glow');
-
+    overlay.classList.remove('show'); cabinet.classList.remove('win-glow','shake');
     try{
       sSpin.currentTime=0; sSpin.loop=true; sSpin.play().catch(()=>{});
-      // If you have a real backend, include wallet.address & sessionId here
       const res=await fetch('/api/slots/spin',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({address:wallet.address ?? 'demo',sessionId:wallet.sessionId ?? null,stake,currency})
@@ -448,6 +466,7 @@
 
       await animateToGrid(data.result);
 
+      // stop spin loop
       try{ sSpin.pause(); sSpin.currentTime=0; }catch(_){}
       const payout=data.totalPayout||0;
       winEl.textContent=payout;
@@ -459,14 +478,20 @@
 
       if(mult>1){
         sWin.currentTime=0; sWin.play().catch(()=>{});
-        cabinet.classList.add('win-glow'); badge.textContent=(mult>=2)?'JACKPOT! 🎉':'WIN! 🎉'; overlay.classList.add('show');
-        setTimeout(()=>overlay.classList.remove('show'),1400);
-        setTimeout(()=>cabinet.classList.remove('win-glow'),1600);
+        cabinet.classList.add('win-glow');
+        badge.textContent=(mult>=2)?'JACKPOT! 🎉':'WIN! 🎉';
+        overlay.classList.add('show');
+        runConfetti(mult>=2 ? 140 : 80);
+        if(mult>=2) cabinet.classList.add('shake');
+        setTimeout(()=>overlay.classList.remove('show'), 1400);
+        setTimeout(()=>cabinet.classList.remove('win-glow','shake'), 1600);
       }else if(mult===1){
-        sWin.currentTime=0; sWin.play().catch(()=>{}); // subtle chime
-        cabinet.classList.add('win-glow'); badge.textContent='SCRATCH'; overlay.classList.add('show');
-        setTimeout(()=>overlay.classList.remove('show'),900);
-        setTimeout(()=>cabinet.classList.remove('win-glow'),1000);
+        sWin.currentTime=0; sWin.play().catch(()=>{}); // soft chime for push
+        cabinet.classList.add('win-glow');
+        badge.textContent='SCRATCH';
+        overlay.classList.add('show');
+        setTimeout(()=>overlay.classList.remove('show'), 800);
+        setTimeout(()=>cabinet.classList.remove('win-glow'), 900);
       }else{
         sLose.currentTime=0; sLose.play().catch(()=>{});
       }
@@ -486,7 +511,7 @@
       lastMult.textContent=mult?`${mult.toFixed(2)}×`:'0×';
       lastProfit.textContent=(payout-(+betEl.textContent||0)).toString();
 
-      if(mult>1){ sWin.currentTime=0; sWin.play().catch(()=>{}); }
+      if(mult>1){ sWin.currentTime=0; sWin.play().catch(()=>{}); runConfetti(mult>=2 ? 140 : 80); }
       else if(mult===1){ sWin.currentTime=0; sWin.play().catch(()=>{}); }
       else { sLose.currentTime=0; sLose.play().catch(()=>{}); }
 
@@ -496,6 +521,9 @@
       spinBtn.disabled=false;
     }
   });
+
+  // expose for quick QA in console
+  window.__slotsDemoSpin = ()=>document.getElementById('spin').click();
 })();
 </script>
 </body>
