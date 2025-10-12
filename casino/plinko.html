@@ -15,33 +15,47 @@
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   a{color:inherit;text-decoration:none}
+
   .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  .top-banner{display:flex;justify-content:center;margin:12px 0 8px}
+  .top-banner{display:flex;justify-content:center;margin:8px 0 6px}
   .top-banner img{width:220px;height:auto;filter:drop-shadow(0 6px 12px rgba(0,0,0,.45))}
-  header{display:flex;align-items:center;justify-content:space-between;margin:10px 0 16px}
+
+  /* HEADER: left = back, center = demo, right = connect/session */
+  header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;margin:6px 0 14px}
+  .h-left{justify-self:start;display:flex;align-items:center;gap:10px}
+  .h-center{justify-self:center}
+  .h-right{justify-self:end;display:flex;align-items:center;gap:10px}
+
   .btn{
     background:linear-gradient(180deg,var(--panel),var(--panel2));
     border:1px solid #183c27;color:var(--fg);
     padding:10px 14px;border-radius:10px;cursor:pointer;
-    box-shadow:0 6px 16px var(--shadow);font-weight:600
+    box-shadow:0 6px 16px var(--shadow);font-weight:600;letter-spacing:.2px
   }
+  .btn:active{transform:translateY(1px)}
   .btn.gold{background:linear-gradient(180deg,#6b5412,#3e2d09);border:1px solid #8a6a1a;color:#ffdc73}
   .btn.green{background:linear-gradient(180deg,#113a22,#0b2a18);border:1px solid #1e6a3f;color:#baf2cd}
   .btn.ghost{background:transparent;border:1px solid #244330;color:#cfe6d8}
+
   .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
   @media(max-width:980px){.grid{grid-template-columns:1fr}}
+
   .panel{
     background:radial-gradient(140% 100% at 0% 0%,rgba(27,64,45,.55),transparent 60%), var(--panel);
     border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:0 10px 30px var(--shadow)
   }
+
   .stage{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
   .canvas-wrap{position:relative;width:100%;max-width:640px;aspect-ratio:8/11}
   canvas{position:absolute;inset:0;width:100%;height:100%}
+
   .hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;pointer-events:none}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
+
   label{font-size:12px;color:var(--muted)}
   input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #244330;background:#0a1e15;color:var(--fg)}
   .row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
@@ -53,12 +67,20 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top-banner"><img src="/assets/img/bag-plinko.png" alt="$BAG PLINKO"></div>
+
+  <!-- Centered art banner (your path) -->
+  <div class="top-banner"><img src="/assets/bag-plinko.png" alt="$BAG PLINKO"></div>
 
   <header>
-    <a class="btn ghost" href="/casino.html">⬅️ Back to Casino</a>
-    <div class="right">
+    <div class="h-left">
+      <a class="btn ghost" href="/casino.html">⬅️ Back to Casino</a>
+    </div>
+
+    <div class="h-center">
       <button id="btnAuto" class="btn green" title="Auto drops every 2s">Auto-Demo: Off</button>
+    </div>
+
+    <div class="h-right">
       <button id="btnConnect" class="btn gold">Connect Xaman</button>
       <button id="btnSession" class="btn green">Start Session</button>
     </div>
@@ -105,69 +127,65 @@
 (() => {
   // ====== CONFIG (Option 3) ======
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L']; // left -> right
-  const SLOT_COUNT = PAY_MAP.length;          // 7
-  const PEG_ROWS = 12, PEG_COLS = 11;         // physics grid
-  const GRAVITY = 0.35, RESTITUTION = 0.82, FRICTION = 0.995;
+  const SLOT_COUNT = PAY_MAP.length;            // 7
+  const PEG_ROWS = 12, PEG_COLS = 11;           // grid
+  // tuned physics (anti-stick)
+  const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
   const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
-  const DROP_Y = 50; // start height
+  const DROP_Y = 60; // start height
 
   // ====== STATE ======
-  let mode = 'Demo', balance = 100, stake = 1, currency = 'XRP', lastTxt = '—';
-  let autoTimer = null, dropping = false;
+  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
+  let autoTimer=null, dropping=false;
 
-  // ====== CANVAS / RESIZE ======
+  // ====== CANVAS / SIZE ======
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  let W=640, H=880; // logical units; scaled to element size
-  function resizeCanvas(){
-    // match aspect ratio container; device pixel ratio-scale
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = W;
-    canvas.height = H;
-  }
-  resizeCanvas(); window.addEventListener('resize', resizeCanvas);
+  const W=640, H=880; // logical resolution
+  function size(){ canvas.width=W; canvas.height=H; }
+  size(); addEventListener('resize', size);
 
-  // ====== BOARD GEOMETRY ======
-  const pegs = [];
-  const leftWall = WALL_PAD, rightWall = W - WALL_PAD;
-  const topBoard = 100, bottomBoard = H - 120;
+  // ====== BOARD GEO ======
+  const pegs=[];
+  const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
+  const topBoard=110, bottomBoard=H-120;
 
-  // peg grid (staggered)
-  const pegSpacingX = (rightWall - leftWall - 40) / (PEG_COLS-1);
-  const pegSpacingY = (bottomBoard - topBoard - 100) / (PEG_ROWS-1);
+  const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
+  const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
+
   for(let r=0;r<PEG_ROWS;r++){
-    const offset = (r%2===0)?0:pegSpacingX/2;
+    const off=(r%2===0)?0:pegSpacingX/2;
     for(let c=0;c<PEG_COLS;c++){
-      let x = leftWall + 20 + c*pegSpacingX + offset;
-      if(x <= leftWall+PEG_R || x >= rightWall-PEG_R) continue;
-      let y = topBoard + r*pegSpacingY;
+      let x=leftWall+20+c*pegSpacingX+off;
+      if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
+      let y=topBoard+r*pegSpacingY;
       pegs.push({x,y,r:PEG_R});
     }
   }
 
-  // slot dividers
-  const slotTop = bottomBoard + 10;
-  const slotWidth = (rightWall - leftWall) / SLOT_COUNT;
-  const slotX = i => leftWall + i*slotWidth;
-  const slotCenters = Array.from({length:SLOT_COUNT},(_,i)=>slotX(i)+slotWidth/2);
+  // slots
+  const slotTop=bottomBoard+10;
+  const slotWidth=(rightWall-leftWall)/SLOT_COUNT;
+  const slotX=i=>leftWall+i*slotWidth;
+  const slotCenters=Array.from({length:SLOT_COUNT},(_,i)=>slotX(i)+slotWidth/2);
 
   // ====== BALL ======
-  let ball = null;
+  let ball=null;
   function newBall(){
-    const x = W/2, y = DROP_Y, vx = 0, vy = 0;
-    ball = {x,y,vx,vy,r:BALL_R,alive:true};
+    const x=W/2, y=DROP_Y, vx=(Math.random()-.5)*0.2, vy=0;
+    ball={x,y,vx,vy,r:BALL_R,alive:true};
   }
 
-  // ====== INPUT / UI ======
-  const $ = id => document.getElementById(id);
+  // ====== UI ======
+  const $=id=>document.getElementById(id);
   const modeLbl=$('modeLbl'), balLbl=$('balLbl'), ccyLbl=$('ccyLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   function hud(){ balLbl.textContent=balance.toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
   $('currency').onchange=e=>{currency=e.target.value; hud();};
-  $('stake').oninput=e=>{stake=Math.max(1,Math.floor(+e.value||1)); e.target.value=stake; hud();};
+  $('stake').oninput=e=>{stake=Math.max(1,Math.floor(+e.target.value||1)); e.target.value=stake; hud();};
   $('btnDrop').onclick=()=>drop();
   $('btnCashout').onclick=()=>toast('Cash out wired later');
   $('btnConnect').onclick=()=>toast('Xaman wired later');
-  $('btnSession').onclick=()=>{mode='Connected'; modeLbl.textContent=mode; toast('Session started (demo payout mirror)');};
+  $('btnSession').onclick=()=>{mode='Connected'; modeLbl.textContent=mode; toast('Session started (demo mirror)');};
   $('btnAuto').onclick=()=>{
     if(autoTimer){clearInterval(autoTimer); autoTimer=null; $('btnAuto').textContent='Auto-Demo: Off'; return;}
     $('btnAuto').textContent='Auto-Demo: On'; drop(); autoTimer=setInterval(drop,2000);
@@ -175,58 +193,62 @@
 
   function drop(){
     if(dropping) return;
-    if(balance < stake){ toast('Insufficient demo funds'); return; }
-    balance -= stake; hud();
-    lastTxt = '—'; hud();
-    newBall(); dropping = true;
+    if(balance<stake){ toast('Insufficient demo funds'); return; }
+    balance -= stake; lastTxt='—'; hud();
+    newBall(); dropping=true;
   }
 
-  // ====== PHYSICS LOOP ======
+  // ====== GAME LOOP ======
   function step(){
     drawBoard();
     if(ball && ball.alive){
-      // gravity
+      // integrate
       ball.vy += GRAVITY;
-      // move
       ball.x += ball.vx; ball.y += ball.vy;
       ball.vx *= FRICTION; ball.vy *= FRICTION;
 
-      // wall collisions
-      if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = -ball.vx*RESTITUTION; }
-      if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -ball.vx*RESTITUTION; }
+      // walls
+      if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; }
+      if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; }
       if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
-      // peg collisions
+      // pegs
       for(const p of pegs){
-        const dx = ball.x - p.x, dy = ball.y - p.y;
-        const dist = Math.hypot(dx,dy);
-        const minD = BALL_R + p.r;
+        const dx=ball.x-p.x, dy=ball.y-p.y;
+        const dist=Math.hypot(dx,dy) || 0.0001; // avoid NaN
+        const minD=BALL_R + p.r;
         if(dist < minD){
-          // push out
-          const nX = dx / (dist || 1), nY = dy / (dist || 1);
-          const overlap = minD - dist;
-          ball.x += nX * overlap;
-          ball.y += nY * overlap;
-          // reflect velocity along normal
-          const vDotN = ball.vx*nX + ball.vy*nY;
-          ball.vx = (ball.vx - 2*vDotN*nX) * RESTITUTION;
-          ball.vy = (ball.vy - 2*vDotN*nY) * RESTITUTION;
+          // normal
+          const nx = dx / dist, ny = dy / dist;
+          // separate with a tiny overshoot to prevent re-penetration
+          const overlap = (minD - dist) + 0.2;
+          ball.x += nx * overlap;
+          ball.y += ny * overlap;
+          // reflect velocity
+          const vDotN = ball.vx*nx + ball.vy*ny;
+          ball.vx = (ball.vx - 2*vDotN*nx) * RESTITUTION;
+          ball.vy = (ball.vy - 2*vDotN*ny) * RESTITUTION;
+          // anti-stick jitter if speed is very low
+          const speed = Math.hypot(ball.vx, ball.vy);
+          if(speed < 0.25){ ball.vx += (Math.random()-.5)*0.6; ball.vy += 0.4; }
         }
       }
 
-      // floor / slot check
-      if(ball.y + BALL_R > bottomBoard){
-        // guide into slots with small damping
-        ball.vy *= 0.98;
-        if(ball.y > slotTop){
-          // resolve
+      // floor / resolve
+      if(ball.y + BALL_R >= bottomBoard){
+        // gentle glide along floor toward slot center
+        ball.vy *= 0.96;
+        // if moving too slowly near floor, nudge down so it finishes
+        if(Math.abs(ball.vy) < 0.15) ball.vy += 0.2;
+
+        // resolve when clearly below dividers
+        if(ball.y >= slotTop + 46){
           const idx = Math.min(SLOT_COUNT-1, Math.max(0, Math.floor((ball.x-leftWall)/slotWidth)));
           resolveDrop(idx);
-          ball.alive = false; dropping = false; ball = null;
+          ball.alive=false; dropping=false; ball=null;
         }
       }
 
-      // draw ball
       drawBall(ball.x, ball.y);
     }
     requestAnimationFrame(step);
@@ -234,33 +256,27 @@
 
   // ====== RENDER ======
   function drawBoard(){
-    // background
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = '#0b1b13'; ctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
-    // frame
-    ctx.strokeStyle = '#1c3b27'; ctx.lineWidth = 4;
+    // frame box
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
     ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
 
-    // title bar suggestion
-    ctx.fillStyle = '#0d2217'; ctx.fillRect(leftWall-6, topBoard-36, rightWall-leftWall+12, 28);
-
     // pegs
-    ctx.fillStyle = '#704d1d';
+    ctx.fillStyle='#704d1d';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
-    // slots and dividers
-    ctx.strokeStyle = '#2a4d38'; ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
+    // floor & dividers
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
     for(let i=1;i<SLOT_COUNT;i++){
       const x = slotX(i);
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    // slot labels (Scratch / 1.2× / 2×)
-    ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    ctx.textAlign = 'center';
+    // labels
+    ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOT_COUNT;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
@@ -270,36 +286,33 @@
   }
 
   function drawBall(x,y){
-    const r = BALL_R;
-    const g = ctx.createRadialGradient(x-4,y-4,2,x,y,r);
+    const r=BALL_R;
+    const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
     g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
   }
 
   // ====== RESOLVE / CELEBRATE ======
-  const cele = document.getElementById('cele');
+  const cele=document.getElementById('cele');
   function resolveDrop(slot){
     const rule = PAY_MAP[slot] ?? 'L';
-    if(rule === 'L'){ lastTxt='Scratch'; showCele('SCRATCH'); hud(); return; }
+    if(rule==='L'){ lastTxt='Scratch'; showCele('SCRATCH'); hud(); return; }
     const mult = Number(rule);
     const payout = Math.floor(stake * mult * 100)/100;
     balance += payout; hud();
-    if(mult === 2){ lastTxt='Jackpot 2×'; showCele('JACKPOT 2×'); }
+    if(mult===2){ lastTxt='Jackpot 2×'; showCele('JACKPOT 2×'); }
     else { lastTxt='Win 1.2×'; showCele('WIN 1.2×'); }
   }
   function showCele(text){
-    cele.textContent = text;
-    cele.classList.remove('show'); void cele.offsetWidth; cele.classList.add('show');
-    setTimeout(()=>cele.classList.remove('show'), 1100);
+    cele.textContent=text; cele.classList.remove('show'); void cele.offsetWidth; cele.classList.add('show');
+    setTimeout(()=>cele.classList.remove('show'),1100);
   }
 
   // ====== HELPERS ======
   function toast(msg){
     const t=document.createElement('div'); t.textContent=msg;
     Object.assign(t.style,{position:'fixed',bottom:'20px',left:'50%',transform:'translateX(-50%)',
-      background:'#0a1e15',color:'#fff',border:'1px solid #244330',
-      padding:'10px 14px',borderRadius:'10px',boxShadow:'0 10px 24px rgba(0,0,0,.35)',zIndex:9999});
+      background:'#0a1e15',color:'#fff',border:'1px solid #244330',padding:'10px 14px',borderRadius:'10px',zIndex:9999});
     document.body.appendChild(t); setTimeout(()=>t.remove(),1500);
   }
 
