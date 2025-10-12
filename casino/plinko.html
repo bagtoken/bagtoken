@@ -10,24 +10,23 @@
   :root{
     --bg:#020703; --fg:#f5f7f4; --muted:#aeb7af;
     --panel:#0b1b13; --panel2:#0d2217; --line:#173c27;
-    --green:#2fbf6b; --gold:#ffd700; --red:#e25b5b;
-    --shadow:rgba(0,0,0,.4);
+    --green:#2fbf6b; --gold:#ffd700; --shadow:rgba(0,0,0,.4);
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   a{color:inherit;text-decoration:none}
 
-  /* very top back button row */
+  /* Top-left back button (same ghost style as Dice) */
   .topbar{max-width:1100px;margin:0 auto;padding:12px 16px}
-  .btn{
-    background:linear-gradient(180deg,var(--panel),var(--panel2));
-    border:1px solid #183c27;color:var(--fg);
-    padding:10px 14px;border-radius:10px;cursor:pointer;
-    box-shadow:0 6px 16px var(--shadow);font-weight:600;letter-spacing:.2px
+  .btn{border-radius:10px;padding:10px 14px;font-weight:600;letter-spacing:.2px;cursor:pointer;box-shadow:0 6px 16px var(--shadow)}
+  .btn.ghost{
+    background:transparent;border:1px solid #244330;color:#cfe6d8;
   }
-  .btn:active{transform:translateY(1px)}
-  .btn.gold{background:linear-gradient(180deg,#6b5412,#3e2d09);border:1px solid #8a6a1a;color:#ffdc73}
-  .btn.green{background:linear-gradient(180deg,#113a22,#0b2a18);border:1px solid #1e6a3f;color:#baf2cd}
-  .btn.ghost{background:transparent;border:1px solid #244330;color:#cfe6d8}
+  .btn.green{
+    background:linear-gradient(180deg,#113a22,#0b2a18);border:1px solid #1e6a3f;color:#baf2cd;
+  }
+  .btn.gold{
+    background:linear-gradient(180deg,#6b5412,#3e2d09);border:1px solid #8a6a1a;color:#ffdc73;
+  }
 
   .wrap{max-width:1100px;margin:0 auto;padding:0 16px 16px}
   .top-banner{display:flex;justify-content:center;margin:6px 0 8px}
@@ -68,7 +67,7 @@
 </head>
 <body>
 
-  <!-- Back to Casino at the absolute top-left (above the banner) -->
+  <!-- Top-left back button above banner -->
   <div class="topbar">
     <a class="btn ghost" href="/casino.html">⬅️ Back to Casino</a>
   </div>
@@ -129,44 +128,65 @@
 (() => {
   // ====== CONFIG (Option 3) ======
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L']; // left -> right
-  const SLOT_COUNT = PAY_MAP.length;            // 7
-  const PEG_ROWS = 12, PEG_COLS = 11;           // grid
+  const SLOTS = PAY_MAP.length;                         // 7
+  const PEG_ROWS = 12, PEG_COLS = 11;
 
-  // tuned physics (anti-stick + finish line)
+  // Physics tuned + anti-stick
   const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
   const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
   const DROP_Y = 60;
 
-  // Sounds (files optional; fallback synth if missing)
+  // ====== STATE ======
+  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
+  let dropping=false, ball=null, dropStartedAt=0;
+
+  // ====== AUDIO (soft peg knocks) ======
   const SND = {
-    peg:   '/assets/audio/peg.mp3',
+    peg:   '/assets/audio/peg.mp3',   // optional
     drop:  '/assets/audio/drop.mp3',
     win:   '/assets/audio/win.mp3',
     jack:  '/assets/audio/jackpot.mp3',
     lose:  '/assets/audio/lose.mp3'
   };
-  let audioCtx=null; let unlocked=false;
-  function unlockAudio(){ if(unlocked) return; try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); unlocked=true; }catch{} }
+  let audio=null, audioUnlocked=false;
+  function unlockAudio(){ if(audioUnlocked) return; try{ audio = new (window.AudioContext||window.webkitAudioContext)(); audioUnlocked=true; }catch{} }
+  document.addEventListener('pointerdown', unlockAudio, {once:true});
 
-  // ====== STATE ======
-  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
-  let autoTimer=null, dropping=false;
+  async function play(kind){
+    // Try file; if missing, synth
+    try{
+      if(audio && SND[kind]){
+        const r = await fetch(SND[kind]); if(r.ok){
+          const b = await r.arrayBuffer(); const buf = await audio.decodeAudioData(b);
+          const src = audio.createBufferSource(); src.buffer = buf;
+          const g = audio.createGain(); g.gain.value = (kind==='peg'?0.08:(kind==='drop'?0.12:0.16));
+          src.connect(g); g.connect(audio.destination); src.start(); return;
+        }
+      }
+    }catch{}
+    if(!audio) return;
+    const osc = audio.createOscillator(), g = audio.createGain();
+    osc.connect(g); g.connect(audio.destination);
+    // Subtle wood knock: short, low-gain, randomized pitch
+    const base = (kind==='peg'?420:(kind==='drop'?240:(kind==='win'?760:(kind==='jack'?950:180))));
+    osc.frequency.value = base + (Math.random()*16-8);
+    g.gain.value = (kind==='peg'?0.05:(kind==='drop'?0.08:0.1));
+    osc.start(); setTimeout(()=>osc.stop(), kind==='peg'?70:140);
+  }
 
   // ====== CANVAS ======
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const W=640, H=880; // logical resolution; no CSS scaling issues
-  function size(){ canvas.width=W; canvas.height=H; }
-  size();
+  const W=640, H=880; canvas.width=W; canvas.height=H;
 
   // ====== BOARD GEO ======
-  const pegs=[];
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=110, bottomBoard=H-120;
 
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
 
+  const pegs=[];
   for(let r=0;r<PEG_ROWS;r++){
     const off=(r%2===0)?0:pegSpacingX/2;
     for(let c=0;c<PEG_COLS;c++){
@@ -178,16 +198,9 @@
   }
 
   const slotTop=bottomBoard+10;
-  const slotWidth=(rightWall-leftWall)/SLOT_COUNT;
+  const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
-  const slotCenters=Array.from({length:SLOT_COUNT},(_,i)=>slotX(i)+slotWidth/2);
-
-  // ====== BALL ======
-  let ball=null;
-  function newBall(){
-    const x=W/2, y=DROP_Y, vx=(Math.random()-.5)*0.25, vy=0;
-    ball={x,y,vx,vy,r:BALL_R,alive:true,frames:0};
-  }
+  const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
 
   // ====== UI ======
   const $=id=>document.getElementById(id);
@@ -195,43 +208,40 @@
   function hud(){ balLbl.textContent=balance.toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
   $('currency').onchange=e=>{currency=e.target.value; hud();};
   $('stake').oninput=e=>{stake=Math.max(1,Math.floor(+e.target.value||1)); e.target.value=stake; hud();};
-
-  // Gesture to unlock audio on first interaction
-  document.addEventListener('pointerdown', unlockAudio, {once:true});
-
-  $('btnDrop').onclick=()=>{ unlockAudio(); drop(); };
+  $('btnDrop').onclick=()=>{ unlockAudio(); startDrop(); };
   $('btnCashout').onclick=()=>toast('Cash out wired later');
   $('btnConnect').onclick=()=>toast('Xaman wired later');
   $('btnSession').onclick=()=>{mode='Connected'; modeLbl.textContent=mode; toast('Session started (demo mirror)');};
-  $('btnAuto').onclick=()=>{
-    unlockAudio();
-    if(autoTimer){clearInterval(autoTimer); autoTimer=null; $('btnAuto').textContent='Auto-Demo: Off'; return;}
-    $('btnAuto').textContent='Auto-Demo: On'; drop(); autoTimer=setInterval(drop,2000);
-  };
+  $('btnAuto').onclick=(()=>{
+    let timer=null;
+    return ()=>{ unlockAudio();
+      if(timer){clearInterval(timer); timer=null; $('btnAuto').textContent='Auto-Demo: Off'; return;}
+      $('btnAuto').textContent='Auto-Demo: On'; if(!dropping) startDrop(); timer=setInterval(()=>{if(!dropping) startDrop();},2000);
+    };
+  })();
 
-  function drop(){
+  function startDrop(){
     if(dropping) return;
     if(balance<stake){ toast('Insufficient demo funds'); return; }
     balance -= stake; lastTxt='—'; hud();
-    newBall(); dropping=true; play('drop');
+    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.25, vy:0, r:BALL_R, alive:true, frames:0};
+    dropStartedAt = performance.now();
+    dropping=true;
+    play('drop');
   }
 
-  // ====== GAME LOOP (with safety watchdog) ======
-  let rafId=null, lastFrameTs=performance.now();
-  function loop(ts){
-    if(ts - lastFrameTs > 2000){ // watchdog: restart draw if ever stalls
-      // no-op; just keeps running
-    }
-    lastFrameTs = ts;
-
+  // ====== LOOP (never stops) + watchdog ======
+  let lastTs=performance.now();
+  (function loop(ts){
     drawBoard();
     if(ball && ball.alive){
       stepBall();
       drawBall(ball.x, ball.y);
+      // hard watchdog: force resolve after 6s
+      if(ts - dropStartedAt > 6000){ forceResolve(); }
     }
-    rafId = requestAnimationFrame(loop);
-  }
-  rafId = requestAnimationFrame(loop);
+    lastTs=ts; requestAnimationFrame(loop);
+  })(lastTs);
 
   function stepBall(){
     ball.frames++;
@@ -258,27 +268,25 @@
         const vDotN = ball.vx*nx + ball.vy*ny;
         ball.vx = (ball.vx - 2*vDotN*nx) * RESTITUTION;
         ball.vy = (ball.vy - 2*vDotN*ny) * RESTITUTION;
-        play('peg');
+        // subtle knock
+        if(ball.frames % 2 === 0) play('peg');
         // anti-stick jitter
         const speed = Math.hypot(ball.vx, ball.vy);
         if(speed < 0.22){ ball.vx += (Math.random()-.5)*0.65; ball.vy += 0.45; }
       }
     }
 
-    // finish line: ensure it always resolves
+    // finish line
     if(ball.y + BALL_R >= bottomBoard){
-      // weak floor damping & nudge to ensure crossing dividers
-      ball.vy = Math.max(ball.vy*0.96, 0.12);
-      if(ball.y >= slotTop + 46 || ball.frames > 1800){
-        resolveNow();
-      }
+      ball.vy = Math.max(ball.vy*0.96, 0.12); // keep it moving
+      if(ball.y >= slotTop + 46){ forceResolve(); }
     }
   }
 
-  function resolveNow(){
-    const idx = Math.min(SLOT_COUNT-1, Math.max(0, Math.floor((ball.x-leftWall)/slotWidth)));
+  function forceResolve(){
+    const idx = Math.min(SLOTS-1, Math.max(0, Math.floor((ball.x-leftWall)/slotWidth)));
     resolveDrop(idx);
-    ball.alive=false; dropping=false; ball=null; // full reset for next play
+    ball.alive=false; dropping=false; ball=null; // full reset
   }
 
   // ====== RENDER ======
@@ -297,14 +305,14 @@
     // floor & dividers
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
-    for(let i=1;i<SLOT_COUNT;i++){
+    for(let i=1;i<SLOTS;i++){
       const x = slotX(i);
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
     // labels
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
-    for(let i=0;i<SLOT_COUNT;i++){
+    for(let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
@@ -335,33 +343,6 @@
     setTimeout(()=>cele.classList.remove('show'),1100);
   }
 
-  // ====== SOUND ======
-  async function play(kind){
-    try{
-      if(!audioCtx) return;                 // no audio on lock
-      const url = SND[kind];
-      if(url){
-        const res = await fetch(url);
-        if(res.ok){
-          const buf = await res.arrayBuffer();
-          const audio = await audioCtx.decodeAudioData(buf);
-          const src = audioCtx.createBufferSource(); src.buffer=audio;
-          src.connect(audioCtx.destination); src.start();
-          return;
-        }
-      }
-    }catch{}
-    // Fallback synth
-    try{
-      if(!audioCtx) return;
-      const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-      o.connect(g); g.connect(audioCtx.destination);
-      const tones = {peg:520, drop:220, win:880, jack:1020, lose:180};
-      o.frequency.value = tones[kind] || 400; g.gain.value = .08;
-      o.start(); setTimeout(()=>o.stop(), kind==='jack'?340:140);
-    }catch{}
-  }
-
   // ====== HELPERS ======
   function toast(msg){
     const t=document.createElement('div'); t.textContent=msg;
@@ -370,7 +351,7 @@
     document.body.appendChild(t); setTimeout(()=>t.remove(),1500);
   }
 
-  // boot
+  // HUD once
   hud();
 })();
 </script>
