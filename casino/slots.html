@@ -258,13 +258,6 @@
   const PAY_SYMS=["🪙","💎","7️⃣"];            // scratch common
   const PAYS    ={ "7️⃣":2.0, "💎":1.25, "🪙":1.0 };
 
-  // Paylines (3 horizontals only)
-  const ROWS = [
-    [[0,0],[0,1],[0,2]],
-    [[1,0],[1,1],[1,2]],
-    [[2,0],[2,1],[2,2]],
-  ];
-
   // ---------- DOM refs ----------
   const strips=[...document.querySelectorAll('.strip')];
   const spinBtn=document.getElementById('spin');
@@ -278,22 +271,11 @@
   const overlay=document.getElementById('winOverlay'), badge=document.getElementById('winBadge'); const cabinet=document.querySelector('.cabinet');
 
   const xrpUsdEl=document.getElementById('xrpUsd'), bagXrpEl=document.getElementById('bagXrp'), bagUsdEl=document.getElementById('bagUsd'), pxTimeEl=document.getElementById('pxTime'), pxDemoEl=document.getElementById('pxDemo');
-  const ariaLive=document.getElementById('ariaLive');
 
-  // Sounds + unlock (mobile autoplay policies)
-  const sSpin=document.getElementById('sSpin'),
-        sWin=document.getElementById('sWin'),
-        sScratch=document.getElementById('sScratch'),
-        sLose=document.getElementById('sLose');
-  [sSpin,sWin,sScratch,sLose].forEach(a=>{ a.muted=true; a.volume=1; });
-  sSpin.volume = 0.35; sWin.volume = 0.9; sScratch.volume = 0.7; sLose.volume = 0.55;
-
-  const unlockAudio=()=>{
-    [sSpin,sWin,sScratch,sLose].forEach(a=>{
-      try{ a.muted=false; a.play().then(()=>a.pause()).catch(()=>{});}catch(e){}
-    });
-    window.removeEventListener('pointerdown',unlockAudio);
-  };
+  // Sounds + unlock (browser policy)
+  const sSpin=document.getElementById('sSpin'), sWin=document.getElementById('sWin'), sLose=document.getElementById('sLose');
+  [sSpin,sWin,sLose].forEach(a=>a.muted=true);
+  const unlockAudio=()=>{[sSpin,sWin,sLose].forEach(a=>{try{a.muted=false;a.play().then(()=>a.pause()).catch(()=>{});}catch(e){}});window.removeEventListener('pointerdown',unlockAudio);};
   window.addEventListener('pointerdown',unlockAudio,{once:true});
 
   // ---------- State ----------
@@ -371,10 +353,13 @@
   }
   refreshPrices(); setInterval(refreshPrices,30000);
 
-  // ---------- Demo server now returns winning line + symbol ----------
+  // ---------- RNG / payouts (3 paylines only) ----------
+  const ROWS=[[[0,0],[0,1],[0,2]],[[1,0],[1,1],[1,2]],[[2,0],[2,1],[2,2]]];
+
+  const rng=()=>SYM[(Math.random()*SYM.length)|0];
+
   function demoServer(stake){
-    const rng=()=>SYM[(Math.random()*SYM.length)|0];
-    const winSpin=Math.random()<0.495;
+    const winSpin=Math.random()<0.495; // Dice-like feel
     if(winSpin){
       const weights=[18,7,2]; // 🪙, 💎, 7️⃣
       const tot=weights.reduce((a,b)=>a+b,0);
@@ -385,36 +370,21 @@
       const g=[[rng(),rng(),rng()],[rng(),rng(),rng()],[rng(),rng(),rng()]];
       const set3=(a,b,c)=>{g[a[0]][a[1]]=sym; g[b[0]][b[1]]=sym; g[c[0]][c[1]]=sym;};
       set3(...ROWS[line]);
-      return {result:g,totalPayout:PAYS[sym]*stake,stake, winLine:line, winSymbol:sym};
+      return {result:g,totalPayout:PAYS[sym]*stake,stake};
     }else{
       // ensure no paying 3-in-row
       let tries=0;
       while(true){
-        const rng2=()=>SYM[(Math.random()*SYM.length)|0];
-        const g=[[rng2(),rng2(),rng2()],[rng2(),rng2(),rng2()],[rng2(),rng2(),rng2()]];
+        const g=[[rng(),rng(),rng()],[rng(),rng(),rng()],[rng(),rng(),rng()]];
         let paying=false;
         for(const L of ROWS){
           const [a,b,c]=L, sA=g[a[0]][a[1]];
           if(sA===g[b[0]][b[1]] && sA===g[c[0]][c[1]] && PAYS[sA]){ paying=true; break; }
         }
-        if(!paying || tries++>20) return {result:g,totalPayout:0,stake, winLine:null, winSymbol:null};
+        if(!paying || tries++>20) return {result:g,totalPayout:0,stake};
       }
     }
   }
-
-  // ---------- Highlight helpers (Dice-like feedback) ----------
-  function clearHighlights(){
-    for(const strip of strips){ [...strip.children].forEach(cell=>cell.classList.remove('win','scratch')); }
-  }
-  function highlightWinLine(lineIdx, type){
-    if(lineIdx==null) return;
-    const coords = ROWS[lineIdx]; // 3 coords
-    coords.forEach(([row, col])=>{
-      const cell = strips[col].children[row];
-      if(cell){ cell.classList.add(type==='scratch' ? 'scratch' : 'win'); }
-    });
-  }
-  function popReadouts(){ [lastResult,lastMult,lastProfit].forEach(el=>{ el.classList.remove('read-pop'); void el.offsetWidth; el.classList.add('read-pop'); }); }
 
   // ---------- Confetti ----------
   const confettiCanvas = document.getElementById('confetti');
@@ -450,7 +420,7 @@
     const fillerLen=16; // longer spin
     await Promise.all(cols.map((colSyms,ci)=>new Promise(resolve=>{
       const strip=strips[ci];
-      const filler=Array.from({length:fillerLen},_=>SYM[(Math.random()*SYM.length)|0]);
+      const filler=Array.from({length:fillerLen},_=>rng());
       const stack=[...filler,...colSyms];
       fillStrip(strip,stack);
       const total=(stack.length-3)*CELL_H;
@@ -470,22 +440,16 @@
   spinBtn.addEventListener('click', async ()=>{
     const stake=+betEl.textContent;
     spinBtn.disabled=true; winEl.textContent='…';
-    overlay.classList.remove('show'); badge.classList.remove('pop'); cabinet.classList.remove('win-glow','shake');
-    clearHighlights();
+    overlay.classList.remove('show'); cabinet.classList.remove('win-glow','shake');
 
     try{
-      // spin loop sound
       sSpin.currentTime=0; sSpin.loop=true; sSpin.play().catch(()=>{});
-
-      // DEMO spin (replace with backend if needed)
+      // Demo spin. Replace with your backend when ready.
       const data = demoServer(stake);
 
-      // animate reels
       await animateToGrid(data.result);
 
-      // stop loop
       try{ sSpin.pause(); sSpin.currentTime=0; }catch(_){}
-
       const payout=data.totalPayout||0;
       winEl.textContent=payout;
 
@@ -493,36 +457,26 @@
       lastResult.textContent=(mult>1)?'Win ✅':(mult===1?'Scratch ⏸️':'Lose ❌');
       lastMult.textContent=mult?`${mult.toFixed(2)}×`:'0×';
       lastProfit.textContent=(payout-stake).toString();
-      popReadouts();
 
-      // celebrations aligned with Dice:
       if(mult>1){
-        // WIN / JACKPOT
-        badge.textContent=(mult>=2)?'JACKPOT! 🎉':'WIN! 🎉';
-        overlay.classList.add('show'); badge.classList.add('pop');
-        cabinet.classList.add('win-glow'); if(mult>=2) cabinet.classList.add('shake');
-        highlightWinLine(data.winLine, 'win');
         sWin.currentTime=0; sWin.play().catch(()=>{});
-        runConfetti(mult>=2 ? 140 : 80);
-        setTimeout(()=>overlay.classList.remove('show'), 1400);
-        setTimeout(()=>{ cabinet.classList.remove('win-glow','shake'); clearHighlights(); }, 1600);
-      }else if(mult===1){
-        // SCRATCH (push)
-        badge.textContent='SCRATCH';
-        overlay.classList.add('show'); badge.classList.add('pop');
         cabinet.classList.add('win-glow');
-        highlightWinLine(data.winLine, 'scratch');
-        sScratch.currentTime=0; sScratch.play().catch(()=>{});
-        setTimeout(()=>overlay.classList.remove('show'), 900);
-        setTimeout(()=>{ cabinet.classList.remove('win-glow'); clearHighlights(); }, 1000);
+        badge.textContent=(mult>=2)?'JACKPOT! 🎉':'WIN! 🎉';
+        overlay.classList.add('show');
+        runConfetti(mult>=2 ? 140 : 80);
+        if(mult>=2) cabinet.classList.add('shake');
+        setTimeout(()=>overlay.classList.remove('show'), 1400);
+        setTimeout(()=>cabinet.classList.remove('win-glow','shake'), 1600);
+      }else if(mult===1){
+        sWin.currentTime=0; sWin.play().catch(()=>{}); // subtle chime
+        cabinet.classList.add('win-glow');
+        badge.textContent='SCRATCH';
+        overlay.classList.add('show');
+        setTimeout(()=>overlay.classList.remove('show'), 800);
+        setTimeout(()=>cabinet.classList.remove('win-glow'), 900);
       }else{
-        // LOSE
         sLose.currentTime=0; sLose.play().catch(()=>{});
       }
-
-      // ARIA live feedback
-      ariaLive.textContent = (mult>1) ? `Win, multiplier ${mult.toFixed(2)} times`
-        : (mult===1 ? 'Scratch, push' : 'No win');
 
       balance = balance - stake + payout;
       balEl.textContent = balance; renderUsd();
@@ -535,10 +489,10 @@
     }
   });
 
-  // expose for quick QA
+  // Expose for quick QA
   window.__slotsDemoSpin = ()=>document.getElementById('spin').click();
+
 })();
 </script>
-
 </body>
 </html>
