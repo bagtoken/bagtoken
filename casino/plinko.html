@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>$BAG PLINKO — $BAG Casino</title>
+
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffd700; --gold2:#e0b84f;
+    --bg:#020703; --panel:#0b1b13; --panel2:#0d2217;
+    --muted:#aeb7af; --fg:#f5f7f4; --line:#173524;
+    --green:#2fbf6b; --green2:#34c759; --red:#e25b5b;
+    --shadow:rgba(0,0,0,.35);
+  }
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .left, .right{display:flex;gap:10px;align-items:center}
+  .btn{
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid #183c27; color:var(--fg);
+    padding:10px 14px; border-radius:10px; cursor:pointer;
+    box-shadow:0 6px 16px var(--shadow); transition:.15s transform ease;
+    font-weight:600; letter-spacing:.2px
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn.gold{background:linear-gradient(180deg,#6b5412,#3e2d09);border:1px solid #8a6a1a;color:#ffdc73}
+  .btn.green{background:linear-gradient(180deg,#113a22,#0b2a18);border:1px solid #1e6a3f;color:#baf2cd}
+  .btn.ghost{background:transparent;border:1px solid #244330;color:#cfe6d8}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.3px}
+  .brand small{display:block;color:var(--muted);font-weight:500}
+  .grid{display:grid;grid-template-columns:1.3fr .7fr;gap:18px}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+  .panel{
+    background:radial-gradient(140% 100% at 0% 0%,rgba(27,64,45,.55),transparent 60%), var(--panel);
+    border:1px solid #173c27; border-radius:14px; padding:16px;
+    box-shadow:0 10px 30px var(--shadow)
+  }
+  .stage{position:relative;min-height:560px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  #board{display:block;width:100%;max-width:640px;height:auto;filter:drop-shadow(0 20px 40px rgba(0,0,0,.5))}
+  .hud{
+    position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;pointer-events:none
+  }
+  .cele{
+    position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:44px;
+    font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)
+  }
+  .cele.show{display:flex;animation:pop .9s ease}
+  @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1);opacity:1}}
+  .controls .row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  label{font-size:12px;color:var(--muted)}
+  input,select{
+    width:100%;padding:10px;border-radius:10px;border:1px solid #244330;background:#0a1e15;color:var(--fg)
+  }
+  .balance{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{
+    background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:8px 10px;font-size:12px;color:#cfe6d8
+  }
+  .how h3{margin:.2rem 0 .6rem 0}
+  .how p, .how li{color:#d7e4db}
+  .slots{display:flex;gap:6px;margin-top:6px}
+  .slot{flex:1;text-align:center;border:1px dashed #2a4d38;border-radius:8px;padding:8px}
+  .slot.jack{border-color:#8a6a1a;background:rgba(138,106,26,.08)}
+  .note{color:#9fb4a7;font-size:12px}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="left">
+        <a class="btn ghost" href="/casino.html">⬅️ Back to Casino</a>
+        <div class="brand">
+          <img src="/assets/img/bag-plinko.png" alt="$BAG PLINKO" style="height:36px;width:auto;border-radius:8px"/>
+          <h1>$BAG PLINKO <small class="muted">XRPL speed — on-ledger when connected</small></h1>
+        </div>
+      </div>
+      <div class="right">
+        <button id="btnConnect" class="btn gold">Connect Xaman</button>
+        <button id="btnSession" class="btn green">Start Session</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Game Stage -->
+      <section class="panel stage">
+        <canvas id="canvas" width="640" height="820" aria-label="$BAG Plinko board"></canvas>
+        <img id="board" alt="" src="/assets/img/bag-plinko.png" style="position:absolute;inset:auto;opacity:0;pointer-events:none" />
+        <div class="hud">
+          <div class="balance">
+            <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+            <span class="pill">Balance: <b id="balLbl">100.00</b> <span id="ccyLbl">XRP</span></span>
+            <span class="pill">Bet: <b id="betLbl">1.00</b></span>
+          </div>
+          <div class="balance">
+            <span class="pill">Last: <b id="lastLbl">—</b></span>
+          </div>
+        </div>
+        <div id="cele" class="cele"></div>
+      </section>
+
+      <!-- Controls + How it plays -->
+      <aside class="panel controls">
+        <div class="row">
+          <div style="flex:1">
+            <label>Stake</label>
+            <input id="stake" type="number" min="1" step="1" value="1" />
+          </div>
+          <div style="width:140px">
+            <label>Currency</label>
+            <select id="currency">
+              <option value="XRP">XRP</option>
+              <option value="BAG">$BAG</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <button id="btnDrop" class="btn green" style="flex:1">Drop Coin</button>
+          <button id="btnCashout" class="btn gold" style="width:150px">Cash Out</button>
+        </div>
+        <div class="how">
+          <h3>How it plays</h3>
+          <ul>
+            <li>Pick stake and currency, then hit Drop Coin</li>
+            <li>Chip bounces through pegs into a slot</li>
+            <li>Outcomes resolve instantly. Connected sessions settle on ledger via your server</li>
+          </ul>
+          <h3>Payouts</h3>
+          <div class="slots">
+            <div class="slot"><b>Scratch</b><br><span class="muted">Lose</span></div>
+            <div class="slot"><b>1.2×</b><br><span class="muted">Instant Win</span></div>
+            <div class="slot jack"><b>2×</b><br><span class="muted">Jackpot</span></div>
+          </div>
+          <p class="note">Minimum bet $1. Demo is always available. When connected, server verifies RNG and handles balances and payouts</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ------- CONFIG -------
+  const BOARD_W = 640, BOARD_H = 820;
+  const ROWS = 8, SLOT_COUNT = 7; // visual sim rows and bottom bins
+
+  // Option 3 — Arcade Feel
+  // 'L' = scratch (lose), 1.2 = instant win, 2 = jackpot
+  const PAY_MAP = [ 'L', 1.2, 'L', 2, 'L', 1.2, 'L' ];
+
+  // Audio files (optional). If missing, synth tones play
+  const SND = {
+    peg: "/assets/audio/peg.mp3",
+    drop: "/assets/audio/drop.mp3",
+    win: "/assets/audio/win.mp3",
+    jack: "/assets/audio/jackpot.mp3",
+    lose: "/assets/audio/lose.mp3"
+  };
+
+  // API endpoints to wire later
+  const API = {
+    start: "/api/session/start",
+    drop:  "/api/plinko/drop",
+    cash:  "/api/cashout"
+  };
+
+  // ------- STATE -------
+  let mode = "Demo";      // Demo | Connected
+  let balance = 100.00;   // local demo balance
+  let currency = "XRP";
+  let stake = 1;
+  let lastTxt = "—";
+  let address = null;     // XRPL address when connected
+
+  // Canvas
+  const cv = document.getElementById('canvas');
+  const cx = cv.getContext('2d');
+
+  // UI refs
+  const modeLbl = document.getElementById('modeLbl');
+  const balLbl  = document.getElementById('balLbl');
+  const ccyLbl  = document.getElementById('ccyLbl');
+  const betLbl  = document.getElementById('betLbl');
+  const lastLbl = document.getElementById('lastLbl');
+  const celeEl  = document.getElementById('cele');
+
+  const $ = id => document.getElementById(id);
+  $('currency').addEventListener('change', e => {currency = e.target.value; ccyLbl.textContent = currency;});
+  $('stake').addEventListener('input', e => {
+    const v = Math.max(1, Math.floor(Number(e.target.value || 1)));
+    stake = v; betLbl.textContent = v.toFixed(2);
+    e.target.value = v;
+  });
+
+  // Buttons
+  $('btnConnect').onclick = async () => {
+    toast("Xaman ready when your backend is live");
+  };
+
+  $('btnSession').onclick = async () => {
+    try{
+      // const r = await post(API.start, { currency });
+      mode = "Connected";
+      modeLbl.textContent = mode;
+      toast("Session started — ledger settlement enabled");
+    }catch(e){
+      mode = "Demo";
+      modeLbl.textContent = mode;
+      toast("Fallback to Demo");
+    }
+  };
+
+  $('btnCashout').onclick = async () => {
+    try{
+      if(mode !== "Connected"){ toast("Connect to cash out"); return; }
+      // await post(API.cash, { address, currency });
+      toast("Cash out requested");
+    }catch(e){ toast("Cash out failed"); }
+  };
+
+  $('btnDrop').onclick = async () => {
+    const amt = Math.max(1, Math.floor(Number($('stake').value || 1)));
+    if(amt < 1){ toast("Minimum is $1"); return; }
+    if(mode === "Demo"){
+      if(balance < amt){ toast("Insufficient demo funds"); return; }
+      balance -= amt; refreshHud();
+      const seed = cryptoRandom();
+      const slot = simulatePath(seed);
+      animateDrop(slot, async () => {
+        const res = resolvePayout(slot, amt);
+        applyResult(res); refreshHud(); celebrate(res);
+      });
+    }else{
+      try{
+        // const r = await post(API.drop, { address, currency, stake: amt });
+        const slot = simulatePath(cryptoRandom());
+        animateDrop(slot, () => {
+          const res = resolvePayout(slot, amt);
+          applyResult(res); refreshHud(); celebrate(res, true);
+        });
+      }catch(e){
+        toast("Server unavailable — demo is live");
+        mode="Demo"; modeLbl.textContent=mode;
+      }
+    }
+  };
+
+  function refreshHud(){
+    balLbl.textContent = balance.toFixed(2);
+    ccyLbl.textContent = currency;
+    betLbl.textContent = Number(stake||1).toFixed(2);
+    lastLbl.textContent = lastTxt;
+  }
+
+  // ------- BOARD RENDER -------
+  const boardImg = new Image();
+  boardImg.src = "/assets/img/bag-plinko.png";
+  boardImg.onload = () => drawBoard();
+
+  function drawBoard(){
+    cx.clearRect(0,0,BOARD_W,BOARD_H);
+    cx.drawImage(boardImg, 0, 0, BOARD_W, BOARD_H);
+    drawLaneLabels();
+  }
+
+  function drawLaneLabels(){
+    const colW = BOARD_W/(PAY_MAP.length+1);
+    cx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    cx.textAlign = 'center';
+    for(let i=0;i<PAY_MAP.length;i++){
+      const x = colW*(i+1);
+      const y = BOARD_H - 28;
+      const rule = PAY_MAP[i];
+      const txt = rule === 'L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
+      cx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
+      cx.fillText(txt, x, y);
+    }
+  }
+
+  // ------- RANDOM WALK SIM -------
+  const ROW_DROP_Y_START = 140;
+  function simulatePath(seed){
+    const rng = mulberry32(seed);
+    let pos = Math.floor(SLOT_COUNT/2);
+    for(let r=0; r<ROWS; r++){
+      const step = rng() < 0.5 ? -1 : 1;
+      pos = clamp(pos + step, 0, SLOT_COUNT-1);
+    }
+    return pos;
+  }
+
+  function resolvePayout(slot, amt){
+    const rule = PAY_MAP[slot] ?? 'L';
+    if(rule === 'L'){
+      lastTxt = 'Scratch';
+      return {label:'Scratch', delta:-amt, mult:0, win:false, jackpot:false};
+    }
+    const mult = Number(rule);
+    const payout = Math.floor(amt * mult * 100)/100;
+    if(mult === 2){
+      lastTxt = 'Jackpot 2×';
+      return {label:'Jackpot', delta:+payout, mult, win:true, jackpot:true};
+    }else{
+      lastTxt = 'Win 1.2×';
+      return {label:'Win', delta:+payout, mult, win:true, jackpot:false};
+    }
+  }
+
+  function applyResult(res){
+    if(res.win) balance += res.delta;
+    refreshHud();
+  }
+
+  // ------- ANIMATION -------
+  function animateDrop(slotIdx, done){
+    drawBoard();
+    play('drop');
+    const path = buildVisualPath(slotIdx);
+    const chip = { x:path[0].x, y:path[0].y, i:0 };
+    const step = () => {
+      const next = path[chip.i+1];
+      if(!next){ done && done(); return; }
+      const dx = next.x - chip.x, dy = next.y - chip.y;
+      const dist = Math.hypot(dx,dy);
+      const spd = 8;
+      if(dist <= spd){ chip.x = next.x; chip.y = next.y; chip.i++; if(next.hit) play('peg'); }
+      else { chip.x += spd*dx/dist; chip.y += spd*dy/dist; }
+      drawBoard();
+      drawChip(chip.x, chip.y);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  function drawChip(x,y){
+    cx.beginPath(); cx.arc(x,y,10,0,Math.PI*2);
+    const g = cx.createRadialGradient(x-4,y-4,2,x,y,10);
+    g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
+    cx.fillStyle=g; cx.fill();
+    cx.closePath();
+  }
+
+  function buildVisualPath(slot){
+    const path = [{x:BOARD_W/2,y:ROW_DROP_Y_START}];
+    const colW = BOARD_W/(SLOT_COUNT+1);
+    let cur = Math.floor(SLOT_COUNT/2);
+    for(let r=0;r<ROWS;r++){
+      const dir = slot > cur ? 1 : (slot < cur ? -1 : (Math.random()<.5?-1:1));
+      cur = clamp(cur + dir, 0, SLOT_COUNT-1);
+      const x = colW*(cur+1);
+      const y = 180 + r*60;
+      path.push({x,y,hit:true});
+      path.push({x, y:y+40});
+    }
+    const finalX = colW*(slot+1);
+    path.push({x:finalX, y:BOARD_H-70});
+    return path;
+  }
+
+  // ------- CELEBRATIONS -------
+  function celebrate(res){
+    if(res.jackpot){ showCele('JACKPOT 2×'); play('jack'); confetti(); }
+    else if(res.win){ showCele('WIN 1.2×'); play('win'); sparkle(); }
+    else { showCele('SCRATCH'); play('lose'); }
+  }
+  function showCele(text){
+    celeEl.textContent = text;
+    celeEl.classList.remove('show');
+    void celeEl.offsetWidth;
+    celeEl.classList.add('show');
+    setTimeout(()=>celeEl.classList.remove('show'), 1100);
+  }
+  function confetti(){ particleBurst(90); }
+  function sparkle(){ particleBurst(40); }
+  function particleBurst(n){
+    const pts=[];
+    for(let i=0;i<n;i++){
+      pts.push({
+        x:BOARD_W/2, y:240,
+        vx:(Math.random()-0.5)*6, vy:-(Math.random()*5+3),
+        g:0.18, life:60+Math.random()*20
+      });
+    }
+    const draw = ()=>{
+      drawBoard();
+      pts.forEach(p=>{
+        p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.life--;
+        cx.fillStyle='rgba(255,220,120,.9)';
+        cx.fillRect(p.x,p.y,2,2);
+      });
+      if(pts.some(p=>p.life>0)) requestAnimationFrame(draw);
+      else drawBoard();
+    };
+    requestAnimationFrame(draw);
+  }
+
+  // ------- AUDIO -------
+  const audioCtx = window.AudioContext ? new AudioContext() : null;
+  async function play(kind){
+    try{
+      const url = SND[kind];
+      if(url && audioCtx){
+        const buf = await fetch(url).then(r=>r.ok?r.arrayBuffer():Promise.reject()).then(b=>audioCtx.decodeAudioData(b));
+        const src = audioCtx.createBufferSource(); src.buffer=buf; src.connect(audioCtx.destination); src.start();
+        return;
+      }
+    }catch{}
+    if(!audioCtx) return;
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination);
+    const tones = {peg:520, drop:220, win:880, jack:1020, lose:180};
+    o.frequency.value = tones[kind]||400; g.gain.value=.08; o.start();
+    setTimeout(()=>{o.stop();}, kind==='jack'?320:140);
+  }
+
+  // ------- HELPERS -------
+  function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+  function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296}}
+  function cryptoRandom(){
+    const a = new Uint32Array(1); (window.crypto||window.msCrypto).getRandomValues(a); return a[0]>>>0;
+  }
+  async function post(url, body){
+    const r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error('http'); return r.json();
+  }
+  function toast(msg){
+    console.log(msg);
+    const t = document.createElement('div');
+    t.textContent = msg;
+    Object.assign(t.style,{
+      position:'fixed',bottom:'20px',left:'50%',transform:'translateX(-50%)',
+      background:'#0a1e15',color:'#fff',border:'1px solid #244330',
+      padding:'10px 14px',borderRadius:'10px',boxShadow:'0 10px 24px rgba(0,0,0,.35)',zIndex:9999
+    });
+    document.body.appendChild(t); setTimeout(()=>t.remove(),1600);
+  }
+
+  // init
+  refreshHud(); drawBoard();
+})();
+</script>
+</body>
+</html>
