@@ -25,12 +25,12 @@
   }
   button,[role="button"],a.btn{touch-action:manipulation;font-size:16px}
 
-  /* Topbar: back (left) + wallet/session (right) */
+  /* Topbar: Back left, Wallet/Session right */
   .topbar{
-    width:min(1120px,94vw);display:flex;align-items:center;justify-content:flex-start;margin:14px 0 6px;gap:10px
+    width:min(1120px,94vw);display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;gap:10px
   }
-  .wallet-row{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .tag{background:var(--panel);border:1px solid var(--stroke);border-radius:10px;padding:8px 10px;font-size:13px;opacity:.9}
+  .wallet-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
+  .tag{background:var(--panel);border:1px solid var(--stroke);border-radius:10px;padding:8px 10px;font-size:13px;opacity:.9;display:none}
 
   .btn{
     background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1e231d;
@@ -100,8 +100,9 @@
   .spinBig{width:100%;max-width:560px;font-size:22px;padding:18px 26px}
 
   /* Controls */
-  .panel{display:grid;gap:12px;margin-top:8px;grid-template-columns:repeat(3,1fr)}
-  @media (max-width:820px){ .panel{grid-template-columns:1fr} }
+  .panel{display:grid;gap:12px;margin-top:8px;grid-template-columns:repeat(4,1fr)}
+  @media (max-width:980px){ .panel{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:620px){ .panel{grid-template-columns:1fr} }
   .display{background:var(--panel);border:1px solid var(--stroke);border-radius:12px;padding:12px;text-align:center}
   .usd{display:block;opacity:.78;font-size:12px;margin-top:4px}
 
@@ -123,13 +124,13 @@
 </style>
 </head>
 <body>
-  <!-- Back (left) + Wallet/Session (right) -->
+  <!-- Back (left) + Wallet/Session (right, inert for now) -->
   <div class="topbar">
     <a class="btn" href="/casino/index.html">⬅️ Back to Casino</a>
     <div class="wallet-row">
-      <span id="addrTag" class="tag" title="Connected address" style="display:none"></span>
-      <button id="btnConnect" class="btn slim">Connect Xaman</button>
-      <button id="btnSession" class="btn slim" disabled>Start Session</button>
+      <span id="addrTag" class="tag" title="Connected address"></span>
+      <button id="btnConnect" class="btn slim" disabled title="Coming soon">Connect Xaman</button>
+      <button id="btnSession" class="btn slim" disabled title="Coming soon">Start Session</button>
     </div>
   </div>
 
@@ -188,6 +189,13 @@
             <button id="curXRP" class="btn" style="padding:8px 12px;opacity:.85">XRP</button>
           </div>
         </div>
+
+        <!-- MISSING BEFORE: Win box (fixes JS error so spin works) -->
+        <div class="display">
+          <strong>Win</strong>
+          <div id="win">0</div>
+          <span class="usd" id="winUsd">—</span>
+        </div>
       </div>
     </section>
   </main>
@@ -197,13 +205,12 @@
     <article class="card" aria-labelledby="howTitle">
       <h3 id="howTitle">How it plays</h3>
       <ol style="margin:0 0 8px 20px;padding:0;line-height:1.6">
-        <li>Connect with <strong>Xaman</strong>, then <strong>Start Session</strong>.</li>
         <li>Select currency: <strong>BAG</strong> or <strong>XRP</strong>.</li>
         <li>Set your <strong>Bet</strong> and press <strong>SPIN</strong>.</li>
         <li>There are <strong>3 paylines</strong> (the horizontal rows). Multiple line wins add together.</li>
         <li>Match three of a kind on a payline to get a payout.</li>
       </ol>
-      <div class="muted">Pricing displays BAG↔XRP↔USD in real time. Until your backend is wired, spins use demo odds.</div>
+      <div class="muted">Pricing displays BAG↔XRP↔USD in real time. Demo odds are used until backend is wired.</div>
     </article>
   </section>
 
@@ -265,54 +272,30 @@
 
   const xrpUsdEl=document.getElementById('xrpUsd'), bagXrpEl=document.getElementById('bagXrp'), bagUsdEl=document.getElementById('bagUsd'), pxTimeEl=document.getElementById('pxTime'), pxDemoEl=document.getElementById('pxDemo');
 
+  // Sounds + unlock (browser policy)
   const sSpin=document.getElementById('sSpin'), sWin=document.getElementById('sWin'), sLose=document.getElementById('sLose');
   [sSpin,sWin,sLose].forEach(a=>a.muted=true);
   const unlockAudio=()=>{[sSpin,sWin,sLose].forEach(a=>{try{a.muted=false;a.play().then(()=>a.pause()).catch(()=>{});}catch(e){}});window.removeEventListener('pointerdown',unlockAudio);};
   window.addEventListener('pointerdown',unlockAudio,{once:true});
 
-  // Wallet / Session stubs (wire to real Xaman later)
-  let wallet = { address: null, sessionId: null };
-  const btnConnect = document.getElementById('btnConnect');
-  const btnSession = document.getElementById('btnSession');
-  const addrTag   = document.getElementById('addrTag');
-
-  async function connectXaman(){
-    wallet.address = wallet.address || 'rDemoXamanAddress...';
-    localStorage.setItem('bag_wallet_addr', wallet.address);
-    addrTag.textContent = wallet.address.slice(0,6)+'…'+wallet.address.slice(-6);
-    addrTag.style.display = 'inline-block';
-    btnSession.disabled = false;
-  }
-  async function startSession(){
-    wallet.sessionId = 'sess_'+Math.random().toString(36).slice(2);
-    localStorage.setItem('bag_session_id', wallet.sessionId);
-    btnSession.textContent = 'Session Active';
-    btnSession.disabled = true;
-  }
-  (function restore(){
-    const a = localStorage.getItem('bag_wallet_addr'); if(a){ wallet.address=a; addrTag.textContent=a.slice(0,6)+'…'+a.slice(-6); addrTag.style.display='inline-block'; btnSession.disabled=false; }
-    const s = localStorage.getItem('bag_session_id'); if(s){ wallet.sessionId=s; btnSession.textContent='Session Active'; btnSession.disabled=true; }
-  })();
-  btnConnect.addEventListener('click', connectXaman);
-  btnSession.addEventListener('click', startSession);
-
-  // State
+  // ---------- State ----------
   let balance=10000, currency='BAG';
   let prices={xrpUsd:null, bagXrp:null, bagUsd:null};
   const CELL_H=93;
 
-  // Reels init (prevent blank)
+  // ---------- Reels (visible immediately) ----------
   const makeCell=s=>{const d=document.createElement('div'); d.className='cell'; d.textContent=s; return d;};
   const fillStrip=(strip,arr)=>{strip.innerHTML=''; arr.forEach(s=>strip.appendChild(makeCell(s)));};
+
   function initReelsVisible(){
-    const starter=["🍒","▬","🪙"];
+    const starter=["🍒","▬","🪙"]; // placeholders so nothing looks blank
     for(const strip of strips){ fillStrip(strip, starter); strip.style.transition='none'; strip.style.transform='translateY(0)'; }
     requestAnimationFrame(()=>{ for(const strip of strips){ strip.style.transition='transform 2800ms cubic-bezier(.07,.95,.05,1)'; }});
   }
   if (document.readyState === 'complete' || document.readyState === 'interactive') initReelsVisible();
   else window.addEventListener('load', initReelsVisible);
 
-  // Pricing
+  // ---------- Pricing ----------
   const fmt=n=>(n==null)?'—':(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
   const fmtUsd=n=>(n==null)?'—':'$'+(Math.abs(n)>=1?n.toFixed(2):n.toFixed(6));
 
@@ -370,12 +353,13 @@
   }
   refreshPrices(); setInterval(refreshPrices,30000);
 
-  // RNG / payouts (3 paylines only)
+  // ---------- RNG / payouts (3 paylines only) ----------
   const ROWS=[[[0,0],[0,1],[0,2]],[[1,0],[1,1],[1,2]],[[2,0],[2,1],[2,2]]];
+
   const rng=()=>SYM[(Math.random()*SYM.length)|0];
 
   function demoServer(stake){
-    const winSpin=Math.random()<0.495;
+    const winSpin=Math.random()<0.495; // Dice-like feel
     if(winSpin){
       const weights=[18,7,2]; // 🪙, 💎, 7️⃣
       const tot=weights.reduce((a,b)=>a+b,0);
@@ -388,6 +372,7 @@
       set3(...ROWS[line]);
       return {result:g,totalPayout:PAYS[sym]*stake,stake};
     }else{
+      // ensure no paying 3-in-row
       let tries=0;
       while(true){
         const g=[[rng(),rng(),rng()],[rng(),rng(),rng()],[rng(),rng(),rng()]];
@@ -401,7 +386,7 @@
     }
   }
 
-  // Confetti
+  // ---------- Confetti ----------
   const confettiCanvas = document.getElementById('confetti');
   const ctx = confettiCanvas.getContext('2d');
   function fitConfetti(){ const r = confettiCanvas.getBoundingClientRect(); confettiCanvas.width = r.width * devicePixelRatio; confettiCanvas.height = r.height * devicePixelRatio; }
@@ -429,7 +414,7 @@
     cancelAnimationFrame(raf); step();
   }
 
-  // Animation
+  // ---------- Animation ----------
   async function animateToGrid(rows){
     const cols=[0,1,2].map(ci=>[rows[0][ci],rows[1][ci],rows[2][ci]]);
     const fillerLen=16; // longer spin
@@ -451,22 +436,19 @@
     })));
   }
 
-  // Spin flow (sounds + celebrations)
+  // ---------- Spin flow ----------
   spinBtn.addEventListener('click', async ()=>{
     const stake=+betEl.textContent;
     spinBtn.disabled=true; winEl.textContent='…';
     overlay.classList.remove('show'); cabinet.classList.remove('win-glow','shake');
+
     try{
       sSpin.currentTime=0; sSpin.loop=true; sSpin.play().catch(()=>{});
-      const res=await fetch('/api/slots/spin',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({address:wallet.address ?? 'demo',sessionId:wallet.sessionId ?? null,stake,currency})
-      }).catch(()=>null);
-      const data=(res && res.ok)? await res.json() : demoServer(stake);
+      // Demo spin. Replace with your backend when ready.
+      const data = demoServer(stake);
 
       await animateToGrid(data.result);
 
-      // stop spin loop
       try{ sSpin.pause(); sSpin.currentTime=0; }catch(_){}
       const payout=data.totalPayout||0;
       winEl.textContent=payout;
@@ -486,7 +468,7 @@
         setTimeout(()=>overlay.classList.remove('show'), 1400);
         setTimeout(()=>cabinet.classList.remove('win-glow','shake'), 1600);
       }else if(mult===1){
-        sWin.currentTime=0; sWin.play().catch(()=>{}); // soft chime for push
+        sWin.currentTime=0; sWin.play().catch(()=>{}); // subtle chime
         cabinet.classList.add('win-glow');
         badge.textContent='SCRATCH';
         overlay.classList.add('show');
@@ -496,34 +478,20 @@
         sLose.currentTime=0; sLose.play().catch(()=>{});
       }
 
-      balance = data.balance ?? (balance - stake + payout);
+      balance = balance - stake + payout;
       balEl.textContent = balance; renderUsd();
 
     }catch(e){
       console.error(e);
       try{ sSpin.pause(); sSpin.currentTime=0; }catch(_){}
-      const data=demoServer(+betEl.textContent);
-      await animateToGrid(data.result);
-      const payout=data.totalPayout; winEl.textContent=payout;
-
-      const mult=payout/(+betEl.textContent||1);
-      lastResult.textContent=(mult>1)?'Win ✅':(mult===1?'Scratch ⏸️':'Lose ❌');
-      lastMult.textContent=mult?`${mult.toFixed(2)}×`:'0×';
-      lastProfit.textContent=(payout-(+betEl.textContent||0)).toString();
-
-      if(mult>1){ sWin.currentTime=0; sWin.play().catch(()=>{}); runConfetti(mult>=2 ? 140 : 80); }
-      else if(mult===1){ sWin.currentTime=0; sWin.play().catch(()=>{}); }
-      else { sLose.currentTime=0; sLose.play().catch(()=>{}); }
-
-      balance=balance - data.stake + data.totalPayout;
-      balEl.textContent=balance; renderUsd();
     }finally{
       spinBtn.disabled=false;
     }
   });
 
-  // expose for quick QA in console
+  // Expose for quick QA
   window.__slotsDemoSpin = ()=>document.getElementById('spin').click();
+
 })();
 </script>
 </body>
