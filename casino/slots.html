@@ -451,135 +451,183 @@
     else if(currentCurrency()==='BAG' && PRICES.bagUsd>0) betQty.value = (raw/PRICES.bagUsd).toString();
   }
 
-  /* --------- Reels + Spin --------- */
-  const strips=[...document.querySelectorAll('.strip')];
-  const spinBtn=document.getElementById('spinBtn');
-  const spinText=document.getElementById('spinText');
+/* --------- Reels + Spin --------- */
+const strips=[...document.querySelectorAll('.strip')];
+const spinBtn=document.getElementById('spinBtn');
+const spinText=document.getElementById('spinText');
 
-  // Real emojis for symbols
-  const SYMS = [
-    {k:'SEVEN', emoji:'7️⃣'},
-    {k:'DIAMOND', emoji:'💎'},
-    {k:'BAG', emoji:'🪙'},
-    {k:'DUFFLE', emoji:'👜'},
-    {k:'CHERRY', emoji:'🍒'}
-  ];
-  const ROWS=3, CELL_H=88;
+// Real emojis for symbols
+const SYMS = [
+  {k:'SEVEN',   emoji:'7️⃣'},
+  {k:'DIAMOND', emoji:'💎'},
+  {k:'BAG',     emoji:'🪙'},
+  {k:'DUFFLE',  emoji:'👜'},
+  {k:'CHERRY',  emoji:'🍒'}
+];
 
-  function cell(sym){ const d=document.createElement('div'); d.className='cell'; d.textContent=sym.emoji; return d; }
-  function fillStrip(el, arr){ el.innerHTML=''; arr.forEach(s=>el.appendChild(cell(s))); }
-  strips.forEach(s=>{ fillStrip(s, [SYMS[4],SYMS[3],SYMS[2]]); s.style.transform='translateY(0)'; });
+const ROWS=3, CELL_H=88;
 
-  function randomSym(){ return SYMS[(Math.random()*SYMS.length)|0]; }
+// helpers
+function cell(sym){ const d=document.createElement('div'); d.className='cell'; d.textContent=sym.emoji; return d; }
+function fillStrip(el, arr){ el.innerHTML=''; arr.forEach(s=>el.appendChild(cell(s))); }
+function randomSym(){ return SYMS[(Math.random()*SYMS.length)|0]; }
 
-  // Generate a 3×3 grid with controlled outcomes (3 paylines only)
-  function buildSpin(stakeBag){
-    const p = Math.random();
-    let outcome='lose';
-    if (p < 0.08) outcome='jackpot';       // 8%
-    else if (p < 0.38) outcome='normal';    // 30%
-    else if (p < 0.50) outcome='scratch';   // 12%
-    // else lose (50%)
+// init each strip with 3 randoms
+strips.forEach(s=>{ fillStrip(s, [randomSym(),randomSym(),randomSym()]); s.style.transform='translateY(0)'; });
 
-    const g=[[randomSym(),randomSym(),randomSym()],
-             [randomSym(),randomSym(),randomSym()],
-             [randomSym(),randomSym(),randomSym()]];
+// Build a 3×3 grid with controlled outcomes (3 paylines only)
+function buildSpin(stakeBag){
+  const p = Math.random();
+  let outcome='lose';
+  if (p < 0.08) outcome='jackpot';       // 8%
+  else if (p < 0.38) outcome='normal';   // 30%
+  else if (p < 0.50) outcome='scratch';  // 12%
+  // else lose (50%)
 
-    const lines=[0,1,2]; // row indices
-    const line = lines[(Math.random()*lines.length)|0];
+  const g=[[randomSym(),randomSym(),randomSym()],
+           [randomSym(),randomSym(),randomSym()],
+           [randomSym(),randomSym(),randomSym()]];
 
-    if (outcome==='jackpot'){ const s=SYMS[0]; g[line]=[s,s,s]; }
-    else if (outcome==='normal'){ const pool=[SYMS[1],SYMS[3],SYMS[4]]; const s=pool[(Math.random()*pool.length)|0]; g[line]=[s,s,s]; }
-    else if (outcome==='scratch'){ const s=SYMS[2]; g[line]=[s,s,s]; }
+  const lines=[0,1,2];
+  const line = lines[(Math.random()*lines.length)|0];
 
-    const mult = outcome==='jackpot' ? 2.00 : outcome==='normal' ? 1.25 : outcome==='scratch' ? 1.00 : 0.00;
-    return { grid:g, outcome, payout: stakeBag*mult, mult };
-  }
+  if (outcome==='jackpot'){ const s=SYMS[0]; g[line]=[s,s,s]; }
+  else if (outcome==='normal'){ const pool=[SYMS[1],SYMS[3],SYMS[4]]; const s=pool[(Math.random()*pool.length)|0]; g[line]=[s,s,s]; }
+  else if (outcome==='scratch'){ const s=SYMS[2]; g[line]=[s,s,s]; }
 
-  function gridCols(rows){ return [0,1,2].map(ci=>[rows[0][ci],rows[1][ci],rows[2][ci]]); }
+  const mult = outcome==='jackpot' ? 2.00 : outcome==='normal' ? 1.25 : outcome==='scratch' ? 1.00 : 0.00;
+  return { grid:g, outcome, payout: stakeBag*mult, mult };
+}
 
-  async function animateTo(rows){
-    const cols = gridCols(rows);
-    const fillerLen=10;
-    await Promise.all(cols.map((col,ci)=> new Promise(res=>{
-      const strip=strips[ci];
-      const filler = Array.from({length:fillerLen},()=> randomSym());
-      const stack=[...filler, ...col];
-      fillStrip(strip, stack);
-      const travel = (stack.length-3)*CELL_H;
-      requestAnimationFrame(()=>{
-        strip.style.transform = `translateY(-${travel}px)`;
-        strip.addEventListener('transitionend', ()=>{
-          fillStrip(strip, col);
-          strip.style.transition='none'; strip.style.transform='translateY(0px)';
-          strip.getBoundingClientRect();
-          strip.style.transition='transform 1800ms cubic-bezier(.15,.9,.1,1)';
-          res();
-        }, {once:true});
-      });
-    })));
-  }
+// ===== FAST SPIN LOOP (6s) THEN ABRUPT STOP =====
+function startFastSpin(durationMs, finalRows){
+  // per-strip loopers
+  const loopers = strips.map((strip, idx) => {
+    // build a short stack so we can animate one cell per tick
+    const base = Array.from({length:6},()=>randomSym());
+    fillStrip(strip, base.slice(0,3));
+    strip.style.transition = 'transform 80ms linear'; // fast ticks
 
-  // Sounds
-  function playSpin(){ try{ window.__bagAudio && (__bagAudio.resume(), (window.__spinHandle=__bagAudio.spinLoop())); }catch{} }
-  function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
-  function sWin(){ try{ window.__bagAudio && __bagAudio.chime(); }catch{} }
-  function sScratch(){ try{ window.__bagAudio && __bagAudio.scratch(); }catch{} }
-  function sLose(){ try{ window.__bagAudio && __bagAudio.thud(); }catch{} }
+    let spinning = true;
+    let tickTimer = null;
 
-  // Spend/Credit helpers
-  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
-  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
-  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
-
-  // Spin
-  spinBtn.addEventListener('click', async ()=>{
-    const sBag = stakeBag(); const sUsd = stakeUsd();
-    // In live mode require session+min $1; Practice mode wrapper overrides __bagSession to always active
-    if (!sessionActive() && !window.__BAG_FORCE_DEMO){
-      alert('Start a session (one-time sign) or use /demo for practice.');
-      return;
+    function tick(){
+      if (!spinning) return;
+      // move down by one cell
+      strip.style.transform = `translateY(-${CELL_H}px)`;
+      strip.addEventListener('transitionend', onEnd, {once:true});
     }
-    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
-    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
 
-    spinBtn.disabled=true; spinText.className='t'; spinText.textContent='Spinning…';
-    playSpin();
-    const result = buildSpin(sBag);
-    await animateTo(result.grid);
-    stopSpin();
-
-    // Payout and feedback
-    if(result.mult>0){
-      if(result.mult===1.00){
-        sScratch();
-        credit(sBag*1.00);
-        spinText.className='t scratch'; spinText.textContent=`Scratch — 1.00×`;
-        showWin({ message:'SCRATCH', subtext:`${(result.mult*100).toFixed(0)}% back`, duration:3200, sound:false });
-      }else if(result.mult===1.25){
-        sWin();
-        credit(sBag*1.25);
-        spinText.className='t win'; spinText.textContent=`WIN — 1.25×`;
-        showWin({ message:'WIN', subtext:`+${fmt(sBag*0.25)} BAG · ${fmtUsd(sUsd*1.25)}`, duration:5200 });
-      }else{
-        sWin();
-        credit(sBag*2.00);
-        spinText.className='t win'; spinText.textContent=`JACKPOT — 2.00×`;
-        showWin({ message:'JACKPOT', subtext:`+${fmt(sBag*1.00)} BAG · ${fmtUsd(sUsd*2.00)}`, duration:7200 });
+    function onEnd(){
+      // rotate symbols: remove top cell, push a new random at end, reset transform
+      const children = [...strip.children];
+      if (children.length){
+        // drop the first, append a new random cell
+        strip.removeChild(children[0]);
+        strip.appendChild(cell(randomSym()));
       }
-    } else {
-      sLose();
-      spinText.className='t lose'; spinText.textContent='Lose — try again';
+      strip.style.transition = 'none';
+      strip.style.transform = 'translateY(0)';
+      // force reflow then restore transition for the next tick
+      strip.getBoundingClientRect();
+      strip.style.transition = 'transform 80ms linear';
+
+      // schedule next tick quickly
+      if (spinning) tickTimer = setTimeout(tick, 60); // fast
     }
 
-    // Emit result event (for Practice Mode toast)
-    window.dispatchEvent(new CustomEvent('bag:slotsResult', {
-      detail: { mult: result.mult, scratch: result.mult===1.00, jackpot: result.mult===2.00, stakeBag: sBag }
-    }));
+    // kick off
+    tick();
 
-    spinBtn.disabled=false;
+    return {
+      stopAbrupt(){
+        spinning = false;
+        if (tickTimer) clearTimeout(tickTimer);
+        // remove transition to make the stop feel abrupt and set final 3 symbols instantly
+        strip.style.transition = 'none';
+        const col = [ finalRows[0][idx], finalRows[1][idx], finalRows[2][idx] ];
+        fillStrip(strip, col);
+        strip.style.transform = 'translateY(0)';
+      }
+    };
   });
 
+  // after duration, stop everything abruptly
+  return new Promise(resolve => {
+    setTimeout(() => {
+      loopers.forEach(l => l.stopAbrupt());
+      resolve();
+    }, durationMs);
+  });
+}
+
+function gridCols(rows){ return [0,1,2].map(ci=>[rows[0][ci],rows[1][ci],rows[2][ci]]); }
+
+// Sounds
+function playSpin(){ try{ window.__bagAudio && (__bagAudio.resume(), (window.__spinHandle=__bagAudio.spinLoop())); }catch{} }
+function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
+function sWin(){ try{ window.__bagAudio && __bagAudio.chime(); }catch{} }
+function sScratch(){ try{ window.__bagAudio && __bagAudio.scratch(); }catch{} }
+function sLose(){ try{ window.__bagAudio && __bagAudio.thud(); }catch{} }
+
+// Spend/Credit helpers
+function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+// Spin
+spinBtn.addEventListener('click', async ()=>{
+  const sBag = stakeBag(); const sUsd = stakeUsd();
+
+  if (!sessionActive() && !window.__BAG_FORCE_DEMO){
+    alert('Start a session (one-time sign) or use /demo for practice.');
+    return;
+  }
+  if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+  if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
+
+  spinBtn.disabled=true; spinText.className='t'; spinText.textContent='Spinning…';
+  playSpin();
+
+  // decide result first
+  const result = buildSpin(sBag);
+  const finalRows = result.grid; // matrix [r][c]
+
+  // spin fast for 6 seconds, then stop abruptly on finalRows
+  await startFastSpin(6000, finalRows);
+  stopSpin();
+
+  // Payout and feedback
+  if(result.mult>0){
+    if(result.mult===1.00){
+      sScratch();
+      credit(sBag*1.00);
+      spinText.className='t scratch'; spinText.textContent=`Scratch — 1.00×`;
+      showWin({ message:'SCRATCH', subtext:`${(result.mult*100).toFixed(0)}% back`, duration:3200, sound:false });
+    }else if(result.mult===1.25){
+      sWin();
+      credit(sBag*1.25);
+      spinText.className='t win'; spinText.textContent=`WIN — 1.25×`;
+      showWin({ message:'WIN', subtext:`+${fmt(sBag*0.25)} BAG · ${fmtUsd(sUsd*1.25)}`, duration:5200 });
+    }else{
+      sWin();
+      credit(sBag*2.00);
+      spinText.className='t win'; spinText.textContent=`JACKPOT — 2.00×`;
+      showWin({ message:'JACKPOT', subtext:`+${fmt(sBag*1.00)} BAG · ${fmtUsd(sUsd*2.00)}`, duration:7200 });
+    }
+  } else {
+    sLose();
+    spinText.className='t lose'; spinText.textContent='Lose — try again';
+  }
+
+  // Emit result (practice mode toast listens)
+  window.dispatchEvent(new CustomEvent('bag:slotsResult', {
+    detail: { mult: result.mult, scratch: result.mult===1.00, jackpot: result.mult===2.00, stakeBag: sBag }
+  }));
+
+  spinBtn.disabled=false;
+});
+ 
   // defaults
   document.querySelector('#bagSlotsDemo .unit').textContent='XRP';
   updatePayoutPreview();
