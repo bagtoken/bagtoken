@@ -80,9 +80,6 @@
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
-
-  /* Footer fix */
-  .footer{ position:relative; z-index:2; clear:both; }
 </style>
 </head>
 <body>
@@ -233,21 +230,101 @@
   </div>
 </section>
 
-<!-- AUDIO ENGINE (same base as Dice) -->
+<!-- AUDIO ENGINE -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC = null, MASTER = null, lastInteractTs = 0, watchdogTimer = null;
-  function makeAC(){ if(!AudioCtx) return null; const ac=new AudioCtx(); const master=ac.createGain(); master.gain.value=0.22; master.connect(ac.destination); AC=ac; MASTER=master; ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); }; return ac; }
+
+  function makeAC(){
+    if(!AudioCtx) return null;
+    const ac=new AudioCtx();
+    const master=ac.createGain();
+    master.gain.value=0.28;            /* a touch louder */
+    master.connect(ac.destination);
+    AC=ac; MASTER=master;
+    ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); };
+    return ac;
+  }
   function getAC(){ if(AC && AC.state!=='closed') return AC; return makeAC(); }
-  function silentTick(ac){ const o=ac.createOscillator(); const g=ac.createGain(); g.gain.value=0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01); }
-  async function tryResume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } if(ac.state==='running'){ silentTick(ac); } }
+
+  function silentTick(ac){
+    const o=ac.createOscillator(); const g=ac.createGain();
+    g.gain.value=0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01);
+  }
+
+  async function tryResume(){
+    const ac=getAC(); if(!ac) return;
+    if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} }
+    if(ac.state==='running'){ silentTick(ac); }
+  }
+
   function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
-  async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
-  function makeNoise(ac,dur=0.08){ const len=Math.max(1,Math.floor(dur*ac.sampleRate)); const buf=ac.createBuffer(1,len,ac.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9; const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0; const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g); return {src,g}; }
-  function nudge(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; const comp=ac.createDynamicsCompressor(); comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08; comp.connect(MASTER); const {src:nSrc,g:nGain}=makeNoise(ac,0.06); nGain.connect(comp); nGain.gain.setValueAtTime(0.0001,now); nGain.linearRampToValueAtTime(0.12,now+0.008); nGain.exponentialRampToValueAtTime(0.0001,now+0.08); nSrc.start(now); nSrc.stop(now+0.09); const o=ac.createOscillator(); const g=ac.createGain(); o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18); g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.10,now+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+0.22); o.connect(g).connect(comp); o.start(now); o.stop(now+0.24); }
-  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click']; INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true})); addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); }); addEventListener('pageshow',()=>{ tryResume(); }); addEventListener('focus',()=>{ tryResume(); });
-  function startWatchdog(){ if(watchdogTimer) return; watchdogTimer=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30_000; if(active && ac.state==='suspended') tryResume(); },1500); } startWatchdog();
+
+  async function ensureInteractive(){
+    const ac=getAC(); if(!ac) return null;
+    if(ac.state!=='running'){ await tryResume(); }
+    return ac;
+  }
+
+  function makeNoise(ac,dur=0.08){
+    const len=Math.max(1,Math.floor(dur*ac.sampleRate));
+    const buf=ac.createBuffer(1,len,ac.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
+    const g=ac.createGain(); g.gain.value=0;
+    src.connect(bp).connect(g);
+    return {src,g};
+  }
+
+  async function nudge(){
+    const ac=getAC(); if(!ac) return;
+    if(ac.state!=='running'){ await tryResume(); return; }
+    const now=ac.currentTime;
+    const comp=ac.createDynamicsCompressor();
+    comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08;
+    comp.connect(MASTER);
+
+    const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
+    nGain.connect(comp);
+    nGain.gain.setValueAtTime(0.0001,now);
+    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    nSrc.start(now); nSrc.stop(now+0.09);
+
+    const o=ac.createOscillator(); const g=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18);
+    g.gain.setValueAtTime(0.0001,now);
+    g.gain.linearRampToValueAtTime(0.10,now+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
+    o.connect(g).connect(comp);
+    o.start(now); o.stop(now+0.24);
+  }
+
+  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
+  INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
+  addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
+  addEventListener('pageshow',()=>{ tryResume(); });
+  addEventListener('focus',()=>{ tryResume(); });
+
+  function startWatchdog(){
+    if(watchdogTimer) return;
+    watchdogTimer=setInterval(()=>{
+      const ac=AC; if(!ac) return;
+      const active=Date.now()-lastInteractTs<30_000;
+      if(active && ac.state==='suspended') tryResume();
+    },1500);
+  }
+  startWatchdog();
+
+  /* One-time prewarm on first user tap/click to satisfy iOS autoplay rules */
+  addEventListener('pointerdown', async function once(){
+    removeEventListener('pointerdown', once, {capture:false});
+    try{ await ensureInteractive(); await nudge(); }catch{}
+  }, {once:true});
+
   window.__bagAudio={ensureInteractive,nudge};
 })();
 </script>
@@ -325,7 +402,7 @@
     btn.disabled = true;
     try {
       const auth = await xumm.authorize();
-      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      const acct = (xumm && xumm.user and xumm.user.account) || auth?.me?.account || null;
       if (!acct) throw new Error('No account returned');
       write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
@@ -685,7 +762,7 @@
 
   let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0;
-  let lastPegTs=0;
+  let lastPegTs=0, hardResolveTimer=null;
 
   function hud(){ balLbl.textContent=Number(balance).toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
 
@@ -723,27 +800,21 @@
     const usd = stakeUsdEquivalent(); usdInput.value = usd>0 ? usd.toFixed(2) : '';
   });
 
-  async function pegKnock(){ try{ if (window.__bagAudio) { __bagAudio.nudge(); } }catch{} }
+  async function pegKnock(){ try{ if (window.__bagAudio) { await __bagAudio.ensureInteractive(); __bagAudio.nudge(); } }catch{} }
 
-  /* ======== PATCH 1: updated click handler (sound + robust repeat) ======== */
+  /* Drop handler: wake audio, validate, disable button, start */
   dropBtn.addEventListener('click', async ()=>{
     if (dropping) return;
 
-    // start audio context & give a small nudge
     try { await (window.__bagAudio?.ensureInteractive?.()); window.__bagAudio?.nudge?.(); } catch {}
 
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-    if (!passesMin){
-      resText.textContent = 'Min $1';
-      return;
-    }
+    if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    dropBtn.disabled = true; // prevent double tap while live
+    dropBtn.disabled = true;
     balance = Math.max(0, balance - stake);
-    lastTxt = '—';
-    resText.textContent = '—';
-    hud();
+    lastTxt = '—'; resText.textContent = '—'; hud();
     startDrop();
   });
 
@@ -752,6 +823,10 @@
     ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, frames:0};
     lastPegTs = 0;
     dropStartedAt = performance.now();
+
+    /* Hard safety resolve in case physics never lands (e.g., tab throttling) */
+    clearTimeout(hardResolveTimer);
+    hardResolveTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(boundarySlotIndex((ball&&ball.x)||W/2)); } }, 7000);
   }
 
   (function loop(ts){
@@ -759,12 +834,9 @@
     if(ball && ball.alive){
       stepBall(ts);
       drawBall(ball.x, ball.y);
-      // late-line guard: if somehow not resolved after 12s or off-screen
       if(ball.y > H + 200 || ts - dropStartedAt > 12000){ resolveByIndex(boundarySlotIndex(ball.x)); }
     }
-    /* ======== PATCH 3: extra guard so flag can't get stuck ======== */
     if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
-
     requestAnimationFrame(loop);
   })(performance.now());
 
@@ -815,10 +887,10 @@
 
   function resolveByIndex(idx){
     if (!ball) return;
-    ball.alive=false;
-    ball=null;
-    dropping=false;
-    /* ======== PATCH 2: ensure flag clears & button re-enables ======== */
+    clearTimeout(hardResolveTimer);
+    ball.alive=false; ball=null; dropping=false;
+
+    /* Always re-enable quickly */
     setTimeout(()=>{ dropping=false; dropBtn.disabled=false; }, 0);
 
     const rule = PAY_MAP[idx] ?? 'L';
@@ -946,7 +1018,7 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('gesturestart', e=>e.preventDefault(), {passive:false});
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
