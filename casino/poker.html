@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>$BAG Poker — 5-Card Draw (Demo)</title>
 
-<!-- Optional Xaman (will not auto-connect; kept for parity with Dice/Slots) -->
+<!-- Optional Xaman for parity with Dice/Slots. No auto-connect -->
 <script src="https://xaman.app/assets/cdn/xumm.min.js" defer></script>
 
 <style>
@@ -16,7 +16,7 @@
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   button{cursor:pointer}
-  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px}
   .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
   .pill{padding:6px 10px;border:1px solid #2b3f33;border-radius:999px;color:var(--muted);font-size:12px}
   .table{
@@ -26,7 +26,6 @@
     padding:22px; min-height:520px;
   }
   .pot{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:13px;color:var(--muted)}
-  .center-board{display:flex;justify-content:center;gap:10px;margin-top:64px}
   .row{display:flex;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap}
   .hand-title{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
 
@@ -89,14 +88,14 @@
   <div class="table" id="table">
     <div class="pot" id="potLabel">Pot: —</div>
 
-    <!-- AI seats -->
+    <!-- Single AI seat -->
     <div class="row" id="aiRow"></div>
 
     <!-- Player seat -->
     <div class="row" id="playerRow" style="margin-top:48px"></div>
     <div class="hand-title">Tap cards to HOLD before Draw</div>
 
-    <!-- Celebration chip + confetti -->
+    <!-- Celebration -->
     <div class="chip" id="chip"></div>
     <canvas class="confetti" id="confetti"></canvas>
   </div>
@@ -124,15 +123,15 @@
 
 <script>
 /* ---------------------------------------
-   $BAG Poker — 5-Card Draw (Demo)
-   - Fixed bet single-round: Deal → Hold/Draw → Showdown
-   - Payouts: Win 2×, Push refund, Lose 0×
-   - Currency: $, XRP, $BAG (clamped $1-$2000; uses window.PRICES if available)
+   $BAG Poker — 5-Card Draw (Demo, 1 CPU)
+   Flow: Deal → Hold/Draw → Showdown
+   Payouts: Win 2×, Push refund, Lose 0×
+   Currency: $, XRP, BAG, clamped $1–$2000
 --------------------------------------- */
 
 (() => {
-  // ====== Prices & currency helpers (re-uses global if present) ======
-  const PRICES = Object.assign({ xrpUsd: 0.50, bagUsd: 0.0001 }, (window.PRICES||{})); // fallback demo
+  // ====== Prices & currency ======
+  const PRICES = Object.assign({ xrpUsd: 0.50, bagUsd: 0.0001 }, (window.PRICES||{}));
   const currencyEl = document.getElementById('currency');
   const betEl = document.getElementById('bet');
   const statusEl = document.getElementById('status');
@@ -159,7 +158,7 @@
   function fmt(n){ if(!Number.isFinite(n)) return '—'; const c=currentCurrency(); return (c==='USD'?'$':'')+((c==='USD')?n.toFixed(2):n.toFixed(6)); }
   function updatePot(usd){ potEl.textContent = 'Pot: ' + (usd>0? '$'+usd.toFixed(2): '—'); }
 
-  // ====== Sounds (WebAudio; minimal & snappy) ======
+  // ====== Sounds ======
   const AudioCtx = window.AudioContext||window.webkitAudioContext;
   const ctx = new AudioCtx();
   function blip(freq=440,ms=70, type='triangle', gain=0.02){
@@ -175,7 +174,6 @@
   function loseSfx(){ [220,180,140].forEach((f,i)=>setTimeout(()=>blip(f,120,'sine',0.03), i*120)); }
   function chipSfx(){ blip(420,90,'square',0.03); }
 
-  // ====== UI helpers ======
   const toastEl = document.getElementById('toast');
   function toast(msg){
     toastEl.textContent = msg;
@@ -191,7 +189,6 @@
   function newDeck(){
     const d=[];
     for(let s=0;s<4;s++) for(let r=0;r<RANKS.length;r++) d.push({r:RANKS[r], s:SUITS[s]});
-    // Fisher-Yates with crypto
     for(let i=d.length-1;i>0;i--){
       const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i+1);
       [d[i], d[j]] = [d[j], d[i]];
@@ -199,20 +196,16 @@
     return d;
   }
 
-  // 5-card hand ranker
   function rankHand(cards){
-    // cards: [{r:'A', s:'♠'}...]
     const vals = cards.map(c=>RVAL[c.r]).sort((a,b)=>a-b);
     const counts = {}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
     const byCount = Object.entries(counts).sort((a,b)=>b[1]-a[1] || b[0]-a[0]); // [val,count]
     const isFlush = cards.every(c=>c.s===cards[0].s);
-    // Straight: special A2345 (treat A as 1)
     let isStraight=false, high=vals[4];
     if(vals.join(',')==='2,3,4,5,14'){ isStraight=true; high=5; }
     else if(vals[0]+4===vals[4] && new Set(vals).size===5){ isStraight=true; }
 
     const kind = byCount.map(x=>x[1]).join('');
-    // Hand categories (higher better): 8=straight flush,7=four,6=full,5=flush,4=straight,3=three,2=two pair,1=pair,0=high
     let cat=0, tiebreak=[];
     if(isStraight && isFlush){ cat=8; tiebreak=[high]; }
     else if(kind==='41'){ cat=7; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
@@ -220,7 +213,7 @@
     else if(isFlush){ cat=5; tiebreak=vals.slice().reverse(); }
     else if(isStraight){ cat=4; tiebreak=[high]; }
     else if(kind==='311'){ cat=3; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
-    else if(kind==='221'){ cat=2; // two pair
+    else if(kind==='221'){ // two pair
       const ps=byCount.filter(x=>x[1]===2).map(x=>+x[0]).sort((a,b)=>b-a);
       const kicker=vals.slice().reverse().find(v=>v!==ps[0]&&v!==ps[1]);
       tiebreak=[...ps, kicker];
@@ -281,17 +274,13 @@
 
   let deck = [];
   let player = { hand:[], nodes:[] };
-  let bots = [
-    { name:'CPU-1', hand:[], nodes:[] },
-    { name:'CPU-2', hand:[], nodes:[] },
-    { name:'CPU-3', hand:[], nodes:[] },
-  ];
+  let bots = [{ name:'CPU', hand:[], nodes:[] }]; // single opponent
   let phase='IDLE'; // IDLE → DEALT → HOLD → DRAWN → SHOWDOWN
   let anteUsd=0;
 
   function renderSeats(){
     aiRow.innerHTML='';
-    bots.forEach((b,i)=>{
+    bots.forEach((b)=>{
       const seat=document.createElement('div'); seat.className='seat ai';
       const row=document.createElement('div'); row.className='row';
       b.nodes=[]; b.hand.forEach((c,idx)=>{
@@ -329,29 +318,24 @@
   }
 
   function startDeal(){
-    // Validate bet
     const usd = betToUsd();
     if(!(usd>=1)){ toast('Bet must be at least $1'); return; }
     anteUsd = usd;
-    updatePot(anteUsd*2); // player vs house (demo)
+    updatePot(anteUsd*2);
     statusEl.textContent = 'Dealing…';
     btnDeal.disabled = true; btnDraw.disabled = true; btnReset.disabled = true;
     shuffleSfx();
 
-    // Fresh deck & hands
     deck = newDeck();
     player.hand = []; bots.forEach(b=>b.hand=[]);
 
-    // Round-robin deal 5 each (face-up for player, down for bots)
     for(let r=0;r<5;r++){
       player.hand.push(deck.pop());
       bots.forEach(b=>b.hand.push(deck.pop()));
     }
     phase='DEALT';
-    // Initial render (bots face-down)
     renderSeats();
 
-    // Small animation on player row
     const nodes = player.nodes;
     nodes.forEach(n=>{ n.style.opacity='0'; });
     dealAnimation(nodes, ()=>{
@@ -364,8 +348,6 @@
   }
 
   function botHoldLogic(hand){
-    // Very simple heuristic: hold pairs or better, otherwise hold highest 2
-    // Returns array of booleans: true = hold
     const holds = [false,false,false,false,false];
     const vals = hand.map(c=>RVAL[c.r]);
     const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
@@ -374,7 +356,6 @@
       hand.forEach((c,i)=>{ if(pairs.includes(RVAL[c.r])) holds[i]=true; });
       return holds;
     }
-    // else hold top 2
     const idxs = vals.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,2).map(x=>x[1]);
     idxs.forEach(i=>holds[i]=true);
     return holds;
@@ -385,23 +366,19 @@
     statusEl.textContent = 'Drawing…';
     btnDraw.disabled = true;
 
-    // Player holds: class "hold" means HOLD, so replace those NOT held
     player.nodes.forEach((el, i)=>{
       const isHeld = el.classList.contains('hold');
       if(!isHeld){ player.hand[i] = deck.pop(); }
     });
 
-    // Bots: compute holds and replace
     bots.forEach(b=>{
       const holds = botHoldLogic(b.hand);
       holds.forEach((h,i)=>{ if(!h) b.hand[i]=deck.pop(); });
     });
 
     phase='DRAWN';
-    // Reveal everything for showdown
     renderSeats();
-    // Glow briefly on player replaced cards
-    player.nodes.forEach((el,i)=>{ el.classList.add('winner-glow'); setTimeout(()=>el.classList.remove('winner-glow'), 300); });
+    player.nodes.forEach((el)=>{ el.classList.add('winner-glow'); setTimeout(()=>el.classList.remove('winner-glow'), 300); });
     setTimeout(showdown, 350);
   }
 
@@ -412,7 +389,7 @@
   function showdown(){
     if(phase!=='DRAWN') return;
     statusEl.textContent = 'Showdown…';
-    // Evaluate all
+
     const results = [];
     const pRank = rankHand(player.hand);
     results.push({ who:'You', rank:pRank, hand:player.hand });
@@ -422,49 +399,39 @@
       results.push({ who:b.name, rank:r, hand:b.hand });
     });
 
-    // Find best
     let winner = 0;
     for(let i=1;i<results.length;i++){
       const cmp=cmpHands(results[i].rank, results[winner].rank);
       if(cmp>0) winner=i;
     }
-    // Check ties
     const top = results[winner];
     const ties = results.filter(r=>cmpHands(r.rank, top.rank)===0);
+
     let outcome='lose', msg='';
     if(ties.length>1){
       outcome='push';
-      msg='Push — '+handName(top.rank.cat)+'. Bet refunded';
+      msg='Push — '+handName(top.rank.cat)+' Refund issued';
     }else if(results[winner].who==='You'){
       outcome='win';
-      msg='You win — '+handName(top.rank.cat)+' (+2×)';
+      msg='You win — '+handName(top.rank.cat)+' 2× payout';
     }else{
       outcome='lose';
       msg= top.who+' wins — '+handName(top.rank.cat);
     }
 
-    // Visuals
     const highlight = (who)=>{
       if(who==='You'){ player.nodes.forEach(n=>n.classList.add('winner-glow')); }
-      else{
-        const idx = bots.findIndex(b=>b.name===who);
-        if(idx>=0){
-          const seat = aiRow.children[idx];
-          seat.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow'));
-        }
-      }
+      else{ aiRow.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow')); }
     };
-
     highlight(top.who);
     statusEl.textContent = msg;
 
-    // Payouts
     const usd = anteUsd;
     if(outcome==='win'){
       winSfx(); confettiBurst(); chipFlash();
-      updatePot(usd*2*2); // show 2× pot flash momentarily
+      updatePot(usd*4);
       setTimeout(()=>updatePot(0), 900);
-      toast('Payout: '+fmt(usdToCurrency(usd*2))+' ('+ (currentCurrency()==='USD'?'$'+(usd*2).toFixed(2):'2×') +')');
+      toast('Payout: '+fmt(usdToCurrency(usd*2)));
     }else if(outcome==='push'){
       chipSfx(); updatePot(0);
       toast('Refunded: '+fmt(usdToCurrency(usd)));
@@ -477,13 +444,16 @@
     btnReset.disabled=false; btnDeal.disabled=false;
   }
 
-  // ====== Confetti + Chip celebration ======
+  // ====== Celebrations ======
+  const confetti = document.getElementById('confetti');
+  const ctx2 = confetti.getContext('2d');
+  let W=0,H=0; function sizeCanvas(){ const r=confetti.parentElement.getBoundingClientRect(); W=r.width; H=r.height; confetti.width=W; confetti.height=H; }
+  window.addEventListener('resize', sizeCanvas); sizeCanvas();
+
   function confettiBurst(){
     const bits=[];
     for(let i=0;i<60;i++){
-      bits.push({
-        x: W/2, y:H/2, vx:(Math.random()*2-1)*3, vy:(Math.random()*-3-2), g:0.08+Math.random()*0.03, r:2+Math.random()*3
-      });
+      bits.push({ x: W/2, y:H/2, vx:(Math.random()*2-1)*3, vy:(Math.random()*-3-2), g:0.08+Math.random()*0.03, r:2+Math.random()*3 });
     }
     let t=0, raf;
     function step(){
@@ -499,6 +469,7 @@
     step();
   }
   function chipFlash(){
+    const chipEl = document.getElementById('chip');
     chipEl.style.display='block'; chipEl.style.opacity='0'; chipEl.style.transform='translate(-50%, -10px) scale(.9)';
     requestAnimationFrame(()=>{
       chipEl.style.transition='transform .25s ease, opacity .25s ease';
@@ -511,8 +482,11 @@
   }
 
   // ====== Controls ======
+  const btnDeal = document.getElementById('btnDeal');
+  const btnDraw = document.getElementById('btnDraw');
+  const btnReset = document.getElementById('btnReset');
+
   btnDeal.addEventListener('click', ()=>{
-    // ensure bet within clamp (if USD mode, clamp directly; otherwise clamp USD equivalent)
     const usd = betToUsd();
     if(!(usd>=1)){ betEl.value = currentCurrency()==='USD'? '1.00' : usdToCurrency(1).toString(); }
     if(usd>2000){ betEl.value = currentCurrency()==='USD'? '2000.00' : usdToCurrency(2000).toString(); }
@@ -527,26 +501,23 @@
     btnDraw.disabled=true; btnReset.disabled=true; btnDeal.disabled=false;
   });
   currencyEl.addEventListener('change', ()=>{
-    // If user had a USD-based amount, keep approximate USD by converting
     const usd = betToUsd();
     if(usd>0){ betEl.value = usdToCurrency(usd).toString(); }
     document.getElementById('betHint').textContent = 'Min $1 — Max $2000';
   });
 
-  // ====== Initial state ======
+  // ====== Init ======
   (function init(){
     statusEl.textContent = 'Ready';
     updatePot(0);
-    // Seed empty hands for layout
-    player.hand = [{},{},{},{},{}]; player.hand.length=0;
-    bots.forEach(b=>{ b.hand=[]; });
+    player.hand = []; bots.forEach(b=>b.hand=[]);
     renderSeats();
-    // Prefill bet if demo
     if(window.__BAG_FORCE_DEMO===true || typeof window.__BAG_FORCE_DEMO==='undefined'){
       currencyEl.value='USD'; betEl.value='5.00';
     }
   })();
 
-})();</script>
+})();
+</script>
 </body>
 </html>
