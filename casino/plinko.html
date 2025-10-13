@@ -240,8 +240,7 @@
     if(!AudioCtx) return null;
     const ac=new AudioCtx();
     const master=ac.createGain();
-    master.gain.value=0.28;
-    master.connect(ac.destination);
+    master.gain.value=0.28; master.connect(ac.destination);
     AC=ac; MASTER=master;
     ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); };
     return ac;
@@ -260,12 +259,7 @@
   }
 
   function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
-
-  async function ensureInteractive(){
-    const ac=getAC(); if(!ac) return null;
-    if(ac.state!=='running'){ await tryResume(); }
-    return ac;
-  }
+  async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
 
   function makeNoise(ac,dur=0.08){
     const len=Math.max(1,Math.floor(dur*ac.sampleRate));
@@ -274,8 +268,7 @@
     for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
     const src=ac.createBufferSource(); src.buffer=buf;
     const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
-    const g=ac.createGain(); g.gain.value=0;
-    src.connect(bp).connect(g);
+    const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g);
     return {src,g};
   }
 
@@ -290,8 +283,8 @@
     const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
     nGain.connect(comp);
     nGain.gain.setValueAtTime(0.0001,now);
-    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    nGain.linearRampToValueAtTime(0.12,now+0.008);
+    nGain.exponentialRampToValueAtTime(0.0001,now+0.08);
     nSrc.start(now); nSrc.stop(now+0.09);
 
     const o=ac.createOscillator(); const g=ac.createGain();
@@ -724,31 +717,57 @@
 
   // Canvas
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const W=640, H=880; canvas.width=W; canvas.height=H;
+  const ctx = canvas.getContext('2d', { alpha: true });
 
-  // Board geometry
-  const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
-  const topBoard=110, bottomBoard=H-120;
+  // Logical size; will be synced to CSS size each frame (DPR-aware)
+  let W = 640, H = 880;
 
-  const PEG_ROWS = 12, PEG_COLS = 11;
-  const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
-  const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
-
-  const pegs=[];
-  for(let r=0;r<PEG_ROWS;r++){
-    const off=(r%2===0)?0:pegSpacingX/2;
-    for(let c=0;c<PEG_COLS;c++){
-      let x=leftWall+20+c*pegSpacingX+off;
-      if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
-      let y=topBoard+r*pegSpacingY;
-      pegs.push({x,y,r:PEG_R});
+  function fitCanvas(){
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const rect = canvas.getBoundingClientRect();
+    W = Math.max(1, Math.round(rect.width));
+    H = Math.max(1, Math.round(rect.height));
+    const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+    if (canvas.width !== bw || canvas.height !== bh){
+      canvas.width = bw; canvas.height = bh;
     }
+    // Reset & scale so we can keep using CSS pixels in drawing code
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = true;
   }
 
+  // Board geometry (derived from W/H every frame)
+  const leftPad = WALL_PAD;
+  function rightWall(){ return W - WALL_PAD; }
+  function leftWall(){ return WALL_PAD; }
+  function topBoard(){ return 110; }
+  function bottomBoard(){ return H - 120; }
+
+  const PEG_ROWS = 12, PEG_COLS = 11;
+  function buildPegs(){
+    const pegs=[];
+    const px = (rightWall()-leftWall()-40)/(PEG_COLS-1);
+    const py = (bottomBoard()-topBoard()-100)/(PEG_ROWS-1);
+    for(let r=0;r<PEG_ROWS;r++){
+      const off=(r%2===0)?0:px/2;
+      for(let c=0;c<PEG_COLS;c++){
+        let x=leftWall()+20+c*px+off;
+        if(x<=leftWall()+PEG_R || x>=rightWall()-PEG_R) continue;
+        let y=topBoard()+r*py;
+        pegs.push({x,y,r:PEG_R});
+      }
+    }
+    return {pegs, px, py};
+  }
+  let pegGeo = buildPegs();
+
   // Slots
-  const slotWidth=(rightWall-leftWall)/SLOTS;
-  const slotX=i=>leftWall+i*slotWidth;
+  function slotWidth(){ return (rightWall()-leftWall())/SLOTS; }
+  const slotX=i=>leftWall()+i*slotWidth();
 
   // UI elements
   const $=id=>document.getElementById(id);
@@ -803,9 +822,9 @@
 
   async function pegKnock(){ try{ if (window.__bagAudio) { await __bagAudio.ensureInteractive(); __bagAudio.nudge(); } }catch{} }
 
-  /* House-edge weighted slot (emergency resolve only) */
+  /* House-edge weight for emergency resolves (tab-throttle cases) */
   function weightedSlotIndex(){
-    const weights = [22, 11, 22, 3, 22, 11, 22]; // loss-heavy; rare jackpot
+    const weights = [22, 11, 22, 3, 22, 11, 22]; // L, 1.2, L, 2x, L, 1.2, L
     const total = weights.reduce((a,b)=>a+b,0);
     let r = Math.random() * total;
     for(let i=0;i<weights.length;i++){ r -= weights[i]; if(r<=0) return i; }
@@ -832,9 +851,9 @@
 
   function startDrop(){
     dropping=true;
-    const startOffset = (Math.random() - 0.5) * 160;
+    const startOffset = (Math.random() - 0.5) * (W * 0.28);  // vary entry so center isn’t always hit
     const initVx = (Math.random() - 0.5) * 1.6;
-    ball = {x:W/2 + startOffset, y:60, vx:initVx, vy:0, r:BALL_R, alive:true, frames:0};
+    ball = {x:(W/2) + startOffset, y:60, vx:initVx, vy:0, r:BALL_R, alive:true, frames:0};
     lastPegTs = 0;
     dropStartedAt = performance.now();
 
@@ -847,15 +866,14 @@
     if(ball && ball.alive){
       stepBall(ts);
       drawBall(ball.x, ball.y);
-      if(ball.y > H + 200){
-        resolveByIndex(boundarySlotIndex(ball.x));
-      }
+      if(ball.y > H + 200){ resolveByIndex(boundarySlotIndex(ball.x)); }
     }
     if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
     requestAnimationFrame(loop);
   })(performance.now());
 
   setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { dropping=false; dropBtn.disabled=false; } }, 700);
+  addEventListener('resize', ()=>{ pegGeo = buildPegs(); }); // rebuild peg layout on viewport changes
 
   function stepBall(ts){
     ball.frames++;
@@ -865,12 +883,12 @@
     ball.vx += (Math.random() - 0.5) * 0.03;
 
     // walls
-    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; }
-    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; }
+    if(ball.x - BALL_R < leftWall()){ ball.x = leftWall() + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; }
+    if(ball.x + BALL_R > rightWall()){ ball.x = rightWall() - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; }
     if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
     // pegs
-    for(const p of pegs){
+    for(const p of pegGeo.pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
       const dist=Math.hypot(dx,dy) || 0.0001;
       const minD=BALL_R + p.r;
@@ -890,19 +908,19 @@
 
     // Landing:
     const slowEnough = Math.abs(ball.vy) < 0.22;
-    if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
+    if (ball.y >= bottomBoard() + 56 && (slowEnough || ball.y >= bottomBoard() + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
     }
   }
 
   function boundarySlotIndex(x){
-    const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
-    const idx = Math.floor((clamped - leftWall) / slotWidth);
+    const clamped = Math.min(rightWall()-1, Math.max(leftWall()+1, x));
+    const idx = Math.floor((clamped - leftWall()) / slotWidth());
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
   function resolveByIndex(idx){
-    if (!ball) { dropping=false; dropBtn.disabled=false; return; }
+    if (!ball){ dropping=false; dropBtn.disabled=false; return; }
     ball.alive = false;
     ball = null;
     clearTimeout(safetyTimer);
@@ -933,108 +951,46 @@
 
   // Render
   function drawBoard(){
-    // 🔧 reset context every frame to avoid “invisible ball” after first run
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.imageSmoothingEnabled = true;
+    fitCanvas();                 // <— DPR-correct sizing + full state reset
+    pegGeo = buildPegs();        // keep pegs aligned to current size
 
-    ctx.clearRect(0,0,W,H);
+    // frame
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
-
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
-    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
+    ctx.strokeRect(leftWall()-8, topBoard()-40, rightWall()-leftWall()+16, bottomBoard()-topBoard()+60);
 
     // pegs
     ctx.fillStyle='#704d1d';
-    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+    for(const p of pegGeo.pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
     // floor & dividers
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(leftWall(), bottomBoard()); ctx.lineTo(rightWall(), bottomBoard()); ctx.stroke();
     for(let i=1;i<SLOTS;i++){
       const x = slotX(i);
-      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, bottomBoard()); ctx.lineTo(x, bottomBoard()+50); ctx.stroke();
     }
 
     // labels
-    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth()/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
-      ctx.fillText(txt, slotCenters[i], bottomBoard+72);
+      ctx.fillText(txt, slotCenters[i], bottomBoard()+72);
     }
   }
+
   function drawBall(x,y){
     const r=BALL_R;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
     const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
     g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    // tiny outline to guarantee visibility on top of any overlayed pixels
+    ctx.fillStyle=g; ctx.fill();
     ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
-
-  // Practice mode wrapper (credit mirror)
-  (function practiceMode(){
-    const qs = new URLSearchParams(location.search);
-    const pathDemo = location.pathname.toLowerCase().includes('/demo');
-    const demoMode = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
-    if (!demoMode) return;
-
-    const statusEl  = document.getElementById('sessionStatus');
-    const startBtn  = document.getElementById('startSessionBtn');
-    const topUpBtn  = document.getElementById('topUpBtn');
-    const endBtn    = document.getElementById('endSessionBtn');
-    const connectEl = document.getElementById('connectBtn');
-
-    const DEMO_KEY = '__bag_demo_bag_v1';
-    const START_BAG = 1000;
-    function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-    function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
-    if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
-
-    function fmt(n){
-      if (!Number.isFinite(n)) return '—';
-      if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
-      if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
-      if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
-      return n.toLocaleString(undefined, {maximumFractionDigits:10});
-    }
-    function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-    function renderDemoSession(){
-      const bag = getBal();
-      const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
-      if (statusEl){
-        statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
-          (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
-      }
-      if (startBtn) startBtn.style.display = 'none';
-      if (topUpBtn)  topUpBtn.style.display  = 'none';
-      if (endBtn)    endBtn.style.display     = 'none';
-    }
-    renderDemoSession();
-    window.addEventListener('bag:pricesUpdated', renderDemoSession);
-
-    if (connectEl) connectEl.style.opacity = '0.9';
-
-    window.__bagSession = {
-      active: () => true,
-      get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
-      set: () => {},
-      spend(bag){
-        const b = getBal();
-        if (!(bag>0) || b < bag) return false;
-        setBal(b - bag); renderDemoSession(); return true;
-      },
-      credit(bag){
-        if (!(bag>0)) return false;
-        setBal(getBal() + bag); renderDemoSession(); return true;
-      }
-    };
-  })();
 
   // initial UI
   ccyLbl.textContent = currency; unitSpan.textContent = currency;
