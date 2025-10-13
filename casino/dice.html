@@ -747,27 +747,63 @@ function recomputeRollEnabled(){
   }
 
   let editingUsd = false;
-  function clampUsd(u){ if (!Number.isFinite(u)) return 0; if (u < 1) return 1; if (u > 2000) return 2000; return u; }
+
+  function clampUsd(u){
+    const n = Number(u);
+    if (!Number.isFinite(n)) return 0;
+    if (n < 1) return 1;
+    if (n > 2000) return 2000;
+    return Number(n.toFixed(2));
+  }
 
   function updateUsdFromBet(){
-    if (editingUsd) return;
+    if (editingUsd || !usdInput) return;
     const usd = stakeUsdEquivalent();
-    if (usdInput){ if (usd>0) usdInput.value = usd.toFixed(2); else usdInput.value = ''; }
+    usdInput.value = usd > 0 ? usd.toFixed(2) : '';
   }
+
   function updateBetFromUsd(){
+    if (!usdInput || !betInput) return;
+
     const raw = parseFloat(usdInput.value);
-    if (!(raw>0)) return;
+    if (!(raw > 0)) {
+      // Empty/invalid -> clear bet & previews
+      betInput.value = '';
+      updatePayoutPreview();
+      updateLimitUi();
+      return;
+    }
+
     const usd = clampUsd(raw);
-    if (usd !== raw){ usdInput.value = usd.toFixed(2); }
-    if (currentCurrency()==='XRP' && PRICES.xrpUsd>0){ betInput.value = (usd / PRICES.xrpUsd).toString(); }
-    else if (currentCurrency()==='BAG' && PRICES.bagUsd>0){ betInput.value = (usd / PRICES.bagUsd).toString(); }
-    updatePayoutPreview(); updateLimitUi();
+    if (usd !== raw) usdInput.value = usd.toFixed(2);
+
+    // Only convert when the needed price is available
+    if (currentCurrency() === 'XRP') {
+      if (PRICES.xrpUsd > 0) {
+        betInput.value = (usd / PRICES.xrpUsd).toFixed(6);
+      } else {
+        return; // prices not ready yet
+      }
+    } else {
+      if (PRICES.bagUsd > 0) {
+        betInput.value = (usd / PRICES.bagUsd).toFixed(6);
+      } else {
+        return; // prices not ready yet
+      }
+    }
+
+    clampIfNeeded(false);
+    updatePayoutPreview();
+    updateLimitUi();
   }
+
   usdInput.addEventListener('focus', ()=>{ editingUsd = true; });
-  usdInput.addEventListener('blur', ()=>{ editingUsd = false; updateBetFromUsd(); updateUsdFromBet(); });
   usdInput.addEventListener('input', ()=>{ editingUsd = true; updateBetFromUsd(); });
-  betInput.addEventListener('blur', ()=>{ updateUsdFromBet(); });
+  usdInput.addEventListener('blur',  ()=>{ editingUsd = false; updateBetFromUsd(); });
+
   betInput.addEventListener('input', ()=>{ clampIfNeeded(false); updatePayoutPreview(); updateUsdFromBet(); });
+  betInput.addEventListener('blur',  ()=>{ updateUsdFromBet(); });
+
 
   function updatePayoutPreview(){
     const s = stakeInBAG();
