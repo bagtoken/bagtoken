@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <!-- Xaman SDK (same as Dice) -->
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<!-- Demo mode ON by default (auto-switches off when wallet connects) -->
+<script>window.__BAG_FORCE_DEMO = true;</script>
 
 <style>
   *{box-sizing:border-box}
@@ -901,13 +903,15 @@ spinBtn.addEventListener('click', async ()=>{
 })();
 </script>
 
-<!-- Practice Mode Wrapper (same pattern as Dice) -->
+<!-- Practice Mode Wrapper (demo by default; auto-handoff on wallet connect/disconnect) -->
 <script>
 (function(){
+  // Always evaluate; we decide inside whether demo is active
   const qs = new URLSearchParams(location.search);
   const pathDemo = location.pathname.toLowerCase().includes('/demo');
-  const demoMode = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
-  if (!demoMode) return;
+
+  // Keep a reference to the live session object created by the TAB SESSION script
+  const liveSession = window.__bagSession;
 
   const $ = (s)=>document.querySelector(s);
   const statusEl  = $('#sessionStatus');
@@ -938,31 +942,11 @@ spinBtn.addEventListener('click', async ()=>{
       statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
-    if (startBtn) startBtn.style.display = 'none';
+    // (1) Keep Start Session visible in demo
+    if (startBtn) startBtn.style.display = 'inline-block';
     if (topUpBtn)  topUpBtn.style.display  = 'none';
     if (endBtn)    endBtn.style.display     = 'none';
   }
-  renderDemoSession();
-  window.addEventListener('bag:pricesUpdated', renderDemoSession);
-
-  if (connectEl) connectEl.style.opacity = '0.9';
-
-  window.__BAG_FORCE_DEMO = true; // allow spinning without on-ledger session
-
-  window.__bagSession = {
-    active: () => true,
-    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
-    set: () => {},
-    spend(bag){
-      const b = getBal();
-      if (!(bag>0) || b < bag) return false;
-      setBal(b - bag); renderDemoSession(); return true;
-    },
-    credit(bag){
-      if (!(bag>0)) return false;
-      setBal(getBal() + bag); renderDemoSession(); return true;
-    }
-  };
 
   function toast(msg){
     try{ if (window.__bagAudio) __bagAudio.scratch(); }catch(e){}
@@ -981,14 +965,58 @@ spinBtn.addEventListener('click', async ()=>{
     }catch{}
   }
 
+  // Demo session impl used by the reels code
+  const demoSession = {
+    active: () => true,
+    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
+    set: () => {},
+    spend(bag){
+      const b = getBal();
+      if (!(bag>0) || b < bag) return false;
+      setBal(b - bag); renderDemoSession(); return true;
+    },
+    credit(bag){
+      if (!(bag>0)) return false;
+      setBal(getBal() + bag); renderDemoSession(); return true;
+    }
+  };
+
+  function enableDemo(){
+    window.__BAG_FORCE_DEMO = true;               // reels can spin without live session
+    window.__bagSession = demoSession;            // swap in demo wallet/session
+    renderDemoSession();
+    if (connectEl) connectEl.style.opacity = '0.9';
+  }
+
+  function enableLive(){
+    window.__BAG_FORCE_DEMO = false;              // reels now require live session
+    if (liveSession) window.__bagSession = liveSession; // restore real session object
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    toast('Wallet connected — Live mode enabled');
+  }
+
+  // Demo is on by default OR when /demo or ?demo=1
+  const demoWanted = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
+  if (demoWanted) enableDemo();
+
+  // Update balances on price refresh while in demo
+  window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
+
+  // Friendly tips after each spin (demo only)
   window.addEventListener('bag:slotsResult', (ev)=>{
+    if (!window.__BAG_FORCE_DEMO) return;
     const d = ev?.detail || {};
     if (d.mult === 2.00)      toast('Jackpot pays 2× on-ledger. Connect when ready to play live');
     else if (d.mult === 1.25) toast('Win pays 1.25× on-ledger. Connect when ready to play live');
     else if (d.mult === 1.00) toast('Scratch returns 1.00×. Connect when ready to play live');
   });
+
+  // (2) Handoff rules
+  window.addEventListener('bag:walletConnected', enableLive);
+  window.addEventListener('bag:walletDisconnected', enableDemo);
 })();
 </script>
+
 
 <!-- Service worker (optional) -->
 <script>
