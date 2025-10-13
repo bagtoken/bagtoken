@@ -6,7 +6,7 @@
 <title>$BAG Plinko</title>
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-<script src="httpsaman.app/assets/cdn/xumm.min.js"></script>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
 <style>
   *{box-sizing:border-box}
@@ -72,8 +72,8 @@
   /* ===== Plinko visuals ===== */
   .stage{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:10px}
   .canvas-wrap{
-    position:relative;width:100%;max-width:720px; /* a bit larger */
-    aspect-ratio:3/4; /* taller board */
+    position:relative;width:100%;max-width:720px;
+    aspect-ratio:3/4;
     border-radius:14px;
     box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
     background: radial-gradient(120% 120% at 50% 0%, #0b2016 0%, #07120d 60%, #060a08 100%);
@@ -103,7 +103,7 @@
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
 
-    <!-- LEFT PANEL (unchanged UI) -->
+    <!-- LEFT PANEL -->
     <div class="panel mock" id="bagPlinko">
       <div id="demo-badge" style="display:none;position:relative;margin:6px 0 10px 0;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.3px;">
         <span style="padding:6px 10px;border:1px solid #aaa;border-radius:6px;opacity:.9;">PRACTICE MODE — No real bets or payouts</span>
@@ -206,7 +206,7 @@
       </div>
     </div>
 
-    <!-- RIGHT: Rules (unchanged) -->
+    <!-- RIGHT: Rules -->
     <div class="panel" style="padding:16px">
       <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
@@ -286,8 +286,8 @@
     const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
     nGain.connect(comp);
     nGain.gain.setValueAtTime(0.0001,now);
-    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    nGain.linearRampToValueAtTime(0.12,now+0.008);
+    nGain.exponentialRampToValueAtTime(0.0001,now+0.08);
     nSrc.start(now); nSrc.stop(now+0.09);
 
     const o=ac.createOscillator(), g=ac.createGain();
@@ -299,7 +299,6 @@
     o.start(now); o.stop(now+0.24);
   }
 
-  // keep trying to resume if user is active
   if(!watchdogTimer){
     watchdogTimer=setInterval(()=>{
       const ac=AC; if(!ac) return;
@@ -314,7 +313,6 @@
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
 
-  // one-time warmup on first user touch/click
   addEventListener('pointerdown', async function once(){
     removeEventListener('pointerdown', once, {capture:false});
     try{ await ensureInteractive(); await nudge(); }catch{}
@@ -324,9 +322,6 @@
 })();
 </script>
 
-
-<!-- Xaman / Session / Prices blocks unchanged above -->
-
 <!-- PLINKO GAME LOGIC -->
 <script>
 (function(){
@@ -334,7 +329,7 @@
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics / layout
+  // Physics / layout (small ball; tighter pegs)
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
@@ -374,7 +369,7 @@
 
   // State
   let balance=100, stake=1, lastTxt='—';
-  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, rafLive=false;
+  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0;
 
   function hud(){
     balLbl.textContent=balance.toFixed(2);
@@ -388,7 +383,7 @@
     hud();
   });
 
-  // Audio hooks (re-arm every time)
+  // Audio hooks
   async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
   async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
 
@@ -400,7 +395,7 @@
     return 3;
   }
 
-  // Price helper used only for the $1 min logic
+  // Price helper for $1 min logic
   function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
@@ -421,16 +416,13 @@
   // Click -> start a new round
   dropBtn.addEventListener('click', async ()=>{
     await clickSound();
-
-    // Reset stale state first
     clearRoundState();
 
-    // Min $1 check (allow in demo if prices not ready)
+    // Min $1 (allow in demo if prices not ready)
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    // Spend & UI
     balance = Math.max(0, balance - stake);
     lastTxt='—';
     resText.textContent='—';
@@ -439,13 +431,12 @@
     hud();
 
     startDrop();
-    ensureLoop();
   });
 
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
-    // varied entry so outcomes aren’t biased center-only
+    // varied entry
     const spread=(rightWall-leftWall)*0.30;
     const startOffset=(Math.random()-0.5)*spread;
     const initVx=(Math.random()-0.5)*1.2;
@@ -456,12 +447,15 @@
     safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  function ensureLoop(){
-    if(rafLive) return;
-    rafLive=true;
-    const tick = ()=>{ drawBoard(); if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); } requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  }
+  // Always-on RAF so board is visible immediately
+  (function raf(){
+    drawBoard();
+    if(ball && ball.alive){
+      stepBall();
+      drawBall(ball.x,ball.y);
+    }
+    requestAnimationFrame(raf);
+  })();
 
   // Extra safety: if physics finished but flags stuck, free the button
   setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ clearRoundState(); } }, 900);
@@ -594,9 +588,19 @@
 })();
 </script>
 
-
-
-
+<!-- Pricing/feedback listener -->
+<script>
+window.addEventListener('bag:pricesUpdated', ()=>{
+  const usd = (typeof stakeUsdEquivalent==='function') ? stakeUsdEquivalent() : 0;
+  const usdInput = document.getElementById('usdBet');
+  if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
+  const stateText = document.getElementById('stateText');
+  if (stateText && window.__PRICES__) {
+    stateText.textContent = (window.__PRICES__.source === 'live-amm') ? 'Live pricing ready' :
+                            (window.__PRICES__.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+  }
+});
+</script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
