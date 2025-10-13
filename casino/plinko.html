@@ -269,7 +269,7 @@
   const TOP_OFFSET = 110;
   const BOTTOM_OFFSET = 120;
 
-  // Canvas: fixed logical size (never re-sized in the loop)
+  // Canvas: fixed logical size (never resized in loop to avoid “disappearing”)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W = 640, H = 880;
@@ -281,7 +281,7 @@
   const topBoard = TOP_OFFSET;
   const bottomBoard = H - BOTTOM_OFFSET;
 
-  // Peg grid spans from near top to near bottom
+  // Peg grid spans nearly full height
   const PEG_ROWS = 15, PEG_COLS = 13;
   const pegSpacingX = (rightWall - leftWall - 40) / (PEG_COLS - 1);
   const pegSpacingY = (bottomBoard - topBoard - 60) / (PEG_ROWS - 1);
@@ -312,11 +312,11 @@
   function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
   betInput.addEventListener('input', ()=>{ stake=Math.max(1, parseInt(betInput.value||'1',10)); hud(); });
 
-  // Audio helpers — use existing engine every time
+  // Audio helpers — re-arm every click & on peg hits
   async function ensureAudio(){ try{ await window.__bagAudio?.ensureInteractive?.(); }catch{} }
-  function tick(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
+  async function tick(){ try{ await ensureAudio(); window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Celebration flash (Dice-like quick flash + pop)
+  // Dice-like quick celebration pop
   function winFlash(text, color){
     if (!celeEl) return;
     celeEl.textContent = text;
@@ -326,7 +326,7 @@
     setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
   }
 
-  // Strong house edge for emergency resolves
+  // Strong house edge for emergency resolves (when tabs throttle)
   function weightedSlotIndex(){
     const weights=[28,10,28,2,28,10,28]; // L, 1.2, L, 2x, L, 1.2, L
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
@@ -334,13 +334,11 @@
     return 3;
   }
 
-  // Full round reset
+  // Round state helpers
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
     ball=null; dropping=false; dropBtn.disabled=false;
   }
-
-  // Detect/abort any hung round before starting a new one
   function abortIfHung(){
     if (!dropping) return false;
     const hung = !ball || !ball.alive || (performance.now()-dropStartedAt>1200 && Math.abs(ball.vx||0)+Math.abs(ball.vy||0)<0.02);
@@ -348,14 +346,13 @@
     return false;
   }
 
-  // Drop handler
+  // Drop handler — HARD RESET before starting a new ball
   dropBtn.addEventListener('click', async ()=>{
-    // Always re-arm audio on click
-    await ensureAudio(); tick();
+    await ensureAudio(); // make sure audio context is running on user gesture
 
-    // If previous round is hung, abort it so we can start fresh
-    abortIfHung();
-    if (dropping) return; // still a legit active round
+    // Always start from a clean slate to prevent “invisible coin” / auto-resolve
+    clearRoundState();
+    abortIfHung(); // just in case a previous round is mid-hang
 
     // Spend stake and prep UI
     balance = Math.max(0, balance - stake);
@@ -382,7 +379,7 @@
     safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  // RAF loop (single forever; we never touch canvas size here)
+  // RAF loop (single forever; canvas size never touched here)
   (function loop(){
     drawBoard();
     if (ball && ball.alive){
@@ -390,7 +387,7 @@
       drawBall(ball.x, ball.y);
     }
     if (!ball && dropping){
-      // If physics concluded but something skipped resolve, unlock UI
+      // If physics concluded but resolve path skipped, unlock UI
       dropping=false; dropBtn.disabled=false;
     }
     requestAnimationFrame(loop);
