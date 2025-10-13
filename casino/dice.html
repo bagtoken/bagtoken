@@ -677,7 +677,7 @@
 
   const WALLET_KEY = 'bag_wallet_v1';
   let playLocked = true;
-  const DEMO_PLAY = true;
+  const DEMO_PLAY = false;
 
   function isWalletConnected(){ try { const w = JSON.parse(localStorage.getItem(WALLET_KEY) || 'null'); return !!(w && w.address); } catch { return false; } }
   function pricesReadyForCurrentCurrency(){ return currentCurrency()==='BAG' ? PRICES.bagUsd>0 : PRICES.xrpUsd>0; }
@@ -946,67 +946,91 @@ function recomputeRollEnabled(){
   }
 
 rollBtn.addEventListener('click', async ()=>{
-    // ✅ Demo override — allow rolling without wallet or session
-    const demoMode = true;
-    if (!demoMode && !(window.__bagSession && __bagSession.active())) {
+    // 🔒 live mode — require session & prices
+    if (!(window.__bagSession && __bagSession.active())) {
       const t=document.querySelector('#startSessionBtn'); if(t) t.focus();
       alert('Start a session first (one-time sign).');
       return;
     }
 
-
     try{ window.__bagAudio && __bagAudio.dice(); }catch(e){}
-if (!demoMode && !pricesReadyForCurrentCurrency()) return;
+
+    if (!pricesReadyForCurrentCurrency()) return;
 
     const usdEq = (function(){ const q=parseFloat(betInput.value||0)||0; if(!q) return 0;
       return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? q*PRICES.bagUsd : 0) : (PRICES.xrpUsd>0 ? q*PRICES.xrpUsd : 0); })();
-if (!demoMode && usdEq < 1){ return; }
+    if (usdEq < 1){ return; }
+
     const stakeBag = (function(){ const bet = Math.max(0, parseFloat(betInput.value||0)); if (!bet) return 0;
       if (currentCurrency()==='BAG') return bet; if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerXrp = PRICES.xrpUsd / PRICES.bagUsd; return bet * bagPerXrp; } return 0; })();
-let spent = true;
-if (!demoMode) {
-  const sess = __bagSession.get();
-  if (!(sess && sess.bag >= stakeBag && stakeBag > 0)) return;
-  spent = __bagSession.spend(stakeBag);
-  if (!spent) return;
-}
+
+    const sess = __bagSession.get();
+    if (!(sess && sess.bag >= stakeBag && stakeBag > 0)) return;
+    const spent = __bagSession.spend(stakeBag);
+    if (!spent) return;
 
     rollBtn.disabled=true;
-    const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
-    const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
-resetCube(dieA); resetCube(dieB);
-dieA.classList.add('rolling');
-setTimeout(()=>dieB.classList.add('rolling'), 120); // slight delay for realism
-    const a=(Math.random()*6|0)+1, b=(Math.random()*6|0)+1;
-    await new Promise(r=>setTimeout(r,900));
-    [dieA,dieB].forEach(c=>c.classList.remove('rolling')); pose(dieA,a); pose(dieB,b);
-    const total=a+b; document.getElementById('rollNumber').textContent=total; const rt=document.getElementById('rollText'); rt.classList.remove('win','lose');
 
-    const detail = { phase: point==null?'comeout':'point', total, kind:null, jackpot:false, stakeBag };
+    // 🔒 server-authoritative roll + settlement
+    try {
+      const res = await fetch('/api/roll', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          stake_bag: Number(stakeBag)||0,
+          phase: (point==null ? 'comeout' : 'point'),
+          point: point
+        })
+      });
+      if (!res.ok) throw new Error('server error');
+      const data = await res.json(); // { a,b,total,phase,kind,jackpot,paid_bag,new_point,usd, ui_text }
+      const { a,b,total,kind,jackpot,new_point,ui_text } = data;
 
-    if (point==null){
-      if (total===7 || total===11){
-        detail.kind='normal'; if ((Math.random()*100|0)===0){ detail.jackpot=true; }
-        rt.textContent=`Come-out WIN — ${total}`; rt.classList.add('win');
-        const payout = detail.jackpot ? (stakeBag*2.00) : (stakeBag*1.25); __bagSession.credit(payout); emitResult(detail);
-      } else if (total===2 || total===3 || total===12){
-        rt.textContent=`Come-out LOSE — ${total}`; rt.classList.add('lose');
-         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
-      } else { point=total; document.getElementById('pointVal').textContent=String(point);
-        document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Point phase — hit the Point before 7';
-        rt.textContent=`Point set to ${point}. Roll again.`; }
-    } else {
-      if (total===point){
-        detail.kind='point'; rt.textContent=`POINT WIN — ${point}`; rt.classList.add('win');
-        const payout = stakeBag*1.00; __bagSession.credit(payout); emitResult(detail);
-        point=null; document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
-      } else if (total===7){
-        rt.textContent=`LOSE — seven out`; rt.classList.add('lose');
-         try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
-        point=null; document.getElementById('pointBadge').style.display='none'; document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
-      } else { rt.textContent=`Roll again — need ${point} (rolled ${total})`; }
+      const dieA=document.getElementById('dieA'); const dieB=document.getElementById('dieB');
+      const resetCube=el=>{ el.className='cube'; }; const pose=(el,v)=>{ el.classList.add('show-'+v); };
+      resetCube(dieA); resetCube(dieB);
+      dieA.classList.add('rolling'); setTimeout(()=>dieB.classList.add('rolling'), 120);
+      await new Promise(r=>setTimeout(r,900));
+      dieA.classList.remove('rolling'); dieB.classList.remove('rolling');
+      pose(dieA, a); pose(dieB, b);
+
+      const rt = document.getElementById('rollText');
+      document.getElementById('rollNumber').textContent = total;
+      rt.classList.remove('win','lose');
+      rt.textContent = ui_text;
+      if (kind) rt.classList.add('win'); else if (total===7 && new_point==null && (data.phase==='point')) rt.classList.add('lose');
+      if (!kind && (data.phase==='comeout' && (total===2||total===3||total===12) || (data.phase==='point' && total===7))){
+        try{ window.__bagAudio && __bagAudio.nudge(); }catch(e){}
+      }
+
+      // update local point badge per server
+      point = new_point;
+      if (point==null){
+        document.getElementById('pointBadge').style.display='none';
+        document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
+      } else {
+        document.getElementById('pointVal').textContent=String(point);
+        document.getElementById('pointBadge').style.display='none';
+        document.getElementById('stateText').textContent='Point phase — hit the Point before 7';
+      }
+
+      // WIN overlay (unchanged)
+      const s = Number(stakeBag)||0;
+      const usd = (function(){ const q=parseFloat(betInput.value||0)||0;
+        return currentCurrency()==='BAG' ? (PRICES.bagUsd>0 ? q*PRICES.bagUsd : 0)
+                                         : (PRICES.xrpUsd>0 ? q*PRICES.xrpUsd : 0); })();
+      if (typeof window.showWin === 'function' && kind){
+        if (jackpot){ showWin({ message:'WIN', subtext:`+${(s*1.00).toFixed(4)} BAG · $${(usd*2).toFixed(2)}`, duration:8000 }); }
+        else if (kind==='normal'){ showWin({ message:'WIN', subtext:`+${(s*0.25).toFixed(4)} BAG · $${(usd*1.25).toFixed(2)}`, duration:6000 }); }
+        else if (kind==='point'){ showWin({ message:'POINT WIN', subtext:`PAYOUT ${(s*1.00).toFixed(4)} BAG`, duration:4000 }); }
+      }
+    } catch (e) {
+      // refund on failure
+      __bagSession.credit(stakeBag);
+      alert('We could not place your bet right now. No funds lost.');
+    } finally {
+      rollBtn.disabled=false;
     }
-    rollBtn.disabled=false;
   });
 
   document.getElementById('stateText').textContent='Come-out roll — 7/11 win · 2/3/12 lose';
