@@ -35,6 +35,7 @@
     background:linear-gradient(145deg,#fff,#f2f2f2);
     border:1px solid #d6d6d6; box-shadow:0 6px 16px rgba(0,0,0,.25);
     position:relative; user-select:none; display:flex; align-items:center; justify-content:center;
+    transition:transform .2s ease, opacity .2s ease;
   }
   .card.face-down{background:linear-gradient(145deg,#0d2217,#0b1b13); border-color:#173524}
   .badge{position:absolute;inset:auto 6px 6px auto;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:3px 6px;border-radius:6px;opacity:0;transform:translateY(4px)}
@@ -124,9 +125,7 @@
 <script>
 /* ---------------------------------------
    $BAG Poker — 5-Card Draw (Demo, 1 CPU)
-   Flow: Deal → Hold/Draw → Showdown
-   Payouts: Win 2×, Push refund, Lose 0×
-   Currency: $, XRP, BAG, clamped $1–$2000
+   Tens render as "10" visually
 --------------------------------------- */
 
 (() => {
@@ -161,6 +160,7 @@
   // ====== Sounds ======
   const AudioCtx = window.AudioContext||window.webkitAudioContext;
   const ctx = new AudioCtx();
+  function resumeAudio(){ if(ctx.state==='suspended') ctx.resume(); }
   function blip(freq=440,ms=70, type='triangle', gain=0.02){
     const o=ctx.createOscillator(), g=ctx.createGain();
     o.type=type; o.frequency.value=freq; g.gain.value=gain;
@@ -183,7 +183,8 @@
 
   // ====== Cards & dealing ======
   const SUITS = ['♠','♥','♦','♣'];
-  const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+  // Use '10' instead of 'T'
+  const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
   const RVAL  = Object.fromEntries(RANKS.map((r,i)=>[r,i+2])); // 2..14
 
   function newDeck(){
@@ -199,10 +200,10 @@
   function rankHand(cards){
     const vals = cards.map(c=>RVAL[c.r]).sort((a,b)=>a-b);
     const counts = {}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
-    const byCount = Object.entries(counts).sort((a,b)=>b[1]-a[1] || b[0]-a[0]); // [val,count]
+    const byCount = Object.entries(counts).sort((a,b)=>b[1]-a[1] || b[0]-a[0]);
     const isFlush = cards.every(c=>c.s===cards[0].s);
     let isStraight=false, high=vals[4];
-    if(vals.join(',')==='2,3,4,5,14'){ isStraight=true; high=5; }
+    if(vals.join(',')==='2,3,4,5,14'){ isStraight=true; high=5; } // A-2-3-4-5
     else if(vals[0]+4===vals[4] && new Set(vals).size===5){ isStraight=true; }
 
     const kind = byCount.map(x=>x[1]).join('');
@@ -213,7 +214,7 @@
     else if(isFlush){ cat=5; tiebreak=vals.slice().reverse(); }
     else if(isStraight){ cat=4; tiebreak=[high]; }
     else if(kind==='311'){ cat=3; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
-    else if(kind==='221'){ // two pair
+    else if(kind==='221'){
       const ps=byCount.filter(x=>x[1]===2).map(x=>+x[0]).sort((a,b)=>b-a);
       const kicker=vals.slice().reverse().find(v=>v!==ps[0]&&v!==ps[1]);
       tiebreak=[...ps, kicker];
@@ -233,7 +234,7 @@
     return 0;
   }
 
-  // ====== Table/Seats ======
+  // ====== Table/Seats and persistent DOM refs ======
   const aiRow = document.getElementById('aiRow');
   const playerRow = document.getElementById('playerRow');
   const btnDeal = document.getElementById('btnDeal');
@@ -242,7 +243,6 @@
   const chipEl = document.getElementById('chip');
   const confetti = document.getElementById('confetti');
   const ctx2 = confetti.getContext('2d');
-
   let W=0,H=0; function sizeCanvas(){ const r=confetti.parentElement.getBoundingClientRect(); W=r.width; H=r.height; confetti.width=W; confetti.height=H; }
   window.addEventListener('resize', sizeCanvas); sizeCanvas();
 
@@ -256,7 +256,8 @@
       const rank=document.createElement('div'); rank.className='rank';
       const suit=document.createElement('div'); suit.className='suit';
       const red = (face.s==='♥'||face.s==='♦');
-      rank.textContent = face.r;
+      // show 10 as "10"
+      rank.textContent = (face.r==='10') ? '10' : face.r;
       suit.textContent = face.s;
       rank.classList.add(red?'red':'black');
       suit.classList.add(red?'red':'black');
@@ -274,7 +275,7 @@
 
   let deck = [];
   let player = { hand:[], nodes:[] };
-  let bots = [{ name:'CPU', hand:[], nodes:[] }]; // single opponent
+  let bots = [{ name:'CPU', hand:[], nodes:[] }];
   let phase='IDLE'; // IDLE → DEALT → HOLD → DRAWN → SHOWDOWN
   let anteUsd=0;
 
@@ -308,7 +309,6 @@
     const tick=()=>{ if(i>=targetNodeList.length){ cb&&cb(); return; }
       const el=targetNodeList[i++]; el.style.transform='translateY(-8px)'; el.style.opacity='0';
       requestAnimationFrame(()=>{
-        el.style.transition='transform .2s ease, opacity .2s ease';
         el.style.transform='translateY(0)'; el.style.opacity='1';
         flipSfx();
         setTimeout(tick, 60);
@@ -318,6 +318,7 @@
   }
 
   function startDeal(){
+    resumeAudio();
     const usd = betToUsd();
     if(!(usd>=1)){ toast('Bet must be at least $1'); return; }
     anteUsd = usd;
@@ -419,11 +420,9 @@
       msg= top.who+' wins — '+handName(top.rank.cat);
     }
 
-    const highlight = (who)=>{
-      if(who==='You'){ player.nodes.forEach(n=>n.classList.add('winner-glow')); }
-      else{ aiRow.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow')); }
-    };
-    highlight(top.who);
+    if(top.who==='You'){ player.nodes.forEach(n=>n.classList.add('winner-glow')); }
+    else { aiRow.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow')); }
+
     statusEl.textContent = msg;
 
     const usd = anteUsd;
@@ -445,11 +444,6 @@
   }
 
   // ====== Celebrations ======
-  const confetti = document.getElementById('confetti');
-  const ctx2 = confetti.getContext('2d');
-  let W=0,H=0; function sizeCanvas(){ const r=confetti.parentElement.getBoundingClientRect(); W=r.width; H=r.height; confetti.width=W; confetti.height=H; }
-  window.addEventListener('resize', sizeCanvas); sizeCanvas();
-
   function confettiBurst(){
     const bits=[];
     for(let i=0;i<60;i++){
@@ -469,7 +463,6 @@
     step();
   }
   function chipFlash(){
-    const chipEl = document.getElementById('chip');
     chipEl.style.display='block'; chipEl.style.opacity='0'; chipEl.style.transform='translate(-50%, -10px) scale(.9)';
     requestAnimationFrame(()=>{
       chipEl.style.transition='transform .25s ease, opacity .25s ease';
@@ -482,11 +475,8 @@
   }
 
   // ====== Controls ======
-  const btnDeal = document.getElementById('btnDeal');
-  const btnDraw = document.getElementById('btnDraw');
-  const btnReset = document.getElementById('btnReset');
-
   btnDeal.addEventListener('click', ()=>{
+    resumeAudio();
     const usd = betToUsd();
     if(!(usd>=1)){ betEl.value = currentCurrency()==='USD'? '1.00' : usdToCurrency(1).toString(); }
     if(usd>2000){ betEl.value = currentCurrency()==='USD'? '2000.00' : usdToCurrency(2000).toString(); }
@@ -505,6 +495,10 @@
     if(usd>0){ betEl.value = usdToCurrency(usd).toString(); }
     document.getElementById('betHint').textContent = 'Min $1 — Max $2000';
   });
+
+  // Canvas size locals used by confetti
+  let W=0,H=0; function sizeCanvas(){ const r=confetti.parentElement.getBoundingClientRect(); W=r.width; H=r.height; confetti.width=W; confetti.height=H; }
+  window.addEventListener('resize', sizeCanvas); sizeCanvas();
 
   // ====== Init ======
   (function init(){
