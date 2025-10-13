@@ -228,95 +228,160 @@
   </div>
 </section>
 
-<!-- AUDIO ENGINE (unchanged except prewarm present) -->
+<!-- AUDIO ENGINE -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC = null, MASTER = null, lastInteractTs = 0, watchdogTimer = null;
-  function makeAC(){ if(!AudioCtx) return null; const ac=new AudioCtx(); const master=ac.createGain(); master.gain.value=0.28; master.connect(ac.destination); AC=ac; MASTER=master; ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); }; return ac; }
-  function getAC(){ if(AC && AC.state!=='closed') return AC; return makeAC(); }
-  function silentTick(ac){ const o=ac.createOscillator(); const g=ac.createGain(); g.gain.value=0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01); }
-  async function tryResume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } if(ac.state==='running'){ silentTick(ac); } }
-  function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
+
+  function makeAC(){
+    if(!AudioCtx) return null;
+    const ac = new AudioCtx();
+    const master = ac.createGain();
+    master.gain.value = 0.28;
+    master.connect(ac.destination);
+    AC = ac; MASTER = master;
+    ac.onstatechange = ()=>{ if (ac.state === 'suspended') tryResume(); };
+    return ac;
+  }
+  function getAC(){ if (AC && AC.state!=='closed') return AC; return makeAC(); }
+
+  function silentTick(ac){
+    try{
+      const o=ac.createOscillator(), g=ac.createGain();
+      g.gain.value=0.00001; o.connect(g).connect(MASTER);
+      o.start(); o.stop(ac.currentTime+0.01);
+    }catch{}
+  }
+
+  async function tryResume(){
+    const ac = getAC(); if(!ac) return;
+    if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} }
+    if(ac.state==='running'){ silentTick(ac); }
+  }
+
+  function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
-  function makeNoise(ac,dur=0.08){ const len=Math.max(1,Math.floor(dur*ac.sampleRate)); const buf=ac.createBuffer(1,len,ac.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9; const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0; const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g); return {src,g}; }
-  async function nudge(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ await tryResume(); return; } const now=ac.currentTime; const comp=ac.createDynamicsCompressor(); comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08; comp.connect(MASTER); const {src:nSrc,g:nGain}=makeNoise(ac,0.06); nGain.connect(comp); nGain.gain.setValueAtTime(0.0001,now); nGain.linearRampToValueAtTime(0.12,now+0.008); nGain.exponentialRampToValueAtTime(0.0001,now+0.08); nSrc.start(now); nSrc.stop(now+0.09); const o=ac.createOscillator(); const g=ac.createGain(); o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18); g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.10,now+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+0.22); o.connect(g).connect(comp); o.start(now); o.stop(now+0.24); }
-  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click']; INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
+
+  function makeNoise(ac,dur=0.08){
+    const len=Math.max(1,Math.floor(dur*ac.sampleRate));
+    const buf=ac.createBuffer(1,len,ac.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
+    const g=ac.createGain(); g.gain.value=0;
+    src.connect(bp).connect(g);
+    return {src,g};
+  }
+
+  async function nudge(){
+    const ac=getAC(); if(!ac) return;
+    if(ac.state!=='running'){ await tryResume(); return; }
+    const now=ac.currentTime;
+    const comp=ac.createDynamicsCompressor();
+    comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08;
+    comp.connect(MASTER);
+
+    const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
+    nGain.connect(comp);
+    nGain.gain.setValueAtTime(0.0001,now);
+    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
+    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    nSrc.start(now); nSrc.stop(now+0.09);
+
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18);
+    g.gain.setValueAtTime(0.0001,now);
+    g.gain.linearRampToValueAtTime(0.10,now+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
+    o.connect(g).connect(comp);
+    o.start(now); o.stop(now+0.24);
+  }
+
+  // keep trying to resume if user is active
+  if(!watchdogTimer){
+    watchdogTimer=setInterval(()=>{
+      const ac=AC; if(!ac) return;
+      const active = Date.now()-lastInteractTs < 30000;
+      if(active && ac.state==='suspended') tryResume();
+    },1500);
+  }
+
+  const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
+  INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
   addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
-  function startWatchdog(){ if(watchdogTimer) return; watchdogTimer=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30_000; if(active && ac.state==='suspended') tryResume(); },1500); }
-  startWatchdog();
-  addEventListener('pointerdown', async function once(){ removeEventListener('pointerdown', once, {capture:false}); try{ await ensureInteractive(); await nudge(); }catch{} }, {once:true});
-  window.__bagAudio={ensureInteractive,nudge};
+
+  // one-time warmup on first user touch/click
+  addEventListener('pointerdown', async function once(){
+    removeEventListener('pointerdown', once, {capture:false});
+    try{ await ensureInteractive(); await nudge(); }catch{}
+  }, {once:true});
+
+  window.__bagAudio = { ensureInteractive, nudge };
 })();
 </script>
+
 
 <!-- Xaman / Session / Prices blocks unchanged above -->
 
 <!-- PLINKO GAME LOGIC -->
 <script>
 (function(){
-  /* ===== Payout map (house edge) ===== */
+  /* House edge map */
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  /* ===== Physics & board ===== */
+  /* Physics & layout */
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-  const PEG_R = 5;
-  const BALL_R = 6;          // smaller coin
-  const WALL_PAD = 24;
-  const TOP_OFFSET = 110;
-  const BOTTOM_OFFSET = 120;
+  const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-  // Canvas: fixed logical size (never resized in loop to avoid “disappearing”)
+  // Canvas: fixed logical size (avoid per-frame resizes)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const W = 640, H = 880;
-  canvas.width = W; canvas.height = H;
+  const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Geometry
-  const leftWall  = WALL_PAD;
-  const rightWall = W - WALL_PAD;
-  const topBoard = TOP_OFFSET;
-  const bottomBoard = H - BOTTOM_OFFSET;
+  // Geometry (centered)
+  const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
+  const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // Peg grid spans nearly full height
-  const PEG_ROWS = 15, PEG_COLS = 13;
-  const pegSpacingX = (rightWall - leftWall - 40) / (PEG_COLS - 1);
-  const pegSpacingY = (bottomBoard - topBoard - 60) / (PEG_ROWS - 1);
-
-  const pegs = [];
-  for (let r = 0; r < PEG_ROWS; r++){
-    const off = (r % 2 === 0) ? 0 : pegSpacingX / 2;
-    for (let c = 0; c < PEG_COLS; c++){
-      const x = leftWall + 20 + c * pegSpacingX + off;
-      if (x <= leftWall + PEG_R || x >= rightWall - PEG_R) continue;
-      const y = topBoard + r * pegSpacingY;
-      pegs.push({ x, y, r: PEG_R });
+  // Peg grid spans down the board
+  const PEG_ROWS=15, PEG_COLS=13;
+  const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
+  const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
+  const pegs=[];
+  for(let r=0;r<PEG_ROWS;r++){
+    const off=(r%2===0)?0:pegSpacingX/2;
+    for(let c=0;c<PEG_COLS;c++){
+      const x=leftWall+20+c*pegSpacingX+off;
+      if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
+      const y=topBoard+r*pegSpacingY;
+      pegs.push({x,y,r:PEG_R});
     }
   }
 
   // Slots
-  const slotWidth = (rightWall - leftWall) / SLOTS;
-  const slotX = i => leftWall + i * slotWidth;
+  const slotWidth=(rightWall-leftWall)/SLOTS;
+  const slotX=i=>leftWall+i*slotWidth;
 
   // UI
-  const $ = id => document.getElementById(id);
+  const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
   const betInput=$('demoBet');
 
   let balance=100, stake=1, lastTxt='—';
-  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, dropStartedAt=0;
+  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, dropStartedAt=0, rafStarted=false;
 
   function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
   betInput.addEventListener('input', ()=>{ stake=Math.max(1, parseInt(betInput.value||'1',10)); hud(); });
 
-  // Audio helpers — re-arm every click & on peg hits
-  async function ensureAudio(){ try{ await window.__bagAudio?.ensureInteractive?.(); }catch{} }
-  async function tick(){ try{ await ensureAudio(); window.__bagAudio?.nudge?.(); }catch{} }
+  /* ===== Audio hooks (re-arm EVERY time) ===== */
+  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+  async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Dice-like quick celebration pop
+  /* Celebration (matches Dice pop) */
   function winFlash(text, color){
     if (!celeEl) return;
     celeEl.textContent = text;
@@ -326,144 +391,136 @@
     setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
   }
 
-  // Strong house edge for emergency resolves (when tabs throttle)
+  /* Emergency weighted resolve to favor house if tab throttles */
   function weightedSlotIndex(){
-    const weights=[28,10,28,2,28,10,28]; // L, 1.2, L, 2x, L, 1.2, L
+    const weights=[28,10,28,2,28,10,28];
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
     for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
     return 3;
   }
 
-  // Round state helpers
+  /* Round state */
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
     ball=null; dropping=false; dropBtn.disabled=false;
   }
-  function abortIfHung(){
-    if (!dropping) return false;
-    const hung = !ball || !ball.alive || (performance.now()-dropStartedAt>1200 && Math.abs(ball.vx||0)+Math.abs(ball.vy||0)<0.02);
-    if (hung){ clearRoundState(); return true; }
-    return false;
-  }
 
-  // Drop handler — HARD RESET before starting a new ball
+  /* Drop Handler — HARD RESET first */
   dropBtn.addEventListener('click', async ()=>{
-    await ensureAudio(); // make sure audio context is running on user gesture
+    await clickSound();
 
-    // Always start from a clean slate to prevent “invisible coin” / auto-resolve
+    // Reset any stale state (fixes invisible coin & locked button)
     clearRoundState();
-    abortIfHung(); // just in case a previous round is mid-hang
 
-    // Spend stake and prep UI
+    // Spend and update UI
     balance = Math.max(0, balance - stake);
     lastTxt='—'; resText.textContent='—';
     celeEl?.classList.remove('show');
     hud();
 
     startDrop();
+    ensureLoop(); // guarantee RAF is running
   });
 
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
-    dropStartedAt = performance.now();
+    dropStartedAt=performance.now();
 
-    // Vary entry so paths aren’t identical
-    const spread = (rightWall - leftWall) * 0.30;
-    const startOffset = (Math.random() - 0.5) * spread;
-    const initVx = (Math.random() - 0.5) * 1.2;
+    // varied entry
+    const spread=(rightWall-leftWall)*0.30;
+    const startOffset=(Math.random()-0.5)*spread;
+    const initVx=(Math.random()-0.5)*1.2;
 
-    ball = { x:(leftWall+rightWall)/2 + startOffset, y: topBoard - 30, vx:initVx, vy:0.25, r:BALL_R, alive:true };
+    ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.25, r:BALL_R, alive:true };
 
-    // Failsafe resolve if browser throttles frames
+    // failsafe
     clearTimeout(safetyTimer);
-    safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
+    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  // RAF loop (single forever; canvas size never touched here)
-  (function loop(){
+  function ensureLoop(){
+    if(rafStarted) return;
+    rafStarted=true;
+    requestAnimationFrame(loop);
+  }
+
+  function loop(){
     drawBoard();
-    if (ball && ball.alive){
+    if(ball && ball.alive){
       stepBall();
       drawBall(ball.x, ball.y);
     }
-    if (!ball && dropping){
-      // If physics concluded but resolve path skipped, unlock UI
+    if(!ball && dropping){
+      // physics concluded but didn't unlock
       dropping=false; dropBtn.disabled=false;
     }
     requestAnimationFrame(loop);
-  })();
+  }
+  ensureLoop(); // start once
 
-  // Extra watchdog
-  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) clearRoundState(); }, 900);
+  // watchdog
+  setInterval(()=>{ if(dropping && (!ball || !ball.alive)) clearRoundState(); }, 900);
 
   function stepBall(){
-    // Integrate
+    // integrate
     ball.vy += GRAVITY;
-    ball.x  += ball.vx;  ball.y += ball.vy;
+    ball.x  += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
-    ball.vx += (Math.random() - 0.5) * 0.02; // micro-jitter
+    ball.vx += (Math.random()-0.5)*0.02;
 
-    // Walls
-    if (ball.x - BALL_R < leftWall){  ball.x = leftWall + BALL_R;   ball.vx =  Math.abs(ball.vx)*RESTITUTION; tick(); }
-    if (ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R;  ball.vx = -Math.abs(ball.vx)*RESTITUTION; tick(); }
-    if (ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
+    // walls
+    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegSound(); }
+    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegSound(); }
+    if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
-    // Pegs
-    const now = performance.now();
-    for (const p of pegs){
+    // pegs
+    const now=performance.now();
+    for(const p of pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
       const dist=Math.hypot(dx,dy) || 0.0001;
       const minD=BALL_R + p.r;
-      if (dist < minD){
-        const nx = dx / dist, ny = dy / dist;
-        ball.x += nx * (minD - dist);
-        ball.y += ny * (minD - dist);
-        const vDot = ball.vx*nx + ball.vy*ny;
-        ball.vx = (ball.vx - 2*vDot*nx) * RESTITUTION;
-        ball.vy = (ball.vy - 2*vDot*ny) * RESTITUTION;
-        if (now - lastPegTick > 55){ lastPegTick = now; tick(); }
+      if(dist < minD){
+        const nx=dx/dist, ny=dy/dist;
+        ball.x += nx*(minD-dist);
+        ball.y += ny*(minD-dist);
+        const vDot=ball.vx*nx + ball.vy*ny;
+        ball.vx = (ball.vx - 2*vDot*nx)*RESTITUTION;
+        ball.vy = (ball.vy - 2*vDot*ny)*RESTITUTION;
+        if(now - lastPegTick > 55){ lastPegTick=now; pegSound(); }
       }
     }
 
-    // Landing line
+    // land
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
     }
-    // Off-screen guard
     if (ball.y > H + 200){ resolveByIndex(boundarySlotIndex(ball.x)); }
   }
 
   function boundarySlotIndex(x){
-    const clamped = Math.min(rightWall - 1, Math.max(leftWall + 1, x));
+    const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
     const idx = Math.floor((clamped - leftWall) / slotWidth);
-    return Math.max(0, Math.min(SLOTS - 1, idx));
+    return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
   function resolveByIndex(idx){
-    if (!ball){ clearRoundState(); return; }
+    if(!ball){ clearRoundState(); return; }
     ball.alive=false; ball=null; clearTimeout(safetyTimer);
-
-    const rule = PAY_MAP[idx] ?? 'L';
     dropping=false; dropBtn.disabled=false;
     celeEl?.classList.remove('show');
 
+    const rule = PAY_MAP[idx] ?? 'L';
     if (rule === 'L'){
-      lastTxt='Scratch'; resText.textContent='Scratch (lose)';
-      tick(); // dull thud
+      lastTxt='Scratch'; resText.textContent='Scratch (lose)'; pegSound();
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
-      if (mult === 2){
-        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-        winFlash(resText.textContent, '#ffd700');
-      } else {
-        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
-        winFlash(resText.textContent, '#baf2cd');
-      }
+      if (mult === 2){ lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×'; winFlash(resText.textContent, '#ffd700'); }
+      else { lastTxt='Win 1.2×'; resText.textContent='Win 1.2×'; winFlash(resText.textContent, '#baf2cd'); }
       try{ window.__bagSession?.credit?.(payout); }catch{}
-      tick(); // celebratory ping
+      pegSound();
     }
     hud();
   }
@@ -471,7 +528,6 @@
   /* ===== Rendering ===== */
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
-
     // frame
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
@@ -479,20 +535,20 @@
 
     // pegs
     ctx.fillStyle='#704d1d';
-    for (const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
     // floor & dividers
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
-    for (let i=1;i<SLOTS;i++){
+    for(let i=1;i<SLOTS;i++){
       const x = slotX(i);
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
     // labels
-    const centers = Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
-    for (let i=0;i<SLOTS;i++){
+    for(let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
@@ -501,15 +557,14 @@
   }
 
   function drawBall(x,y){
-    const r = BALL_R;
-    const g = ctx.createRadialGradient(x-3,y-3,2,x,y,r);
+    const r=BALL_R;
+    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
     g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle = g;
+    ctx.fillStyle=g;
     ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // Initial HUD
   hud();
 })();
 </script>
