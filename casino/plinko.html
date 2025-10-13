@@ -80,6 +80,9 @@
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
+
+  /* Footer fix */
+  .footer{ position:relative; z-index:2; clear:both; }
 </style>
 </head>
 <body>
@@ -722,18 +725,21 @@
 
   async function pegKnock(){ try{ if (window.__bagAudio) { __bagAudio.nudge(); } }catch{} }
 
-  /* ======== PATCH 1: updated click handler ======== */
-  dropBtn.addEventListener('click', ()=>{
+  /* ======== PATCH 1: updated click handler (sound + robust repeat) ======== */
+  dropBtn.addEventListener('click', async ()=>{
     if (dropping) return;
 
+    // start audio context & give a small nudge
+    try { await (window.__bagAudio?.ensureInteractive?.()); window.__bagAudio?.nudge?.(); } catch {}
+
     const usd = stakeUsdEquivalent();
-    // If prices aren't ready (usd === 0), allow play as long as stake >= 1 in demo
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){
       resText.textContent = 'Min $1';
       return;
     }
 
+    dropBtn.disabled = true; // prevent double tap while live
     balance = Math.max(0, balance - stake);
     lastTxt = '—';
     resText.textContent = '—';
@@ -757,12 +763,12 @@
       if(ball.y > H + 200 || ts - dropStartedAt > 12000){ resolveByIndex(boundarySlotIndex(ball.x)); }
     }
     /* ======== PATCH 3: extra guard so flag can't get stuck ======== */
-    if (!ball && dropping) dropping = false;
+    if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
 
     requestAnimationFrame(loop);
   })(performance.now());
 
-  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) dropping=false; }, 800);
+  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { dropping=false; dropBtn.disabled=false; } }, 800);
 
   function stepBall(ts){
     ball.frames++;
@@ -809,11 +815,11 @@
 
   function resolveByIndex(idx){
     if (!ball) return;
-    ball.alive=false; 
-    ball=null; 
+    ball.alive=false;
+    ball=null;
     dropping=false;
-    /* ======== PATCH 2: ensure flag clears after result ======== */
-    setTimeout(()=>{ dropping=false; }, 0);
+    /* ======== PATCH 2: ensure flag clears & button re-enables ======== */
+    setTimeout(()=>{ dropping=false; dropBtn.disabled=false; }, 0);
 
     const rule = PAY_MAP[idx] ?? 'L';
     if(rule==='L'){
@@ -940,7 +946,7 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('gesturestart', e=>e.preventDefault(), {passive:false});
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
