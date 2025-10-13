@@ -257,19 +257,19 @@
 <!-- PLINKO GAME LOGIC -->
 <script>
 (function(){
-  /* ===== Pay map (house edge) ===== */
+  /* ===== Payout map (house edge) ===== */
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
   /* ===== Physics & board ===== */
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-  const PEG_R = 5;                 // small pegs
-  const BALL_R = 7;                // small coin
-  const WALL_PAD = 24;             // fixed padding so board is centered
+  const PEG_R = 5;
+  const BALL_R = 6;          // smaller coin
+  const WALL_PAD = 24;
   const TOP_OFFSET = 110;
   const BOTTOM_OFFSET = 120;
 
-  // Canvas (fixed logical size to avoid wiping during play)
+  // Canvas: fixed logical size (never re-sized in the loop)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W = 640, H = 880;
@@ -281,8 +281,8 @@
   const topBoard = TOP_OFFSET;
   const bottomBoard = H - BOTTOM_OFFSET;
 
-  // Peg grid spans the board nicely
-  const PEG_ROWS = 14, PEG_COLS = 13;
+  // Peg grid spans from near top to near bottom
+  const PEG_ROWS = 15, PEG_COLS = 13;
   const pegSpacingX = (rightWall - leftWall - 40) / (PEG_COLS - 1);
   const pegSpacingY = (bottomBoard - topBoard - 60) / (PEG_ROWS - 1);
 
@@ -303,120 +303,128 @@
 
   // UI
   const $ = id => document.getElementById(id);
-  const balLbl = $('balLbl'), betLbl = $('betLbl'), lastLbl = $('lastLbl'), resText = $('resText'), dropBtn = $('dropBtn'), celeEl = $('cele');
-  const betInput = $('demoBet');
+  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
+  const betInput=$('demoBet');
 
-  let balance = 100, stake = 1, lastTxt = '—';
-  let dropping = false, ball = null, safetyTimer = null, lastPegTick = 0;
+  let balance=100, stake=1, lastTxt='—';
+  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, dropStartedAt=0;
 
-  function hud(){ balLbl.textContent = balance.toFixed(2); betLbl.textContent = stake; lastLbl.textContent = lastTxt; }
-  betInput.addEventListener('input', ()=>{ stake = Math.max(1, parseInt(betInput.value||'1',10)); hud(); });
+  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
+  betInput.addEventListener('input', ()=>{ stake=Math.max(1, parseInt(betInput.value||'1',10)); hud(); });
 
-  // Sound helpers (use your existing engine)
+  // Audio helpers — use existing engine every time
   async function ensureAudio(){ try{ await window.__bagAudio?.ensureInteractive?.(); }catch{} }
-  function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
+  function tick(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Weighted fallback (rare 2x)
+  // Celebration flash (Dice-like quick flash + pop)
+  function winFlash(text, color){
+    if (!celeEl) return;
+    celeEl.textContent = text;
+    celeEl.style.color = color || '#ffd700';
+    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
+    celeEl.classList.add('show');
+    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
+  }
+
+  // Strong house edge for emergency resolves
   function weightedSlotIndex(){
-    const weights=[28,10,28,2,28,10,28]; // strong house edge around center jackpot
+    const weights=[28,10,28,2,28,10,28]; // L, 1.2, L, 2x, L, 1.2, L
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
     for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
     return 3;
   }
 
-  // Clean reset between rounds (prevents invisible-ball & stuck button)
+  // Full round reset
   function clearRoundState(){
-    clearTimeout(safetyTimer);
-    safetyTimer = null;
-    dropping = false;
-    ball = null;
-    dropBtn.disabled = false;
+    clearTimeout(safetyTimer); safetyTimer=null;
+    ball=null; dropping=false; dropBtn.disabled=false;
+  }
+
+  // Detect/abort any hung round before starting a new one
+  function abortIfHung(){
+    if (!dropping) return false;
+    const hung = !ball || !ball.alive || (performance.now()-dropStartedAt>1200 && Math.abs(ball.vx||0)+Math.abs(ball.vy||0)<0.02);
+    if (hung){ clearRoundState(); return true; }
+    return false;
   }
 
   // Drop handler
   dropBtn.addEventListener('click', async ()=>{
-    if (dropping) return;
+    // Always re-arm audio on click
+    await ensureAudio(); tick();
 
-    // Always resume audio on every user click (iOS/desktop)
-    await ensureAudio();
-    try{ window.__bagAudio?.nudge?.(); }catch{}
+    // If previous round is hung, abort it so we can start fresh
+    abortIfHung();
+    if (dropping) return; // still a legit active round
 
-    // Spend stake + UI
+    // Spend stake and prep UI
     balance = Math.max(0, balance - stake);
-    lastTxt = '—';
-    resText.textContent = '—';
+    lastTxt='—'; resText.textContent='—';
     celeEl?.classList.remove('show');
     hud();
 
-    // Fresh start
-    clearRoundState();
     startDrop();
   });
 
   function startDrop(){
-    dropping = true;
+    dropping=true; dropBtn.disabled=true;
+    dropStartedAt = performance.now();
 
-    // Vary entry (avoid same path)
+    // Vary entry so paths aren’t identical
     const spread = (rightWall - leftWall) * 0.30;
     const startOffset = (Math.random() - 0.5) * spread;
     const initVx = (Math.random() - 0.5) * 1.2;
 
-    ball = { x: (leftWall + rightWall)/2 + startOffset, y: topBoard - 30, vx: initVx, vy: 0.2, r: BALL_R, alive: true };
+    ball = { x:(leftWall+rightWall)/2 + startOffset, y: topBoard - 30, vx:initVx, vy:0.25, r:BALL_R, alive:true };
 
-    // Safety resolve if browser throttles frames
+    // Failsafe resolve if browser throttles frames
     clearTimeout(safetyTimer);
-    safetyTimer = setTimeout(()=>{ if (dropping) resolveByIndex(weightedSlotIndex()); }, 9000);
+    safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  // Main loop (single RAF forever)
+  // RAF loop (single forever; we never touch canvas size here)
   (function loop(){
     drawBoard();
     if (ball && ball.alive){
       stepBall();
       drawBall(ball.x, ball.y);
     }
-    // If anything killed the ball unexpectedly, unlock UI to allow retry
     if (!ball && dropping){
-      dropping = false;
-      dropBtn.disabled = false;
+      // If physics concluded but something skipped resolve, unlock UI
+      dropping=false; dropBtn.disabled=false;
     }
     requestAnimationFrame(loop);
   })();
 
-  // Extra guard against stuck states
-  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { clearRoundState(); } }, 800);
+  // Extra watchdog
+  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) clearRoundState(); }, 900);
 
   function stepBall(){
     // Integrate
     ball.vy += GRAVITY;
     ball.x  += ball.vx;  ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
-
-    // Tiny horizontal jitter so it doesn’t deadlock on pegs
-    ball.vx += (Math.random() - 0.5) * 0.02;
+    ball.vx += (Math.random() - 0.5) * 0.02; // micro-jitter
 
     // Walls
-    if (ball.x - BALL_R < leftWall){  ball.x = leftWall + BALL_R;   ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
-    if (ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R;  ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+    if (ball.x - BALL_R < leftWall){  ball.x = leftWall + BALL_R;   ball.vx =  Math.abs(ball.vx)*RESTITUTION; tick(); }
+    if (ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R;  ball.vx = -Math.abs(ball.vx)*RESTITUTION; tick(); }
     if (ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
     // Pegs
     const now = performance.now();
     for (const p of pegs){
-      const dx = ball.x - p.x, dy = ball.y - p.y;
-      const dist = Math.hypot(dx,dy) || 0.0001;
-      const minD = BALL_R + p.r;
+      const dx=ball.x-p.x, dy=ball.y-p.y;
+      const dist=Math.hypot(dx,dy) || 0.0001;
+      const minD=BALL_R + p.r;
       if (dist < minD){
-        // separate
         const nx = dx / dist, ny = dy / dist;
         ball.x += nx * (minD - dist);
         ball.y += ny * (minD - dist);
-        // reflect
         const vDot = ball.vx*nx + ball.vy*ny;
         ball.vx = (ball.vx - 2*vDot*nx) * RESTITUTION;
         ball.vy = (ball.vy - 2*vDot*ny) * RESTITUTION;
-        // throttled tick
-        if (now - lastPegTick > 55){ lastPegTick = now; pegKnock(); }
+        if (now - lastPegTick > 55){ lastPegTick = now; tick(); }
       }
     }
 
@@ -437,49 +445,49 @@
 
   function resolveByIndex(idx){
     if (!ball){ clearRoundState(); return; }
-    ball.alive = false; ball = null;
-    clearTimeout(safetyTimer);
+    ball.alive=false; ball=null; clearTimeout(safetyTimer);
 
     const rule = PAY_MAP[idx] ?? 'L';
-    dropping = false;
-    dropBtn.disabled = false;
+    dropping=false; dropBtn.disabled=false;
     celeEl?.classList.remove('show');
 
     if (rule === 'L'){
-      lastTxt = 'Scratch';
-      resText.textContent = 'Scratch (lose)';
-      try{ window.__bagAudio?.nudge?.(); }catch{}
+      lastTxt='Scratch'; resText.textContent='Scratch (lose)';
+      tick(); // dull thud
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
-      if (mult === 2){ lastTxt = 'Jackpot 2×'; resText.textContent = '🎉 Jackpot 2×'; celeEl.style.color = '#ffd700'; }
-      else { lastTxt = 'Win 1.2×'; resText.textContent = 'Win 1.2×'; celeEl.style.color = '#baf2cd'; }
+      if (mult === 2){
+        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
+        winFlash(resText.textContent, '#ffd700');
+      } else {
+        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
+        winFlash(resText.textContent, '#baf2cd');
+      }
       try{ window.__bagSession?.credit?.(payout); }catch{}
-      celeEl.textContent = resText.textContent;
-      celeEl.classList.add('show');
-      setTimeout(()=> celeEl.classList.remove('show'), 1200);
-      try{ window.__bagAudio?.nudge?.(); }catch{}
+      tick(); // celebratory ping
     }
     hud();
   }
 
-  // Draw
+  /* ===== Rendering ===== */
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
-    // background frame
-    ctx.fillStyle = '#0b1b13'; ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle = '#1c3b27'; ctx.lineWidth = 4;
+
+    // frame
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
     ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
 
     // pegs
-    ctx.fillStyle = '#704d1d';
+    ctx.fillStyle='#704d1d';
     for (const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
     // floor & dividers
-    ctx.strokeStyle = '#2a4d38'; ctx.lineWidth = 3;
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
-    for(let i=1;i<SLOTS;i++){
+    for (let i=1;i<SLOTS;i++){
       const x = slotX(i);
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
@@ -487,7 +495,7 @@
     // labels
     const centers = Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
-    for(let i=0;i<SLOTS;i++){
+    for (let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
@@ -501,13 +509,14 @@
     g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // initial HUD
+  // Initial HUD
   hud();
 })();
 </script>
+
 
 
 
