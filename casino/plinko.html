@@ -263,8 +263,8 @@
 
   /* ===== PHYSICS ===== */
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-  const PEG_R = 4;        // smaller peg
-  const BALL_R = 3.5;     // 🔻 tiny coin
+  const PEG_R = 4;
+  const BALL_R = 3.5;                 // small, on-theme coin
   const WALL_PAD_PCT = 0.08;
 
   const canvas = document.getElementById('game');
@@ -276,11 +276,11 @@
     const rect = canvas.getBoundingClientRect();
     W = Math.round(rect.width); H = Math.round(rect.height);
     if (canvas.width !== W*dpr || canvas.height !== H*dpr){
-      canvas.width=W*dpr; canvas.height=H*dpr;
+      canvas.width = W*dpr; canvas.height = H*dpr;
     }
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,W,H);
-    ctx.imageSmoothingEnabled=true;
+    ctx.imageSmoothingEnabled = true;
   }
 
   function leftWall(){return W*WALL_PAD_PCT;}
@@ -309,128 +309,214 @@
   function slotWidth(){return (rightWall()-leftWall())/SLOTS;}
   const slotX=i=>leftWall()+i*slotWidth();
 
-  /* ===== UI ELEMENTS ===== */
+  /* ===== UI ===== */
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
   const betInput=$('demoBet');
-  let balance=100, stake=1, lastTxt='—', dropping=false, ball=null, safetyTimer=null;
 
-  function hud(){balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt;}
+  let balance=100, stake=1, lastTxt='—';
+  let dropping=false, ball=null, safetyTimer=null;
 
-  betInput.addEventListener('input',()=>{stake=Math.max(1,parseInt(betInput.value)||1);hud();});
+  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
+  betInput.addEventListener('input',()=>{ stake=Math.max(1,parseInt(betInput.value)||1); hud(); });
 
-  /* ===== SOUND ===== */
-  const audio=(()=>{const ctx=new (window.AudioContext||window.webkitAudioContext)();const g=ctx.createGain();g.connect(ctx.destination);g.gain.value=0.25;
-    function tone(f,d=0.08){const o=ctx.createOscillator();const gn=ctx.createGain();o.type='sine';o.frequency.value=f;gn.gain.setValueAtTime(.15,ctx.currentTime);
-      gn.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+d);o.connect(gn).connect(g);o.start();o.stop(ctx.currentTime+d);}
-    return{ctx,knock:()=>tone(440,0.05),win:()=>tone(660,0.3)};})();
-  addEventListener('pointerdown',()=>audio.ctx.resume(),{once:true,passive:true});
+  /* ===== SOUND (resume on EVERY click) ===== */
+  const audio=(()=>{
+    const AC = new (window.AudioContext||window.webkitAudioContext)();
+    const master = AC.createGain(); master.gain.value=0.25; master.connect(AC.destination);
+    function tick(f=440, d=0.06, g0=0.14){
+      const o=AC.createOscillator(), g=AC.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(g0, AC.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+      o.connect(g).connect(master); o.start(); o.stop(AC.currentTime + d);
+    }
+    return { ctx: AC, knock:()=>tick(440,0.05,0.12), win:()=>tick(660,0.28,0.16) };
+  })();
+  addEventListener('pointerdown', ()=>audio.ctx.resume(), { passive:true });
 
-  function pegKnock(){try{audio.knock();}catch{}}
-  function winSound(){try{audio.win();}catch{}}
+  function pegKnock(){ try{ audio.knock(); }catch{} }
+  function winSound(){ try{ audio.win(); }catch{} }
 
-  /* ===== DROP ===== */
+  /* ===== Odds for emergency resolves ===== */
   function weightedSlotIndex(){
-    const weights=[30,10,30,2,30,10,30]; // rare 2x
-    let t=weights.reduce((a,b)=>a+b,0),r=Math.random()*t;
-    for(let i=0;i<weights.length;i++){r-=weights[i];if(r<=0)return i;}return 3;
+    const weights=[30,10,30,2,30,10,30]; // strong house edge, rare 2x
+    let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
+    return 3;
   }
 
-  dropBtn.addEventListener('click',()=>{
-    if(dropping)return;
-    audio.ctx.resume();
-    dropBtn.disabled=true;
-    balance=Math.max(0,balance-stake);
-    lastTxt='—';resText.textContent='—';celeEl.classList.remove('show');hud();
+  /* ===== Drop handler (hard resets every time) ===== */
+  function hardResetFlags(){
+    clearTimeout(safetyTimer);
+    dropping = false;
+    dropBtn.disabled = false;
+  }
+
+  dropBtn.addEventListener('click', ()=>{
+    // Make sure audio is running every click (iOS/desktop)
+    audio.ctx.resume().catch(()=>{});
+
+    if (dropping) return;
+
+    // Full reset before we start a new run (prevents “invisible coin”)
+    hardResetFlags();
+    ball = null;
+
+    // Spend stake + UI
+    balance = Math.max(0, balance - stake);
+    lastTxt = '—'; resText.textContent = '—';
+    celeEl?.classList.remove('show');
+    hud();
+
     startDrop();
   });
 
   function startDrop(){
-    dropping=true;
+    dropping = true;
+
     const spread=(rightWall()-leftWall())*0.3;
     const startOffset=(Math.random()-.5)*spread;
     const initVx=(Math.random()-.5)*1.1;
-    ball={x:(leftWall()+rightWall())/2+startOffset,y:topBoard()-20,vx:initVx,vy:0.2,r:BALL_R,alive:true};
+
+    // fresh coin every time
+    ball = { x:(leftWall()+rightWall())/2 + startOffset, y:topBoard()-20, vx:initVx, vy:0.2, r:BALL_R, alive:true, born:performance.now() };
+
+    // safety resolve if RAF throttles
     clearTimeout(safetyTimer);
-    safetyTimer=setTimeout(()=>{if(dropping)resolveByIndex(weightedSlotIndex());},9000);
+    safetyTimer = setTimeout(()=>{ if(dropping) resolveByIndex(weightedSlotIndex()); }, 9000);
+
+    // tiny start tick so you hear “something” immediately
+    pegKnock();
   }
 
+  /* ===== Main loop (single RAF forever) ===== */
   (function loop(){
     drawBoard();
-    if(ball&&ball.alive){stepBall();drawBall(ball.x,ball.y);}
-    if(!ball&&dropping){dropping=false;dropBtn.disabled=false;}
+    if (ball && ball.alive){ stepBall(); drawBall(ball.x, ball.y); }
+    if (!ball && dropping){ // if something killed the ball, unlock UI so user can retry
+      dropping=false; dropBtn.disabled=false;
+    }
     requestAnimationFrame(loop);
   })();
 
-  setInterval(()=>{if(dropping&&(!ball||!ball.alive)){dropping=false;dropBtn.disabled=false;}},700);
-  addEventListener('resize',()=>{pegs=buildPegs();});
+  // extra guard
+  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { dropping=false; dropBtn.disabled=false; } }, 700);
 
+  addEventListener('resize', ()=>{ pegs=buildPegs(); });
+
+  /* ===== Physics step ===== */
   function stepBall(){
-    ball.vy+=GRAVITY;ball.x+=ball.vx;ball.y+=ball.vy;ball.vx*=FRICTION;ball.vy*=FRICTION;ball.vx+=(Math.random()-.5)*0.02;
-    if(ball.x-ball.r<leftWall()){ball.x=leftWall()+ball.r;ball.vx=Math.abs(ball.vx)*RESTITUTION;pegKnock();}
-    if(ball.x+ball.r>rightWall()){ball.x=rightWall()-ball.r;ball.vx=-Math.abs(ball.vx)*RESTITUTION;pegKnock();}
+    ball.vy += GRAVITY;
+    ball.x  += ball.vx;  ball.y += ball.vy;
+    ball.vx *= FRICTION; ball.vy *= FRICTION;
+    ball.vx += (Math.random() - 0.5) * 0.02;
+
+    // walls
+    if (ball.x - ball.r < leftWall()){ ball.x = leftWall() + ball.r; ball.vx = Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+    if (ball.x + ball.r > rightWall()){ ball.x = rightWall() - ball.r; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+
+    // pegs
     for(const p of pegs){
-      const dx=ball.x-p.x,dy=ball.y-p.y,dist=Math.hypot(dx,dy)||.0001,minD=BALL_R+p.r;
-      if(dist<minD){
-        const nx=dx/dist,ny=dy/dist;
-        ball.x+=nx*(minD-dist);ball.y+=ny*(minD-dist);
-        const vDot=ball.vx*nx+ball.vy*ny;
-        ball.vx=(ball.vx-2*vDot*nx)*RESTITUTION;ball.vy=(ball.vy-2*vDot*ny)*RESTITUTION;
+      const dx=ball.x-p.x, dy=ball.y-p.y, dist=Math.hypot(dx,dy)||.0001, minD=BALL_R+p.r;
+      if(dist < minD){
+        const nx=dx/dist, ny=dy/dist;
+        ball.x += nx*(minD-dist); ball.y += ny*(minD-dist);
+        const vDot = ball.vx*nx + ball.vy*ny;
+        ball.vx = (ball.vx - 2*vDot*nx) * RESTITUTION;
+        ball.vy = (ball.vy - 2*vDot*ny) * RESTITUTION;
         pegKnock();
       }
     }
-    if(ball.y>bottomBoard()+80){resolveByIndex(boundarySlotIndex(ball.x));}
+
+    // landing
+    if (ball.y > bottomBoard() + 80){
+      resolveByIndex(boundarySlotIndex(ball.x));
+    }
   }
 
   function boundarySlotIndex(x){
-    const c=Math.min(rightWall()-1,Math.max(leftWall()+1,x));
-    return Math.floor((c-leftWall())/slotWidth());
+    const c=Math.min(rightWall()-1, Math.max(leftWall()+1, x));
+    return Math.floor((c - leftWall()) / slotWidth());
   }
 
+  /* ===== Resolve + full cleanup ===== */
   function resolveByIndex(idx){
-    if(!ball){dropping=false;dropBtn.disabled=false;return;}
-    ball.alive=false;ball=null;clearTimeout(safetyTimer);
-    const rule=PAY_MAP[idx]??'L';dropping=false;dropBtn.disabled=false;celeEl.classList.remove('show');
-    if(rule==='L'){lastTxt='Scratch';resText.textContent='Scratch (lose)';}
-    else{
-      const mult=Number(rule),payout=Math.floor(stake*mult*100)/100;
-      balance+=payout;hud();
-      if(mult===2){lastTxt='Jackpot 2×';resText.textContent='🎉 Jackpot 2×';celeEl.style.color='#ffd700';}
-      else{lastTxt='Win 1.2×';resText.textContent='Win 1.2×';celeEl.style.color='#baf2cd';}
-      celeEl.textContent=resText.textContent;celeEl.classList.add('show');setTimeout(()=>celeEl.classList.remove('show'),1200);
+    // If ball somehow got lost, still unlock UI
+    if (!ball){ hardResetFlags(); return; }
+
+    ball.alive=false; ball=null;
+    clearTimeout(safetyTimer);
+
+    const rule = PAY_MAP[idx] ?? 'L';
+    dropping = false;
+    dropBtn.disabled = false;
+    celeEl?.classList.remove('show');
+
+    if (rule === 'L'){
+      lastTxt='Scratch'; resText.textContent='Scratch (lose)';
+    } else {
+      const mult = Number(rule);
+      const payout = Math.floor(stake * mult * 100)/100;
+      balance += payout; hud();
+      if (mult === 2){
+        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×'; celeEl.style.color='#ffd700';
+      } else {
+        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×'; celeEl.style.color='#baf2cd';
+      }
+      celeEl.textContent = resText.textContent;
+      celeEl.classList.add('show');
+      setTimeout(()=> celeEl.classList.remove('show'), 1200);
       winSound();
     }
     hud();
   }
 
+  /* ===== Draw ===== */
   function drawBoard(){
-    fitCanvas();pegs=buildPegs();
-    ctx.fillStyle='#0b1b13';ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle='#1c3b27';ctx.lineWidth=3;ctx.strokeRect(leftWall()-6,topBoard()-40,rightWall()-leftWall()+12,bottomBoard()-topBoard()+70);
+    fitCanvas();               // DPR-correct and centered each frame
+    // Frame
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=3;
+    ctx.strokeRect(leftWall()-6, topBoard()-40, rightWall()-leftWall()+12, bottomBoard()-topBoard()+70);
+
+    // Rebuild pegs from current size to keep perfect centering
+    pegs = buildPegs();
+
+    // Pegs
     ctx.fillStyle='#704d1d';
-    for(const p of pegs){ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();}
-    ctx.strokeStyle='#2a4d38';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(leftWall(),bottomBoard());ctx.lineTo(rightWall(),bottomBoard());ctx.stroke();
-    for(let i=1;i<SLOTS;i++){const x=slotX(i);ctx.beginPath();ctx.moveTo(x,bottomBoard());ctx.lineTo(x,bottomBoard()+40);ctx.stroke();}
-    ctx.font='13px system-ui,Segoe UI,Roboto,Arial';ctx.textAlign='center';
-    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth()/2);
+    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+
+    // Floor & slot dividers
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(leftWall(), bottomBoard()); ctx.lineTo(rightWall(), bottomBoard()); ctx.stroke();
+    for(let i=1;i<SLOTS;i++){
+      const x = slotX(i);
+      ctx.beginPath(); ctx.moveTo(x, bottomBoard()); ctx.lineTo(x, bottomBoard()+40); ctx.stroke();
+    }
+
+    // Labels
+    ctx.font='13px system-ui, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
+    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth()/2);
     for(let i=0;i<SLOTS;i++){
-      const r=PAY_MAP[i];const txt=r==='L'?'Scratch':(r===2?'2×':'1.2×');
-      ctx.fillStyle=r==='L'?'#e25b5b':(r===2?'#ffd700':'#baf2cd');
-      ctx.fillText(txt,slotCenters[i],bottomBoard()+60);
+      const r = PAY_MAP[i];
+      const txt = r==='L'?'Scratch':(r===2?'2×':'1.2×');
+      ctx.fillStyle = r==='L'?'#e25b5b':(r===2?'#ffd700':'#baf2cd');
+      ctx.fillText(txt, centers[i], bottomBoard()+60);
     }
   }
 
   function drawBall(x,y){
     const r=BALL_R;
     const g=ctx.createRadialGradient(x-1,y-1,1,x,y,r);
-    g.addColorStop(0,'#fff5a3');g.addColorStop(.5,'#d4a63f');g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+    g.addColorStop(0,'#fff5a3'); g.addColorStop(.5,'#d4a63f'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
   }
 
   hud();
 })();
 </script>
+
 
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
