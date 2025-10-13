@@ -330,24 +330,24 @@
 <!-- PLINKO GAME LOGIC -->
 <script>
 (function(){
-  /* House edge map */
+  // House-edge payout map (L=lose)
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  /* Physics & layout */
+  // Physics / layout
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-  // Canvas: fixed logical size (avoid per-frame resizes)
+  // Canvas (fixed logical size; CSS scales it)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Geometry (centered)
+  // Board geometry (centered)
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // Peg grid spans down the board
+  // Peg grid spans down most of the board
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -366,32 +366,33 @@
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI
+  // UI hooks
   const $=id=>document.getElementById(id);
-  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
-  const betInput=$('demoBet');
+  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
+  const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
+  const betInput=$('demoBet'), stateText=$('stateText');
 
+  // State
   let balance=100, stake=1, lastTxt='—';
-  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, dropStartedAt=0, rafStarted=false;
+  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, rafLive=false;
 
-  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
-  betInput.addEventListener('input', ()=>{ stake=Math.max(1, parseInt(betInput.value||'1',10)); hud(); });
+  function hud(){
+    balLbl.textContent=balance.toFixed(2);
+    betLbl.textContent=stake;
+    lastLbl.textContent=lastTxt;
+  }
+  betInput.addEventListener('input', ()=>{
+    const raw = (betInput.value||'').replace(/[^\d]/g,'');
+    betInput.value = raw || '1';
+    stake = Math.max(1, parseInt(betInput.value,10)||1);
+    hud();
+  });
 
-  /* ===== Audio hooks (re-arm EVERY time) ===== */
+  // Audio hooks (re-arm every time)
   async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
   async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
 
-  /* Celebration (matches Dice pop) */
-  function winFlash(text, color){
-    if (!celeEl) return;
-    celeEl.textContent = text;
-    celeEl.style.color = color || '#ffd700';
-    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
-    celeEl.classList.add('show');
-    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
-  }
-
-  /* Emergency weighted resolve to favor house if tab throttles */
+  // Weighted fallback resolve (tab throttling) – favors house
   function weightedSlotIndex(){
     const weights=[28,10,28,2,28,10,28];
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
@@ -399,67 +400,71 @@
     return 3;
   }
 
-  /* Round state */
-  function clearRoundState(){
-    clearTimeout(safetyTimer); safetyTimer=null;
-    ball=null; dropping=false; dropBtn.disabled=false;
+  // Price helper used only for the $1 min logic
+  function stakeUsdEquivalent(){
+    const qty = Math.max(0, parseFloat(betInput.value||0));
+    const P=window.__PRICES__||{};
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
+    return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   }
 
-  /* Drop Handler — HARD RESET first */
+  // Round reset (prevents “invisible coin / locked button”)
+  function clearRoundState(){
+    clearTimeout(safetyTimer); safetyTimer=null;
+    ball=null;
+    dropping=false;
+    dropBtn.disabled=false;
+    lastPegTick=0;
+  }
+
+  // Click -> start a new round
   dropBtn.addEventListener('click', async ()=>{
     await clickSound();
 
-    // Reset any stale state (fixes invisible coin & locked button)
+    // Reset stale state first
     clearRoundState();
 
-    // Spend and update UI
+    // Min $1 check (allow in demo if prices not ready)
+    const usd = stakeUsdEquivalent();
+    const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
+    if (!passesMin){ resText.textContent = 'Min $1'; return; }
+
+    // Spend & UI
     balance = Math.max(0, balance - stake);
-    lastTxt='—'; resText.textContent='—';
+    lastTxt='—';
+    resText.textContent='—';
+    stateText.textContent='Dropping…';
     celeEl?.classList.remove('show');
     hud();
 
     startDrop();
-    ensureLoop(); // guarantee RAF is running
+    ensureLoop();
   });
 
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
-    dropStartedAt=performance.now();
 
-    // varied entry
+    // varied entry so outcomes aren’t biased center-only
     const spread=(rightWall-leftWall)*0.30;
     const startOffset=(Math.random()-0.5)*spread;
     const initVx=(Math.random()-0.5)*1.2;
 
-    ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.25, r:BALL_R, alive:true };
+    ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
 
-    // failsafe
-    clearTimeout(safetyTimer);
+    // Failsafe resolve
     safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
   function ensureLoop(){
-    if(rafStarted) return;
-    rafStarted=true;
-    requestAnimationFrame(loop);
+    if(rafLive) return;
+    rafLive=true;
+    const tick = ()=>{ drawBoard(); if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); } requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
   }
 
-  function loop(){
-    drawBoard();
-    if(ball && ball.alive){
-      stepBall();
-      drawBall(ball.x, ball.y);
-    }
-    if(!ball && dropping){
-      // physics concluded but didn't unlock
-      dropping=false; dropBtn.disabled=false;
-    }
-    requestAnimationFrame(loop);
-  }
-  ensureLoop(); // start once
-
-  // watchdog
-  setInterval(()=>{ if(dropping && (!ball || !ball.alive)) clearRoundState(); }, 900);
+  // Extra safety: if physics finished but flags stuck, free the button
+  setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ clearRoundState(); } }, 900);
 
   function stepBall(){
     // integrate
@@ -490,7 +495,7 @@
       }
     }
 
-    // land
+    // Landing
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
@@ -506,38 +511,58 @@
 
   function resolveByIndex(idx){
     if(!ball){ clearRoundState(); return; }
-    ball.alive=false; ball=null; clearTimeout(safetyTimer);
+    ball.alive=false; ball=null;
+    clearTimeout(safetyTimer); safetyTimer=null;
+
     dropping=false; dropBtn.disabled=false;
-    celeEl?.classList.remove('show');
 
     const rule = PAY_MAP[idx] ?? 'L';
+    celeEl?.classList.remove('show');
+
     if (rule === 'L'){
-      lastTxt='Scratch'; resText.textContent='Scratch (lose)'; pegSound();
+      lastTxt='Scratch';
+      resText.textContent='Scratch (lose)';
+      stateText.textContent='Resolved';
+      pegSound();
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
-      if (mult === 2){ lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×'; winFlash(resText.textContent, '#ffd700'); }
-      else { lastTxt='Win 1.2×'; resText.textContent='Win 1.2×'; winFlash(resText.textContent, '#baf2cd'); }
+      if (mult === 2){
+        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
+        winFlash(resText.textContent, '#ffd700');
+      } else {
+        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
+        winFlash(resText.textContent, '#baf2cd');
+      }
+      stateText.textContent='Resolved';
       try{ window.__bagSession?.credit?.(payout); }catch{}
       pegSound();
     }
     hud();
   }
 
-  /* ===== Rendering ===== */
+  // Dice-like “pop” celebration
+  function winFlash(text, color){
+    if (!celeEl) return;
+    celeEl.textContent = text;
+    celeEl.style.color = color || '#ffd700';
+    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
+    celeEl.classList.add('show');
+    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
+  }
+
+  // Draw board & ball
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
-    // frame
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
+
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
     ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
 
-    // pegs
     ctx.fillStyle='#704d1d';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
-    // floor & dividers
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
     for(let i=1;i<SLOTS;i++){
@@ -545,7 +570,6 @@
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    // labels
     const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
@@ -565,9 +589,11 @@
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
+  // Init UI
   hud();
 })();
 </script>
+
 
 
 
