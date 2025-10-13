@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>$BAG Poker — 5-Card Draw (Demo)</title>
+
+<!-- Optional Xaman (will not auto-connect; kept for parity with Dice/Slots) -->
+<script src="https://xaman.app/assets/cdn/xumm.min.js" defer></script>
+
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffd700;--bg:#020703;--felt:#103621;--felt2:#0a2a18;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.45);
+  }
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  button{cursor:pointer}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .pill{padding:6px 10px;border:1px solid #2b3f33;border-radius:999px;color:var(--muted);font-size:12px}
+  .table{
+    position:relative;border-radius:18px;
+    background:radial-gradient(120% 120% at 50% 10%, var(--felt) 0%, var(--felt2) 65%, #07190e 100%);
+    box-shadow:0 20px 60px var(--shadow), inset 0 0 0 3px #153a26, inset 0 0 0 6px #0e2a1a;
+    padding:22px; min-height:520px;
+  }
+  .pot{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:13px;color:var(--muted)}
+  .center-board{display:flex;justify-content:center;gap:10px;margin-top:64px}
+  .row{display:flex;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap}
+  .hand-title{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+
+  /* Card */
+  .card{
+    width:92px;height:128px;border-radius:10px;
+    background:linear-gradient(145deg,#fff,#f2f2f2);
+    border:1px solid #d6d6d6; box-shadow:0 6px 16px rgba(0,0,0,.25);
+    position:relative; user-select:none; display:flex; align-items:center; justify-content:center;
+  }
+  .card.face-down{background:linear-gradient(145deg,#0d2217,#0b1b13); border-color:#173524}
+  .badge{position:absolute;inset:auto 6px 6px auto;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:3px 6px;border-radius:6px;opacity:0;transform:translateY(4px)}
+  .card.hold .badge{opacity:1;transform:translateY(0)}
+  .rank{font-weight:700;font-size:28px}
+  .suit{position:absolute;bottom:8px;right:10px;font-size:18px}
+  .red{color:#cc1d1d}
+  .black{color:#111}
+
+  .seat{display:flex;flex-direction:column;align-items:center}
+  .ai .card{filter:brightness(.9)}
+  .winner-glow{box-shadow:0 0 0 3px var(--gold),0 0 16px 6px rgba(255,215,0,.35), inset 0 0 0 2px #fff}
+
+  /* Controls */
+  .panel{
+    margin-top:14px;border:1px solid #173524;border-radius:14px;background:linear-gradient(180deg,#0b1b13,#0d2217);
+    padding:14px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center
+  }
+  .betline{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .betline input, .betline select{
+    background:#0d2217;color:var(--fg);border:1px solid #173524;border-radius:8px;padding:10px 12px;font-size:14px;min-width:120px
+  }
+  .betline small{color:var(--muted)}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .btn{
+    background:linear-gradient(180deg,#1c412e,#0f2b1c); color:#fff; border:1px solid #1d4a32; border-radius:9px;
+    padding:10px 14px; font-weight:700; letter-spacing:.3px; box-shadow:0 6px 18px rgba(0,0,0,.35);
+  }
+  .btn.gold{background:linear-gradient(180deg,#f7d867,#b08a0a); border-color:#c8a21a; color:#221a00}
+  .btn.ghost{background:transparent;border-color:#2b3f33}
+  .status{font-size:13px;color:var(--muted)}
+  .toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0b1b13;border:1px solid #173524;color:var(--fg);
+    padding:10px 14px;border-radius:10px;box-shadow:0 10px 30px var(--shadow);opacity:0;pointer-events:none;transition:opacity .25s, transform .25s
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+  .confetti{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .chip{position:absolute;top:40px;left:50%;transform:translateX(-50%);width:72px;height:72px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #ffe175, #b89008 70%);box-shadow:0 10px 30px rgba(0,0,0,.45);display:none
+  }
+  @media (max-width:780px){ .card{width:74px;height:104px} .rank{font-size:22px} .seat .hand-title{font-size:11px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="titlebar">
+    <span class="pill">$BAG Casino</span>
+    <h1 style="margin:0;font-size:20px;letter-spacing:.3px">$BAG Poker — 5-Card Draw</h1>
+  </div>
+
+  <div class="table" id="table">
+    <div class="pot" id="potLabel">Pot: —</div>
+
+    <!-- AI seats -->
+    <div class="row" id="aiRow"></div>
+
+    <!-- Player seat -->
+    <div class="row" id="playerRow" style="margin-top:48px"></div>
+    <div class="hand-title">Tap cards to HOLD before Draw</div>
+
+    <!-- Celebration chip + confetti -->
+    <div class="chip" id="chip"></div>
+    <canvas class="confetti" id="confetti"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="betline">
+      <select id="currency">
+        <option value="USD">$</option>
+        <option value="XRP">XRP</option>
+        <option value="BAG">$BAG</option>
+      </select>
+      <input id="bet" type="number" step="0.01" placeholder="Bet amount" />
+      <small id="betHint">Min $1 — Max $2000</small>
+      <div class="status" id="status">Ready</div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnReset" disabled>Reset</button>
+      <button class="btn" id="btnDeal">Deal</button>
+      <button class="btn gold" id="btnDraw" disabled>Draw</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------------------------------
+   $BAG Poker — 5-Card Draw (Demo)
+   - Fixed bet single-round: Deal → Hold/Draw → Showdown
+   - Payouts: Win 2×, Push refund, Lose 0×
+   - Currency: $, XRP, $BAG (clamped $1-$2000; uses window.PRICES if available)
+--------------------------------------- */
+
+(() => {
+  // ====== Prices & currency helpers (re-uses global if present) ======
+  const PRICES = Object.assign({ xrpUsd: 0.50, bagUsd: 0.0001 }, (window.PRICES||{})); // fallback demo
+  const currencyEl = document.getElementById('currency');
+  const betEl = document.getElementById('bet');
+  const statusEl = document.getElementById('status');
+  const potEl = document.getElementById('potLabel');
+
+  function clampUsd(u){ if(!Number.isFinite(u)) return 0; if(u<1) return 1; if(u>2000) return 2000; return u; }
+  function currentCurrency(){ return currencyEl.value; }
+  function betToUsd(){
+    const v = parseFloat(betEl.value);
+    if(!(v>0)) return 0;
+    switch(currentCurrency()){
+      case 'USD': return clampUsd(v);
+      case 'XRP': return clampUsd(PRICES.xrpUsd>0 ? v*PRICES.xrpUsd : 0);
+      case 'BAG': return clampUsd(PRICES.bagUsd>0 ? v*PRICES.bagUsd : 0);
+      default: return 0;
+    }
+  }
+  function usdToCurrency(usd){
+    if(currentCurrency()==='USD') return usd;
+    if(currentCurrency()==='XRP') return PRICES.xrpUsd>0 ? usd/PRICES.xrpUsd : 0;
+    if(currentCurrency()==='BAG') return PRICES.bagUsd>0 ? usd/PRICES.bagUsd : 0;
+    return 0;
+  }
+  function fmt(n){ if(!Number.isFinite(n)) return '—'; const c=currentCurrency(); return (c==='USD'?'$':'')+((c==='USD')?n.toFixed(2):n.toFixed(6)); }
+  function updatePot(usd){ potEl.textContent = 'Pot: ' + (usd>0? '$'+usd.toFixed(2): '—'); }
+
+  // ====== Sounds (WebAudio; minimal & snappy) ======
+  const AudioCtx = window.AudioContext||window.webkitAudioContext;
+  const ctx = new AudioCtx();
+  function blip(freq=440,ms=70, type='triangle', gain=0.02){
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=gain;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    setTimeout(()=>{ o.stop(); o.disconnect(); g.disconnect(); }, ms);
+  }
+  function shuffleSfx(){ [240,220,200,180,160].forEach((f,i)=>setTimeout(()=>blip(f,30,'square',0.015),i*30)); }
+  function flipSfx(){ blip(550,45,'sawtooth',0.02); }
+  function winSfx(){ [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,120,'sine',0.04), i*120)); }
+  function loseSfx(){ [220,180,140].forEach((f,i)=>setTimeout(()=>blip(f,120,'sine',0.03), i*120)); }
+  function chipSfx(){ blip(420,90,'square',0.03); }
+
+  // ====== UI helpers ======
+  const toastEl = document.getElementById('toast');
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(()=>toastEl.classList.remove('show'), 1500);
+  }
+
+  // ====== Cards & dealing ======
+  const SUITS = ['♠','♥','♦','♣'];
+  const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+  const RVAL  = Object.fromEntries(RANKS.map((r,i)=>[r,i+2])); // 2..14
+
+  function newDeck(){
+    const d=[];
+    for(let s=0;s<4;s++) for(let r=0;r<RANKS.length;r++) d.push({r:RANKS[r], s:SUITS[s]});
+    // Fisher-Yates with crypto
+    for(let i=d.length-1;i>0;i--){
+      const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i+1);
+      [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+  }
+
+  // 5-card hand ranker
+  function rankHand(cards){
+    // cards: [{r:'A', s:'♠'}...]
+    const vals = cards.map(c=>RVAL[c.r]).sort((a,b)=>a-b);
+    const counts = {}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+    const byCount = Object.entries(counts).sort((a,b)=>b[1]-a[1] || b[0]-a[0]); // [val,count]
+    const isFlush = cards.every(c=>c.s===cards[0].s);
+    // Straight: special A2345 (treat A as 1)
+    let isStraight=false, high=vals[4];
+    if(vals.join(',')==='2,3,4,5,14'){ isStraight=true; high=5; }
+    else if(vals[0]+4===vals[4] && new Set(vals).size===5){ isStraight=true; }
+
+    const kind = byCount.map(x=>x[1]).join('');
+    // Hand categories (higher better): 8=straight flush,7=four,6=full,5=flush,4=straight,3=three,2=two pair,1=pair,0=high
+    let cat=0, tiebreak=[];
+    if(isStraight && isFlush){ cat=8; tiebreak=[high]; }
+    else if(kind==='41'){ cat=7; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+    else if(kind==='32'){ cat=6; tiebreak=[+byCount[0][0], +byCount[1][0]]; }
+    else if(isFlush){ cat=5; tiebreak=vals.slice().reverse(); }
+    else if(isStraight){ cat=4; tiebreak=[high]; }
+    else if(kind==='311'){ cat=3; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+    else if(kind==='221'){ cat=2; // two pair
+      const ps=byCount.filter(x=>x[1]===2).map(x=>+x[0]).sort((a,b)=>b-a);
+      const kicker=vals.slice().reverse().find(v=>v!==ps[0]&&v!==ps[1]);
+      tiebreak=[...ps, kicker];
+    }
+    else if(kind==='2111'){ cat=1; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+    else { cat=0; tiebreak=vals.slice().reverse(); }
+    return {cat, tiebreak};
+  }
+
+  function cmpHands(a,b){
+    if(a.cat!==b.cat) return a.cat-b.cat;
+    const L=Math.max(a.tiebreak.length, b.tiebreak.length);
+    for(let i=0;i<L;i++){
+      const av=a.tiebreak[i]||0, bv=b.tiebreak[i]||0;
+      if(av!==bv) return av-bv;
+    }
+    return 0;
+  }
+
+  // ====== Table/Seats ======
+  const aiRow = document.getElementById('aiRow');
+  const playerRow = document.getElementById('playerRow');
+  const btnDeal = document.getElementById('btnDeal');
+  const btnDraw = document.getElementById('btnDraw');
+  const btnReset = document.getElementById('btnReset');
+  const chipEl = document.getElementById('chip');
+  const confetti = document.getElementById('confetti');
+  const ctx2 = confetti.getContext('2d');
+
+  let W=0,H=0; function sizeCanvas(){ const r=confetti.parentElement.getBoundingClientRect(); W=r.width; H=r.height; confetti.width=W; confetti.height=H; }
+  window.addEventListener('resize', sizeCanvas); sizeCanvas();
+
+  function mkCardEl(face, idx, isPlayer){
+    const el=document.createElement('div');
+    el.className='card'+(face? '':' face-down');
+    el.dataset.index = idx;
+    const badge=document.createElement('div'); badge.className='badge'; badge.textContent='HOLD';
+    el.appendChild(badge);
+    if(face){
+      const rank=document.createElement('div'); rank.className='rank';
+      const suit=document.createElement('div'); suit.className='suit';
+      const red = (face.s==='♥'||face.s==='♦');
+      rank.textContent = face.r;
+      suit.textContent = face.s;
+      rank.classList.add(red?'red':'black');
+      suit.classList.add(red?'red':'black');
+      el.appendChild(rank); el.appendChild(suit);
+    }
+    if(isPlayer){
+      el.addEventListener('click', ()=>{
+        if(phase!=='HOLD') return;
+        el.classList.toggle('hold');
+        flipSfx();
+      });
+    }
+    return el;
+  }
+
+  let deck = [];
+  let player = { hand:[], nodes:[] };
+  let bots = [
+    { name:'CPU-1', hand:[], nodes:[] },
+    { name:'CPU-2', hand:[], nodes:[] },
+    { name:'CPU-3', hand:[], nodes:[] },
+  ];
+  let phase='IDLE'; // IDLE → DEALT → HOLD → DRAWN → SHOWDOWN
+  let anteUsd=0;
+
+  function renderSeats(){
+    aiRow.innerHTML='';
+    bots.forEach((b,i)=>{
+      const seat=document.createElement('div'); seat.className='seat ai';
+      const row=document.createElement('div'); row.className='row';
+      b.nodes=[]; b.hand.forEach((c,idx)=>{
+        const el = mkCardEl(phase==='SHOWDOWN'?c:null, idx, false);
+        row.appendChild(el); b.nodes.push(el);
+      });
+      seat.appendChild(row);
+      const cap=document.createElement('div'); cap.className='hand-title'; cap.textContent=b.name;
+      seat.appendChild(cap);
+      aiRow.appendChild(seat);
+    });
+
+    playerRow.innerHTML='';
+    const seat=document.createElement('div'); seat.className='seat';
+    const row=document.createElement('div'); row.className='row';
+    player.nodes=[]; player.hand.forEach((c,idx)=>{
+      const el = mkCardEl(c, idx, true); row.appendChild(el); player.nodes.push(el);
+    });
+    seat.appendChild(row);
+    playerRow.appendChild(seat);
+  }
+
+  function dealAnimation(targetNodeList, cb){
+    let i=0;
+    const tick=()=>{ if(i>=targetNodeList.length){ cb&&cb(); return; }
+      const el=targetNodeList[i++]; el.style.transform='translateY(-8px)'; el.style.opacity='0';
+      requestAnimationFrame(()=>{
+        el.style.transition='transform .2s ease, opacity .2s ease';
+        el.style.transform='translateY(0)'; el.style.opacity='1';
+        flipSfx();
+        setTimeout(tick, 60);
+      });
+    };
+    tick();
+  }
+
+  function startDeal(){
+    // Validate bet
+    const usd = betToUsd();
+    if(!(usd>=1)){ toast('Bet must be at least $1'); return; }
+    anteUsd = usd;
+    updatePot(anteUsd*2); // player vs house (demo)
+    statusEl.textContent = 'Dealing…';
+    btnDeal.disabled = true; btnDraw.disabled = true; btnReset.disabled = true;
+    shuffleSfx();
+
+    // Fresh deck & hands
+    deck = newDeck();
+    player.hand = []; bots.forEach(b=>b.hand=[]);
+
+    // Round-robin deal 5 each (face-up for player, down for bots)
+    for(let r=0;r<5;r++){
+      player.hand.push(deck.pop());
+      bots.forEach(b=>b.hand.push(deck.pop()));
+    }
+    phase='DEALT';
+    // Initial render (bots face-down)
+    renderSeats();
+
+    // Small animation on player row
+    const nodes = player.nodes;
+    nodes.forEach(n=>{ n.style.opacity='0'; });
+    dealAnimation(nodes, ()=>{
+      phase='HOLD';
+      btnDraw.disabled=false;
+      btnReset.disabled=false;
+      statusEl.textContent='Select cards to HOLD, then press Draw';
+      chipSfx();
+    });
+  }
+
+  function botHoldLogic(hand){
+    // Very simple heuristic: hold pairs or better, otherwise hold highest 2
+    // Returns array of booleans: true = hold
+    const holds = [false,false,false,false,false];
+    const vals = hand.map(c=>RVAL[c.r]);
+    const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+    const pairs = Object.entries(counts).filter(([v,c])=>c>=2).map(([v,c])=>+v);
+    if(pairs.length){
+      hand.forEach((c,i)=>{ if(pairs.includes(RVAL[c.r])) holds[i]=true; });
+      return holds;
+    }
+    // else hold top 2
+    const idxs = vals.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,2).map(x=>x[1]);
+    idxs.forEach(i=>holds[i]=true);
+    return holds;
+  }
+
+  function drawPhase(){
+    if(phase!=='HOLD') return;
+    statusEl.textContent = 'Drawing…';
+    btnDraw.disabled = true;
+
+    // Player holds: class "hold" means HOLD, so replace those NOT held
+    player.nodes.forEach((el, i)=>{
+      const isHeld = el.classList.contains('hold');
+      if(!isHeld){ player.hand[i] = deck.pop(); }
+    });
+
+    // Bots: compute holds and replace
+    bots.forEach(b=>{
+      const holds = botHoldLogic(b.hand);
+      holds.forEach((h,i)=>{ if(!h) b.hand[i]=deck.pop(); });
+    });
+
+    phase='DRAWN';
+    // Reveal everything for showdown
+    renderSeats();
+    // Glow briefly on player replaced cards
+    player.nodes.forEach((el,i)=>{ el.classList.add('winner-glow'); setTimeout(()=>el.classList.remove('winner-glow'), 300); });
+    setTimeout(showdown, 350);
+  }
+
+  function handName(cat){
+    return ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'][cat] || '—';
+  }
+
+  function showdown(){
+    if(phase!=='DRAWN') return;
+    statusEl.textContent = 'Showdown…';
+    // Evaluate all
+    const results = [];
+    const pRank = rankHand(player.hand);
+    results.push({ who:'You', rank:pRank, hand:player.hand });
+
+    bots.forEach(b=>{
+      const r=rankHand(b.hand);
+      results.push({ who:b.name, rank:r, hand:b.hand });
+    });
+
+    // Find best
+    let winner = 0;
+    for(let i=1;i<results.length;i++){
+      const cmp=cmpHands(results[i].rank, results[winner].rank);
+      if(cmp>0) winner=i;
+    }
+    // Check ties
+    const top = results[winner];
+    const ties = results.filter(r=>cmpHands(r.rank, top.rank)===0);
+    let outcome='lose', msg='';
+    if(ties.length>1){
+      outcome='push';
+      msg='Push — '+handName(top.rank.cat)+'. Bet refunded';
+    }else if(results[winner].who==='You'){
+      outcome='win';
+      msg='You win — '+handName(top.rank.cat)+' (+2×)';
+    }else{
+      outcome='lose';
+      msg= top.who+' wins — '+handName(top.rank.cat);
+    }
+
+    // Visuals
+    const highlight = (who)=>{
+      if(who==='You'){ player.nodes.forEach(n=>n.classList.add('winner-glow')); }
+      else{
+        const idx = bots.findIndex(b=>b.name===who);
+        if(idx>=0){
+          const seat = aiRow.children[idx];
+          seat.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow'));
+        }
+      }
+    };
+
+    highlight(top.who);
+    statusEl.textContent = msg;
+
+    // Payouts
+    const usd = anteUsd;
+    if(outcome==='win'){
+      winSfx(); confettiBurst(); chipFlash();
+      updatePot(usd*2*2); // show 2× pot flash momentarily
+      setTimeout(()=>updatePot(0), 900);
+      toast('Payout: '+fmt(usdToCurrency(usd*2))+' ('+ (currentCurrency()==='USD'?'$'+(usd*2).toFixed(2):'2×') +')');
+    }else if(outcome==='push'){
+      chipSfx(); updatePot(0);
+      toast('Refunded: '+fmt(usdToCurrency(usd)));
+    }else{
+      loseSfx(); updatePot(0);
+      toast('Lost: '+fmt(usdToCurrency(usd)));
+    }
+
+    phase='SHOWDOWN';
+    btnReset.disabled=false; btnDeal.disabled=false;
+  }
+
+  // ====== Confetti + Chip celebration ======
+  function confettiBurst(){
+    const bits=[];
+    for(let i=0;i<60;i++){
+      bits.push({
+        x: W/2, y:H/2, vx:(Math.random()*2-1)*3, vy:(Math.random()*-3-2), g:0.08+Math.random()*0.03, r:2+Math.random()*3
+      });
+    }
+    let t=0, raf;
+    function step(){
+      t++;
+      ctx2.clearRect(0,0,W,H);
+      bits.forEach(b=>{
+        b.vy+=b.g; b.x+=b.vx; b.y+=b.vy;
+        ctx2.globalAlpha = 0.9; ctx2.fillStyle = (t%10<5)?'#ffd700':'#2fbf6b';
+        ctx2.beginPath(); ctx2.arc(b.x,b.y,b.r,0,Math.PI*2); ctx2.fill();
+      });
+      if(t<70) raf=requestAnimationFrame(step); else cancelAnimationFrame(raf);
+    }
+    step();
+  }
+  function chipFlash(){
+    chipEl.style.display='block'; chipEl.style.opacity='0'; chipEl.style.transform='translate(-50%, -10px) scale(.9)';
+    requestAnimationFrame(()=>{
+      chipEl.style.transition='transform .25s ease, opacity .25s ease';
+      chipEl.style.opacity='1'; chipEl.style.transform='translate(-50%, 0) scale(1)';
+      setTimeout(()=>{
+        chipEl.style.opacity='0';
+        setTimeout(()=>{ chipEl.style.display='none'; }, 250);
+      }, 650);
+    });
+  }
+
+  // ====== Controls ======
+  btnDeal.addEventListener('click', ()=>{
+    // ensure bet within clamp (if USD mode, clamp directly; otherwise clamp USD equivalent)
+    const usd = betToUsd();
+    if(!(usd>=1)){ betEl.value = currentCurrency()==='USD'? '1.00' : usdToCurrency(1).toString(); }
+    if(usd>2000){ betEl.value = currentCurrency()==='USD'? '2000.00' : usdToCurrency(2000).toString(); }
+    startDeal();
+  });
+  btnDraw.addEventListener('click', drawPhase);
+  btnReset.addEventListener('click', ()=>{
+    phase='IDLE';
+    player.hand=[]; bots.forEach(b=>b.hand=[]);
+    renderSeats(); updatePot(0);
+    statusEl.textContent='Ready';
+    btnDraw.disabled=true; btnReset.disabled=true; btnDeal.disabled=false;
+  });
+  currencyEl.addEventListener('change', ()=>{
+    // If user had a USD-based amount, keep approximate USD by converting
+    const usd = betToUsd();
+    if(usd>0){ betEl.value = usdToCurrency(usd).toString(); }
+    document.getElementById('betHint').textContent = 'Min $1 — Max $2000';
+  });
+
+  // ====== Initial state ======
+  (function init(){
+    statusEl.textContent = 'Ready';
+    updatePot(0);
+    // Seed empty hands for layout
+    player.hand = [{},{},{},{},{}]; player.hand.length=0;
+    bots.forEach(b=>{ b.hand=[]; });
+    renderSeats();
+    // Prefill bet if demo
+    if(window.__BAG_FORCE_DEMO===true || typeof window.__BAG_FORCE_DEMO==='undefined'){
+      currencyEl.value='USD'; betEl.value='5.00';
+    }
+  })();
+
+})();</script>
+</body>
+</html>
