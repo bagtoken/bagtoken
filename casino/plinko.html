@@ -402,7 +402,7 @@
     btn.disabled = true;
     try {
       const auth = await xumm.authorize();
-      const acct = (xumm && xumm.user and xumm.user.account) || auth?.me?.account || null;
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
       if (!acct) throw new Error('No account returned');
       write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
@@ -803,34 +803,36 @@
   async function pegKnock(){ try{ if (window.__bagAudio) { await __bagAudio.ensureInteractive(); __bagAudio.nudge(); } }catch{} }
 
   /* Drop handler: wake audio, validate, disable button, start */
-dropBtn.addEventListener('click', async ()=>{
-  if (dropping) return;
+  dropBtn.addEventListener('click', async ()=>{
+    if (dropping) return;
 
-  // ensure audio works on first user action
-  try {
-    await window.__bagAudio?.ensureInteractive?.();
-    window.__bagAudio?.nudge?.();
-  } catch {}
+    // ensure audio works on first user action
+    try {
+      await window.__bagAudio?.ensureInteractive?.();
+      window.__bagAudio?.nudge?.();
+    } catch {}
 
-  const usd = stakeUsdEquivalent();
-  const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-  if (!passesMin){
-    resText.textContent = 'Min $1';
-    return;
-  }
+    const usd = stakeUsdEquivalent();
+    const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
+    if (!passesMin){
+      resText.textContent = 'Min $1';
+      return;
+    }
 
-  dropBtn.disabled = true;
-  balance = Math.max(0, balance - stake);
-  lastTxt = '—';
-  resText.textContent = '—';
-  hud();
-  startDrop();
-});
-
+    dropBtn.disabled = true;
+    balance = Math.max(0, balance - stake);
+    lastTxt = '—';
+    resText.textContent = '—';
+    hud();
+    startDrop();
+  });
 
   function startDrop(){
     dropping=true;
-    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, frames:0};
+    // start slightly offset from center with more horizontal energy
+    const startOffset = (Math.random() - 0.5) * 120;
+    const initVx = (Math.random() - 0.5) * 1.4;
+    ball = {x:W/2 + startOffset, y:60, vx:initVx, vy:0, r:BALL_R, alive:true, frames:0};
     lastPegTs = 0;
     dropStartedAt = performance.now();
 
@@ -857,6 +859,8 @@ dropBtn.addEventListener('click', async ()=>{
     ball.vy += GRAVITY;
     ball.x += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
+    // tiny jitter to avoid perfect vertical "rail"
+    ball.vx += (Math.random() - 0.5) * 0.02;
 
     // walls
     if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; }
@@ -895,47 +899,46 @@ dropBtn.addEventListener('click', async ()=>{
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-function resolveByIndex(idx){
-  if (!ball) return;
-  ball.alive = false;
-  ball = null;
+  function resolveByIndex(idx){
+    if (!ball) return;
+    ball.alive = false;
+    ball = null;
 
-  const rule = PAY_MAP[idx] ?? 'L';
-  let text = '', color = '#ffd700';
-  dropping = false;
-  dropBtn.disabled = false;
+    const rule = PAY_MAP[idx] ?? 'L';
+    let color = '#ffd700';
+    dropping = false;
+    dropBtn.disabled = false;
 
-  const cele = document.getElementById('cele');
-  cele.classList.remove('show');
+    const cele = document.getElementById('cele');
+    cele.classList.remove('show');
 
-  if (rule === 'L'){
-    lastTxt = 'Scratch';
-    resText.textContent = 'Scratch (lose)';
-    color = '#e25b5b';
-    try{ __bagAudio?.nudge?.(); }catch{}
-  } else {
-    const mult = Number(rule);
-    const payout = Math.floor(stake * mult * 100)/100;
-    balance += payout; hud();
-    if (mult === 2){
-      lastTxt = 'Jackpot 2×';
-      resText.textContent = '🎉 Jackpot 2×';
-      color = '#ffd700';
+    if (rule === 'L'){
+      lastTxt = 'Scratch';
+      resText.textContent = 'Scratch (lose)';
+      color = '#e25b5b';
+      try{ __bagAudio?.nudge?.(); }catch{}
     } else {
-      lastTxt = 'Win 1.2×';
-      resText.textContent = 'Win 1.2×';
-      color = '#baf2cd';
+      const mult = Number(rule);
+      const payout = Math.floor(stake * mult * 100)/100;
+      balance += payout; hud();
+      if (mult === 2){
+        lastTxt = 'Jackpot 2×';
+        resText.textContent = '🎉 Jackpot 2×';
+        color = '#ffd700';
+      } else {
+        lastTxt = 'Win 1.2×';
+        resText.textContent = 'Win 1.2×';
+        color = '#baf2cd';
+      }
+      try{ window.__bagSession?.credit?.(payout); }catch{}
+      cele.style.color = color;
+      cele.textContent = resText.textContent;
+      cele.classList.add('show');
+      setTimeout(()=> cele.classList.remove('show'), 1200);
     }
-    try{ window.__bagSession?.credit?.(payout); }catch{}
-    cele.style.color = color;
-    cele.textContent = resText.textContent;
-    cele.classList.add('show');
-    setTimeout(()=> cele.classList.remove('show'), 1200);
+
+    hud();
   }
-
-  hud();
-}
-
 
   // Render
   function drawBoard(){
@@ -1049,7 +1052,7 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('gesturestart', e=>e.preventDefault(), {passive:false});
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
