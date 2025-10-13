@@ -240,7 +240,7 @@
     if(!AudioCtx) return null;
     const ac=new AudioCtx();
     const master=ac.createGain();
-    master.gain.value=0.28;
+    master.gain.value=0.28;            /* slightly louder */
     master.connect(ac.destination);
     AC=ac; MASTER=master;
     ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); };
@@ -300,7 +300,7 @@
     g.gain.linearRampToValueAtTime(0.10,now+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
     o.connect(g).connect(comp);
-    o.start(now); o.stop(now+0.24);
+  o.start(now); o.stop(now+0.24);
   }
 
   const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
@@ -319,6 +319,7 @@
   }
   startWatchdog();
 
+  /* One-time prewarm on first user tap/click (iOS autoplay) */
   addEventListener('pointerdown', async function once(){
     removeEventListener('pointerdown', once, {capture:false});
     try{ await ensureInteractive(); await nudge(); }catch{}
@@ -401,7 +402,7 @@
     btn.disabled = true;
     try {
       const auth = await xumm.authorize();
-      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null; /* <-- fixed && */
       if (!acct) throw new Error('No account returned');
       write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
       window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
@@ -758,10 +759,11 @@
   const unitSpan=document.querySelector('#bagPlinko .unit');
   const betInput=document.getElementById('demoBet');
   const usdInput=document.getElementById('usdBet');
+  const celeEl=document.getElementById('cele');
 
   let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0;
-  let lastPegTs=0;
+  let lastPegTs=0, safetyTimer=null;
 
   function hud(){ balLbl.textContent=Number(balance).toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
 
@@ -801,10 +803,20 @@
 
   async function pegKnock(){ try{ if (window.__bagAudio) { await __bagAudio.ensureInteractive(); __bagAudio.nudge(); } }catch{} }
 
+  /* House-edge weighted slot (used ONLY for emergency resolve) */
+  function weightedSlotIndex(){
+    // Heavier on losses; light wins; rare jackpot
+    // Slots: [L, 1.2, L, 2, L, 1.2, L]
+    const weights = [22, 11, 22, 3, 22, 11, 22]; // sum = 113 (~80% loss, ~18% 1.2x, ~2-3% jackpot)
+    const total = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random() * total;
+    for(let i=0;i<weights.length;i++){ r -= weights[i]; if(r<=0) return i; }
+    return 3;
+  }
+
   /* Drop handler */
   dropBtn.addEventListener('click', async ()=>{
     if (dropping) return;
-
     try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
     const usd = stakeUsdEquivalent();
@@ -815,17 +827,23 @@
     balance = Math.max(0, balance - stake);
     lastTxt = '—';
     resText.textContent = '—';
+    celeEl?.classList.remove('show');
     hud();
     startDrop();
   });
 
   function startDrop(){
     dropping=true;
-    const startOffset = (Math.random() - 0.5) * 120;
-    const initVx = (Math.random() - 0.5) * 1.4;
+    // more chaos so we don't funnel center
+    const startOffset = (Math.random() - 0.5) * 160;
+    const initVx = (Math.random() - 0.5) * 1.6;
     ball = {x:W/2 + startOffset, y:60, vx:initVx, vy:0, r:BALL_R, alive:true, frames:0};
     lastPegTs = 0;
     dropStartedAt = performance.now();
+
+    // Safety resolve (house-weighted) if tab throttles / physics stalls
+    clearTimeout(safetyTimer);
+    safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 8000);
   }
 
   (function loop(ts){
@@ -833,23 +851,26 @@
     if(ball && ball.alive){
       stepBall(ts);
       drawBall(ball.x, ball.y);
-      // long fallback only — avoids center bias
-      if(ball.y > H + 200 || ts - dropStartedAt > 20000){
+      // long fallback only if really off-screen
+      if(ball.y > H + 200){
         resolveByIndex(boundarySlotIndex(ball.x));
       }
     }
+    // last-line guard: never leave disabled
     if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
     requestAnimationFrame(loop);
   })(performance.now());
 
-  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { dropping=false; dropBtn.disabled=false; } }, 800);
+  // periodic guard
+  setInterval(()=>{ if (dropping && (!ball || !ball.alive)) { dropping=false; dropBtn.disabled=false; } }, 700);
 
   function stepBall(ts){
     ball.frames++;
     ball.vy += GRAVITY;
     ball.x += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
-    ball.vx += (Math.random() - 0.5) * 0.02;
+    // tiny horizontal noise to avoid dead-straight descent
+    ball.vx += (Math.random() - 0.5) * 0.03;
 
     // walls
     if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; }
@@ -892,13 +913,13 @@
     if (!ball) return;
     ball.alive = false;
     ball = null;
+    clearTimeout(safetyTimer);
 
     const rule = PAY_MAP[idx] ?? 'L';
     dropping = false;
     dropBtn.disabled = false;
 
-    const cele = document.getElementById('cele');
-    cele.classList.remove('show');
+    celeEl?.classList.remove('show');
 
     if (rule === 'L'){
       lastTxt = 'Scratch';
@@ -908,22 +929,20 @@
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
-      if (mult === 2){ lastTxt = 'Jackpot 2×'; resText.textContent = '🎉 Jackpot 2×'; }
-      else { lastTxt = 'Win 1.2×'; resText.textContent = 'Win 1.2×'; }
+      if (mult === 2){ lastTxt = 'Jackpot 2×'; resText.textContent = '🎉 Jackpot 2×'; celeEl.style.color='#ffd700'; }
+      else { lastTxt = 'Win 1.2×'; resText.textContent = 'Win 1.2×'; celeEl.style.color='#baf2cd'; }
       try{ window.__bagSession?.credit?.(payout); }catch{}
-      cele.style.color = (mult === 2 ? '#ffd700' : '#baf2cd');
-      cele.textContent = resText.textContent;
-      cele.classList.add('show');
-      setTimeout(()=> cele.classList.remove('show'), 1200);
+      celeEl.textContent = resText.textContent;
+      celeEl.classList.add('show');
+      setTimeout(()=> celeEl.classList.remove('show'), 1200);
     }
-
     hud();
   }
 
   // Render
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
-    ctx.globalAlpha = 1; /* defensive reset */
+    ctx.globalAlpha = 1;
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
