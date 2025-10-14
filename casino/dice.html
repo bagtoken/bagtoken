@@ -52,7 +52,7 @@
   .status .note{font-size:.9rem;color:#cfe0d6}
   .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-  /* CSS fallback dice (no images, just colors) */
+  /* CSS fallback (minimal) */
   .css-dice{position:absolute;inset:0;display:none;place-items:center;gap:64px}
   .cube{position:relative;width:110px;height:110px;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.9,.2,1)}
   .face{position:absolute;inset:0;background:#f3f2ee;border-radius:20px;box-shadow:inset 0 0 0 2px #d9d7d2}
@@ -86,7 +86,7 @@
     </div>
   </div>
 
-<!-- SOUND (optional, safe) -->
+<!-- SOUND (safe) -->
 <script>
 (function(){
   const shake = new Audio('/assets/sounds/diceshake.mp3'), roll = new Audio('/assets/sounds/diceroll.mp3');
@@ -124,70 +124,11 @@
     pointEl.textContent=String(p);
     ctaEl.innerHTML=`Point is <b>${p}</b> — Roll <b>${p}</b> to <span class="ok">WIN</span> before <b>7</b> (<span class="bad">SEVEN OUT</span>).`;
   }
-  function winUI(msg){
-    ctaEl.innerHTML=`<span class="ok">WIN</span> — ${msg}`;
-  }
-  function loseUI(msg){
-    ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`;
-  }
+  function winUI(msg){ ctaEl.innerHTML=`<span class="ok">WIN</span> — ${msg}`; }
+  function loseUI(msg){ ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`; }
   resetComeOutUI();
 
-  /* -------------------- Procedural pip textures -------------------- */
-  function makePipFace(n, size=512){
-    const c=document.createElement('canvas'); c.width=c.height=size;
-    const ctx=c.getContext('2d');
-    // Bleed background to avoid seam/fringe
-    const R=size/12, rr=18; // corner radius for card
-    const bgGrad=ctx.createLinearGradient(0,0,0,size);
-    bgGrad.addColorStop(0,'#f7f5f0'); bgGrad.addColorStop(1,'#eeeae3');
-    ctx.fillStyle=bgGrad;
-    // big rounded rect
-    const r=size*(1); const pad=size*0.02;
-    ctx.beginPath();
-    const x=pad, y=pad, w=size-2*pad, h=size-2*pad, rad=size*0.06;
-    ctx.moveTo(x+rad,y);
-    ctx.arcTo(x+w,y,x+w,y+h,rad);
-    ctx.arcTo(x+w,y+h,x,y+h,rad);
-    ctx.arcTo(x,y+h,x,y,rad);
-    ctx.arcTo(x,y,x+w,y,rad);
-    ctx.closePath(); ctx.fill();
-
-    // subtle edge vignette
-    const vg=ctx.createRadialGradient(size/2,size/2, size*.2, size/2,size/2, size*.7);
-    vg.addColorStop(0,'rgba(0,0,0,0)');
-    vg.addColorStop(1,'rgba(0,0,0,.06)');
-    ctx.fillStyle=vg; ctx.fillRect(0,0,size,size);
-
-    // pip helper
-    function pip(px,py){
-      const r=size*0.06;
-      // soft shadow
-      ctx.beginPath(); ctx.arc(px+r*0.12, py+r*0.12, r*1.02, 0, Math.PI*2);
-      ctx.fillStyle='rgba(0,0,0,.14)'; ctx.fill();
-      // dot
-      ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
-      const g=ctx.createLinearGradient(px-r,py-r,px+r,py+r);
-      g.addColorStop(0,'#222'); g.addColorStop(1,'#000');
-      ctx.fillStyle=g; ctx.fill();
-      // spec
-      ctx.beginPath(); ctx.arc(px-r*0.35, py-r*0.35, r*0.28, 0, Math.PI*2);
-      ctx.fillStyle='rgba(255,255,255,.18)'; ctx.fill();
-    }
-    const m=size*0.22, cx=size/2, cy=size/2;
-    const grid = {
-      1:[[cx,cy]],
-      2:[[m,m],[size-m,size-m]],
-      3:[[m,m],[cx,cy],[size-m,size-m]],
-      4:[[m,m],[size-m,m],[m,size-m],[size-m,size-m]],
-      5:[[m,m],[size-m,m],[cx,cy],[m,size-m],[size-m,size-m]],
-      6:[[m,m],[size-m,m],[m,cy],[size-m,cy],[m,size-m],[size-m,size-m]],
-    }[n] || [];
-    grid.forEach(([x,y])=>pip(x,y));
-
-    return c;
-  }
-
-  /* -------------------- THREE: nice tumbling dice -------------------- */
+  /* -------------------- THREE: brand-new physical dice -------------------- */
   function bootThree(){
     const THREE = window.THREE;
     const w = stageEl.clientWidth, h = stageEl.clientHeight;
@@ -210,29 +151,25 @@
       renderer.setSize(W,H);
     });
 
-    // Environment-ish
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new THREE.Scene(), 0.1).texture;
-
-    // Felt
+    // Table felt
     const felt = new THREE.Mesh(
       new THREE.CylinderGeometry(3.8,3.8,0.02,64),
-      new THREE.MeshStandardMaterial({color:0x0e2419, roughness:.9})
+      new THREE.MeshStandardMaterial({color:0x0e2419, roughness:.92})
     );
     felt.rotation.x = -Math.PI/2; felt.position.y = -1.06; felt.receiveShadow = true;
     scene.add(felt);
 
-    // Lights
-    const key = new THREE.DirectionalLight(0xffffff,1.1); key.position.set(3.5,5.8,4.2); key.castShadow=true;
+    // Lights: punchy, cinematic
+    const key = new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3.5,5.8,4.2); key.castShadow=true;
     key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
     key.shadow.camera.near=1; key.shadow.camera.far=20;
     key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
     const fill = new THREE.DirectionalLight(0xffffff,.46); fill.position.set(-4.2,3,2);
     const rim  = new THREE.DirectionalLight(0xffffff,.28); rim.position.set(0,6.5,-5.5);
-    const amb  = new THREE.AmbientLight(0xcfd7e2,.36);
+    const amb  = new THREE.AmbientLight(0xcfd7e2,.34);
     scene.add(key,fill,rim,amb);
 
-    // Rounded cube generator
+    // Rounded cube generator (clean chamfer)
     function RoundedBox(w,h,d,r=0.19, seg=4){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -247,52 +184,106 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
-    // Create 6 pip textures (CanvasTexture)
-    const pipTex = {};
-    for(let i=1;i<=6;i++){
-      const c = makePipFace(i, 512);
-      const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = 8; t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
-      t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
-      pipTex[i]=t;
-    }
-
-    // Body & face materials
+    // Materials: pearl body + matte inlaid pips + micro inked edge
     const bodyMat = new THREE.MeshPhysicalMaterial({
-      color:0xf3efe8, roughness:.42, metalness:0.0,
-      sheen:1.0, sheenColor:new THREE.Color(0xffffff), sheenRoughness:.7,
-      clearcoat:.65, clearcoatRoughness:.24, envMapIntensity:1.0
+      color:0xf3efe8, roughness:.38, metalness:0.02,
+      sheen:1.0, sheenColor:new THREE.Color(0xffffff), sheenRoughness:.6,
+      clearcoat:.7, clearcoatRoughness:.25, iridescence:.1, iridescenceIOR:1.2, iridescenceThicknessRange:[100,300],
+      envMapIntensity:1.0
     });
-    function faceMat(n){
-      return new THREE.MeshPhysicalMaterial({
-        map: pipTex[n], transparent:false, color:0xffffff,
-        roughness:.48, metalness:0.0, clearcoat:.45, clearcoatRoughness:.32
-      });
-    }
+    const pipMat  = new THREE.MeshPhysicalMaterial({
+      color:0x0b0b0b, roughness:.6, metalness:.05, clearcoat:.2, clearcoatRoughness:.45
+    });
+    const edgeMat = new THREE.MeshStandardMaterial({ color:0xd9d7d2, roughness:.7, metalness:0 });
 
     function makeDie(size=1.08){
       const g = new THREE.Group();
+
+      // Body
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-      body.castShadow = true; g.add(body);
+      body.castShadow = true; body.receiveShadow = false;
+      g.add(body);
 
-      // Thin “cards” stuck to each face for perfect crisp pips (no z-fighting/hard seam)
-      const pad=0.02, s=size-pad*2, t=0.0016;
-      const plane = new THREE.PlaneGeometry(s,s);
-      const faces = [
-        {n:3, pos:[+size/2+t,0,0], rot:[0, Math.PI/2, 0]},
-        {n:4, pos:[-size/2-t,0,0], rot:[0,-Math.PI/2, 0]},
-        {n:1, pos:[0,+size/2+t,0], rot:[-Math.PI/2,0,0]},
-        {n:6, pos:[0,-size/2-t,0], rot:[+Math.PI/2,0,0]},
-        {n:2, pos:[0,0,+size/2+t], rot:[0,0,0]},
-        {n:5, pos:[0,0,-size/2-t], rot:[0,Math.PI,0]},
-      ];
-      faces.forEach(f=>{
-        const p = new THREE.Mesh(plane, faceMat(f.n));
-        p.position.set(...f.pos); p.rotation.set(...f.rot); p.castShadow=false; p.receiveShadow=false;
+      // Thin “inked” edge card (subtle outline look)
+      const ink = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
+      ink.scale.set(1.002,1.002,1.002);
+      g.add(ink);
+
+      // Inlaid pips — real geometry (cylinders) slightly embedded
+      const pipR = size*0.08, pipH = size*0.14, inset = size*0.52; // push into face
+      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipH, 32);
+      const mkPip = (x,y,z, rx=0,ry=0,rz=0)=>{
+        const p = new THREE.Mesh(pipGeom, pipMat);
+        p.rotation.set(rx,ry,rz);
+        p.position.set(x,y,z);
+        p.castShadow=true; p.receiveShadow=false;
         g.add(p);
-      });
+      };
 
+      // Grid offsets on a face
+      const m = size*0.28, c = 0; // center
+      const positions = {
+        1:[[c,c]],
+        2:[[-m,-m],[m,m]],
+        3:[[-m,-m],[c,c],[m,m]],
+        4:[[-m,-m],[m,-m],[-m,m],[m,m]],
+        5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],
+        6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
+      };
+
+      // Face mapping (matches craps die standard; opposite sum = 7)
+      // +X=3, -X=4, +Y=1 (top), -Y=6 (bottom), +Z=2 (front), -Z=5 (back)
+      function addFace(face, normal){
+        const [nx,ny,nz] = normal;
+        const rx = ny!==0 ? 0 : (nz!==0 ? Math.PI/2 : 0);
+        const ry = nx!==0 ? 0 : (nz!==0 ? 0 : (nx===0 && nz===0 ? 0 : 0));
+        const rz = 0;
+        const rot = new THREE.Euler(
+          nz!==0 ? 0 : (ny>0?0: (ny<0?Math.PI:0)),
+          nz!==0 ? 0 : (nx>0?-Math.PI/2: (nx<0?Math.PI/2:0)),
+          nz>0?0:(nz<0?Math.PI:0)
+        ); // we'll override per-axis below for correctness
+
+        // orientation per axis so pips read correctly:
+        let orient = new THREE.Quaternion();
+        if(nx>0){ orient.setFromEuler(new THREE.Euler(0, Math.PI/2, 0)); }        // +X
+        if(nx<0){ orient.setFromEuler(new THREE.Euler(0,-Math.PI/2, 0)); }        // -X
+        if(ny>0){ orient.setFromEuler(new THREE.Euler(-Math.PI/2,0,0)); }         // +Y (top)
+        if(ny<0){ orient.setFromEuler(new THREE.Euler( Math.PI/2,0,0)); }         // -Y (bottom)
+        if(nz>0){ orient.setFromEuler(new THREE.Euler(0,0,0)); }                  // +Z (front)
+        if(nz<0){ orient.setFromEuler(new THREE.Euler(0,Math.PI,0)); }            // -Z (back)
+
+        const arr = positions[face];
+        arr.forEach(([u,v])=>{
+          // local face coordinates
+          const local = new THREE.Vector3(u, v, 0);
+          local.applyQuaternion(orient);
+          // place on face plane with slight inset along normal
+          const pos = new THREE.Vector3(
+            local.x + nx*inset,
+            local.y + ny*inset,
+            local.z + nz*inset
+          );
+          const pip = new THREE.Mesh(pipGeom, pipMat);
+          // rotate cylinder so its axis points along the normal
+          if(nx!==0){ pip.rotation.z = Math.PI/2; }
+          if(ny!==0){ pip.rotation.x = 0; pip.rotation.z = 0; }
+          if(nz!==0){ pip.rotation.x = Math.PI/2; }
+          pip.position.copy(pos);
+          pip.castShadow = true;
+          g.add(pip);
+        });
+      }
+
+      // Build all faces
+      addFace(3,[+1,0,0]);
+      addFace(4,[-1,0,0]);
+      addFace(1,[0,+1,0]);
+      addFace(6,[0,-1,0]);
+      addFace(2,[0,0,+1]);
+      addFace(5,[0,0,-1]);
+
+      // Helper: pose to show specific top face with optional yaw
       g.__setTop = function(value, yaw=0){
         const m={
           1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -329,41 +320,33 @@
       });
     }
 
-    // Big throw with spins then settle to specific faces
+    // Throw: heavier spin, clean settle
     async function throwTo(a,b, totalMs=1250){
       const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
       A.position.set(startXA,startY,0); B.position.set(startXB,startY,0);
       A.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
       B.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
 
-      // random yaws for final orientation so they don’t look identical every time
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-
-      // noise spin speeds
-      const sA=34+Math.random()*7, sB=33+Math.random()*7;
+      const sA=36+Math.random()*8, sB=35+Math.random()*8;
 
       const t0=performance.now();
       await new Promise(res=>{
         function step(t){
           const raw=Math.min(1,(t-t0)/totalMs);
-          // flight vs drop curve
           const pAir=Math.min(1, raw/0.78), pDrop=Math.max(0,(raw-0.78)/0.22);
-
-          // bezier-ish easing
           const ease=(x)=>1-Math.pow(1-x,3);
 
           const xA=startXA+(-0.95-startXA)*ease(pAir);
           const xB=startXB+( 0.95-startXB)*ease(pAir);
-          const arc = 0.62*(1 - (2*pAir-1)**2);
+          const arc = 0.66*(1 - (2*pAir-1)**2);
           const y=endY+arc+0.12;
           A.position.set(xA,y,0); B.position.set(xB,y,0);
 
-          // tumble while in air
           const dt=0.016;
-          A.rotation.x+=1.08*sA*dt; A.rotation.y+=1.35*sA*dt; A.rotation.z+=0.74*sA*dt;
-          B.rotation.x+=0.98*sB*dt; B.rotation.y+=1.22*sB*dt; B.rotation.z+=0.66*sB*dt;
+          A.rotation.x+=1.18*sA*dt; A.rotation.y+=1.42*sA*dt; A.rotation.z+=0.82*sA*dt;
+          B.rotation.x+=1.05*sB*dt; B.rotation.y+=1.30*sB*dt; B.rotation.z+=0.74*sB*dt;
 
-          // settle into target during drop
           if(pDrop>0){
             const k=ease(pDrop);
             const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
@@ -376,19 +359,17 @@
         requestAnimationFrame(step);
       });
 
-      // snap & bounce micro-wobble
       A.__setTop(a,yawA); B.__setTop(b,yawB);
       A.position.y=B.position.y=endY;
 
       await impact(140,0.06);
 
-      // subtle damped wobble
       const wob0=performance.now();
       await new Promise(res=>{
         (function wob(ts){
-          const t=(ts-wob0)/300; const k=Math.max(0,1-t);
+          const t=(ts-wob0)/320; const k=Math.max(0,1-t);
           if(k<=0) return res();
-          const w=0.06*k*Math.sin(ts*0.05);
+          const w=0.06*k*Math.sin(ts*0.06);
           A.rotation.x+=w*0.02; B.rotation.y-=w*0.02;
           requestAnimationFrame(wob);
         })(wob0);
@@ -402,11 +383,11 @@
       await throwTo(a,b,1250);
     };
 
-    // center pose (static)
+    // Default idle pose
     A.__setTop(3, 0.2); B.__setTop(4, -0.3);
   }
 
-  /* -------------------- CSS fallback (still no images) -------------------- */
+  /* -------------------- CSS fallback (basic) -------------------- */
   function bootCSS(){
     cssWrap.innerHTML=''; cssWrap.classList.add('active');
     function makeCube(){
@@ -441,7 +422,7 @@
     };
   }
 
-  // Boot path
+  // Boot
   (function boot(){
     let tries=0;
     function tick(){
@@ -452,7 +433,7 @@
     tick();
   })();
 
-  /* -------------------- Game rules + UI (clean) -------------------- */
+  /* -------------------- Game rules + UI -------------------- */
   function isComeOut(){ return !ROUND.active || ROUND.point==null; }
 
   function setStatus(rollA, rollB, extra){
@@ -495,7 +476,6 @@
           ROUND.active=false; ROUND.point=null; resetComeOutUI();
         } else {
           setStatus(a,b,'Neutral — roll again');
-          // keep current point UI
         }
       }
 
