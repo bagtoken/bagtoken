@@ -391,7 +391,7 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-  /* ---------------- THREE.JS PATH (pearl body + PRECISE inlaid geometry pips) ---------------- */
+  /* ---------------- THREE.JS: centered, tumble-only, precise pips ---------------- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
@@ -457,7 +457,7 @@
     const amb  = new THREE.AmbientLight(0xcfd7e2, 0.34);
     scene.add(key, fill, rim, amb);
 
-    // Rounded cube
+    // Rounded cube helper
     function RoundedBox(w,h,d,r=0.19, seg=4){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -474,29 +474,40 @@
 
     // Materials
     const bodyMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf4f0ea, roughness: 0.40, metalness: 0.02,
-      sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.6,
-      clearcoat: 0.70, clearcoatRoughness: 0.25,
-      iridescence: 0.08, iridescenceIOR: 1.2, iridescenceThicknessRange: [110, 280],
+      color: 0xf6f3ee,
+      roughness: 0.38,
+      metalness: 0.02,
+      sheen: 1.0,
+      sheenColor: new THREE.Color(0xffffff),
+      sheenRoughness: 0.55,
+      clearcoat: 0.70,
+      clearcoatRoughness: 0.22,
       envMapIntensity: 1.0
     });
     const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdad7d2, roughness: 0.75, metalness: 0.0 });
-    const pipMat  = new THREE.MeshPhysicalMaterial({ color: 0x0c0c0c, roughness: 0.55, metalness: 0.08, clearcoat: 0.25, clearcoatRoughness: 0.45 });
+    // High-contrast glossy pips
+    const pipMat  = new THREE.MeshPhysicalMaterial({
+      color: 0x0b0b0b,
+      roughness: 0.45,
+      metalness: 0.08,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.40
+    });
 
-    // PRECISE inlaid pips (quaternion-align cylinders to face normals)
+    // PRECISE inlaid pips (quaternion align; tiny inset to avoid z-fighting)
     function makeDie(size=1.08){
       const g = new THREE.Group();
 
-      // Body + subtle outline
+      // Body + subtle outline shell
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-      body.castShadow = true; g.add(body);
-
+      body.castShadow = true; body.receiveShadow = false;
+      g.add(body);
       const shell = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
       shell.scale.set(1.002,1.002,1.002); g.add(shell);
 
-      const pipR = size*0.082, pipDepth = size*0.14;
-      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40);
-
+      const pipR = size*0.082;
+      const pipDepth = size*0.16;               // deeper for crisp inlay
+      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40, 1, false);
       const m = size*0.28, c = 0;
       const pattern = {
         1:[[c,c]],
@@ -509,7 +520,7 @@
 
       const axisY = new THREE.Vector3(0,1,0);
       const half  = size/2;
-      const insetEPS = 0.012; // tiny inset to prevent z-fighting
+      const insetEPS = 0.014; // push pips just inside to prevent floaters
       function addFace(faceNum, n, u, v){
         const plane = half - insetEPS;
         const quat = new THREE.Quaternion().setFromUnitVectors(axisY, n.clone().normalize());
@@ -524,12 +535,11 @@
         }
       }
 
-      // Face frames
+      // Per-face frames (consistent grid)
       const Xp = new THREE.Vector3( 1,0,0), Xm = new THREE.Vector3(-1,0,0);
       const Yp = new THREE.Vector3(0, 1,0), Ym = new THREE.Vector3(0,-1,0);
       const Zp = new THREE.Vector3(0,0, 1), Zm = new THREE.Vector3(0,0,-1);
 
-      // u/v axes per face so grid aligns consistently
       addFace(3, Xp, Zp, Yp); // +X
       addFace(4, Xm, Zp, Yp); // -X
       addFace(1, Yp, Xp, Zp); // +Y
@@ -537,6 +547,7 @@
       addFace(2, Zp, Xp, Yp); // +Z
       addFace(5, Zm, Xp, Yp); // -Z
 
+      // Pose helper (top face + yaw)
       g.__setTop = function(value, yaw=0){
         const map={1:[0,yaw,0],2:[-Math.PI/2,yaw,0],3:[0,yaw+Math.PI/2,0],4:[0,yaw-Math.PI/2,0],5:[Math.PI/2,yaw,0],6:[Math.PI,yaw,0]}[value]||[0,yaw,0];
         g.rotation.set(map[0],map[1],map[2]);
@@ -549,18 +560,22 @@
     const diceA = makeDie(1.08), diceB = makeDie(1.08);
     stage.add(diceA, diceB);
 
-    // Park tightly in center
-    function centerPose(){
-      const endY = 0.28, gap = 0.40;
-      diceA.position.set(-gap, endY, -0.04);
-      diceB.position.set( gap, endY,  0.04);
-    }
-    centerPose();
+    // Spacing: "just next to each other" (not touching, not too tight)
+    const GAP = 0.70;      // adjust for closer/further
+    const YPOS = 0.28;
+    const ZA = -0.05, ZB = 0.05;
 
+    function park(){
+      diceA.position.set(-GAP, YPOS, ZA);
+      diceB.position.set( GAP, YPOS, ZB);
+    }
+    park();
+
+    // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Tiny impact shake
-    async function impactShake(ms=70, px=0.03){
+    // Subtle impact tick (optional)
+    async function impactTick(ms=50, px=0.02){
       const t0=performance.now(), ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
         (function step(t){
@@ -572,78 +587,46 @@
       });
     }
 
-    // Snappy center tumble → abrupt stop
-    async function throwDiceTo(a,b, totalMs=900){
-      const endY=0.28, endXA=-0.40, endXB=+0.40, endZA=-0.04, endZB=+0.04;
-      const startXA=-2.0, startXB=+2.0, startY=0.90;
-
-      diceA.position.set(startXA,startY,endZA);
-      diceB.position.set(startXB,startY,endZB);
+    // TUMBLE IN PLACE → ABRUPT STOP
+    async function tumbleTo(a,b, totalMs=700){
+      // Start: keep positions fixed; only spin
+      const yawA=(Math.random()*Math.PI*2-Math.PI);
+      const yawB=(Math.random()*Math.PI*2-Math.PI);
       diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
       diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
-
-      const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-      const easeOutCubic = (x)=> 1 - Math.pow(1-x, 3);
 
       const t0=performance.now();
       await new Promise(res=>{
         function step(t){
           const raw = Math.min(1, (t-t0)/totalMs);
-          const pFly  = Math.min(1, raw/0.80);
-          const pSnap = Math.max(0,(raw-0.80)/0.20);
-
-          const k = easeOutCubic(pFly);
-          const xA = startXA + (endXA - startXA)*k;
-          const xB = startXB + (endXB - startXB)*k;
-          const arc = 0.50*(1 - (2*pFly-1)**2);
-          const y   = endY + arc + 0.10;
-
-          diceA.position.set(xA,y,endZA);
-          diceB.position.set(xB,y,endZB);
-
-          const spin = 42*(1 - pFly*0.85);
+          // Ease for spin-down feel, no translation at all
+          const spin = 60 * (1 - raw*0.85);
           const dt = 0.016;
-          diceA.rotation.x += 1.22*spin*dt; diceA.rotation.y += 1.40*spin*dt; diceA.rotation.z += 0.80*spin*dt;
-          diceB.rotation.x += 1.16*spin*dt; diceB.rotation.y += 1.32*spin*dt; diceB.rotation.z += 0.74*spin*dt;
-
-          if (pSnap>0){
-            const s = Math.min(1, Math.pow(pSnap, 6)); // steep snap
-            const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
-            const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
-            diceA.rotation.set(
-              diceA.rotation.x + (toA[0]-diceA.rotation.x)*s,
-              diceA.rotation.y + (toA[1]-diceA.rotation.y)*s,
-              diceA.rotation.z + (toA[2]-diceA.rotation.z)*s
-            );
-            diceB.rotation.set(
-              diceB.rotation.x + (toB[0]-diceB.rotation.x)*s,
-              diceB.rotation.y + (toB[1]-diceB.rotation.y)*s,
-              diceB.rotation.z + (toB[2]-diceB.rotation.z)*s
-            );
-          }
+          diceA.rotation.x += 1.3*spin*dt; diceA.rotation.y += 1.5*spin*dt; diceA.rotation.z += 0.9*spin*dt;
+          diceB.rotation.x += 1.2*spin*dt; diceB.rotation.y += 1.4*spin*dt; diceB.rotation.z += 0.85*spin*dt;
 
           if (raw<1) requestAnimationFrame(step); else res();
         }
         requestAnimationFrame(step);
       });
 
-      // Force exact final pose/position and give a tiny impact tick
-      diceA.__setTop(a,yawA); diceB.__setTop(b,yawB);
-      diceA.position.set(endXA,endY,endZA);
-      diceB.position.set(endXB,endY,endZB);
-      await impactShake(70,0.03);
+      // Abrupt snap to the exact result (no wobble)
+      diceA.__setTop(a, yawA);
+      diceB.__setTop(b, yawB);
+      park();
+      await impactTick(50, 0.02);
     }
 
     // Public hook used by the rest of your app
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.(); await sP;
       window.__bagSfx?.playRoll?.();
-      await throwDiceTo(a,b,900);
-      await new Promise(r=>setTimeout(r,90));
+      await tumbleTo(a,b,700);
+      await new Promise(r=>setTimeout(r,70));
     };
   }
 
-  /* ---------------- CSS FALLBACK (uses your PNGs) ---------------- */
+  /* ---------------- CSS FALLBACK (PNG faces): same tumble-only behavior ---------------- */
   function initCssFallback(){
     cssWrap.innerHTML = '';
     cssWrap.classList.add('active');
@@ -654,10 +637,14 @@
         f.style.backgroundImage = `url(${FACE_URLS[i+1]})`;
         d.appendChild(f);
       });
-      cssWrap.appendChild(d);
       return d;
     };
+    const holder = document.createElement('div');
+    holder.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:32px;place-items:center;width:100%;height:100%';
     const A = mk(), B = mk();
+    holder.appendChild(A); holder.appendChild(B);
+    cssWrap.appendChild(holder);
+
     function setTop(el, val, yaw=0){
       const map={
         1:`rotateX(0rad) rotateY(${yaw}rad)`,
@@ -673,14 +660,15 @@
     window.__bagDiceRollImpl = async function(a,b){
       A.classList.remove('settle'); B.classList.remove('settle');
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+      // Tumble-in-place only
       A.style.transition=B.style.transition='transform .65s cubic-bezier(.2,.9,.2,1)';
-      A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
-      B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
+      A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad) rotateZ(${Math.random()*8}rad)`;
+      B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad) rotateZ(${Math.random()*8}rad)`;
       const sP = window.__bagSfx?.playShake?.(); await sP; window.__bagSfx?.playRoll?.();
       await new Promise(r=>setTimeout(r, 520));
       setTop(A,a,yawA); setTop(B,b,yawB);
       A.classList.add('settle'); B.classList.add('settle');
-      await new Promise(r=>setTimeout(r, 160));
+      await new Promise(r=>setTimeout(r, 140));
     };
   }
 
@@ -747,6 +735,7 @@
   }
 })();
 </script>
+
 
 
 <!-- Xaman wallet connect -->
