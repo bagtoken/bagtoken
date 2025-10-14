@@ -2,8 +2,54 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta
+  http-equiv="Cache-Control"
+  content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>$BAG Dice — Clean Dice, Real Tumble</title>
+<title>$BAG Dice — Clean Dice, Real Tumble ⚡ V2</title>
+
+<!-- 0) SELF-VERSION once per session to bust HTML cache -->
+<script>
+(function(){
+  try{
+    const Q = new URLSearchParams(location.search);
+    if(!sessionStorage.getItem('BAG_DICE_V2_BOOTED')){
+      sessionStorage.setItem('BAG_DICE_V2_BOOTED','1');
+      if(!Q.get('v')){
+        Q.set('v', Date.now().toString());
+        const u = location.pathname + '?' + Q.toString() + location.hash;
+        location.replace(u);
+      }
+    }
+  }catch(e){}
+})();
+</script>
+
+<!-- 1) NUKE any service worker + CacheStorage once -->
+<script>
+(async function(){
+  try{
+    if(!localStorage.getItem('BAG_DICE_SW_NUKED')){
+      if('serviceWorker' in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for(const r of regs) { try{ await r.unregister(); }catch{} }
+      }
+      if('caches' in window){
+        const keys = await caches.keys();
+        for(const k of keys) { try{ await caches.delete(k); }catch{} }
+      }
+      localStorage.setItem('BAG_DICE_SW_NUKED','1');
+      // Don’t loop: only soft reload if no ?nocache flag
+      if(!/nocache=1/.test(location.search)){
+        const url = new URL(location.href);
+        url.searchParams.set('nocache','1');
+        location.replace(url.toString());
+      }
+    }
+  }catch(e){}
+})();
+</script>
 
 <!-- Three.js (robust loader with fallback) -->
 <script>
@@ -30,7 +76,6 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  h1,h2,h3{margin:0 0 8px}
   .wrap{max-width:1100px;margin:0 auto;padding:22px 14px 40px}
   .hero{display:flex;align-items:end;gap:10px;justify-content:center;margin:14px 0 10px}
   .hero h1{font-size:clamp(1.2rem,3.2vw,1.6rem);opacity:.95}
@@ -38,21 +83,17 @@
   .stage{height:300px;border:1px solid #214a31;border-radius:12px;overflow:hidden;background:radial-gradient(120% 100% at 50% 10%, #123425 0%, #091a13 70%)}
   .stage canvas{display:block;width:100%;height:100%}
   .row{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-top:10px}
-  .col{flex:1;min-width:260px}
   .btn{
     width:min(360px,95%);padding:14px 18px;border:0;border-radius:12px;font-weight:900;letter-spacing:.4px;
     color:#0a130e;background:linear-gradient(180deg,var(--gold1),var(--gold2));box-shadow:0 6px 0 #b08a19,0 14px 30px rgba(255,225,117,.18);cursor:pointer
   }
-  .btn:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 10px 24px rgba(255,225,117,.22)}
-  .status{
-    margin-top:10px;padding:10px 12px;border:1px solid #234e35;border-radius:12px;background:#0c2318;
-    display:grid;gap:6px
-  }
+  .btn:active{transform:translateY(2px)}
+  .status{margin-top:10px;padding:10px 12px;border:1px solid #234e35;border-radius:12px;background:#0c2318;display:grid;gap:6px}
   .status .line{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}
   .status .note{font-size:.9rem;color:#cfe0d6}
   .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-  /* CSS fallback (still no images) */
+  /* CSS fallback */
   .css-dice{position:absolute;inset:0;display:none;place-items:center;gap:64px}
   .cube{position:relative;width:110px;height:110px;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.9,.2,1)}
   .face{position:absolute;inset:0;background:#f3f2ee;border-radius:20px;box-shadow:inset 0 0 0 2px #d9d7d2}
@@ -61,8 +102,8 @@
   .f2{transform:rotateX(-90deg) translateZ(55px)} .f5{transform:rotateX(90deg) translateZ(55px)}
   .css-dice.active{display:grid}
 
-  /* Debug badge */
-  .dbg{position:absolute;top:8px;left:8px;z-index:9;font:600 12px/1.2 Inter,system-ui,sans-serif;padding:6px 8px;border-radius:8px;background:#0b1b13;box-shadow:0 0 0 1px #234e35;color:#d2f5e3;opacity:.95}
+  /* Build badge */
+  .dbg{position:absolute;top:8px;left:8px;z-index:9;font:700 12px/1.2 Inter,system-ui,sans-serif;padding:6px 8px;border-radius:8px;background:#0b1b13;box-shadow:0 0 0 1px #234e35;color:#d2f5e3}
   #stage{position:relative}
 </style>
 </head>
@@ -75,7 +116,7 @@
     <div class="table">
       <div id="stage" class="stage" aria-label="3D dice area">
         <div id="cssFallback" class="css-dice"></div>
-        <div id="dbg" class="dbg">Booting…</div>
+        <div id="dbg" class="dbg">BUILD: <b id="buildId"></b> · Booting…</div>
       </div>
 
       <div class="row" style="justify-content:center">
@@ -112,13 +153,17 @@
   const cssWrap = document.getElementById('cssFallback');
   const rollBtn = document.getElementById('rollBtn');
   const dbgEl   = document.getElementById('dbg');
+  const buildIdEl = document.getElementById('buildId');
 
   const phaseEl = document.getElementById('phase');
   const lastEl  = document.getElementById('lastRoll');
   const pointEl = document.getElementById('pointVal');
   const ctaEl   = document.getElementById('cta');
 
-  function shout(msg){ dbgEl.textContent = msg; console.log('[BAG DICE]', msg); }
+  const BUILD = new Date().toISOString().replace('T',' ').slice(0,19);
+  buildIdEl.textContent = BUILD;
+
+  function shout(msg){ dbgEl.textContent = 'BUILD: ' + BUILD + ' · ' + msg; console.log('[BAG DICE]', msg); }
 
   const ROUND = { active:false, point:null };
   function resetComeOutUI(){
@@ -136,7 +181,7 @@
   function loseUI(msg){ ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`; }
   resetComeOutUI();
 
-  /* -------------------- THREE: brand-new physical dice (inlaid pips) -------------------- */
+  /* -------------------- THREE dice with real inlaid pips -------------------- */
   function bootThree(){
     const THREE = window.THREE;
     const w = stageEl.clientWidth, h = stageEl.clientHeight;
@@ -159,7 +204,7 @@
       renderer.setSize(W,H);
     });
 
-    // Table felt
+    // Felt
     const felt = new THREE.Mesh(
       new THREE.CylinderGeometry(3.8,3.8,0.02,64),
       new THREE.MeshStandardMaterial({color:0x0e2419, roughness:.92})
@@ -177,7 +222,6 @@
     const amb  = new THREE.AmbientLight(0xcfd7e2,.34);
     scene.add(key,fill,rim,amb);
 
-    // Rounded cube geometry (clean chamfer)
     function RoundedBox(w,h,d,r=0.19, seg=4){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -192,7 +236,6 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
-    // Materials: pearl body + matte inlaid pips + subtle edge ink
     const bodyMat = new THREE.MeshPhysicalMaterial({
       color:0xf3efe8, roughness:.38, metalness:0.02,
       sheen:1.0, sheenColor:new THREE.Color(0xffffff), sheenRoughness:.6,
@@ -207,17 +250,12 @@
     function makeDie(size=1.08){
       const g = new THREE.Group();
 
-      // Body
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-      body.castShadow = true; body.receiveShadow = false;
-      g.add(body);
+      body.castShadow = true; g.add(body);
 
-      // Subtle edge outline
       const ink = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-      ink.scale.set(1.002,1.002,1.002);
-      g.add(ink);
+      ink.scale.set(1.002,1.002,1.002); g.add(ink);
 
-      // Inlaid pips: cylinders embedded into each face
       const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
       const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 32);
 
@@ -231,34 +269,25 @@
         6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
       };
 
-      function addFace(face, normal){ // normal is [nx,ny,nz] unit directions
+      function addFace(face, normal){
         const [nx,ny,nz]=normal;
-        const arr = positions[face];
-        arr.forEach(([u,v])=>{
+        positions[face].forEach(([u,v])=>{
           const pip = new THREE.Mesh(pipGeom, pipMat);
-          // orient cylinder axis along normal
           if(nx!==0){ pip.rotation.z = Math.PI/2; }
           if(nz!==0){ pip.rotation.x = Math.PI/2; }
-          // place on face plane with slight inset
-          pip.position.set(
-            u + nx*inset,
-            v + ny*inset,
-            0 + nz*inset
-          );
-          pip.castShadow = true;
-          g.add(pip);
+          pip.position.set(u + nx*inset, v + ny*inset, nz*inset);
+          pip.castShadow = true; g.add(pip);
         });
       }
 
-      // Face mapping (opposites sum to 7)
+      // Opposites sum to 7
       addFace(3,[+1,0,0]); // +X
       addFace(4,[-1,0,0]); // -X
-      addFace(1,[0,+1,0]); // +Y (top)
-      addFace(6,[0,-1,0]); // -Y (bottom)
-      addFace(2,[0,0,+1]); // +Z (front)
-      addFace(5,[0,0,-1]); // -Z (back)
+      addFace(1,[0,+1,0]); // +Y
+      addFace(6,[0,-1,0]); // -Y
+      addFace(2,[0,0,+1]); // +Z
+      addFace(5,[0,0,-1]); // -Z
 
-      // Pose helper: set which face is up, with yaw
       g.__setTop = function(value, yaw=0){
         const m={
           1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -279,11 +308,10 @@
     }
     centerPose();
 
-    // Expose tiny hooks for debug/verification
+    // Hooks for verification if you need them later
     window.__setDiePoseHook = (a,b)=>{ try{ A.__setTop(a,0.15); B.__setTop(b,-0.2); }catch{} };
     window.__tweakDieLook = ({pipDepth, bodyTint})=>{
       try{
-        // nudge cylinders outward for deeper look
         A.children.concat(B.children).forEach(m=>{
           if (m.geometry && m.geometry.type === 'CylinderGeometry') {
             const n = m.position.clone().normalize().multiplyScalar((pipDepth||0.18));
@@ -294,13 +322,11 @@
           A.children[0].material.color.set(bodyTint);
           B.children[0].material.color.set(bodyTint);
         }
-      }catch(e){ console.warn(e); }
+      }catch(e){}
     };
 
-    // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Tiny scene shake on impact
     async function impact(ms=140, px=0.055){
       const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
@@ -313,7 +339,6 @@
       });
     }
 
-    // Throw & settle
     async function throwTo(a,b, totalMs=1250){
       const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
       A.position.set(startXA,startY,0); B.position.set(startXB,startY,0);
@@ -369,20 +394,19 @@
       });
     }
 
-    // Public roll impl
     window.__rollDiceImpl = async function(a,b){
       await window.SFX?.shake();
       window.SFX?.roll();
       await throwTo(a,b,1250);
     };
 
-    // Idle pose shows 1 & 6 to prove new model
+    // Idle pose shows 1 & 6 as proof
     A.__setTop(1, 0.15); B.__setTop(6, -0.2);
 
     shout('THREE + GEOMETRY PIPS ✅');
   }
 
-  /* -------------------- CSS fallback (basic cubes) -------------------- */
+  /* CSS fallback */
   function bootCSS(){
     cssWrap.innerHTML=''; cssWrap.classList.add('active');
     function makeCube(){
@@ -393,7 +417,6 @@
       cssWrap.appendChild(c); return c;
     }
     const A=makeCube(), B=makeCube();
-
     function setTop(el, val, yaw=0){
       const map={
         1:`rotateX(0rad) rotateY(${yaw}rad)`,
@@ -405,7 +428,6 @@
       }[val]||`rotateX(0rad) rotateY(${yaw}rad)`;
       el.style.transform = map;
     }
-
     window.__setDiePoseHook = (a,b)=>{ setTop(A,a,0.15); setTop(B,b,-0.2); };
     window.__tweakDieLook = ()=>{};
     window.__rollDiceImpl = async function(a,b){
@@ -417,7 +439,6 @@
       setTop(B,b, Math.random()*6-3);
       await new Promise(r=>setTimeout(r, 220));
     };
-
     shout('CSS FALLBACK ⚠️ (Three failed to load)');
   }
 
@@ -432,13 +453,12 @@
     tick();
   })();
 
-  /* -------------------- Game rules + UI -------------------- */
+  /* Rules + UI */
   function isComeOut(){ return !ROUND.active || ROUND.point==null; }
   function setStatus(rollA, rollB, extra){
     const sum = rollA+rollB;
     lastEl.textContent = `${rollA} + ${rollB} = ${sum}` + (extra?`  ·  ${extra}`:'');
   }
-
   function wireRoll(){
     rollBtn.addEventListener('click', async ()=>{
       if (!window.__rollDiceImpl) return;
@@ -450,28 +470,23 @@
 
       await window.__rollDiceImpl(a,b);
 
-      if (!ROUND.active || ROUND.point==null){
+      if (isComeOut()){
         if (sum===7 || sum===11){
           setStatus(a,b,'Come-out WIN (1.25×)');
-          winUI('Come-out 7/11');
-          ROUND.active=false; ROUND.point=null; resetComeOutUI();
+          winUI('Come-out 7/11'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
         } else if (sum===2 || sum===3 || sum===12){
           setStatus(a,b,'CRAPS');
-          loseUI('CRAPS on come-out');
-          ROUND.active=false; ROUND.point=null; resetComeOutUI();
+          loseUI('CRAPS on come-out'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
         } else {
-          setStatus(a,b,'Point set');
-          setPointUI(sum);
+          setStatus(a,b,'Point set'); setPointUI(sum);
         }
       } else {
         if (sum===ROUND.point){
           setStatus(a,b,'POINT MADE (1.00×)');
-          winUI(`Point ${ROUND.point} made`);
-          ROUND.active=false; ROUND.point=null; resetComeOutUI();
+          winUI(`Point ${ROUND.point} made`); ROUND.active=false; ROUND.point=null; resetComeOutUI();
         } else if (sum===7){
           setStatus(a,b,'SEVEN OUT');
-          loseUI('Seven out');
-          ROUND.active=false; ROUND.point=null; resetComeOutUI();
+          loseUI('Seven out'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
         } else {
           setStatus(a,b,'Neutral — roll again');
         }
