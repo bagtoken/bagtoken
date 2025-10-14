@@ -109,7 +109,7 @@
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
 
-  /* CSS fallback dice (only if Three.js fails) */
+  /* CSS fallback dice */
   .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
   .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
   .css-face{
@@ -366,7 +366,7 @@
 })();
 </script>
 
-<!-- GAME + DICE -->
+<!-- GAME + PRICES + DICE -->
 <script>
 (function(){
   /* ---------- Dice UI helpers (status text) ---------- */
@@ -484,8 +484,6 @@
       clearcoatRoughness: 0.22,
       envMapIntensity: 1.0
     });
-    const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdad7d2, roughness: 0.75, metalness: 0.0 });
-    // High-contrast glossy pips
     const pipMat  = new THREE.MeshPhysicalMaterial({
       color: 0x0b0b0b,
       roughness: 0.45,
@@ -494,20 +492,19 @@
       clearcoatRoughness: 0.40
     });
 
-    // PRECISE inlaid pips (quaternion align; tiny inset to avoid z-fighting)
+    // PRECISE embossed pips (tiny outward bump; quaternion-aligned)
     function makeDie(size=1.08){
       const g = new THREE.Group();
 
-      // Body + subtle outline shell
+      // Die body
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-      body.castShadow = true; body.receiveShadow = false;
+      body.castShadow = true;
       g.add(body);
-      const shell = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-      shell.scale.set(1.002,1.002,1.002); g.add(shell);
 
       const pipR = size*0.082;
-      const pipDepth = size*0.16;               // deeper for crisp inlay
+      const pipDepth = size*0.16;          // length of cylinder
       const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40, 1, false);
+
       const m = size*0.28, c = 0;
       const pattern = {
         1:[[c,c]],
@@ -518,13 +515,21 @@
         6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]]
       };
 
+      // Frame vectors per face
+      const Xp = new THREE.Vector3( 1,0,0), Xm = new THREE.Vector3(-1,0,0);
+      const Yp = new THREE.Vector3(0, 1,0), Ym = new THREE.Vector3(0,-1,0);
+      const Zp = new THREE.Vector3(0,0, 1), Zm = new THREE.Vector3(0,0,-1);
+
+      const half = size/2;
+      const OUT  = 0.012; // tiny outward bump so pips are visible (no floaters)
       const axisY = new THREE.Vector3(0,1,0);
-      const half  = size/2;
-      const insetEPS = 0.014; // push pips just inside to prevent floaters
+
       function addFace(faceNum, n, u, v){
-        const plane = half - insetEPS;
+        // center so the outer cap is half + OUT (slightly outside body)
+        const centerDist = (half + OUT) - (pipDepth*0.5);
+        const center = n.clone().multiplyScalar(centerDist);
         const quat = new THREE.Quaternion().setFromUnitVectors(axisY, n.clone().normalize());
-        const center = n.clone().multiplyScalar(plane - pipDepth*0.50);
+
         for(const [uu,vv] of pattern[faceNum]){
           const pip = new THREE.Mesh(pipGeom, pipMat);
           pip.castShadow = true;
@@ -535,11 +540,7 @@
         }
       }
 
-      // Per-face frames (consistent grid)
-      const Xp = new THREE.Vector3( 1,0,0), Xm = new THREE.Vector3(-1,0,0);
-      const Yp = new THREE.Vector3(0, 1,0), Ym = new THREE.Vector3(0,-1,0);
-      const Zp = new THREE.Vector3(0,0, 1), Zm = new THREE.Vector3(0,0,-1);
-
+      // Opposites sum to 7
       addFace(3, Xp, Zp, Yp); // +X
       addFace(4, Xm, Zp, Yp); // -X
       addFace(1, Yp, Xp, Zp); // +Y
@@ -560,11 +561,10 @@
     const diceA = makeDie(1.08), diceB = makeDie(1.08);
     stage.add(diceA, diceB);
 
-    // Spacing: "just next to each other" (not touching, not too tight)
-    const GAP = 0.70;      // adjust for closer/further
+    // “Just next to each other”
+    const GAP = 0.75;         // tweak spacing here
     const YPOS = 0.28;
     const ZA = -0.05, ZB = 0.05;
-
     function park(){
       diceA.position.set(-GAP, YPOS, ZA);
       diceB.position.set( GAP, YPOS, ZB);
@@ -574,7 +574,7 @@
     // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Subtle impact tick (optional)
+    // Very small impact tick (optional)
     async function impactTick(ms=50, px=0.02){
       const t0=performance.now(), ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
@@ -587,9 +587,8 @@
       });
     }
 
-    // TUMBLE IN PLACE → ABRUPT STOP
+    // TUMBLE IN PLACE → ABRUPT STOP (no throw)
     async function tumbleTo(a,b, totalMs=700){
-      // Start: keep positions fixed; only spin
       const yawA=(Math.random()*Math.PI*2-Math.PI);
       const yawB=(Math.random()*Math.PI*2-Math.PI);
       diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
@@ -599,34 +598,31 @@
       await new Promise(res=>{
         function step(t){
           const raw = Math.min(1, (t-t0)/totalMs);
-          // Ease for spin-down feel, no translation at all
-          const spin = 60 * (1 - raw*0.85);
+          const spin = 60 * (1 - raw*0.85); // spin-down feel
           const dt = 0.016;
           diceA.rotation.x += 1.3*spin*dt; diceA.rotation.y += 1.5*spin*dt; diceA.rotation.z += 0.9*spin*dt;
           diceB.rotation.x += 1.2*spin*dt; diceB.rotation.y += 1.4*spin*dt; diceB.rotation.z += 0.85*spin*dt;
-
           if (raw<1) requestAnimationFrame(step); else res();
         }
         requestAnimationFrame(step);
       });
 
-      // Abrupt snap to the exact result (no wobble)
+      // Abrupt snap to result (no wobble)
       diceA.__setTop(a, yawA);
       diceB.__setTop(b, yawB);
       park();
       await impactTick(50, 0.02);
     }
 
-    // Public hook used by the rest of your app
+    // Public hook (start spin IMMEDIATELY on tap; audio in parallel)
     window.__bagDiceRollImpl = async function(a,b){
-      const sP = window.__bagSfx?.playShake?.(); await sP;
-      window.__bagSfx?.playRoll?.();
+      try{ window.__bagSfx?.playShake?.(); }catch{}
+      try{ window.__bagSfx?.playRoll?.(); }catch{}
       await tumbleTo(a,b,700);
-      await new Promise(r=>setTimeout(r,70));
     };
   }
 
-  /* ---------------- CSS FALLBACK (PNG faces): same tumble-only behavior ---------------- */
+  /* ---------------- CSS FALLBACK (PNG faces; tumble-only) ---------------- */
   function initCssFallback(){
     cssWrap.innerHTML = '';
     cssWrap.classList.add('active');
@@ -660,11 +656,10 @@
     window.__bagDiceRollImpl = async function(a,b){
       A.classList.remove('settle'); B.classList.remove('settle');
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-      // Tumble-in-place only
       A.style.transition=B.style.transition='transform .65s cubic-bezier(.2,.9,.2,1)';
       A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad) rotateZ(${Math.random()*8}rad)`;
       B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad) rotateZ(${Math.random()*8}rad)`;
-      const sP = window.__bagSfx?.playShake?.(); await sP; window.__bagSfx?.playRoll?.();
+      try{ window.__bagSfx?.playShake?.(); window.__bagSfx?.playRoll?.(); }catch{}
       await new Promise(r=>setTimeout(r, 520));
       setTop(A,a,yawA); setTop(B,b,yawB);
       A.classList.add('settle'); B.classList.add('settle');
@@ -672,7 +667,7 @@
     };
   }
 
-  /* ---------------- Boot: wait for Three.js then init, else fallback ---------------- */
+  /* ---------------- Boot & Rules ---------------- */
   (function boot(){
     let tries = 0;
     function tick(){
@@ -683,7 +678,6 @@
     tick();
   })();
 
-  /* ---------------- Roll button + Pass-Line rules ---------------- */
   function wireRoll(){
     rollBtn?.addEventListener('click', async ()=>{
       if (!window.__bagDiceRollImpl) return;
@@ -735,8 +729,6 @@
   }
 })();
 </script>
-
-
 
 <!-- Xaman wallet connect -->
 <script>
@@ -866,7 +858,7 @@
     if (s && s.addr){
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
-      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
@@ -1022,7 +1014,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
