@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 <script>window.__BAG_FORCE_DEMO = true;</script>
+<!-- Three.js for real 3D dice -->
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
 
 <style>
   *{box-sizing:border-box}
@@ -64,44 +66,7 @@
   .payout-grid .lab{color:#cfd6cf}
   .payout-grid .val{font-variant-numeric:tabular-nums}
 
-  /* ----- 3D Dice ----- */
-  .stage{height:260px;display:flex;align-items:center;justify-content:center;gap:28px; position:relative}
-  .die-wrap{ width:96px; height:96px; perspective:900px; perspective-origin:50% 40%; }
-  .cube{
-    position:relative; width:96px; height:96px;
-    transform-style:preserve-3d;
-    will-change:transform;
-    filter: drop-shadow(0 10px 18px rgba(0,0,0,.35));
-  }
-  .face{
-    position:absolute; inset:0;
-    background:radial-gradient(120% 120% at 30% 20%, #ffffff 0%, #f1f1f1 70%, #e9e9e9 100%);
-    border-radius:16px; box-shadow:inset 0 0 0 2px #dadada;
-    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
-    padding:14px;
-  }
-  .pip{
-    width:14px;height:14px;border-radius:50%; background:#111;
-    align-self:center; justify-self:center;
-  }
-  .pip.off{opacity:0}
-
-  /* Position cube faces */
-  .face.top{    transform:translateZ(48px); }              /* +Z */
-  .face.bottom{ transform:rotateX(180deg) translateZ(48px);}/* -Z (flipped) */
-  .face.right{  transform:rotateY(90deg) translateZ(48px);} /* +X */
-  .face.left{   transform:rotateY(-90deg) translateZ(48px);}/* -X */
-  .face.front{  transform:rotateX(-90deg) translateZ(48px);}/* +Y */
-  .face.back{   transform:rotateX(90deg) translateZ(48px);} /* -Y */
-
-  /* Settle bounce */
-  .settle{animation:settle .35s ease-out}
-  @keyframes settle{
-    0%{ transform:translateY(-6px) rotateZ(.6deg) }
-    55%{ transform:translateY(2px) rotateZ(-.5deg) }
-    100%{ transform:translateY(0) rotateZ(0) }
-  }
-
+  /* ----- 3D dice area (WebGL canvas) ----- */
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
   .felt{
     display:grid;grid-template-columns:1fr;gap:12px;
@@ -110,6 +75,8 @@
   .marquee{ text-align:center;font-weight:900;letter-spacing:.08em;
     color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px }
+  .stage3d{ height:260px; position:relative; border-radius:10px; overflow:hidden; }
+  .stage3d canvas{ display:block; width:100%; height:100%; }
   .roll-row{display:flex;justify-content:center}
   .btn-roll{
     width:min(360px,90%);padding:16px 22px;margin-top:2px;
@@ -123,7 +90,7 @@
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}
 
-  /* WIN overlay visuals (unchanged) */
+  /* WIN overlay visuals */
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
   #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, #00ffb2, #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
@@ -227,10 +194,7 @@
         <div class="marquee">$BAG DICE</div>
         <div class="table">
           <div class="felt">
-            <div class="stage">
-              <div class="die-wrap"><div id="dieA" class="cube" aria-label="die A"></div></div>
-              <div class="die-wrap"><div id="dieB" class="cube" aria-label="die B"></div></div>
-            </div>
+            <div id="dice3d" class="stage3d" aria-label="3D dice canvas"></div>
             <div class="roll-row"><button id="rollBtn" class="btn-roll">ROLL</button></div>
             <div class="result"><div class="t" id="rollText">Tap ROLL</div></div>
           </div>
@@ -268,43 +232,49 @@
   </div>
 </div>
 
-<!-- AUDIO: single diceshake.mp3 once per roll -->
+<!-- AUDIO: diceshake once, then diceroll once -->
 <script>
 (function(){
   const SHAKE_SRC = '/assets/sounds/diceshake.mp3';
+  const ROLL_SRC  = '/assets/sounds/diceroll.mp3';
 
   let primed=false;
-  const baseShake = new Audio(SHAKE_SRC);
-  baseShake.preload='auto'; baseShake.crossOrigin='anonymous'; baseShake.setAttribute('playsinline',''); baseShake.volume=0.95;
+  const shake = new Audio(SHAKE_SRC);
+  const roll  = new Audio(ROLL_SRC);
+  [shake, roll].forEach(a=>{ a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95; });
 
   function primeOnce(){
     if (primed) return;
     try{
-      baseShake.muted=true; const p=baseShake.play();
-      if (p && p.then){
-        p.then(()=>{ baseShake.pause(); baseShake.muted=false; primed=true; }).catch(()=>{});
-      } else { baseShake.pause(); baseShake.muted=false; primed=true; }
+      shake.muted=true;
+      const p=shake.play();
+      if (p?.then) p.then(()=>{ shake.pause(); shake.muted=false; primed=true; }).catch(()=>{});
+      else { shake.pause(); shake.muted=false; primed=true; }
     }catch{}
   }
   addEventListener('pointerdown', primeOnce, {once:true, passive:true});
 
-  function playShakeOnce(){
+  function playOnce(srcEl){
     return new Promise(res=>{
       try{
-        const a = baseShake.cloneNode(true);
-        a.loop=false; a.currentTime=0; a.volume=baseShake.volume;
+        const a = srcEl.cloneNode(true);
         a.addEventListener('ended', ()=>res(), {once:true});
-        a.play().catch(()=>setTimeout(res, 1200));
-        setTimeout(()=>res(), 2500);
+        a.play().catch(()=>setTimeout(res, 1000));
+        setTimeout(()=>res(), 4000);
       }catch{ res(); }
     });
   }
 
-  window.__bagSfx = { playShakeOnce, primeOnce };
+  async function rollFxChain(){
+    await playOnce(shake);
+    await playOnce(roll);
+  }
+
+  window.__bagSfx = { rollFxChain, primeOnce };
 })();
 </script>
 
-<!-- WIN overlay logic -->
+<!-- WIN overlay logic (unchanged) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -334,10 +304,10 @@
 })();
 </script>
 
-<!-- GAME + PRICES + 3D DICE -->
+<!-- GAME + PRICES + REAL 3D DICE (Three.js) -->
 <script>
 (function(){
-  /* ---------- Prices ---------- */
+  /* ---------- Prices (same as before) ---------- */
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
@@ -445,62 +415,202 @@
     updatePayoutPreview();
   });
 
-  /* ---------- 3D Dice helpers ---------- */
-  function makeDie(el){
-    el.innerHTML='';
-    const faces=[
-      {cls:'top',    val:1, pips:[5]},
-      {cls:'bottom', val:6, pips:[1,3,4,6,7,9]},
-      {cls:'right',  val:2, pips:[1,9]},           /* conventional diagonal */
-      {cls:'left',   val:5, pips:[1,3,5,7,9]},
-      {cls:'front',  val:3, pips:[1,5,9]},
-      {cls:'back',   val:4, pips:[1,3,7,9]},
-    ];
-    faces.forEach(f=>{
-      const face=document.createElement('div'); face.className='face '+f.cls;
-      for(let i=1;i<=9;i++){
-        const p=document.createElement('div');
-        p.className='pip'+(f.pips.includes(i)?'':' off');
-        face.appendChild(p);
-      }
-      el.appendChild(face);
-    });
-    const ORIENT = {
-      1:'rotateX(0deg) rotateY(0deg)',
-      2:'rotateY(-90deg)',
-      3:'rotateX(90deg)',
-      4:'rotateX(-90deg)',
-      5:'rotateY(90deg)',
-      6:'rotateX(180deg)'
-    };
-    function setTop(n){
-      el.style.transform = ORIENT[n] || ORIENT[1];
-      el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
-    }
-    return { setTop };
+  /* ---------- REAL 3D DICE (WebGL) ---------- */
+  const container = document.getElementById('dice3d');
+  let scene, camera, renderer, lightKey, lightFill, lightRim, diceA, diceB, raf;
+  init3d(); renderLoop();
+
+  function init3d(){
+    scene = new THREE.Scene();
+
+    const w = container.clientWidth, h = container.clientHeight;
+    camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
+    camera.position.set(0.6, 1.2, 6.0);
+    camera.lookAt(0,0,0);
+
+    renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+    renderer.setSize(w, h);
+    renderer.shadowMap.enabled = false;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+
+    // Lights
+    lightKey = new THREE.DirectionalLight(0xffffff, 1.0);
+    lightKey.position.set(2,4,3);
+    lightFill = new THREE.DirectionalLight(0xffffff, 0.6);
+    lightFill.position.set(-3,2,2);
+    lightRim = new THREE.AmbientLight(0x708090, 0.55);
+    scene.add(lightKey, lightFill, lightRim);
+
+    // Felt-ish floor (just for subtle grounding)
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(4.6, 48),
+      new THREE.MeshBasicMaterial({ color: 0x0c2016, transparent:true, opacity:0.55 })
+    );
+    floor.rotation.x = -Math.PI/2;
+    floor.position.y = -1.1;
+    scene.add(floor);
+
+    const matSetA = makeDiceMaterials('#ffffff');
+    const matSetB = makeDiceMaterials('#fef9f4');
+    const geo = new THREE.BoxGeometry(1.1,1.1,1.1);
+    diceA = new THREE.Mesh(geo, matSetA);
+    diceB = new THREE.Mesh(geo, matSetB);
+    diceA.position.set(-1.2, 0.0, 0);
+    diceB.position.set( 1.2, 0.2, 0);
+    scene.add(diceA, diceB);
+
+    // Nice idle orientation
+    setTop(diceA, 3, Math.PI/6);
+    setTop(diceB, 4, -Math.PI/5);
+
+    addEventListener('resize', onResize);
   }
 
-  const dieA = makeDie(document.getElementById('dieA'));
-  const dieB = makeDie(document.getElementById('dieB'));
+  function onResize(){
+    if (!renderer) return;
+    const w = container.clientWidth, h = container.clientHeight;
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  }
 
-  // Spin animation (3 axes) then settle
-  function tumble(elList, ms){
-    const start = performance.now();
-    const base = elList.map(()=>({ rx:Math.random()*360, ry:Math.random()*360, rz:Math.random()*360 }));
-    let raf;
-    function frame(t){
-      const e = t - start, p = Math.min(1, e/ms);
-      elList.forEach((el,i)=>{
-        const s = 1 + i*0.07;
-        const rx = base[i].rx + e * 0.35 * s;
-        const ry = base[i].ry + e * 0.55 * s;
-        const rz = base[i].rz + e * 0.25 * s;
-        el.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
-      });
-      if (e < ms) raf=requestAnimationFrame(frame);
+  function renderLoop(){
+    raf = requestAnimationFrame(renderLoop);
+    renderer.render(scene, camera);
+  }
+
+  // Create textures for dice faces (1..6) and assign to box materials.
+  // Box material order in three.js: [px, nx, py, ny, pz, nz]  => we'll map to standard opposite sums=7
+  function makeDiceMaterials(baseColor='#ffffff'){
+    const tex = {};
+    for(let n=1;n<=6;n++) tex[n] = makePipTexture(n, baseColor);
+
+    // Map numbers to faces:
+    // px(+X)=3, nx(-X)=4, py(+Y)=1 (top), ny(-Y)=6 (bottom), pz(+Z)=2, nz(-Z)=5
+    return [
+      new THREE.MeshPhongMaterial({ map: tex[3] }),
+      new THREE.MeshPhongMaterial({ map: tex[4] }),
+      new THREE.MeshPhongMaterial({ map: tex[1] }),
+      new THREE.MeshPhongMaterial({ map: tex[6] }),
+      new THREE.MeshPhongMaterial({ map: tex[2] }),
+      new THREE.MeshPhongMaterial({ map: tex[5] }),
+    ];
+  }
+
+  // Draw a 256x256 canvas texture with proper pip layout
+  function makePipTexture(n, baseColor){
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    // face
+    g.fillStyle = baseColor; g.fillRect(0,0,256,256);
+    // bevel/edge shading
+    const grd = g.createLinearGradient(0,0,256,256);
+    grd.addColorStop(0,'rgba(0,0,0,.08)'); grd.addColorStop(1,'rgba(255,255,255,.06)');
+    g.fillStyle = grd; g.fillRect(0,0,256,256);
+    // border
+    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 10; g.strokeRect(5,5,246,246);
+    // pips
+    const spots = {
+      1:[5],
+      2:[1,9],
+      3:[1,5,9],
+      4:[1,3,7,9],
+      5:[1,3,5,7,9],
+      6:[1,3,4,6,7,9]
+    }[n] || [];
+    function cellPos(idx){
+      // grid 3x3 within 256, margins
+      const margin = 48, step = (256- margin*2)/2; // step between centers
+      const col = ((idx-1)%3), row = Math.floor((idx-1)/3);
+      const x = margin + col*step;
+      const y = margin + row*step;
+      return [x,y];
     }
-    raf=requestAnimationFrame(frame);
-    return new Promise(res=>setTimeout(res, ms));
+    g.fillStyle = '#0d0d10';
+    spots.forEach(i=>{
+      const [x,y] = cellPos(i);
+      g.beginPath(); g.arc(x,y,16,0,Math.PI*2); g.fill();
+    });
+    const texture = new THREE.CanvasTexture(c);
+    texture.anisotropy = 8;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  // Set dice orientation so that N (1..6) is on top; add optional yaw
+  function setTop(mesh, value, yaw=0){
+    // With our material mapping: top=1, bottom=6, +X=3 (right), -X=4 (left), +Z=2 (front), -Z=5 (back)
+    const ori = {
+      1: [ 0,      yaw, 0],
+      2: [-Math.PI/2, yaw, 0],         // rotate X -90 => +Z (2) moves to top? Actually py=1; To get 2 on top, rotate -90 about X then +Z goes top
+      3: [ 0,      yaw+Math.PI/2, 0],  // rotate Y +90 ==> +X(3) to front; but for top we need rotate Z/X combos. Easier: precomputed:
+      4: [ 0,      yaw-Math.PI/2, 0],
+      5: [ Math.PI, yaw, 0],           // bottom(6) opposite top(1); but 5 is -Z; simpler to list exact:
+      6: [ Math.PI, yaw, 0]            // (we’ll override below)
+    };
+    // Correct mappings (explicit):
+    // 1 top: identity
+    // 2 top: rotateX(-90deg)
+    // 3 top: rotateY(+90deg)
+    // 4 top: rotateY(-90deg)
+    // 5 top: rotateX(+90deg)
+    // 6 top: rotateX(180deg)
+    const map = {
+      1: [0, yaw, 0],
+      2: [-Math.PI/2, yaw, 0],
+      3: [0, yaw+Math.PI/2, 0],
+      4: [0, yaw-Math.PI/2, 0],
+      5: [ Math.PI/2, yaw, 0],
+      6: [ Math.PI, yaw, 0],
+    }[value] || [0,yaw,0];
+    mesh.rotation.set(map[0], map[1], map[2]);
+  }
+
+  // Tumble both dice (random 3-axis spin) for ms duration
+  function tumbleBoth(ms=1200){
+    const start = performance.now();
+    const a0 = diceA.rotation.clone();
+    const b0 = diceB.rotation.clone();
+    const wAx = (Math.random()*3+3) * (Math.random()<.5?-1:1);
+    const wAy = (Math.random()*3+4) * (Math.random()<.5?-1:1);
+    const wAz = (Math.random()*2+2) * (Math.random()<.5?-1:1);
+    const wBx = (Math.random()*3+3) * (Math.random()<.5?-1:1);
+    const wBy = (Math.random()*3+4) * (Math.random()<.5?-1:1);
+    const wBz = (Math.random()*2+2) * (Math.random()<.5?-1:1);
+    return new Promise(res=>{
+      function frame(t){
+        const e = t - start; const p = Math.min(1, e/ms);
+        const damp = 1 - p*p; // ease-out
+        diceA.rotation.set(a0.x + wAx*damp, a0.y + wAy*damp, a0.z + wAz*damp);
+        diceB.rotation.set(b0.x + wBx*damp, b0.y + wBy*damp, b0.z + wBz*damp);
+        if (e < ms) requestAnimationFrame(frame); else res();
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  // Smoothly tween a die to the orientation for target value + yaw (during roll sound)
+  function tweenToTop(mesh, value, yaw, ms=900){
+    const start = performance.now();
+    const r0 = mesh.rotation.clone();
+    // compute final euler:
+    const dummy = new THREE.Object3D();
+    setTop(dummy, value, yaw);
+    const rx = dummy.rotation.x, ry = dummy.rotation.y, rz = dummy.rotation.z;
+    return new Promise(res=>{
+      function frame(t){
+        const e = t - start; const p = Math.min(1, e/ms);
+        const s = p<.5 ? 2*p*p : -1+(4-2*p)*p; // smoothstep
+        mesh.rotation.set(
+          r0.x + (rx - r0.x)*s,
+          r0.y + (ry - r0.y)*s,
+          r0.z + (rz - r0.z)*s
+        );
+        if (e < ms) requestAnimationFrame(frame); else res();
+      }
+      requestAnimationFrame(frame);
+    });
   }
 
   /* ---------- Roll & Resolve ---------- */
@@ -530,16 +640,21 @@
 
     rollBtn.disabled = true; rollText.className='t'; rollText.textContent='Rolling…';
 
-    const sfx = window.__bagSfx?.playShakeOnce?.();
-    const cubes = [document.getElementById('dieA'), document.getElementById('dieB')];
-    await tumble(cubes, 1200);
+    const sfx = window.__bagSfx?.rollFxChain?.();  // plays: shake, then roll
+    await tumbleBoth(1000);                        // tumble while shake plays
 
-    const a = Math.floor(Math.random()*6)+1;
-    const b = Math.floor(Math.random()*6)+1;
-    dieA.setTop(a);
-    dieB.setTop(b);
+    // Choose results and settle while roll sound plays
+    const a = (Math.random()*6|0)+1;
+    const b = (Math.random()*6|0)+1;
+    const yawA = (Math.random()*Math.PI*2 - Math.PI);
+    const yawB = (Math.random()*Math.PI*2 - Math.PI);
 
-    await sfx;
+    await Promise.all([
+      tweenToTop(diceA, a, yawA, 900),
+      tweenToTop(diceB, b, yawB, 900)
+    ]);
+
+    await sfx; // ensure roll sfx finished
 
     const ev = evaluate(a,b);
     rollText.className = 't ' + (ev.cls||'');
@@ -857,7 +972,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
