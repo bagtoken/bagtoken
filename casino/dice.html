@@ -340,42 +340,114 @@
   function makeNoise(ac,dur=0.08){ const len=Math.max(1,Math.floor(dur*ac.sampleRate)); const buf=ac.createBuffer(1,len,ac.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9; const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0; const g=ac.createGain(); g.gain.value=0; src.connect(bp).connect(g); return {src,g}; }
   function chime(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; const notes=[880,1175,1760]; notes.forEach((f,i)=>{ const o=ac.createOscillator(); const g=ac.createGain(); o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(0.0001,now+i*0.02); g.gain.linearRampToValueAtTime(0.18,now+i*0.02+0.03); g.gain.exponentialRampToValueAtTime(0.0001,now+i*0.02+0.28); o.connect(g).connect(MASTER); o.start(now+i*0.02); o.stop(now+i*0.02+0.3); }); }
   function nudge(){ const ac=getAC(); if(!ac) return; if(ac.state!=='running'){ tryResume(); return; } const now=ac.currentTime; const comp=ac.createDynamicsCompressor(); comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08; comp.connect(MASTER); const {src:nSrc,g:nGain}=makeNoise(ac,0.06); nGain.connect(comp); nGain.gain.setValueAtTime(0.0001,now); nGain.gain.linearRampToValueAtTime(0.12,now+0.008); nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08); nSrc.start(now); nSrc.stop(now+0.09); const o=ac.createOscillator(); const g=ac.createGain(); o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18); g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.10,now+0.02); g.gain.exponentialRampToValueAtTime(0.0001,now+0.22); o.connect(g).connect(comp); o.start(now); o.stop(now+0.24); }
-function dice() {
+function dice(){
   const ac = getAC();
   if (!ac) return;
-  if (ac.state !== 'running') { tryResume(); return; }
+  if (ac.state !== 'running'){ tryResume(); return; }
 
   const now = ac.currentTime;
-  const dur = 1.2; // total duration of the roll sound
-  const hitCount = 10; // number of dice “clacks”
+  const dur = 1.4;                 // overall shake length (feels like shaking a cup)
+  const baseGain = 0.9;            // overall loudness trim
+  const stepMs = 70;               // how often the shake “bursts” change
 
-  // Low rumble while dice roll
-  const rumble = ac.createOscillator();
-  const g = ac.createGain();
-  rumble.type = 'triangle';
-  rumble.frequency.setValueAtTime(120, now);
-  rumble.frequency.exponentialRampToValueAtTime(80, now + dur);
-  g.gain.setValueAtTime(0.04, now);
-  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-  rumble.connect(g).connect(MASTER);
-  rumble.start(now);
-  rumble.stop(now + dur);
-
-  // Add random “clack” transients
-  for (let i = 0; i < hitCount; i++) {
-    const t = now + Math.random() * dur * 0.9;
-    const { src, g: gain } = makeNoise(ac, 0.04);
-    const bp = ac.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1500 + Math.random() * 1000;
-    src.connect(bp).connect(gain).connect(MASTER);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.12, t + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
-    src.start(t);
-    src.stop(t + 0.1);
+  // --- tiny stereo room (reused between calls) ---
+  if (!dice.__room || dice.__room.ac !== ac){
+    const L1 = ac.createDelay(); L1.delayTime.value = 0.011;
+    const L2 = ac.createDelay(); L2.delayTime.value = 0.018;
+    const g1 = ac.createGain(); g1.gain.value = 0.22;
+    const g2 = ac.createGain(); g2.gain.value = 0.17;
+    L1.connect(g1).connect(L2);
+    L2.connect(g2).connect(L1);
+    dice.__room = { in: L1, out: L2, ac };
   }
+  const roomIn  = dice.__room.in;
+  const roomOut = dice.__room.out;
+
+  // master for this effect
+  const bus = ac.createGain(); bus.gain.value = baseGain; bus.connect(MASTER);
+  const send = ac.createGain(); send.gain.value = 0.35;   // room send
+  roomOut.connect(bus);
+
+  // --- continuous “shake” noise (bright, rattly) ---
+  // white noise -> highpass + bandpass -> gain with choppy envelopes -> stereo pan motion
+  (function(){
+    // make a one-shot noise buffer of `dur`
+    const len = Math.max(1, Math.floor(dur * ac.sampleRate));
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i=0;i<len;i++) data[i] = (Math.random()*2 - 1) * 0.7;
+
+    const src = ac.createBufferSource(); src.buffer = buf;
+
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900; hp.Q.value = 0.7;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2100; bp.Q.value = 1.2;
+
+    const g  = ac.createGain(); g.gain.value = 0.0001;
+    const pan = ac.createStereoPanner();
+
+    // wire
+    src.connect(hp).connect(bp).connect(g);
+    g.connect(pan);
+    pan.connect(bus);
+    pan.connect(send).connect(roomIn);
+
+    // stereo motion: a gentle figure-8 across the shake
+    pan.pan.setValueAtTime(-0.35, now);
+    pan.pan.linearRampToValueAtTime(0.35, now + dur*0.55);
+    pan.pan.linearRampToValueAtTime(0.0, now + dur);
+
+    // “shake” envelope: rapid stepped accents (no low thuds)
+    const steps = Math.max(1, Math.floor((dur * 1000) / stepMs));
+    for (let i=0;i<steps;i++){
+      const t = now + (i * stepMs) / 1000;
+      // louder at the start, tapering toward the end
+      const u = i / (steps - 1 || 1);
+      const taper = 1 - Math.pow(u, 1.4);
+      const amp = (0.09 + Math.random()*0.07) * taper; // 0.09–0.16 then taper
+      g.gain.setValueAtTime(amp, t);
+      // quick mini-decay inside each burst
+      g.gain.exponentialRampToValueAtTime(Math.max(0.001, amp * 0.35), t + 0.035);
+    }
+    // fast release at the end so it stops cleanly
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    // subtle brightness motion so it doesn’t feel static
+    bp.frequency.setValueAtTime(1900, now);
+    bp.frequency.linearRampToValueAtTime(2500, now + dur*0.5);
+    bp.frequency.linearRampToValueAtTime(2000, now + dur);
+
+    src.start(now);
+    src.stop(now + dur + 0.02);
+  })();
+
+  // --- a few light high “rattle” ticks (no bass thuds) ---
+  // very short, bright clacks sprinkled over the shake
+  (function(){
+    function tick(t){
+      const { src, g } = makeNoise(ac, 0.035);
+      const bp = ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 2800 + Math.random()*700; bp.Q.value = 1.0 + Math.random()*0.6;
+      const pan = ac.createStereoPanner(); pan.pan.value = (Math.random()*2-1) * 0.6;
+
+      src.connect(bp).connect(g);
+      g.connect(pan); pan.connect(bus); pan.connect(send).connect(roomIn);
+
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.08 + Math.random()*0.06, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+
+      src.start(t);
+      src.stop(t + 0.08);
+    }
+
+    const count = 8; // a handful of light ticks
+    for (let i=0;i<count;i++){
+      const u = i / (count - 1 || 1);
+      const t = now + 0.07 + u * (dur * 0.85) + (Math.random()-0.5)*0.02;
+      tick(t);
+    }
+  })();
 }
+
 const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click']; INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true})); addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); }); addEventListener('pageshow',()=>{ tryResume(); }); addEventListener('focus',()=>{ tryResume(); });
   function startWatchdog(){ if(watchdogTimer) return; watchdogTimer=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30_000; if(active && ac.state==='suspended') tryResume(); },1500); } startWatchdog();
   window.__bagAudio={ensureInteractive,chime,nudge,dice};
