@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>BAG Dice — Clean Dice, Real Tumble</title>
+<title>$BAG Dice — Clean Dice, Real Tumble</title>
 
-<!-- Three.js (robust loader) -->
+<!-- Three.js (robust loader with fallback) -->
 <script>
 (function(){
   function load(src, ok, fail){
@@ -52,7 +52,7 @@
   .status .note{font-size:.9rem;color:#cfe0d6}
   .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-  /* CSS fallback (minimal) */
+  /* CSS fallback (still no images) */
   .css-dice{position:absolute;inset:0;display:none;place-items:center;gap:64px}
   .cube{position:relative;width:110px;height:110px;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.9,.2,1)}
   .face{position:absolute;inset:0;background:#f3f2ee;border-radius:20px;box-shadow:inset 0 0 0 2px #d9d7d2}
@@ -60,6 +60,10 @@
   .f3{transform:rotateY(90deg) translateZ(55px)} .f4{transform:rotateY(-90deg) translateZ(55px)}
   .f2{transform:rotateX(-90deg) translateZ(55px)} .f5{transform:rotateX(90deg) translateZ(55px)}
   .css-dice.active{display:grid}
+
+  /* Debug badge */
+  .dbg{position:absolute;top:8px;left:8px;z-index:9;font:600 12px/1.2 Inter,system-ui,sans-serif;padding:6px 8px;border-radius:8px;background:#0b1b13;box-shadow:0 0 0 1px #234e35;color:#d2f5e3;opacity:.95}
+  #stage{position:relative}
 </style>
 </head>
 <body>
@@ -71,6 +75,7 @@
     <div class="table">
       <div id="stage" class="stage" aria-label="3D dice area">
         <div id="cssFallback" class="css-dice"></div>
+        <div id="dbg" class="dbg">Booting…</div>
       </div>
 
       <div class="row" style="justify-content:center">
@@ -86,7 +91,7 @@
     </div>
   </div>
 
-<!-- SOUND (safe) -->
+<!-- SOUND -->
 <script>
 (function(){
   const shake = new Audio('/assets/sounds/diceshake.mp3'), roll = new Audio('/assets/sounds/diceroll.mp3');
@@ -106,11 +111,14 @@
   const stageEl = document.getElementById('stage');
   const cssWrap = document.getElementById('cssFallback');
   const rollBtn = document.getElementById('rollBtn');
+  const dbgEl   = document.getElementById('dbg');
 
   const phaseEl = document.getElementById('phase');
   const lastEl  = document.getElementById('lastRoll');
   const pointEl = document.getElementById('pointVal');
   const ctaEl   = document.getElementById('cta');
+
+  function shout(msg){ dbgEl.textContent = msg; console.log('[BAG DICE]', msg); }
 
   const ROUND = { active:false, point:null };
   function resetComeOutUI(){
@@ -128,7 +136,7 @@
   function loseUI(msg){ ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`; }
   resetComeOutUI();
 
-  /* -------------------- THREE: brand-new physical dice -------------------- */
+  /* -------------------- THREE: brand-new physical dice (inlaid pips) -------------------- */
   function bootThree(){
     const THREE = window.THREE;
     const w = stageEl.clientWidth, h = stageEl.clientHeight;
@@ -159,7 +167,7 @@
     felt.rotation.x = -Math.PI/2; felt.position.y = -1.06; felt.receiveShadow = true;
     scene.add(felt);
 
-    // Lights: punchy, cinematic
+    // Lights
     const key = new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3.5,5.8,4.2); key.castShadow=true;
     key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
     key.shadow.camera.near=1; key.shadow.camera.far=20;
@@ -169,7 +177,7 @@
     const amb  = new THREE.AmbientLight(0xcfd7e2,.34);
     scene.add(key,fill,rim,amb);
 
-    // Rounded cube generator (clean chamfer)
+    // Rounded cube geometry (clean chamfer)
     function RoundedBox(w,h,d,r=0.19, seg=4){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -184,7 +192,7 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
-    // Materials: pearl body + matte inlaid pips + micro inked edge
+    // Materials: pearl body + matte inlaid pips + subtle edge ink
     const bodyMat = new THREE.MeshPhysicalMaterial({
       color:0xf3efe8, roughness:.38, metalness:0.02,
       sheen:1.0, sheenColor:new THREE.Color(0xffffff), sheenRoughness:.6,
@@ -204,24 +212,16 @@
       body.castShadow = true; body.receiveShadow = false;
       g.add(body);
 
-      // Thin “inked” edge card (subtle outline look)
+      // Subtle edge outline
       const ink = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
       ink.scale.set(1.002,1.002,1.002);
       g.add(ink);
 
-      // Inlaid pips — real geometry (cylinders) slightly embedded
-      const pipR = size*0.08, pipH = size*0.14, inset = size*0.52; // push into face
-      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipH, 32);
-      const mkPip = (x,y,z, rx=0,ry=0,rz=0)=>{
-        const p = new THREE.Mesh(pipGeom, pipMat);
-        p.rotation.set(rx,ry,rz);
-        p.position.set(x,y,z);
-        p.castShadow=true; p.receiveShadow=false;
-        g.add(p);
-      };
+      // Inlaid pips: cylinders embedded into each face
+      const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
+      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 32);
 
-      // Grid offsets on a face
-      const m = size*0.28, c = 0; // center
+      const m = size*0.28, c = 0;
       const positions = {
         1:[[c,c]],
         2:[[-m,-m],[m,m]],
@@ -231,59 +231,34 @@
         6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
       };
 
-      // Face mapping (matches craps die standard; opposite sum = 7)
-      // +X=3, -X=4, +Y=1 (top), -Y=6 (bottom), +Z=2 (front), -Z=5 (back)
-      function addFace(face, normal){
-        const [nx,ny,nz] = normal;
-        const rx = ny!==0 ? 0 : (nz!==0 ? Math.PI/2 : 0);
-        const ry = nx!==0 ? 0 : (nz!==0 ? 0 : (nx===0 && nz===0 ? 0 : 0));
-        const rz = 0;
-        const rot = new THREE.Euler(
-          nz!==0 ? 0 : (ny>0?0: (ny<0?Math.PI:0)),
-          nz!==0 ? 0 : (nx>0?-Math.PI/2: (nx<0?Math.PI/2:0)),
-          nz>0?0:(nz<0?Math.PI:0)
-        ); // we'll override per-axis below for correctness
-
-        // orientation per axis so pips read correctly:
-        let orient = new THREE.Quaternion();
-        if(nx>0){ orient.setFromEuler(new THREE.Euler(0, Math.PI/2, 0)); }        // +X
-        if(nx<0){ orient.setFromEuler(new THREE.Euler(0,-Math.PI/2, 0)); }        // -X
-        if(ny>0){ orient.setFromEuler(new THREE.Euler(-Math.PI/2,0,0)); }         // +Y (top)
-        if(ny<0){ orient.setFromEuler(new THREE.Euler( Math.PI/2,0,0)); }         // -Y (bottom)
-        if(nz>0){ orient.setFromEuler(new THREE.Euler(0,0,0)); }                  // +Z (front)
-        if(nz<0){ orient.setFromEuler(new THREE.Euler(0,Math.PI,0)); }            // -Z (back)
-
+      function addFace(face, normal){ // normal is [nx,ny,nz] unit directions
+        const [nx,ny,nz]=normal;
         const arr = positions[face];
         arr.forEach(([u,v])=>{
-          // local face coordinates
-          const local = new THREE.Vector3(u, v, 0);
-          local.applyQuaternion(orient);
-          // place on face plane with slight inset along normal
-          const pos = new THREE.Vector3(
-            local.x + nx*inset,
-            local.y + ny*inset,
-            local.z + nz*inset
-          );
           const pip = new THREE.Mesh(pipGeom, pipMat);
-          // rotate cylinder so its axis points along the normal
+          // orient cylinder axis along normal
           if(nx!==0){ pip.rotation.z = Math.PI/2; }
-          if(ny!==0){ pip.rotation.x = 0; pip.rotation.z = 0; }
           if(nz!==0){ pip.rotation.x = Math.PI/2; }
-          pip.position.copy(pos);
+          // place on face plane with slight inset
+          pip.position.set(
+            u + nx*inset,
+            v + ny*inset,
+            0 + nz*inset
+          );
           pip.castShadow = true;
           g.add(pip);
         });
       }
 
-      // Build all faces
-      addFace(3,[+1,0,0]);
-      addFace(4,[-1,0,0]);
-      addFace(1,[0,+1,0]);
-      addFace(6,[0,-1,0]);
-      addFace(2,[0,0,+1]);
-      addFace(5,[0,0,-1]);
+      // Face mapping (opposites sum to 7)
+      addFace(3,[+1,0,0]); // +X
+      addFace(4,[-1,0,0]); // -X
+      addFace(1,[0,+1,0]); // +Y (top)
+      addFace(6,[0,-1,0]); // -Y (bottom)
+      addFace(2,[0,0,+1]); // +Z (front)
+      addFace(5,[0,0,-1]); // -Z (back)
 
-      // Helper: pose to show specific top face with optional yaw
+      // Pose helper: set which face is up, with yaw
       g.__setTop = function(value, yaw=0){
         const m={
           1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -304,10 +279,28 @@
     }
     centerPose();
 
+    // Expose tiny hooks for debug/verification
+    window.__setDiePoseHook = (a,b)=>{ try{ A.__setTop(a,0.15); B.__setTop(b,-0.2); }catch{} };
+    window.__tweakDieLook = ({pipDepth, bodyTint})=>{
+      try{
+        // nudge cylinders outward for deeper look
+        A.children.concat(B.children).forEach(m=>{
+          if (m.geometry && m.geometry.type === 'CylinderGeometry') {
+            const n = m.position.clone().normalize().multiplyScalar((pipDepth||0.18));
+            m.position.copy(n);
+          }
+        });
+        if (bodyTint){
+          A.children[0].material.color.set(bodyTint);
+          B.children[0].material.color.set(bodyTint);
+        }
+      }catch(e){ console.warn(e); }
+    };
+
     // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Tiny camera/scene shake on impact
+    // Tiny scene shake on impact
     async function impact(ms=140, px=0.055){
       const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
@@ -320,7 +313,7 @@
       });
     }
 
-    // Throw: heavier spin, clean settle
+    // Throw & settle
     async function throwTo(a,b, totalMs=1250){
       const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
       A.position.set(startXA,startY,0); B.position.set(startXB,startY,0);
@@ -383,11 +376,13 @@
       await throwTo(a,b,1250);
     };
 
-    // Default idle pose
-    A.__setTop(3, 0.2); B.__setTop(4, -0.3);
+    // Idle pose shows 1 & 6 to prove new model
+    A.__setTop(1, 0.15); B.__setTop(6, -0.2);
+
+    shout('THREE + GEOMETRY PIPS ✅');
   }
 
-  /* -------------------- CSS fallback (basic) -------------------- */
+  /* -------------------- CSS fallback (basic cubes) -------------------- */
   function bootCSS(){
     cssWrap.innerHTML=''; cssWrap.classList.add('active');
     function makeCube(){
@@ -411,6 +406,8 @@
       el.style.transform = map;
     }
 
+    window.__setDiePoseHook = (a,b)=>{ setTop(A,a,0.15); setTop(B,b,-0.2); };
+    window.__tweakDieLook = ()=>{};
     window.__rollDiceImpl = async function(a,b){
       A.style.transition=B.style.transition='transform .8s cubic-bezier(.2,.9,.2,1)';
       A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
@@ -420,6 +417,8 @@
       setTop(B,b, Math.random()*6-3);
       await new Promise(r=>setTimeout(r, 220));
     };
+
+    shout('CSS FALLBACK ⚠️ (Three failed to load)');
   }
 
   // Boot
@@ -435,7 +434,6 @@
 
   /* -------------------- Game rules + UI -------------------- */
   function isComeOut(){ return !ROUND.active || ROUND.point==null; }
-
   function setStatus(rollA, rollB, extra){
     const sum = rollA+rollB;
     lastEl.textContent = `${rollA} + ${rollB} = ${sum}` + (extra?`  ·  ${extra}`:'');
@@ -452,7 +450,7 @@
 
       await window.__rollDiceImpl(a,b);
 
-      if (isComeOut()){
+      if (!ROUND.active || ROUND.point==null){
         if (sum===7 || sum===11){
           setStatus(a,b,'Come-out WIN (1.25×)');
           winUI('Come-out 7/11');
