@@ -351,11 +351,11 @@
 })();
 </script>
 
-<!-- GAME + PRICES + DICE (WebGL side-tumble → throw physics, CSS 3D fallback) -->
+<!-- GAME + PRICES + DICE (Rounded d6: continuous side tumble through both SFX → abrupt stop) -->
 <script>
 (function(){
   /* ---------- Prices (unchanged helpers) ---------- */
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
+  const PRICES = (window.__PRICES__ = window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' });
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
@@ -394,33 +394,34 @@
     conversions(); updateLimits(); updatePayoutPreview();
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
-  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
-  async function fetchXrpUsd(){
-    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
-    return false;
+  if (!window.__bagPriceTimer){
+    (async function refresh(){
+      try{
+        const timed=(url,ms=8000)=>{ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); };
+        async function fetchXrpUsd(){ try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{} return false; }
+        async function fetchBagUsdViaAMM(){
+          return new Promise(resolve=>{
+            const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},asset2:{currency:'XRP'}};
+            const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
+            ws.onopen=()=>ws.send(JSON.stringify(req));
+            ws.onmessage=ev=>{ try{
+              const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
+              const bag=Number(j.result.amm.amount?.value||0);
+              const x2=j.result.amm.amount2;
+              const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
+              if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
+            }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
+            ws.onerror=()=>{ clearTimeout(to); resolve(false); };
+          });
+        }
+        await fetchXrpUsd();
+        const ok = await fetchBagUsdViaAMM();
+        if(!ok) PRICES.source='last-live';
+        updateLive();
+        window.__bagPriceTimer=setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); },15000);
+      }catch{}
+    })();
   }
-  async function fetchBagUsdViaAMM(){
-    return new Promise(resolve=>{
-      const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},asset2:{currency:'XRP'}};
-      const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
-      ws.onopen=()=>ws.send(JSON.stringify(req));
-      ws.onmessage=ev=>{ try{
-        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
-        const bag=Number(j.result.amm.amount?.value||0);
-        const x2=j.result.amm.amount2;
-        const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
-        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
-      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
-      ws.onerror=()=>{ clearTimeout(to); resolve(false); };
-    });
-  }
-  (async function refresh(){
-    await fetchXrpUsd();
-    const ok = await fetchBagUsdViaAMM();
-    if(!ok) PRICES.source='last-live';
-    updateLive();
-    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
-  })();
 
   /* ---------- Payout preview ---------- */
   const payScratch=document.getElementById('payScratch');
@@ -462,10 +463,9 @@
     updatePayoutPreview();
   });
 
-  /* ---------- DICE ENGINE: side-tumble → throw → bounce → settle ---------- */
+  /* ---------- DICE ENGINE: rounded d6 tumbling side-by-side → abrupt stop ---------- */
   const container = document.getElementById('dice3d');
   const cssWrap   = document.getElementById('cssDice');
-
   let usingCSS = false;
 
   // boot after Three.js or fallback
@@ -476,74 +476,51 @@
     else { tries++; setTimeout(boot, 100); }
   })();
 
+  /* --- Rounded box helper (true chamfered cube without addons) --- */
+  function makeRoundedBox(THREE, size=1, radius=0.12, seg=6){
+    const g = new THREE.BoxGeometry(size,size,size, seg,seg,seg);
+    const pos = g.attributes.position;
+    const half = size/2, r = Math.min(radius, half*0.999);
+    for (let i=0; i<pos.count; i++){
+      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+      const cx = Math.max(-half+r, Math.min(half-r, x));
+      const cy = Math.max(-half+r, Math.min(half-r, y));
+      const cz = Math.max(-half+r, Math.min(half-r, z));
+      const vx = x - cx, vy = y - cy, vz = z - cz;
+      const len = Math.hypot(vx,vy,vz) || 1;
+      const nx = cx + (vx/len)*r, ny = cy + (vy/len)*r, nz = cz + (vz/len)*r;
+      pos.setXYZ(i, nx, ny, nz);
+    }
+    g.computeVertexNormals();
+    return g;
+  }
+
   /* ----- THREE.JS PATH ----- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
     const w = container.clientWidth, h = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.6, 1.6, 6.0); camera.lookAt(0,0,0);
+    camera.position.set(0.5, 1.4, 5.5); camera.lookAt(0,0,0);
 
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     renderer.setSize(w, h);
     container.innerHTML = ''; container.appendChild(renderer.domElement);
 
-    // Lights + table glow
-    const key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(2,4,3);
-    const fill= new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-3,2,2);
-    const rim = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(0,6,-4);
-    const amb = new THREE.AmbientLight(0x7a8fa3, 0.55);
-    scene.add(key, fill, rim, amb);
+    // Lights tuned for glossy dice
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x1b2a20, 0.75);
+    const key  = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(2.5,4,3);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-3,2,2);
+    const rim  = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(0,6,-4);
+    scene.add(hemi, key, fill, rim);
 
     const floorY = -1.06;
     const floor = new THREE.Mesh(new THREE.CircleGeometry(5.2, 48),
       new THREE.MeshBasicMaterial({ color: 0x0c2016, transparent:true, opacity:0.55 }));
     floor.rotation.x = -Math.PI/2; floor.position.y = floorY; scene.add(floor);
 
-    // Materials (canvas pips so they’re crisp)
-    const matA = makeMaterials(THREE,'#ffffff');
-    const matB = makeMaterials(THREE,'#fef9f4');
-    const size = 1.1;
-    const geo  = new THREE.BoxGeometry(size,size,size);
-    const diceA = new THREE.Mesh(geo, matA);
-    const diceB = new THREE.Mesh(geo, matB);
-    scene.add(diceA, diceB);
-
-    // State for simple physics
-    const HALF=size/2, G=-14.0, REST=0.48, FRIC=0.985, ANG_F=0.985;
-
-    function resetPose(){
-      // off-center side-by-side (left/right), ready to tumble
-      diceA.position.set(-1.2, 0.25, 0);
-      diceB.position.set( 1.2, 0.30, 0);
-      diceA.rotation.set(0.6, 0.6, 0.2);
-      diceB.rotation.set(-0.4, -0.2, 0.4);
-    }
-    resetPose();
-
-    function onResize(){
-      const w = container.clientWidth, h = container.clientHeight;
-      camera.aspect = w/h; camera.updateProjectionMatrix();
-      renderer.setSize(w,h);
-    }
-    addEventListener('resize', onResize);
-
-    (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
-
-    /* --- face textures --- */
-    function makeMaterials(THREE, base){
-      const tex={};
-      for(let n=1;n<=6;n++) tex[n]=makeFaceTex(THREE, n, base);
-      return [
-        new THREE.MeshPhongMaterial({ map: tex[3] }), // +X
-        new THREE.MeshPhongMaterial({ map: tex[4] }), // -X
-        new THREE.MeshPhongMaterial({ map: tex[1] }), // +Y
-        new THREE.MeshPhongMaterial({ map: tex[6] }), // -Y
-        new THREE.MeshPhongMaterial({ map: tex[2] }), // +Z
-        new THREE.MeshPhongMaterial({ map: tex[5] }), // -Z
-      ];
-    }
+    // Face textures (same as before, stays crisp)
     function makeFaceTex(THREE, n, base){
       const c = document.createElement('canvas'); c.width=c.height=256;
       const g = c.getContext('2d');
@@ -557,7 +534,39 @@
       g.fillStyle='#0d0d10'; map.forEach(i=>{ const [x,y]=pos(i); g.beginPath(); g.arc(x,y,16,0,Math.PI*2); g.fill(); });
       const t = new THREE.CanvasTexture(c); t.anisotropy=8; t.needsUpdate=true; return t;
     }
+    function makeMaterials(THREE, base='#ffffff'){
+      const tex={}; for(let n=1;n<=6;n++) tex[n]=makeFaceTex(THREE,n,base);
+      function face(m){ return new THREE.MeshPhysicalMaterial({ map:m, metalness:0.0, roughness:0.38, clearcoat:0.6, clearcoatRoughness:0.1 }); }
+      return [ face(tex[3]), face(tex[4]), face(tex[1]), face(tex[6]), face(tex[2]), face(tex[5]) ];
+    }
 
+    // Rounded dice
+    const size = 1.1, radius = 0.18, seg = 10;
+    const geo  = makeRoundedBox(THREE, size, radius, seg);
+    const diceA = new THREE.Mesh(geo, makeMaterials(THREE,'#ffffff'));
+    const diceB = new THREE.Mesh(geo, makeMaterials(THREE,'#fef9f4'));
+    scene.add(diceA, diceB);
+
+    // Keep them centered, side-by-side
+    const lane = 0.65;
+    function resetPose(){
+      diceA.position.set(-lane, 0.22, 0);
+      diceB.position.set( lane, 0.22, 0);
+      diceA.rotation.set(0.5, 0.7, 0.2);
+      diceB.rotation.set(-0.4, -0.2, 0.6);
+    }
+    resetPose();
+
+    function onResize(){
+      const w = container.clientWidth, h = container.clientHeight;
+      camera.aspect = w/h; camera.updateProjectionMatrix();
+      renderer.setSize(w,h);
+    }
+    addEventListener('resize', onResize);
+
+    (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
+
+    // Map top face to orientation (keep yaw for flavor)
     function setTop(THREE, mesh, value, yaw=0){
       const map={
         1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -566,136 +575,59 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    /* --- Side-by-side TUMBLE (no shaking) while diceshake.mp3 plays --- */
-    function sideTumble(ms=750){
-      const start=performance.now();
-      // random base angles and rates so they spin fast
+    /* --- Continuous side-by-side tumble loop (cancellable) --- */
+    let tumbleReq = 0;
+    function startSideTumble(){
+      const req = ++tumbleReq;
       const a0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
       const b0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
-      return new Promise(res=>{
-        function f(t){
-          const e = (t-start)/1000; // seconds
-          // strong, smooth angular velocity
-          diceA.rotation.set(
-            THREE.MathUtils.degToRad(a0.x + e*520),
-            THREE.MathUtils.degToRad(a0.y + e*840),
-            THREE.MathUtils.degToRad(a0.z + e*360)
-          );
-          diceB.rotation.set(
-            THREE.MathUtils.degToRad(b0.x + e*500),
-            THREE.MathUtils.degToRad(b0.y + e*800),
-            THREE.MathUtils.degToRad(b0.z + e*340)
-          );
-          // keep them frozen side-by-side (no position jitter)
-          diceA.position.set(-1.2, 0.25, 0);
-          diceB.position.set( 1.2, 0.30, 0);
-          if (t-start < ms) requestAnimationFrame(f); else res();
-        }
-        requestAnimationFrame(f);
-      });
-    }
-
-    /* --- Throw with simple physics, bounce, then snap centered and settle --- */
-    function throwAndSettle(targetA, targetB){
-      // release positions
-      diceA.position.set(-1.0, 0.9, 0.0);
-      diceB.position.set( 1.0, 1.1, 0.0);
-
-      // velocities (units/s) + angular velocities (rad/s)
-      const vA = new THREE.Vector3( (Math.random()*0.8+0.9)*-0.9,  (Math.random()*2.5+3.4),  - (Math.random()*1.2+0.6) );
-      const vB = new THREE.Vector3( (Math.random()*0.8+0.9)* 0.9,  (Math.random()*2.8+3.8),  - (Math.random()*1.2+0.6) );
-      const wA = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
-      const wB = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
-
-      // slight horizontal spring towards center lanes (left/right)
-      const springK = 2.1;  // center pull
-      const lane = 0.7;     // final x separation
-
-      const tmpQ = new THREE.Quaternion();
-      let tPrev = performance.now();
-
-      return new Promise(res=>{
-        function step(tNow){
-          let dt = (tNow - tPrev)/1000; if(dt>0.05) dt=0.05; tPrev = tNow;
-
-          // integrate linear + gravity
-          vA.y += G*dt; vB.y += G*dt;
-
-          // x spring toward -lane / +lane
-          vA.x += (-springK * (diceA.position.x + lane)) * dt;
-          vB.x += (-springK * (diceB.position.x - lane)) * dt;
-
-          diceA.position.addScaledVector(vA, dt);
-          diceB.position.addScaledVector(vB, dt);
-
-          // floor collisions
-          if (diceA.position.y - HALF <= floorY){
-            diceA.position.y = floorY + HALF; vA.y = -vA.y * REST; vA.x*=FRIC; vA.z*=FRIC; wA.multiplyScalar(ANG_F);
-          }
-          if (diceB.position.y - HALF <= floorY){
-            diceB.position.y = floorY + HALF; vB.y = -vB.y * REST; vB.x*=FRIC; vB.z*=FRIC; wB.multiplyScalar(ANG_F);
-          }
-
-          // integrate angular
-          const awA = wA.clone().multiplyScalar(dt), awB = wB.clone().multiplyScalar(dt);
-          tmpQ.setFromEuler(new THREE.Euler(awA.x, awA.y, awA.z)); diceA.quaternion.multiply(tmpQ).normalize();
-          tmpQ.setFromEuler(new THREE.Euler(awB.x, awB.y, awB.z)); diceB.quaternion.multiply(tmpQ).normalize();
-
-          // damping
-          vA.multiplyScalar(0.995); vB.multiplyScalar(0.995);
-          wA.multiplyScalar(0.995); wB.multiplyScalar(0.995);
-
-          const speed = vA.lengthSq()+vB.lengthSq()+wA.lengthSq()*0.03+wB.lengthSq()*0.03;
-          const slow  = speed < 0.035;
-
-          if (!slow){
-            requestAnimationFrame(step);
-          } else {
-            // snap positions neatly centered with small separation
-            diceA.position.set(-lane, floorY + HALF, 0);
-            diceB.position.set( lane, floorY + HALF, 0);
-            // tween to exact faces with tiny table yaw
-            const yawA=(Math.random()*Math.PI*2 - Math.PI);
-            const yawB=(Math.random()*Math.PI*2 - Math.PI);
-            Promise.all([ tweenTo(diceA,targetA,yawA,620), tweenTo(diceB,targetB,yawB,620) ]).then(res);
-          }
-        }
+      const speedA = { x:520, y:840, z:360 };
+      const speedB = { x:500, y:800, z:340 };
+      const t0 = performance.now();
+      function step(now){
+        if (req !== tumbleReq) return;
+        const e = (now - t0) / 1000;
+        diceA.rotation.set(
+          THREE.MathUtils.degToRad(a0.x + e*speedA.x),
+          THREE.MathUtils.degToRad(a0.y + e*speedA.y),
+          THREE.MathUtils.degToRad(a0.z + e*speedA.z)
+        );
+        diceB.rotation.set(
+          THREE.MathUtils.degToRad(b0.x + e*speedB.x),
+          THREE.MathUtils.degToRad(b0.y + e*speedB.y),
+          THREE.MathUtils.degToRad(b0.z + e*speedB.z)
+        );
+        // keep them perfectly centered & next to each other
+        diceA.position.set(-lane, 0.22, 0);
+        diceB.position.set( lane, 0.22, 0);
         requestAnimationFrame(step);
-      });
+      }
+      requestAnimationFrame(step);
     }
-
-    function tweenTo(mesh,val,yaw,ms=600){
-      const start=performance.now(), r0=mesh.rotation.clone(), tmp=new THREE.Object3D();
-      setTop(THREE,tmp,val,yaw); const rx=tmp.rotation.x, ry=tmp.rotation.y, rz=tmp.rotation.z;
-      return new Promise(res=>{
-        function f(t){
-          const e=t-start, p=Math.min(1,e/ms), s=p<.5?2*p*p:-1+(4-2*p)*p;
-          mesh.rotation.set(r0.x+(rx-r0.x)*s, r0.y+(ry-r0.y)*s, r0.z+(rz-r0.z)*s);
-          if(e<ms) requestAnimationFrame(f); else res();
-        }
-        requestAnimationFrame(f);
-      });
-    }
+    function stopTumble(){ tumbleReq++; }
 
     // public roll implementation used by game logic
     window.__bagDiceRollImpl = async function(a,b){
       resetPose();
-      // 1) side-by-side tumble while playing shake SFX (no jitter)
-      const shakeP = window.__bagSfx?.playShake?.();
-      await sideTumble(750);
-      await shakeP;
-      // 2) throw into center lanes on roll SFX, bounce, settle to values
-      window.__bagSfx?.playRoll?.();
-      await throwAndSettle(a,b);
+      // 1) tumble during first SFX
+      startSideTumble();
+      await (window.__bagSfx?.playShake?.() || Promise.resolve());
+      // 2) keep tumbling during second SFX
+      await (window.__bagSfx?.playRoll?.() || Promise.resolve());
+      // 3) abrupt stop on the result
+      stopTumble();
+      const yawA = (Math.random()*Math.PI*2 - Math.PI);
+      const yawB = (Math.random()*Math.PI*2 - Math.PI);
+      setTop(THREE, diceA, a, yawA);
+      setTop(THREE, diceB, b, yawB);
     };
   }
 
-  /* ----- CSS FALLBACK (side-tumble → throw) ----- */
+  /* ----- CSS FALLBACK (kept) ----- */
   function initCssFallback(){
     usingCSS = true;
     cssWrap.classList.add('active');
     cssWrap.innerHTML='';
-
     function buildDie(){
       const die=document.createElement('div'); die.className='css-die';
       const faces={ f1:[5], f2:[1,9], f3:[1,5,9], f4:[1,3,7,9], f5:[1,3,5,7,9], f6:[1,3,4,6,7,9] };
@@ -718,54 +650,32 @@
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    function tumbleCss(ms=750){
-      const start=performance.now();
-      return new Promise(res=>{
-        function f(t){
-          const e=t-start;
-          dA.style.transform = `translate3d(-84px,0,0) rotateX(${e*0.55}deg) rotateY(${e*0.90}deg) rotateZ(${e*0.40}deg)`;
-          dB.style.transform = `translate3d( 84px,0,0) rotateX(${e*0.52}deg) rotateY(${e*0.85}deg) rotateZ(${e*0.38}deg)`;
-          if(e<ms) requestAnimationFrame(f); else res();
-        }
+    // Continuous tumble
+    let req=0;
+    function startTumble(){
+      const r=++req; const t0=performance.now();
+      function f(now){
+        if (r!==req) return;
+        const e=now-t0;
+        dA.style.transform = `translate3d(-60px,0,0) rotateX(${e*0.55}deg) rotateY(${e*0.90}deg) rotateZ(${e*0.40}deg)`;
+        dB.style.transform = `translate3d( 60px,0,0) rotateX(${e*0.52}deg) rotateY(${e*0.85}deg) rotateZ(${e*0.38}deg)`;
         requestAnimationFrame(f);
-      });
-    }
-
-    function throwCssTo(a,b,ms=1400){
-      const start=performance.now();
-      let yA=0, vyA=-380, yB=0, vyB=-420;
-      const g=980; // px/s^2
-      return new Promise(res=>{
-        function f(t){
-          const dt=Math.min(0.05,(t-start)/1000);
-          vyA+=g*dt; yA+=vyA*dt;
-          vyB+=g*dt; yB+=vyB*dt;
-          if (yA>0){ yA=0; vyA*=-0.45; }
-          if (yB>0){ yB=0; vyB*=-0.45; }
-          // glide into centered lanes
-          dA.style.transform = `translate3d(-60px, ${yA}px, 0) rotateX(${t*0.35}deg) rotateY(${t*0.55}deg) rotateZ(${t*0.22}deg)`;
-          dB.style.transform = `translate3d( 60px, ${yB}px, 0) rotateX(${t*0.33}deg) rotateY(${t*0.50}deg) rotateZ(${t*0.20}deg)`;
-          if ((t-start)<ms) requestAnimationFrame(f);
-          else {
-            setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
-            setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
-            res();
-          }
-        }
-        requestAnimationFrame(f);
-      });
+      }
+      requestAnimationFrame(f);
+      return ()=>{ req++; };
     }
 
     window.__bagDiceRollImpl = async function(a,b){
-      const sP = window.__bagSfx?.playShake?.();
-      await tumbleCss(750);
-      await sP;
-      window.__bagSfx?.playRoll?.();
-      await throwCssTo(a,b,1400);
+      const stop = startTumble();
+      await (window.__bagSfx?.playShake?.() || Promise.resolve());
+      await (window.__bagSfx?.playRoll?.()  || Promise.resolve());
+      stop();
+      setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
+      setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
     };
   }
 
-  /* ---------- Roll + payouts ---------- */
+  /* ---------- Roll + payouts (unchanged) ---------- */
   const rollBtn = document.getElementById('rollBtn');
   const rollText = document.getElementById('rollText');
 
@@ -798,7 +708,7 @@
     const a = (Math.random()*6|0)+1;
     const b = (Math.random()*6|0)+1;
 
-    // animate (tumble → throw → settle), with audio sync inside __bagDiceRollImpl
+    // animate (continuous tumble through both SFX → abrupt stop)
     if (typeof window.__bagDiceRollImpl === 'function'){
       await window.__bagDiceRollImpl(a,b);
     }
