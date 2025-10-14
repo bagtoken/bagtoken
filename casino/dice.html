@@ -114,7 +114,7 @@
   .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
   .css-face{
     position:absolute; inset:0; transform-style:preserve-3d;
-    background:#fff center/cover no-repeat;
+    background:#f6f3ec center/cover no-repeat; /* match pearl tone */
     border-radius:16px; box-shadow:inset 0 0 0 2px #dadada;
   }
   .css-face.f1{ transform: translateZ(48px); }
@@ -497,7 +497,7 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-  /* ---------------- THREE.JS PATH (pearl body + sticker faces) ---------------- */
+  /* ---------------- THREE.JS PATH (pearl body + OPAQUE sticker faces) ---------------- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
@@ -564,14 +564,13 @@
       clearcoat: 0.65, clearcoatRoughness: 0.25, envMapIntensity: 1.0
     });
 
-    // Sticker materials (avoid dark fringe)
+    // OPAQUE sticker materials (no alpha fringe + polygon offset to remove z-fighting)
     const loader = new THREE.TextureLoader();
     function loadSticker(n){
       const t = loader.load(FACE_URLS[n]);
       t.colorSpace = THREE.SRGBColorSpace;
-      t.premultiplyAlpha = true;
-      t.generateMipmaps = false;
-      t.minFilter = THREE.LinearFilter;
+      t.generateMipmaps = true;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
       t.magFilter = THREE.LinearFilter;
       t.anisotropy = 4;
       return t;
@@ -579,10 +578,13 @@
     function stickerMat(n){
       return new THREE.MeshPhysicalMaterial({
         map: loadSticker(n),
-        transparent: true,
-        alphaTest: 0.05,
-        color: 0xffffff,
-        roughness: 0.45, metalness: 0.0, clearcoat: 0.5, clearcoatRoughness: 0.3
+        transparent: false,
+        side: THREE.FrontSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+        roughness: 0.38, metalness: 0.0, clearcoat: 0.6, clearcoatRoughness: 0.28,
+        envMapIntensity: 1.0
       });
     }
 
@@ -604,6 +606,7 @@
       faces.forEach(f=>{
         const p = new THREE.Mesh(plane, stickerMat(f.n));
         p.position.set(...f.pos); p.rotation.set(...f.rot);
+        p.castShadow = false; p.receiveShadow = false;
         g.add(p);
       });
 
@@ -689,7 +692,7 @@
     };
   }
 
-  /* ---------------- CSS FALLBACK (also uses your PNGs) ---------------- */
+  /* ---------------- CSS FALLBACK (uses your PNGs; face background matches pearl) ---------------- */
   function initCssFallback(){
     cssWrap.innerHTML = '';
     cssWrap.classList.add('active');
