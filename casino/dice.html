@@ -403,9 +403,9 @@
 
     // Camera
     const w = container.clientWidth, h = container.clientHeight;
-    const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.8, 1.8, 6.2);
-    camera.lookAt(0,0,0);
+    const camera = new THREE.PerspectiveCamera(36, w/h, 0.1, 100);
+    camera.position.set(0.45, 1.55, 5.4);
+    camera.lookAt(0,0.25,0);
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -413,8 +413,9 @@
     renderer.setSize(w, h);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.physicallyCorrectLights = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
+    renderer.toneMappingExposure = 1.0;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -425,9 +426,9 @@
       renderer.setSize(W,H);
     });
 
-    // Environment (soft spec)
+    // Environment (soft specular)
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new THREE.Scene(), 0.025).texture;
+    scene.environment = pmrem.fromScene(new THREE.Scene(), 0.02).texture;
 
     // Felt
     const floorY = -1.06;
@@ -440,30 +441,31 @@
     felt.receiveShadow = true;
     scene.add(felt);
 
-    // Lights
-    const key = new THREE.DirectionalLight(0xffffff, 1.15);
-    key.position.set(3.6, 5.7, 4.0);
+    // Lights (higher-res soft shadows)
+    const SH = 2048;
+    const key = new THREE.DirectionalLight(0xffffff, 1.05);
+    key.position.set(3.2, 6.0, 4.2);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024,1024);
+    key.shadow.mapSize.set(SH,SH);
     key.shadow.radius = 3;
     key.shadow.camera.near = 1;
     key.shadow.camera.far  = 20;
-    key.shadow.camera.left = -7;
-    key.shadow.camera.right= 7;
-    key.shadow.camera.top  = 7;
-    key.shadow.camera.bottom = -7;
+    key.shadow.camera.left = -6.5;
+    key.shadow.camera.right=  6.5;
+    key.shadow.camera.top  =  6.5;
+    key.shadow.camera.bottom = -6.5;
 
-    const fill = new THREE.DirectionalLight(0xffffff, 0.45);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.42);
     fill.position.set(-4.2, 3.0, 2.2);
 
-    const rim  = new THREE.DirectionalLight(0xffffff, 0.30);
+    const rim  = new THREE.DirectionalLight(0xffffff, 0.28);
     rim.position.set(0.0, 6.5, -5.8);
 
-    const amb  = new THREE.AmbientLight(0xcfd7e2, 0.34);
+    const amb  = new THREE.AmbientLight(0xdfe6ef, 0.28);
     scene.add(key, fill, rim, amb);
 
-    // Slightly beveled cube (keeps edges crisp but avoids aliasing)
-    function RoundedBox(w,h,d,r=0.08, seg=4){
+    // Nearly-square cube: tiny bevel to catch light (not rounded)
+    function RoundedBox(w,h,d,r=0.04, seg=3){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
       for(let i=0;i<pos.count;i++){
@@ -477,37 +479,37 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
-    // Materials (clean, readable)
+    // Materials (ivory body + glossy black pips)
     const bodyMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf4f0ea, roughness: 0.42, metalness: 0.02,
-      sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.7,
-      clearcoat: 0.70, clearcoatRoughness: 0.25,
-      envMapIntensity: 1.0
+      color: 0xf4f0ea, roughness: 0.38, metalness: 0.02,
+      sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.75,
+      clearcoat: 0.80, clearcoatRoughness: 0.28, envMapIntensity: 1.0
     });
-    const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdad7d2, roughness: 0.75, metalness: 0.0 });
+    const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdcd9d4, roughness: 0.72, metalness: 0.0 });
     const pipMat  = new THREE.MeshPhysicalMaterial({
-      color: 0x0b0b0b, roughness: 0.55, metalness: 0.06, clearcoat: 0.25, clearcoatRoughness: 0.45
+      color: 0x0b0b0b, roughness: 0.45, metalness: 0.04, clearcoat: 0.25, clearcoatRoughness: 0.45
     });
 
-    // Inlaid pip cylinders, precisely seated (no floaters)
-    function makeDie(size=1.08){
+    // Inlaid pip cylinders (seated inside face, no floaters)
+    function makeDie(size=1.06){
       const g = new THREE.Group();
 
-      // Body + very subtle outline shell to make bevels pop
-      const body = new THREE.Mesh(RoundedBox(size,size,size,0.08,4), bodyMat);
+      const body = new THREE.Mesh(RoundedBox(size,size,size,0.04,3), bodyMat);
       body.castShadow = true; g.add(body);
 
       const outline = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-      outline.scale.set(1.002,1.002,1.002); g.add(outline);
+      outline.scale.set(1.002,1.002,1.002);
+      g.add(outline);
 
-      // Geometry pips
-      const pipR = size*0.082;
-      const pipDepth = size*0.14; // total cylinder height
-      const inset = size*0.50;    // approximate face plane from center
-      const eps = 0.0015;         // keep front cap just inside the face plane
+      const pipR = size*0.085;
+      const pipDepth = size*0.16;
+      const half = size/2;
+      const bevel = 0.04;
+      const facePlane = half - bevel*0.85;
+      const eps = 0.0015;
+
       const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40);
-
-      const m = size*0.28, c = 0;
+      const m = size*0.29, c = 0;
       const pattern = {
         1:[[c,c]],
         2:[[-m,-m],[ m, m]],
@@ -517,35 +519,26 @@
         6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]]
       };
 
-      // Place a pip set on a face with normal (nx,ny,nz)
       function addFace(face, nx,ny,nz){
         pattern[face].forEach(([u,v])=>{
           const pip = new THREE.Mesh(pipGeom, pipMat);
-
-          // Orient axis along face normal
-          if (nx!==0) pip.rotation.z = Math.PI/2;   // axis along X
-          if (nz!==0) pip.rotation.x = Math.PI/2;   // axis along Z
-          // Default axis is Y, so no rotation needed for Y faces
-
-          // Center so the front cap sits slightly INSIDE the face plane (no z-fighting / floaters)
-          // center = facePlane - (pipDepth/2) * toward interior
-          const centerShift = (inset - (pipDepth/2) - eps);
+          if (nx!==0) pip.rotation.z = Math.PI/2;
+          if (nz!==0) pip.rotation.x = Math.PI/2;
+          const centerShift = facePlane - (pipDepth/2) - eps;
           pip.position.set(u + nx*centerShift, v + ny*centerShift, nz*centerShift);
-
           pip.castShadow = true;
           g.add(pip);
         });
       }
 
-      // Standard opposite sum to 7 layout
-      addFace(3,+1,0,0); // +X
-      addFace(4,-1,0,0); // -X
-      addFace(1,0,+1,0); // +Y
-      addFace(6,0,-1,0); // -Y
-      addFace(2,0,0,+1); // +Z
-      addFace(5,0,0,-1); // -Z
+      // Opposites sum to 7
+      addFace(3,+1,0,0);
+      addFace(4,-1,0,0);
+      addFace(1,0,+1,0);
+      addFace(6,0,-1,0);
+      addFace(2,0,0,+1);
+      addFace(5,0,0,-1);
 
-      // Pose helper (set "top" face and yaw)
       g.__setTop = function(value, yaw=0){
         const map={1:[0,yaw,0],2:[-Math.PI/2,yaw,0],3:[0,yaw+Math.PI/2,0],4:[0,yaw-Math.PI/2,0],5:[Math.PI/2,yaw,0],6:[Math.PI,yaw,0]}[value]||[0,yaw,0];
         g.rotation.set(map[0],map[1],map[2]);
@@ -555,26 +548,25 @@
 
     // Stage + dice
     const stage = new THREE.Group(); scene.add(stage);
-    const diceA = makeDie(1.08), diceB = makeDie(1.08);
+    const diceA = makeDie(1.06), diceB = makeDie(1.06);
     stage.add(diceA, diceB);
 
-    // Keep dice centered & side-by-side (not touching)
+    // Centered & side-by-side
     function parkDice(){
-      const GAP = 0.85, YPOS = 0.30;
-      diceA.position.set(-GAP, YPOS, -0.04);
-      diceB.position.set( GAP, YPOS,  0.04);
+      const GAP = 0.95, YPOS = 0.30;
+      diceA.position.set(-GAP, YPOS, -0.035);
+      diceB.position.set( GAP, YPOS,  0.035);
     }
     parkDice();
 
     // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Smooth in-place tumble for full duration of both sounds, then snap
+    // Spin during both sounds (sequential), then snap
     async function tumbleTo(a,b){
       await window.__bagSfx?.primeOnce?.();
 
       let stop=false;
-      // sequential audio; when both finish, stop tumbling
       (async()=>{
         try{ await window.__bagSfx?.playShake?.(); }catch{}
         try{ await window.__bagSfx?.playRoll?.(); }catch{}
@@ -586,34 +578,30 @@
         (function step(now){
           const elapsed = now - t0;
           const dt = 0.016;
-          // lively but natural — slightly different speeds per axis & die
-          const damping = 1 / (1 + (elapsed/900));
-          const speed = 46 * damping;
+          const damping = 1 / (1 + (elapsed/1200));
+          const base = 52 * damping;
 
-          diceA.rotation.x += (1.32 + 0.10*Math.sin(now*0.006))*speed*dt;
-          diceA.rotation.y += (1.56 + 0.36*Math.cos(now*0.004))*speed*dt;
-          diceA.rotation.z += (0.90 + 0.05*Math.sin(now*0.007))*speed*dt;
+          diceA.rotation.x += (1.28 + 0.10*Math.sin(now*0.006))*base*dt;
+          diceA.rotation.y += (1.50 + 0.26*Math.cos(now*0.004))*base*dt;
+          diceA.rotation.z += (0.90 + 0.06*Math.sin(now*0.007))*base*dt;
 
-          diceB.rotation.x += (1.24 + 0.08*Math.cos(now*0.005))*speed*dt;
-          diceB.rotation.y += (1.48 + 0.33*Math.sin(now*0.004))*speed*dt;
-          diceB.rotation.z += (0.86 + 0.06*Math.cos(now*0.006))*speed*dt;
+          diceB.rotation.x += (1.22 + 0.08*Math.cos(now*0.005))*base*dt;
+          diceB.rotation.y += (1.44 + 0.24*Math.sin(now*0.004))*base*dt;
+          diceB.rotation.z += (0.86 + 0.05*Math.cos(now*0.006))*base*dt;
 
           if (!stop) requestAnimationFrame(step); else res();
         })(performance.now());
       });
 
-      // Abrupt snap to the result
       const yawA = (Math.random()*Math.PI*2 - Math.PI);
       const yawB = (Math.random()*Math.PI*2 - Math.PI);
       diceA.__setTop(a, yawA);
       diceB.__setTop(b, yawB);
       parkDice();
 
-      // brief hold for readability
       await new Promise(r=>setTimeout(r,110));
     }
 
-    // Public hook used by the rest of your app
     window.__bagDiceRollImpl = async function(a,b){
       await tumbleTo(a,b);
     };
@@ -646,7 +634,6 @@
       el.style.transform = map;
     }
 
-    // Sequential audio & spin-until-done, then snap
     window.__bagDiceRollImpl = async function(a,b){
       await window.__bagSfx?.primeOnce?.();
 
@@ -1024,7 +1011,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
