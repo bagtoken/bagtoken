@@ -1,489 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>BAG Dice</title>
-
-<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<script>window.__BAG_FORCE_DEMO = true;</script>
-
-<!-- Robust Three.js loader -->
 <script>
 (function(){
-  function load(src, done, fail){
-    var s=document.createElement('script');
-    s.src=src; s.async=true; s.onload=done; s.onerror=fail; document.head.appendChild(s);
-  }
-  load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-    function(){ window.__THREE_READY__=true; },
-    function(){
-      console.warn('[bag-dice] jsDelivr failed, trying unpkg');
-      load('https://unpkg.com/three@0.158.0/build/three.min.js',
-        function(){ window.__THREE_READY__=true; },
-        function(){ console.error('[bag-dice] three.js failed to load'); window.__THREE_FAILED__=true; }
-      );
-    }
-  );
-})();
-</script>
-
-<style>
-  *{box-sizing:border-box}
-  :root{
-    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
-    --win-bg: rgba(10,12,16,.70);
-    --lose:#e25b5b; --warn:#e8a85c;
-  }
-  html,body{margin:0;background:var(--bg);color:var(--fg);
-    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
-  img{display:block;max-width:100%;height:auto}
-  button,input{font-size:16px}
-
-  .back-casino{
-    position:fixed;top:18px;left:18px;z-index:1000;
-    background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
-    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
-    box-shadow:0 4px 0 #b08a19;transition:all .15s ease
-  }
-  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
-  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
-
-  .game-header{text-align:center;padding:36px 10px 14px}
-  .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
-  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
-  @media (min-width:900px){
-    .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
-  }
-
-  .game-teaser{padding:10px 16px 60px;background:
-    radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
-    radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
-    border-top:1px solid #131313;border-bottom:1px solid #131313}
-  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
-  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
-
-  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
-    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
-  .mock{padding:16px}
-
-  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
-  .stake-box{padding:14px}
-  .stack{display:grid;gap:10px}
-  .choice{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
-  .chip input{accent-color:#2fbf6b}
-  .mono{font-variant-numeric:tabular-nums}
-  .micro{font-size:.85rem;color:#a8b5ab}
-  .muted{color:#cfd6cf}
-  .divider{height:1px;background:#123221;margin:10px 0}
-  .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
-  .payout-grid{display:grid;gap:4px}
-  .payout-grid .row{display:flex;justify-content:space-between}
-  .payout-grid .lab{color:#cfd6cf}
-  .payout-grid .val{font-variant-numeric:tabular-nums}
-
-  /* ----- Dice area ----- */
-  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
-  .felt{
-    display:grid;grid-template-columns:1fr;gap:12px;
-    background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;overflow:hidden
-  }
-  .marquee{ text-align:center;font-weight:900;letter-spacing:.08em;
-    color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
-    border:1px solid #254a33;border-radius:12px;padding:8px }
-  .stage3d{ height:260px; position:relative; border-radius:10px; overflow:hidden; }
-  .stage3d canvas{ display:block; width:100%; height:100%; }
-  .roll-row{display:flex;justify-content:center}
-  .btn-roll{
-    width:min(360px,90%);padding:16px 22px;margin-top:2px;
-    font-size:1.15rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;border:0;border-radius:14px;
-    color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
-    box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35);
-    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease; cursor:pointer;
-  }
-  .btn-roll:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
-  .btn-roll:disabled{opacity:.65;cursor:not-allowed}
-  .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
-  .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
-
-  /* CSS fallback dice (only if Three.js fails) */
-  .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
-  .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
-  .css-face{
-    position:absolute; inset:0; transform-style:preserve-3d;
-    background:#f6f3ec center/cover no-repeat; /* match pearl tone */
-    border-radius:16px; box-shadow:inset 0 0 0 2px #dadada;
-  }
-  .css-face.f1{ transform: translateZ(48px); }
-  .css-face.f6{ transform: rotateX(180deg) translateZ(48px); }
-  .css-face.f3{ transform: rotateY(90deg) translateZ(48px); }
-  .css-face.f4{ transform: rotateY(-90deg) translateZ(48px); }
-  .css-face.f2{ transform: rotateX(-90deg) translateZ(48px); }
-  .css-face.f5{ transform: rotateX(90deg) translateZ(48px); }
-  .css-dice-wrap.active{ display:grid; }
-  .css-die{ transition: transform .65s cubic-bezier(.2,.9,.2,1); }
-  .settle{ animation:settle .35s ease-out; }
-  @keyframes settle{
-    0%{ transform:translateY(-6px) rotateZ(.6deg) }
-    55%{ transform:translateY(2px) rotateZ(-.5deg) }
-    100%{ transform:translateY(0) rotateZ(0) }
-  }
-
-  /* WIN overlay visuals */
-  #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
-  #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, #00ffb2, #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
-  #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
-  #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
-  #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
-  @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
-  @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  @keyframes shine{ 0%{ background-position:0% 50% } 100%{ background-position:200% 50% } }
-</style>
-</head>
-<body>
-
-<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
-
-<section class="game-header">
-  <img src="/assets/bag-dice.png" alt="BAG Dice" class="hero-img">
-  <h2>🎲 $BAG DICE — Pass Line</h2>
-  <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
-</section>
-
-<section class="game-teaser" aria-labelledby="game-teaser-title">
-  <div class="game-wrap">
-
-    <!-- LEFT -->
-    <div class="panel mock" id="bagDiceDemo">
-      <!-- CONNECT -->
-      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
-        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <button id="connectBtn" style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">Connect Xaman</button>
-      </div>
-
-      <!-- SESSION -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
-        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
-          <button id="topUpBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;display:none;">Top Up</button>
-          <button id="endSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">End</button>
-        </div>
-      </div>
-
-      <div class="section-title">Stake & Prices</div>
-
-      <div class="stake-box">
-        <div class="stack">
-          <div>
-            <div class="micro">Amount</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <div style="display:flex;align-items:center;gap:6px">
-                <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-                <span class="micro" aria-hidden="true">USD</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="micro">Bet currency</div>
-            <div class="choice" id="curToggle">
-              <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
-              <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
-            </div>
-          </div>
-
-          <div>
-            <div class="micro">Bet amount</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <div>
-                <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-                <span class="unit">XRP</span>
-              </div>
-            </div>
-            <div class="micro" id="betLimits" style="margin-top:6px"></div>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="micro">Live prices</div>
-          <div class="muted mono" id="liveLine">
-            <span id="liveDot" class="warn">●</span>
-            <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
-            <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <!-- Payouts preview -->
-      <div class="callout mono" id="payoutBox">
-        <div class="payout-grid">
-          <div class="row"><div class="lab"><strong>Come-out WIN</strong> (7 or 11):</div><div class="val" id="payWinComeOut">—</div></div>
-          <div class="row"><div class="lab"><strong>Point WIN</strong> (roll point before 7):</div><div class="val" id="payWinPoint">—</div></div>
-          <div class="row"><div class="lab"><strong>SEVEN OUT / CRAPS</strong> (lose):</div><div class="val" id="payLose">0 BAG ($0.00)</div></div>
-          <div class="row"><div class="lab"><strong>Point established</strong> (no payout yet):</div><div class="val" id="payHold">Stake held</div></div>
-        </div>
-        <div class="micro" style="margin-top:6px;opacity:.85;">
-          Pass Line: 7/11 on come-out = WIN · 2/3/12 = CRAPS (lose) · Any other total sets the <b>Point</b>. Then roll until <b>point</b> (WIN) or <b>7</b> (SEVEN OUT, lose). Come-out win pays <b>1.25×</b>; point win pays <b>1.00×</b>.
-        </div>
-      </div>
-
-      <!-- DICE table -->
-      <div class="dice-wrap">
-        <div class="marquee">$BAG DICE</div>
-        <div class="table">
-          <div class="felt">
-            <div id="dice3d" class="stage3d" aria-label="3D dice area">
-              <div id="cssDice" class="css-dice-wrap"></div>
-            </div>
-            <div class="roll-row"><button id="rollBtn" class="btn-roll">ROLL</button></div>
-            <div class="result"><div class="t" id="rollText">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT -->
-    <div class="panel" style="padding:16px">
-      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays (Pass Line)</h3>
-
-      <p style="color:#cfd6cf;margin:0 0 8px;">
-        Bet the <b>Pass Line</b>. The first roll is the <b>come-out roll</b>.
-      </p>
-
-      <h4 style="margin:12px 0 6px;">Come-out roll</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>7 or 11</b> → <b>Pass Line WIN</b> (pays <b>1.25×</b> total).</li>
-        <li><b>2, 3, or 12</b> → <b>CRAPS</b> (you lose, round ends).</li>
-        <li><b>4, 5, 6, 8, 9, or 10</b> → That number becomes the <b>Point</b>. Your stake stays up.</li>
-      </ul>
-
-      <h4 style="margin:12px 0 6px;">Point phase</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li>Roll until either the <b>Point</b> is made (you <b>WIN 1.00×</b>) or a <b>7</b> appears (<b>SEVEN OUT</b>, you lose).</li>
-        <li>Any other total is a <b>neutral</b> roll — no payout; stake remains.</li>
-      </ul>
-
-      <h4 style="margin:12px 0 6px;">Payouts</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>Come-out WIN</b> (7/11) — <b>1.25× total</b></li>
-        <li><b>Point WIN</b> — <b>1.00× total</b></li>
-        <li><b>CRAPS / SEVEN OUT</b> — lose</li>
-      </ul>
-
-      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA. All payouts settle in <b>$BAG</b>. $XRP stakes convert at live rate automatically.</p>
-    </div>
-
-  </div>
-</section>
-
-<!-- WIN overlay -->
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
-  <div id="win-card">
-    <button id="win-close" aria-label="Close">×</button>
-    <div id="win-text">WIN</div>
-    <div id="win-sub">Nice roll</div>
-  </div>
-</div>
-
-<!-- AUDIO -->
-<script>
-(function(){
-  const SHAKE_SRC = '/assets/sounds/diceshake.mp3';
-  const ROLL_SRC  = '/assets/sounds/diceroll.mp3';
-
-  let primed=false;
-  const baseShake = new Audio(SHAKE_SRC);
-  const baseRoll  = new Audio(ROLL_SRC);
-  [baseShake, baseRoll].forEach(a=>{
-    a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95;
-  });
-
-  function primeOnce(){
-    if (primed) return;
-    try{
-      baseShake.muted=true; const p=baseShake.play();
-      if (p && p.then){
-        p.then(()=>{ baseShake.pause(); baseShake.muted=false; primed=true; }).catch(()=>{});
-      } else { baseShake.pause(); baseShake.muted=false; primed=true; }
-    }catch{}
-  }
-  addEventListener('pointerdown', primeOnce, {once:true, passive:true});
-
-  function playOnce(tmpl){
-    return new Promise(res=>{
-      try{
-        const a = tmpl.cloneNode(true);
-        a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
-        a.addEventListener('ended', ()=>res(), {once:true});
-        a.play().catch(()=>setTimeout(res, 900));
-        setTimeout(()=>res(), 5000);
-      }catch{ res(); }
-    });
-  }
-
-  function playShake(){ return playOnce(baseShake); }
-  function playRoll(){ return playOnce(baseRoll); }
-
-  window.__bagSfx = { playShake, playRoll, primeOnce };
-})();
-</script>
-
-<!-- WIN overlay logic -->
-<script>
-(function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
-  let rafId=null, particles=[], start=0, dur=2000;
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
-  size(); addEventListener('resize', size);
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++){ particles.push({ x:innerWidth*0.5, y:innerHeight*0.4,
-      vx:(Math.random()-.5)*6, vy:-(3+Math.random()*5), g:.16, rot:Math.random()*6.28, vr:(Math.random()-.5)*.25, sz:6+Math.random()*10, col:colors[(Math.random()*colors.length)|0], shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri') }); } }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
-  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
-  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ overlay.style.display='grid'; }
-  function hide(){ overlay.style.display='none'; stop(); }
-  closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice roll', duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
-    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
-  };
-})();
-</script>
-
-<!-- GAME + PRICES + DICE -->
-<script>
-(function(){
-  /* ---------- Prices ---------- */
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
-  const liveDot = document.getElementById('liveDot');
-  const liveBAG = document.getElementById('liveBAG');
-  const liveXRP = document.getElementById('liveXRP');
-  const liveNote= document.getElementById('liveNote');
-  const liveConv= document.getElementById('liveConv');
-  const limits = document.getElementById('betLimits');
-  const betQty = document.getElementById('betQty');
-  const usdBet = document.getElementById('usdBet');
-  const curToggle = document.getElementById('curToggle');
-
-  function fmt(n){ if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
-  function updateLimits(){
-    if(!(PRICES.bagUsd>0 && PRICES.xrpUsd>0)){ limits.textContent='Min $1 · Max $2,000'; return; }
-    const maxX = 2000/PRICES.xrpUsd, maxB = 2000/PRICES.bagUsd;
-    const minX = 1/PRICES.xrpUsd,  minB = 1/PRICES.bagUsd;
-    limits.textContent = `Min $1 · Max $2,000 · Min ≈ ${fmt(minX)} XRP / ${fmt(minB)} BAG · Max ≈ ${fmt(maxX)} XRP / ${fmt(maxB)} BAG`;
-  }
-  function conversions(){
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const xPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerX = PRICES.xrpUsd/PRICES.bagUsd;
-      liveConv.textContent = `1 BAG ≈ ${fmt(xPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerX)} BAG`;
-    } else liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
-  }
-  function updateLive(){
-    liveBAG.textContent = fmt(PRICES.bagUsd);
-    liveXRP.textContent = fmt(PRICES.xrpUsd);
-    liveDot.className = PRICES.source==='live-amm' ? 'ok' : (PRICES.source==='last-live' ? 'warn' : 'err');
-    liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
-    conversions(); updateLimits(); updatePayoutPreview();
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-  }
-  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
-  async function fetchXrpUsd(){
-    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
-    return false;
-  }
-  async function fetchBagUsdViaAMM(){
-    return new Promise(resolve=>{
-      const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},asset2:{currency:'XRP'}};
-      const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
-      ws.onopen=()=>ws.send(JSON.stringify(req));
-      ws.onmessage=ev=>{ try{
-        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
-        const bag=Number(j.result.amm.amount?.value||0);
-        const x2=j.result.amm.amount2;
-        const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
-        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
-      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
-      ws.onerror=()=>{ clearTimeout(to); resolve(false); };
-    });
-  }
-  (async function refresh(){
-    await fetchXrpUsd();
-    const ok = await fetchBagUsdViaAMM();
-    if(!ok) PRICES.source='last-live';
-    updateLive();
-    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
-  })();
-
-  /* ---------- Payout preview ---------- */
-  const payWinComeOut=document.getElementById('payWinComeOut');
-  const payWinPoint = document.getElementById('payWinPoint');
-  const payLose=document.getElementById('payLose');
-
-  function stakeUsd(qOverride){
-    const q = Number.isFinite(qOverride) ? qOverride : (parseFloat(betQty.value||0)||0);
-    if(!q) return 0;
-    return currentCurrency()==='BAG' ? (PRICES.bagUsd>0?q*PRICES.bagUsd:0) : (PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
-  }
-  function stakeBag(qOverride){
-    const q = Number.isFinite(qOverride) ? qOverride : (parseFloat(betQty.value||0)||0);
-    if(!q) return 0;
-    if(currentCurrency()==='BAG') return q;
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerX = PRICES.xrpUsd/PRICES.bagUsd; return q*bagPerX; }
-    return 0;
-  }
-  function updatePayoutPreview(){
-    const s=stakeBag(), u=stakeUsd();
-    if(!(s>0)){ payWinComeOut.textContent='—'; payWinPoint.textContent='—'; return; }
-    payWinComeOut.textContent = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
-    payWinPoint.textContent   = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
-  }
-  betQty.addEventListener('input', ()=>{ const u=stakeUsd(); usdBet.value = u>0 ? u.toFixed(2) : ''; updatePayoutPreview(); });
-  usdBet.addEventListener('input', ()=>{
-    const raw=parseFloat(usdBet.value);
-    if(!(raw>0)) return;
-    if(currentCurrency()==='XRP' && PRICES.xrpUsd>0) betQty.value = (raw/PRICES.xrpUsd).toString();
-    else if(currentCurrency()==='BAG' && PRICES.bagUsd>0) betQty.value = (raw/PRICES.bagUsd).toString();
-    updatePayoutPreview();
-  });
-  curToggle.addEventListener('change', ()=>{
-    document.querySelector('#bagDiceDemo .unit').textContent=currentCurrency();
-    const u=stakeUsd(); usdBet.value = u>0 ? u.toFixed(2) : '';
-    updatePayoutPreview();
-  });
-
   /* ---------- Dice engine (Three.js or CSS fallback) ---------- */
   const container = document.getElementById('dice3d');
   const cssWrap   = document.getElementById('cssDice');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
-
-  const FACE_URLS = {
-    1:'/assets/face1.png', 2:'/assets/face2.png', 3:'/assets/face3.png',
-    4:'/assets/face4.png', 5:'/assets/face5.png', 6:'/assets/face6.png'
-  };
 
   const ROUND = (window.ROUND = { active:false, point:null });
 
@@ -497,13 +18,14 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-  /* ---------------- THREE.JS PATH (pearl body + OPAQUE sticker faces) ---------------- */
+  /* ---------------- THREE.JS: solid pearl dice with true 3D pips ---------------- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
     const w = container.clientWidth, h = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.75, 1.9, 6.2); camera.lookAt(0,0,0);
+    camera.position.set(0.75, 1.9, 6.2);
+    camera.lookAt(0,0,0);
 
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
@@ -520,29 +42,26 @@
       renderer.setSize(w,h);
     });
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new THREE.Scene(), 0.1).texture;
-
     // Felt
     const floorY = -1.06;
     const felt = new THREE.Mesh(
       new THREE.CylinderGeometry(3.5,3.5,0.02,64),
-      new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.9, metalness:0 })
+      new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.92, metalness:0 })
     );
     felt.rotation.x = -Math.PI/2; felt.position.y = floorY+0.01; felt.receiveShadow = true;
     scene.add(felt);
 
-    // Lights
-    const key=new THREE.DirectionalLight(0xffffff,1.05); key.position.set(3.5,5.8,4.2); key.castShadow=true;
+    // Lights: key/fill/rim/amb
+    const key =  new THREE.DirectionalLight(0xffffff,1.05); key.position.set( 3.5,5.8,4.2); key.castShadow=true;
     key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
     key.shadow.camera.near=1; key.shadow.camera.far=20;
     key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
-    const fill=new THREE.DirectionalLight(0xffffff,0.45); fill.position.set(-4.2,3,2);
-    const rim =new THREE.DirectionalLight(0xffffff,0.28); rim.position.set(0,6.5,-6);
-    const amb =new THREE.AmbientLight(0xb7c3d1,0.34);
+    const fill = new THREE.DirectionalLight(0xffffff,0.45); fill.position.set(-4.2,3,2);
+    const rim  = new THREE.DirectionalLight(0xffffff,0.28); rim.position.set(0,6.5,-6);
+    const amb  = new THREE.AmbientLight(0xb7c3d1,0.34);
     scene.add(key,fill,rim,amb);
 
-    // Rounded cube
+    // Rounded cube geometry
     function RoundedBox(w,h,d,r=0.19, seg=4){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -557,59 +76,54 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
-    // Pearl body
+    // Materials
     const pearl = new THREE.MeshPhysicalMaterial({
       color: 0xf6f3ec, roughness: 0.42, metalness: 0.0,
       sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.8,
       clearcoat: 0.65, clearcoatRoughness: 0.25, envMapIntensity: 1.0
     });
+    const pipMat = new THREE.MeshStandardMaterial({ color:0x0e1215, roughness:0.35, metalness:0.0 });
 
-    // OPAQUE sticker materials (no alpha fringe + polygon offset to remove z-fighting)
-    const loader = new THREE.TextureLoader();
-    function loadSticker(n){
-      const t = loader.load(FACE_URLS[n]);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.generateMipmaps = true;
-      t.minFilter = THREE.LinearMipmapLinearFilter;
-      t.magFilter = THREE.LinearFilter;
-      t.anisotropy = 4;
-      return t;
-    }
-    function stickerMat(n){
-      return new THREE.MeshPhysicalMaterial({
-        map: loadSticker(n),
-        transparent: false,
-        side: THREE.FrontSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-        roughness: 0.38, metalness: 0.0, clearcoat: 0.6, clearcoatRoughness: 0.28,
-        envMapIntensity: 1.0
-      });
-    }
-
+    // Build a die with real 3D pips (spheres)
     function makeDie(size=1.08){
       const g = new THREE.Group();
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), pearl);
-      body.castShadow = true; g.add(body);
+      body.castShadow = true; body.receiveShadow = false;
+      g.add(body);
 
-      const pad=0.02, s=size-pad*2, t=0.0015;
-      const plane = new THREE.PlaneGeometry(s,s);
-      const faces = [
-        {n:3, pos:[+size/2+t,0,0], rot:[0, Math.PI/2, 0]},
-        {n:4, pos:[-size/2-t,0,0], rot:[0,-Math.PI/2, 0]},
-        {n:1, pos:[0,+size/2+t,0], rot:[-Math.PI/2,0,0]},
-        {n:6, pos:[0,-size/2-t,0], rot:[+Math.PI/2,0,0]},
-        {n:2, pos:[0,0,+size/2+t], rot:[0,0,0]},
-        {n:5, pos:[0,0,-size/2-t], rot:[0,Math.PI,0]},
-      ];
-      faces.forEach(f=>{
-        const p = new THREE.Mesh(plane, stickerMat(f.n));
-        p.position.set(...f.pos); p.rotation.set(...f.rot);
-        p.castShadow = false; p.receiveShadow = false;
-        g.add(p);
-      });
+      // pip layout (face value -> [positions]) on unit grid
+      const s = size/2 - 0.16;
+      const p = 0.38; // pip spacing
+      const sets = {
+        1:[[0,0]],
+        2:[[-p,-p],[p,p]],
+        3:[[-p,-p],[0,0],[p,p]],
+        4:[[-p,-p],[-p,p],[p,-p],[p,p]],
+        5:[[-p,-p],[-p,p],[0,0],[p,-p],[p,p]],
+        6:[[-p,-p],[-p,0],[-p,p],[p,-p],[p,0],[p,p]]
+      };
+      const pipRadius = 0.09;
+      function addPips(face, axis, sign){
+        const list = sets[face];
+        list.forEach(([u,v])=>{
+          const geo = new THREE.SphereGeometry(pipRadius, 22, 18);
+          const m   = new THREE.Mesh(geo, pipMat);
+          m.castShadow = true; m.receiveShadow = false;
+          if(axis==='x') m.position.set(sign*s, u, v);
+          if(axis==='y') m.position.set(u, sign*s, v);
+          if(axis==='z') m.position.set(u, v, sign*s);
+          g.add(m);
+        });
+      }
+      // Standard opposite sides sum to 7
+      addPips(3,'x',+1); // right
+      addPips(4,'x',-1); // left
+      addPips(1,'y',+1); // top
+      addPips(6,'y',-1); // bottom
+      addPips(2,'z',+1); // front
+      addPips(5,'z',-1); // back
 
+      // Orientation helper
       g.__setTop = function(value, yaw=0){
         const map={
           1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -620,6 +134,7 @@
       return g;
     }
 
+    // Stage and dice
     const stage = new THREE.Group(); scene.add(stage);
     const diceA = makeDie(1.08);
     const diceB = makeDie(1.08);
@@ -631,9 +146,11 @@
     }
     centerPose();
 
+    // Render loop
     (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
 
-    async function impactShake(ms=120, px=0.055){
+    // Camera micro-shake on impact
+    async function impactShake(ms=140, px=0.06){
       const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
         function f(t){
@@ -646,61 +163,99 @@
       });
     }
 
-    async function throwDiceTo(a,b, totalMs=1150){
-      const endY=0.28, startXA=-2.4, startXB= 2.4, startY=0.65;
+    // Tumble animation: big arc + random spin, then slerp to exact face
+    async function throwDiceTo(a,b, totalMs=1350){
+      const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
       diceA.position.set(startXA,startY,0); diceB.position.set(startXB,startY,0);
+
+      // random initial rotations
       diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
       diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
-      const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+
+      const yawA=(Math.random()*Math.PI*2-Math.PI);
+      const yawB=(Math.random()*Math.PI*2-Math.PI);
+
+      // target orientations
+      const tgtA=new THREE.Euler(...({1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a]));
+      const tgtB=new THREE.Euler(...({1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b]));
+      const qStartA=diceA.quaternion.clone(), qStartB=diceB.quaternion.clone();
+      const qEndA=new THREE.Quaternion().setFromEuler(tgtA);
+      const qEndB=new THREE.Quaternion().setFromEuler(tgtB);
 
       const t0=performance.now();
       await new Promise(res=>{
         function step(t){
           const raw=Math.min(1,(t-t0)/totalMs);
-          const pAir=Math.min(1, raw/0.76), pDrop=Math.max(0,(raw-0.76)/0.24);
-          const xA=startXA+(-0.95-startXA)*(1-Math.pow(1-pAir,3));
-          const xB=startXB+( 0.95-startXB)*(1-Math.pow(1-pAir,3));
-          const arc = 0.56*(1 - (2*pAir-1)**2);
-          const y=endY+arc+0.1;
-          diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
-          const s=36*(1-pAir*0.85), dt=0.016;
-          diceA.rotation.x+=1.00*s*dt; diceA.rotation.y+=1.30*s*dt; diceA.rotation.z+=0.70*s*dt;
-          diceB.rotation.x+=0.92*s*dt; diceB.rotation.y+=1.18*s*dt; diceB.rotation.z+=0.62*s*dt;
+          // ease: accelerate then decelerate, with overspin portion
+          const ease = raw<0.8
+            ? 1 - Math.pow(1-(raw/0.8), 2.2)
+            : 1; // final slerp in last 20%
 
-          if(pDrop>0){
-            const k=(1-Math.pow(1-pDrop,3));
-            const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
-            const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
-            diceA.rotation.set(diceA.rotation.x+(toA[0]-diceA.rotation.x)*k, diceA.rotation.y+(toA[1]-diceA.rotation.y)*k, diceA.rotation.z+(toA[2]-diceA.rotation.z)*k);
-            diceB.rotation.set(diceB.rotation.x+(toB[0]-diceB.rotation.x)*k, diceB.rotation.y+(toB[1]-diceB.rotation.y)*k, diceB.rotation.z+(toB[2]-diceB.rotation.z)*k);
+          // ballistic arc for position
+          const pAir = Math.min(1, raw/0.78);
+          const xA = startXA+(-0.95-startXA)*(1-Math.pow(1-pAir,3));
+          const xB = startXB+( 0.95-startXB)*(1-Math.pow(1-pAir,3));
+          const arc = 0.64*(1 - (2*pAir-1)**2);
+          const y=endY+arc+0.08;
+          diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
+
+          if(raw<0.8){
+            // free spin phase
+            const s=48*(1-pAir*0.85), dt=0.016;
+            diceA.rotation.x+=1.10*s*dt; diceA.rotation.y+=1.35*s*dt; diceA.rotation.z+=0.74*s*dt;
+            diceB.rotation.x+=1.02*s*dt; diceB.rotation.y+=1.22*s*dt; diceB.rotation.z+=0.66*s*dt;
+          } else {
+            // settle slerp
+            const k = (raw-0.8)/0.2;
+            diceA.quaternion.slerpQuaternions(qStartA, qEndA, k);
+            diceB.quaternion.slerpQuaternions(qStartB, qEndB, k);
           }
+
           if(raw<1) requestAnimationFrame(step); else res();
         }
         requestAnimationFrame(step);
       });
 
-      diceA.__setTop(a,yawA); diceB.__setTop(b,yawB);
+      diceA.quaternion.copy(qEndA);
+      diceB.quaternion.copy(qEndB);
       diceA.position.y=diceB.position.y=endY;
-      await impactShake(120,0.06);
+      await impactShake(140,0.06);
     }
 
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.(); await sP;
       window.__bagSfx?.playRoll?.();
-      await throwDiceTo(a,b,1150);
+      await throwDiceTo(a,b,1350);
       await new Promise(r=>setTimeout(r,120));
     };
   }
 
-  /* ---------------- CSS FALLBACK (uses your PNGs; face background matches pearl) ---------------- */
+  /* ---------------- CSS Fallback (no WebGL): simple DOM dice with pips ---------------- */
   function initCssFallback(){
     cssWrap.innerHTML = '';
     cssWrap.classList.add('active');
     const mk = ()=> {
       const d = document.createElement('div'); d.className='css-die';
-      ['f1','f2','f3','f4','f5','f6'].forEach((cls,i)=>{
+      // 6 face planes
+      const faces = ['f1','f2','f3','f4','f5','f6'];
+      faces.forEach((cls,idx)=>{
         const f=document.createElement('div'); f.className='css-face '+cls;
-        f.style.backgroundImage = `url(${FACE_URLS[i+1]})`;
+        // generate pips as children
+        const layout={
+          1:[[0,0]],
+          2:[[-1,-1],[1,1]],
+          3:[[-1,-1],[0,0],[1,1]],
+          4:[[-1,-1],[-1,1],[1,-1],[1,1]],
+          5:[[-1,-1],[-1,1],[0,0],[1,-1],[1,1]],
+          6:[[-1,-1],[-1,0],[-1,1],[1,-1],[1,0],[1,1]]
+        }[idx+1];
+        layout.forEach(([u,v])=>{
+          const dot=document.createElement('span');
+          dot.style.cssText='position:absolute;width:14px;height:14px;border-radius:50%;background:#0e1215;left:50%;top:50%;transform:translate(-50%,-50%)';
+          dot.style.left = `calc(50% + ${u*22}px)`;
+          dot.style.top  = `calc(50% + ${v*22}px)`;
+          f.appendChild(dot);
+        });
         d.appendChild(f);
       });
       cssWrap.appendChild(d);
@@ -718,18 +273,17 @@
       }[val]||`rotateX(0rad) rotateY(${yaw}rad)`;
       el.style.transform = map;
     }
-
     window.__bagDiceRollImpl = async function(a,b){
       A.classList.remove('settle'); B.classList.remove('settle');
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-      A.style.transition=B.style.transition='transform .75s cubic-bezier(.2,.9,.2,1)';
+      A.style.transition=B.style.transition='transform .85s cubic-bezier(.2,.9,.2,1)';
       A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
       B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
       const sP = window.__bagSfx?.playShake?.(); await sP; window.__bagSfx?.playRoll?.();
-      await new Promise(r=>setTimeout(r, 620));
+      await new Promise(r=>setTimeout(r, 680));
       setTop(A,a,yawA); setTop(B,b,yawB);
       A.classList.add('settle'); B.classList.add('settle');
-      await new Promise(r=>setTimeout(r, 220));
+      await new Promise(r=>setTimeout(r, 240));
     };
   }
 
@@ -796,366 +350,3 @@
   }
 })();
 </script>
-
-<!-- Xaman wallet connect -->
-<script>
-(function(){
-  const WALLET_KEY = 'bag_wallet_v1';
-  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
-
-  const btn = document.getElementById('connectBtn');
-  const statusEl = document.getElementById('connectStatus');
-  if (!btn || !statusEl) return;
-
-  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
-  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
-  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
-
-  function short(a){ try{ const s=String(a||''); return s ? s.slice(0,6)+'…'+s.slice(-4) : ''; }catch{ return ''; } }
-
-  let connectedNow = false;
-  let currentAddr = '';
-
-  function render(){
-    if (connectedNow && currentAddr){
-      statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+short(currentAddr)+'</span>';
-      btn.textContent = 'Disconnect';
-    } else {
-      statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
-      btn.textContent = 'Connect Xaman';
-    }
-  }
-
-  let xumm = null, ready = false, tries = 0;
-  function initIfSdk(){
-    if (ready) return true;
-    if (typeof window.Xumm === 'function'){
-      xumm = new Xumm(API_KEY);
-      ready = true;
-
-      xumm.on('success', () => {
-        try{
-          const acct = xumm?.user?.account || null;
-          if (acct){
-            connectedNow = true; currentAddr = String(acct);
-            write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
-            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
-            render();
-          }
-        }catch(e){ console.warn('[bag] success handler error', e); }
-      });
-
-      xumm.on('ready', () => { render(); });
-      return true;
-    }
-    if (tries++ < 60) setTimeout(initIfSdk, 200);
-    return false;
-  }
-
-  async function connectXaman(){
-    if (!ready && !initIfSdk()){
-      alert('Loading Xaman… try again in a moment.');
-      return;
-    }
-    btn.disabled = true;
-    try {
-      const auth = await xumm.authorize();
-      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
-      if (!acct) throw new Error('No account returned');
-      connectedNow = true; currentAddr = String(acct);
-      write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
-      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
-      render();
-    } catch (e) {
-      console.warn('Xaman connect failed/cancelled', e);
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  btn.addEventListener('click', async ()=>{
-    if (connectedNow){
-      connectedNow = false; currentAddr = '';
-      clear();
-      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
-      render();
-    } else {
-      await connectXaman();
-    }
-  });
-
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
-
-  render();
-  initIfSdk();
-})();
-</script>
-
-<!-- TAB SESSION -->
-<script>
-(function(){
-  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
-  const SESSION_KEY = 'bag_session_v1';
-  const MIN_DEPOSIT_USD = 1;
-  const MAX_DEPOSIT_USD = 500;
-
-  const $ = s => document.querySelector(s);
-  const statusEl = $('#sessionStatus');
-  const startBtn = $('#startSessionBtn');
-  const topUpBtn = $('#topUpBtn');
-  const endBtn = $('#endSessionBtn');
-
-  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
-  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
-  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
-
-  function fmt(n){
-    if (!Number.isFinite(n)) return '—';
-    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
-    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
-    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
-    return n.toLocaleString(undefined, {maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
-
-  function render(){
-    const s = read();
-    if (s && s.addr){
-      const bag = Number(s.bag)||0;
-      const usd = (window.__PRICES__?.bagUsd||0) * bag;
-      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
-      startBtn.style.display = 'none';
-      if (topUpBtn) topUpBtn.style.display = 'inline-block';
-      endBtn.style.display = 'inline-block';
-    } else {
-      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
-      startBtn.style.display = 'inline-block';
-      if (topUpBtn) topUpBtn.style.display = 'none';
-      endBtn.style.display = 'none';
-    }
-  }
-
-  function suggestDepositUsd(){
-    const betEl = document.getElementById('usdBet');
-    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
-    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
-    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
-    return usd;
-  }
-
-  async function waitForTx(txid, timeoutMs=30000){
-    return new Promise(resolve=>{
-      const ws=new WebSocket('wss://s1.ripple.com'); const t=setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
-      ws.onopen=()=>ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
-      ws.onmessage=ev=>{ try{
-        const msg=JSON.parse(ev.data);
-        if (msg?.result?.hash===txid && msg?.result?.validated){
-          clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
-        }
-      }catch{} };
-      ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
-    });
-  }
-
-  async function startSession(){
-    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
-    const PRICES = window.__PRICES__ || {};
-    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
-    const depositUsd = Math.max(1, suggestDepositUsd());
-    const depositXrp = depositUsd / PRICES.xrpUsd;
-    const drops = Math.round(depositXrp * 1_000_000);
-    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
-    if (!w || !w.address){ alert('Connect Xaman first'); return; }
-    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
-    startBtn.disabled = true; startBtn.textContent = 'Opening…';
-    try{
-      const { created, resolved } = await xumm.payload.createAndSubscribe({
-        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
-          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('DICE_SESSION')}}] },
-        options: { submit:true, expire:300 }
-      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
-      const res = await resolved;
-      if (!res?.signed) throw new Error('User declined in Xaman');
-      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
-      if (!txid) throw new Error('No txid returned');
-      const validated = await waitForTx(txid, 60000);
-      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
-      const bag = (depositUsd / PRICES.bagUsd);
-      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
-      render();
-      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
-      alert('Session started — you’re good to play!');
-    } catch (err){
-      console.error('[bag] startSession error', err);
-      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
-    } finally {
-      startBtn.disabled = false; startBtn.textContent = 'Start Session';
-    }
-  }
-
-  async function topUpSession(){
-    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
-    const PRICES = window.__PRICES__ || {};
-    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
-    const s = read();
-    if (!(s && s.addr)){ alert('Start a session first.'); return; }
-    const depositUsd = suggestDepositUsd();
-    const depositXrp = depositUsd / PRICES.xrpUsd;
-    const drops = Math.round(depositXrp * 1_000_000);
-    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
-    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
-    try{
-      const { created } = await xumm.payload.createAndSubscribe({
-        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
-          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('DICE_TOPUP')}}] },
-        options: { submit:true, expire:300 }
-      }, ()=>{});
-      const resolved = await xumm.payload.get(created.uuid);
-      const txid = resolved?.response?.txid || resolved?.meta?.txid;
-      if (!txid) throw new Error('No txid (cancelled?)');
-      const tx = await waitForTx(txid, 45000);
-      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
-      const addBag = (depositUsd / PRICES.bagUsd);
-      const cur = read() || { addr: s.addr, bag: 0 };
-      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
-      write(cur); render();
-      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
-    } catch(e){
-      console.warn('Top-up failed', e); alert('Top-up cancelled or failed.');
-    } finally {
-      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
-    }
-  }
-
-  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
-
-  startBtn?.addEventListener('click', startSession);
-  topUpBtn?.addEventListener('click', topUpSession);
-  endBtn?.addEventListener('click', endSession);
-
-  window.addEventListener('bag:pricesUpdated', render);
-  render();
-
-  window.__bagSession = {
-    active: sessionActive,
-    get: read,
-    set: write,
-    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
-    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
-  };
-})();
-</script>
-
-<!-- Practice Mode Wrapper -->
-<script>
-(function(){
-  const qs = new URLSearchParams(location.search);
-  const pathDemo = location.pathname.toLowerCase().includes('/demo');
-  const liveSession = window.__bagSession;
-
-  const $ = (s)=>document.querySelector(s);
-  const statusEl  = $('#sessionStatus');
-  const startBtn  = $('#startSessionBtn');
-  const topUpBtn  = $('#topUpBtn');
-  const endBtn    = $('#endSessionBtn');
-  const connectEl = $('#connectBtn');
-
-  const DEMO_KEY = '__bag_demo_bag_v1';
-  const START_BAG = 1000;
-  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
-  if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
-
-  function fmt(n){
-    if (!Number.isFinite(n)) return '—';
-    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
-    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
-    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
-    return n.toLocaleString(undefined, {maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function renderDemoSession(){
-    const bag = getBal();
-    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
-    if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
-        (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
-    }
-    if (startBtn) startBtn.style.display = 'inline-block';
-    if (topUpBtn)  topUpBtn.style.display  = 'none';
-    if (endBtn)    endBtn.style.display     = 'none';
-  }
-
-  function toast(msg){
-    try{
-      let t = document.getElementById('bag-demo-toast');
-      if (!t){
-        t = document.createElement('div');
-        t.id = 'bag-demo-toast';
-        t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:#0b2217;color:#eaf3ed;border:1px solid #1b4a2f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 13px system-ui;z-index:2147483647';
-        document.body.appendChild(t);
-      }
-      t.textContent = msg;
-      t.style.display = 'block';
-      clearTimeout(window.__bagDemoToastTimer);
-      window.__bagDemoToastTimer = setTimeout(()=>{ t.style.display='none'; }, 2200);
-    }catch{}
-  }
-
-  const demoSession = {
-    active: () => true,
-    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
-    set: () => {},
-    spend(bag){ const b=getBal(); if(!(bag>0) || b<bag) return false; setBal(b-bag); renderDemoSession(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemoSession(); return true; }
-  };
-
-  function enableDemo(){
-    window.__BAG_FORCE_DEMO = true;
-    window.__bagSession = demoSession;
-    renderDemoSession();
-    if (connectEl) connectEl.style.opacity = '0.9';
-  }
-  function enableLive(){
-    window.__BAG_FORCE_DEMO = false;
-    if (liveSession) window.__bagSession = liveSession;
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    toast('Wallet connected — Live mode enabled');
-  }
-
-  const demoWanted = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
-  if (demoWanted) enableDemo();
-
-  window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
-
-  window.addEventListener('bag:diceResult', (ev)=>{
-    if (!window.__BAG_FORCE_DEMO) return;
-    const d = ev?.detail || {};
-    if (d.outcome === 'win')      toast('WIN paid — connect when ready to play live');
-    else if (d.outcome === 'lose') toast('Round lost — connect when ready to play live');
-    else                           toast('Point set — roll again');
-  });
-
-  window.addEventListener('bag:walletConnected', enableLive);
-  window.addEventListener('bag:walletDisconnected', enableDemo);
-})();
-</script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-}
-</script>
-
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
-  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
-  <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
-  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
-</footer>
-
-</body>
-</html>
