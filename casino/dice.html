@@ -394,7 +394,7 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-  /* ---------- THREE PATH (square body + correct pip mapping) ---------- */
+  /* ---------- THREE.JS PATH (square dice + exact pip mapping) ---------- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
@@ -402,7 +402,7 @@
     // Camera
     const w = container.clientWidth, h = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(36, w/h, 0.1, 100);
-    camera.position.set(0.45, 1.55, 5.4);
+    camera.position.set(0.5, 1.7, 5.6);
     camera.lookAt(0,0.25,0);
 
     // Renderer
@@ -411,9 +411,8 @@
     renderer.setSize(w, h);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.physicallyCorrectLights = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.02;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -423,12 +422,12 @@
       renderer.setSize(W,H);
     });
 
-    // Environment + felt
+    // Soft env + felt
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new THREE.Scene(), 0.02).texture;
 
     const felt = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.6,3.6,0.02,64),
+      new THREE.CylinderGeometry(3.8,3.8,0.02,64),
       new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.92, metalness:0 })
     );
     felt.rotation.x = -Math.PI/2;
@@ -437,30 +436,29 @@
     scene.add(felt);
 
     // Lights
-    const SH = 2048;
     const key = new THREE.DirectionalLight(0xffffff, 1.05);
     key.position.set(3.2, 6.0, 4.2);
     key.castShadow = true;
-    key.shadow.mapSize.set(SH,SH);
+    key.shadow.mapSize.set(1536,1536);
     key.shadow.radius = 3;
     key.shadow.camera.near = 1;
     key.shadow.camera.far  = 20;
-    key.shadow.camera.left = -6.5;
-    key.shadow.camera.right=  6.5;
-    key.shadow.camera.top  =  6.5;
-    key.shadow.camera.bottom = -6.5;
+    key.shadow.camera.left = -7;
+    key.shadow.camera.right=  7;
+    key.shadow.camera.top  =  7;
+    key.shadow.camera.bottom = -7;
 
-    const fill = new THREE.DirectionalLight(0xffffff, 0.42);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.44);
     fill.position.set(-4.2, 3.0, 2.2);
 
     const rim  = new THREE.DirectionalLight(0xffffff, 0.28);
     rim.position.set(0.0, 6.5, -5.8);
 
-    const amb  = new THREE.AmbientLight(0xdfe6ef, 0.28);
+    const amb  = new THREE.AmbientLight(0xdfe6ef, 0.30);
     scene.add(key, fill, rim, amb);
 
-    // Almost-square cube: tiny bevel to catch light
-    function RoundedBox(w,h,d,r=0.04, seg=3){
+    // Almost-square cube: micro bevel for anti-aliasing
+    function RoundedBox(w,h,d,r=0.035, seg=3){
       const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
       const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
       for(let i=0;i<pos.count;i++){
@@ -474,35 +472,38 @@
       pos.needsUpdate=true; g.computeVertexNormals(); return g;
     }
 
+    // Materials
     const bodyMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf4f0ea, roughness: 0.40, metalness: 0.02,
+      color: 0xf6f2eb, roughness: 0.42, metalness: 0.02,
       sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.7,
       clearcoat: 0.80, clearcoatRoughness: 0.28, envMapIntensity: 1.0
     });
     const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdcd9d4, roughness: 0.72, metalness: 0.0 });
     const pipMat  = new THREE.MeshPhysicalMaterial({
-      color: 0x0a0a0a, roughness: 0.48, metalness: 0.03, clearcoat: 0.25, clearcoatRoughness: 0.45
+      color: 0x0a0a0a, roughness: 0.50, metalness: 0.04, clearcoat: 0.25, clearcoatRoughness: 0.45
     });
 
-    // Correct pip placement: (u,v) aligned to the TWO tangential axes of each face.
+    // Dice with *inlaid* pips (no z-fight, no floaters)
     function makeDie(size=1.06){
       const g = new THREE.Group();
 
-      const body = new THREE.Mesh(RoundedBox(size,size,size,0.04,3), bodyMat);
+      const body = new THREE.Mesh(RoundedBox(size,size,size,0.035,3), bodyMat);
       body.castShadow = true; g.add(body);
 
+      // slight outline shell to emphasize edges
       const outline = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
       outline.scale.set(1.002,1.002,1.002);
       g.add(outline);
 
+      // Pip geometry & pattern
       const pipR = size*0.085;
-      const pipDepth = size*0.16;
+      const pipDepth = size*0.20;                   // deeper so they read clearly
       const half = size/2;
-      const bevel = 0.04;
-      const facePlane = half - bevel*0.85;
-      const eps = 0.0015;
+      const bevel = 0.035;
+      const facePlane = half - bevel*0.9;
+      const eps = 0.0015;                           // tiny inset to avoid z-fighting
+      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 48);
 
-      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40);
       const m = size*0.29, c = 0;
       const pattern = {
         1:[[c,c]],
@@ -513,42 +514,39 @@
         6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]]
       };
 
-      // Helpers: map (u,v) onto the correct axes per face normal (nx,ny,nz)
-      function placePip(mesh, nx,ny,nz, u,v, centerShift){
-        if (nx!==0){            // face normal ±X → tangents are Y (u) and Z (v)
+      // Place (u,v) on tangents for each face normal (nx,ny,nz)
+      function placePip(mesh, nx,ny,nz, u,v){
+        const centerShift = facePlane - (pipDepth/2) - eps;
+        if (nx!==0){             // ±X → tangents: Y=u, Z=v
           mesh.position.set(nx*centerShift, u, v);
-          mesh.rotation.z = Math.PI/2;                 // axis -> X
-        } else if (ny!==0){     // face normal ±Y → tangents are X (u) and Z (v)
+          mesh.rotation.z = Math.PI/2;             // axis -> X
+        } else if (ny!==0){      // ±Y → tangents: X=u, Z=v
           mesh.position.set(u, ny*centerShift, v);
-          // default cylinder axis is Y (already aligned)
-        } else if (nz!==0){     // face normal ±Z → tangents are X (u) and Y (v)
+          // axis already along Y
+        } else if (nz!==0){      // ±Z → tangents: X=u, Y=v
           mesh.position.set(u, v, nz*centerShift);
-          mesh.rotation.x = Math.PI/2;                 // axis -> Z
+          mesh.rotation.x = Math.PI/2;             // axis -> Z
         }
+        mesh.castShadow = true;
       }
 
       function addFace(face, nx,ny,nz){
-        const centerShift = facePlane - (pipDepth/2) - eps; // sit inside the face — no floaters
-        pattern[face].forEach(([u,v])=>{
+        for (const [u,v] of pattern[face]){
           const pip = new THREE.Mesh(pipGeom, pipMat);
-          placePip(pip, nx,ny,nz, u,v, centerShift);
-          pip.castShadow = true;
+          placePip(pip, nx,ny,nz, u,v);
           g.add(pip);
-        });
+        }
       }
 
-      // Face assignment (opposites sum to 7):
-      // +Y: 1 (top), -Y: 6 (bottom)
-      // +X: 3 (right), -X: 4 (left)
-      // +Z: 2 (front), -Z: 5 (back)
-      addFace(3,+1,0,0);
-      addFace(4,-1,0,0);
-      addFace(1,0,+1,0);
-      addFace(6,0,-1,0);
-      addFace(2,0,0,+1);
-      addFace(5,0,0,-1);
+      // Face map (opposites sum to 7)
+      addFace(3,+1,0,0); // +X
+      addFace(4,-1,0,0); // -X
+      addFace(1,0,+1,0); // +Y (top)
+      addFace(6,0,-1,0); // -Y (bottom)
+      addFace(2,0,0,+1); // +Z (front)
+      addFace(5,0,0,-1); // -Z (back)
 
-      // Pose helper (set "top" face and yaw)
+      // Orientation helper
       g.__setTop = function(value, yaw=0){
         const map={1:[0,yaw,0],2:[-Math.PI/2,yaw,0],3:[0,yaw+Math.PI/2,0],4:[0,yaw-Math.PI/2,0],5:[Math.PI/2,yaw,0],6:[Math.PI,yaw,0]}[value]||[0,yaw,0];
         g.rotation.set(map[0],map[1],map[2]);
@@ -561,67 +559,126 @@
     const diceA = makeDie(1.06), diceB = makeDie(1.06);
     stage.add(diceA, diceB);
 
+    // Start “off” positions (left/right), end “parked” positions (closer together)
+    const START_Y = 0.50, GROUND_Y = 0.30;
+    const START_XA = -2.8, START_XB = 2.8;
+    const PARK_GAP = 0.70; // closer together
     function parkDice(){
-      const GAP = 1.00, YPOS = 0.30;
-      diceA.position.set(-GAP, YPOS, -0.035);
-      diceB.position.set( GAP, YPOS,  0.035);
+      diceA.position.set(-PARK_GAP, GROUND_Y, -0.035);
+      diceB.position.set( PARK_GAP, GROUND_Y,  0.035);
     }
     parkDice();
 
+    // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    // Slow, smooth tumble using true delta-time; spins until both sounds finish, then snaps.
-    async function tumbleTo(a,b){
+    // Tiny stage shake helper
+    async function impactShake(ms=130, amp=0.055){
+      const t0=performance.now();
+      const ox=stage.position.x, oy=stage.position.y;
+      await new Promise(res=>{
+        (function step(now){
+          const p = Math.min(1,(now-t0)/ms), k = (1-p);
+          stage.position.x = ox + (Math.random()*2-1)*amp*k;
+          stage.position.y = oy + (Math.random()*2-1)*amp*k*0.6;
+          if (p<1) requestAnimationFrame(step); else { stage.position.set(ox,oy,0); res(); }
+        })(t0);
+      });
+    }
+
+    // Easing
+    const easeOutCubic = x => 1 - Math.pow(1-x,3);
+
+    // Full animation: SHAKE -> THROW (to middle) -> ABRUPT LAND (target faces)
+    async function shakeThenThrow(a,b){
       await window.__bagSfx?.primeOnce?.();
 
-      let stop=false;
-      (async()=>{
-        try{ await window.__bagSfx?.playShake?.(); }catch{}
-        try{ await window.__bagSfx?.playRoll?.(); }catch{}
-        stop=true;
-      })();
+      // 1) SHAKE while `diceshake.mp3` plays
+      const shakeDur = 650;
+      let t0 = performance.now();
+      diceA.position.set(-PARK_GAP, GROUND_Y, -0.035);
+      diceB.position.set( PARK_GAP, GROUND_Y,  0.035);
 
-      let last = performance.now();
-      const start = last;
+      const shakeP = window.__bagSfx?.playShake?.(); // fire & forget but we’ll run shake loop ~same duration
+      await new Promise(res=>{
+        (function step(now){
+          const t = Math.min(1,(now - t0)/shakeDur);
+          const k = 1 - t;
+          const j = 0.08*k;
+          diceA.rotation.x += 0.18; diceA.rotation.y += 0.22; diceA.rotation.z += 0.12;
+          diceB.rotation.x += 0.20; diceB.rotation.y += 0.18; diceB.rotation.z += 0.10;
+          diceA.position.x = -PARK_GAP + (Math.random()*2-1)*j;
+          diceB.position.x =  PARK_GAP + (Math.random()*2-1)*j;
+          if (t<1) requestAnimationFrame(step); else res();
+        })(t0);
+      });
+      await shakeP?.catch(()=>{});
+
+      // 2) THROW while `diceroll.mp3` plays (ballistic-ish arc to middle)
+      const yawA = (Math.random()*Math.PI*2 - Math.PI);
+      const yawB = (Math.random()*Math.PI*2 - Math.PI);
+
+      diceA.position.set(START_XA, START_Y, 0);
+      diceB.position.set(START_XB, START_Y, 0);
+      diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+      diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+
+      const throwDur = 900;
+      t0 = performance.now();
+      const rollP = window.__bagSfx?.playRoll?.();
 
       await new Promise(res=>{
         (function step(now){
-          const dt = Math.max(0.001, (now - last) / 1000); // seconds
-          last = now;
+          const p = Math.min(1,(now - t0)/throwDur);
+          const e = easeOutCubic(p);
 
-          const t = (now - start) / 1000;
-          // gentle easing down over time
-          const damping = 1 / (1 + t*1.1);
-          const base = 9.5 * damping; // << slower than before
+          // positions (to parked positions near center)
+          const xA = START_XA + (-PARK_GAP - START_XA)*e;
+          const xB = START_XB + ( PARK_GAP - START_XB)*e;
+          const arc = 0.65*(1 - (2*p-1)*(2*p-1)); // simple parabola
+          const y   = GROUND_Y + arc;
+          diceA.position.set(xA, y, -0.035*(1-p));
+          diceB.position.set(xB, y,  0.035*(1-p));
 
-          // slightly different rates per axis/die to avoid stiffness
-          diceA.rotation.x += (1.05 + 0.06*Math.sin(now*0.002)) * base * dt;
-          diceA.rotation.y += (0.90 + 0.05*Math.cos(now*0.0017)) * base * dt;
-          diceA.rotation.z += (0.70 + 0.04*Math.sin(now*0.0013)) * base * dt;
+          // rotations
+          const base = 9.0*(1-p*0.6);
+          const dt = 0.016;
+          diceA.rotation.x += 1.05*base*dt; diceA.rotation.y += 1.10*base*dt; diceA.rotation.z += 0.72*base*dt;
+          diceB.rotation.x += 1.00*base*dt; diceB.rotation.y += 1.06*base*dt; diceB.rotation.z += 0.68*base*dt;
 
-          diceB.rotation.x += (0.98 + 0.05*Math.cos(now*0.0018)) * base * dt;
-          diceB.rotation.y += (1.02 + 0.06*Math.sin(now*0.0021)) * base * dt;
-          diceB.rotation.z += (0.68 + 0.04*Math.cos(now*0.0011)) * base * dt;
-
-          if (!stop) requestAnimationFrame(step); else res();
-        })(last);
+          if (p<1) requestAnimationFrame(step); else res();
+        })(t0);
       });
 
-      const yawA = (Math.random()*Math.PI*2 - Math.PI);
-      const yawB = (Math.random()*Math.PI*2 - Math.PI);
+      await rollP?.catch(()=>{});
+
+      // 3) ABRUPT LAND on the result with small impact wobble
       diceA.__setTop(a, yawA);
       diceB.__setTop(b, yawB);
       parkDice();
+      await impactShake(140, 0.06);
 
-      await new Promise(r=>setTimeout(r,120));
+      // micro-wobble settle
+      const wob0=performance.now();
+      await new Promise(res=>{
+        (function wob(ts){
+          const t=(ts-wob0)/260, k=Math.max(0,1-t);
+          if(k<=0) return res();
+          const w=0.05*k*Math.sin(ts*0.06);
+          diceA.rotation.x+=w*0.022;
+          diceB.rotation.y-=w*0.022;
+          requestAnimationFrame(wob);
+        })(wob0);
+      });
+      await new Promise(r=>setTimeout(r,110));
     }
 
     window.__bagDiceRollImpl = async function(a,b){
-      await tumbleTo(a,b);
+      await shakeThenThrow(a,b);
     };
   }
 
-  /* ---------- CSS FALLBACK (PNG faces) ---------- */
+  /* ---------- CSS FALLBACK (PNG faces; same UX sequence) ---------- */
   function initCssFallback(){
     cssWrap.innerHTML = '';
     cssWrap.classList.add('active');
@@ -649,29 +706,35 @@
       el.style.transform = map;
     }
 
+    // shake -> throw (center) -> snap to result
     window.__bagDiceRollImpl = async function(a,b){
       await window.__bagSfx?.primeOnce?.();
 
-      let stop=false;
-      (async()=>{
-        try{ await window.__bagSfx?.playShake?.(); }catch{}
-        try{ await window.__bagSfx?.playRoll?.(); }catch{}
-        stop=true;
-      })();
-
-      const start = performance.now();
-      let last = start;
+      // SHAKE
+      const shakeDur=650, t0=performance.now();
+      const shakeP = window.__bagSfx?.playShake?.();
       await new Promise(res=>{
-        function spin(now){
-          const dt = Math.max(0.001, (now-last)/1000); last=now;
-          const t = (now-start)/1000;
-          const base = 1.4/(1+1.1*t); // slow & easing
-          A.style.transform = `rotateX(${now*0.002*base}rad) rotateY(${now*0.0024*base}rad) rotateZ(${now*0.0016*base}rad)`;
-          B.style.transform = `rotateX(${now*0.0022*base}rad) rotateY(${now*0.0020*base}rad) rotateZ(${now*0.0015*base}rad)`;
-          if (!stop) requestAnimationFrame(spin); else res();
-        }
-        requestAnimationFrame(spin);
+        (function step(now){
+          const t=Math.min(1,(now-t0)/shakeDur), k=1-t, j=8*k;
+          A.style.transform = `translate3d(${(Math.random()*2-1)*j}px,${(Math.random()*2-1)*j}px,0) rotateX(${now*0.20}deg) rotateY(${now*0.24}deg) rotateZ(${now*0.16}deg)`;
+          B.style.transform = `translate3d(${(Math.random()*2-1)*j}px,${(Math.random()*2-1)*j}px,0) rotateX(${now*0.18}deg) rotateY(${now*0.22}deg) rotateZ(${now*0.14}deg)`;
+          if (t<1) requestAnimationFrame(step); else res();
+        })(t0);
       });
+      await shakeP?.catch(()=>{});
+
+      // THROW (we fake by rotating steadily until done)
+      const rollP = window.__bagSfx?.playRoll?.();
+      const throwDur=900, t1=performance.now();
+      await new Promise(res=>{
+        (function step(now){
+          const p=Math.min(1,(now-t1)/throwDur), base=1.0*(1-0.6*p);
+          A.style.transform = `rotateX(${now*0.9*base}deg) rotateY(${now*1.0*base}deg) rotateZ(${now*0.6*base}deg)`;
+          B.style.transform = `rotateX(${now*0.85*base}deg) rotateY(${now*0.95*base}deg) rotateZ(${now*0.58*base}deg)`;
+          if (p<1) requestAnimationFrame(step); else res();
+        })(t1);
+      });
+      await rollP?.catch(()=>{});
 
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
       setTop(A,a,yawA); setTop(B,b,yawB);
