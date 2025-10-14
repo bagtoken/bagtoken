@@ -508,20 +508,16 @@
   /* ----- THREE.JS PATH (realistic dice) ----- */
   function initThree(){
     const THREE = window.THREE;
-
-    // Renderer / Camera / Scene
     const scene = new THREE.Scene();
     const w = container.clientWidth, h = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.75, 1.9, 6.2); camera.lookAt(0,0,0);
+    camera.position.set(0.7, 1.85, 6.3); camera.lookAt(0,0,0);
 
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     renderer.setSize(w, h);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
     container.innerHTML = ''; container.appendChild(renderer.domElement);
 
     function onResize(){
@@ -531,66 +527,42 @@
     }
     addEventListener('resize', onResize);
 
-    // Subtle environment (procedural cube → PMREM)
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    function makeEnv(){
-      const faces = [];
-      for (let i=0;i<6;i++){
-        const c=document.createElement('canvas'); c.width=c.height=256;
-        const g=c.getContext('2d');
-        const grad = g.createLinearGradient(0,0,256,256);
-        grad.addColorStop(0,'#dfe6ee');
-        grad.addColorStop(0.5,'#bfc8d3');
-        grad.addColorStop(1,'#99a7b6');
-        g.fillStyle=grad; g.fillRect(0,0,256,256);
-        g.globalCompositeOperation='multiply';
-        const v=g.createRadialGradient(128,128,10,128,128,180);
-        v.addColorStop(0,'rgba(255,255,255,1)');
-        v.addColorStop(1,'rgba(0,0,0,0.25)');
-        g.fillStyle=v; g.beginPath(); g.arc(128,128,180,0,Math.PI*2); g.fill();
-        faces.push(new THREE.CanvasTexture(c));
-      }
-      const cube = new THREE.CubeTexture(faces.map(f=>f.image));
-      cube.needsUpdate = true;
-      const env = pmrem.fromCubemap(cube).texture;
-      faces.forEach(t=>t.dispose());
-      cube.dispose();
-      return env;
-    }
-    scene.environment = makeEnv();
-
-    // Felt table
+    // Soft table receiver
     const floorY = -1.06;
     const felt = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.5,3.5,0.02, 64),
-      new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.9, metalness:0.0 })
+      new THREE.CylinderGeometry(3.4,3.4,0.02, 48),
+      new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.85, metalness:0.0 })
     );
     felt.rotation.x = -Math.PI/2;
     felt.position.y = floorY + 0.01;
     felt.receiveShadow = true;
     scene.add(felt);
 
-    // Lights
-    const key = new THREE.DirectionalLight(0xffffff, 1.05);
-    key.position.set(3.5, 5.8, 4.2);
+    // Lights with shadows
+    const key = new THREE.DirectionalLight(0xffffff, 1.0);
+    key.position.set(3.5, 5.5, 4.5);
     key.castShadow = true;
     key.shadow.mapSize.set(1024,1024);
-    key.shadow.radius = 3;
-    key.shadow.camera.near = 1; key.shadow.camera.far = 20;
-    key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
+    key.shadow.radius = 4;
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far  = 20;
+    key.shadow.camera.left = -7;
+    key.shadow.camera.right=  7;
+    key.shadow.camera.top  =  7;
+    key.shadow.camera.bottom=-7;
 
-    const fill = new THREE.DirectionalLight(0xffffff, 0.45);
-    fill.position.set(-4.2, 3.0, 2.0);
+    const fill= new THREE.DirectionalLight(0xffffff, 0.45);
+    fill.position.set(-4, 3, 2);
 
-    const rim  = new THREE.DirectionalLight(0xffffff, 0.28);
-    rim.position.set(0, 6.5, -6);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.28);
+    rim.position.set(0, 6, -6);
 
-    const amb  = new THREE.AmbientLight(0xb7c3d1, 0.34);
+    const amb = new THREE.AmbientLight(0xb7c3d1, 0.35);
     scene.add(key, fill, rim, amb);
 
-    // Rounded cube geometry (fillets)
-    function RoundedBox(w,h,d,r=0.19, seg=4){
-      const g = new THREE.BoxGeometry(w,h,d, seg,seg,seg);
+    /* ---------- RoundedBox that keeps 6 face groups ---------- */
+    function RoundedBox(w,h,d,r=0.18, seg=4){
+      const g = new THREE.BoxGeometry(w,h,d, seg,seg,seg); // 6 groups
       const pos = g.attributes.position;
       const hx=w/2, hy=h/2, hz=d/2, rx=Math.min(r,hx), ry=Math.min(r,hy), rz=Math.min(r,hz);
       for(let i=0;i<pos.count;i++){
@@ -600,42 +572,46 @@
         const iz = THREE.MathUtils.clamp(z, -hz+rz, hz-rz);
         const dx = x - ix, dy = y - iy, dz = z - iz;
         const len = Math.hypot(dx,dy,dz);
-        if (len>1e-6) pos.setXYZ(i, ix + dx/len * rx, iy + dy/len * ry, iz + dz/len * rz);
+        if (len>1e-6){
+          pos.setXYZ(i, ix + dx/len * rx, iy + dy/len * ry, iz + dz/len * rz);
+        }
       }
-      pos.needsUpdate = true; g.computeVertexNormals(); return g;
+      pos.needsUpdate = true;
+      g.computeVertexNormals();
+      return g;
     }
 
-    // PBR face maps with recessed pips
-    function makeFaceMaps(n, base='#f5f1ea'){
+    // Textures: color + bump (recessed pips) + roughness variation
+    function makeMaps(n, base='#f8f5ef'){
       const N=512;
       const col=document.createElement('canvas'), bump=document.createElement('canvas'), rough=document.createElement('canvas');
       col.width=col.height=bump.width=bump.height=rough.width=rough.height=N;
       const gc=col.getContext('2d'), gb=bump.getContext('2d'), gr=rough.getContext('2d');
 
+      // base color + subtle panel/edge gloss
       gc.fillStyle=base; gc.fillRect(0,0,N,N);
       const gloss=gc.createLinearGradient(0,0,N,N);
-      gloss.addColorStop(0,'rgba(255,255,255,.10)'); gloss.addColorStop(1,'rgba(0,0,0,.05)');
+      gloss.addColorStop(0,'rgba(255,255,255,.12)'); gloss.addColorStop(1,'rgba(0,0,0,.05)');
       gc.fillStyle=gloss; gc.fillRect(0,0,N,N);
       gc.strokeStyle='rgba(0,0,0,.12)'; gc.lineWidth=18; gc.strokeRect(12,12,N-24,N-24);
 
+      // bump mid-gray; pips darker = deeper
       gb.fillStyle='rgb(140,140,140)'; gb.fillRect(0,0,N,N);
-      gr.fillStyle='rgb(135,135,135)'; gr.fillRect(0,0,N,N);
-      const rn = gr.createImageData(N,N);
-      for(let i=0;i<rn.data.length;i+=4){
-        const v = 130 + ((Math.random()*30)|0);
-        rn.data[i]=rn.data[i+1]=rn.data[i+2]=v; rn.data[i+3]=24;
-      }
-      gr.putImageData(rn,0,0);
+      // roughness base
+      gr.fillStyle='rgb(130,130,130)'; gr.fillRect(0,0,N,N);
 
-      const pips={1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]}[n];
+      const pipMap={1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]}[n];
       function pos(i){ const m=88, s=(N-m*2)/2; const c=(i-1)%3, r=((i-1)/3|0); return [m+c*s, m+r*s]; }
-      pips.forEach(i=>{
-        const [x,y]=pos(i), R=36;
-        gc.fillStyle='#0b0b10'; gc.beginPath(); gc.arc(x,y,R,0,Math.PI*2); gc.fill();
-        const g=gb.createRadialGradient(x,y,R*0.25,x,y,R);
-        g.addColorStop(0,'rgb(75,75,75)'); g.addColorStop(1,'rgb(60,60,60)');
-        gb.fillStyle=g; gb.beginPath(); gb.arc(x,y,R,0,Math.PI*2); gb.fill();
-        gr.fillStyle='rgb(170,170,170)'; gr.beginPath(); gr.arc(x,y,R*1.02,0,Math.PI*2); gr.fill();
+      pipMap.forEach(i=>{
+        const [x,y]=pos(i); const rad=36;
+        // pip color
+        gc.fillStyle='#0a0a0c'; gc.beginPath(); gc.arc(x,y,rad,0,Math.PI*2); gc.fill();
+        // bump recess
+        const g=gb.createRadialGradient(x,y,rad*0.2,x,y,rad);
+        g.addColorStop(0,'rgb(80,80,80)'); g.addColorStop(1,'rgb(60,60,60)');
+        gb.fillStyle=g; gb.beginPath(); gb.arc(x,y,rad,0,Math.PI*2); gb.fill();
+        // a bit rougher inside pips
+        gr.fillStyle='rgb(170,170,170)'; gr.beginPath(); gr.arc(x,y,rad*1.02,0,Math.PI*2); gr.fill();
       });
 
       const mapC = new THREE.CanvasTexture(col); mapC.anisotropy=8;
@@ -645,21 +621,22 @@
     }
 
     function materialsForDie(){
-      const f1=makeFaceMaps(1), f2=makeFaceMaps(2), f3=makeFaceMaps(3),
-            f4=makeFaceMaps(4), f5=makeFaceMaps(5), f6=makeFaceMaps(6);
-      const M = (face) => new THREE.MeshPhysicalMaterial({
-        map: face.mapC,
-        bumpMap: face.mapB, bumpScale: 0.055,
-        roughnessMap: face.mapR,
-        roughness: 0.38, metalness: 0.0,
-        clearcoat: 0.65, clearcoatRoughness: 0.28,
-        envMapIntensity: 1.05
-      });
-      // +X:+3, +Y:+1, +Z:+2, -X:+4, -Y:+6, -Z:+5 (opposites sum to 7)
-      return [M(f3), M(f1), M(f2), M(f4), M(f6), M(f5)];
+      // face order: +X,+Y,+Z,-X,-Y,-Z → numbers mapped so opposite sides = 7
+      const f1 = makeMaps(1), f2=makeMaps(2), f3=makeMaps(3), f4=makeMaps(4), f5=makeMaps(5), f6=makeMaps(6);
+      function m(face){
+        return new THREE.MeshPhysicalMaterial({
+          map: face.mapC,
+          bumpMap: face.mapB, bumpScale: 0.06,
+          roughnessMap: face.mapR,
+          roughness: 0.38, metalness: 0.0,
+          clearcoat: 0.6, clearcoatRoughness: 0.25,
+          envMapIntensity: 1.0
+        });
+      }
+      return [ m(f3), m(f1), m(f2), m(f4), m(f6), m(f5) ];
     }
 
-    function setTop(mesh, value, yaw=0){
+    function setTop(THREE_UNUSED, mesh, value, yaw=0){
       const map={
         1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
         4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
@@ -667,10 +644,10 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    // Dice + tiny impact shake
+    // Dice meshes (group for impact shake)
     const stage = new THREE.Group(); scene.add(stage);
     const size = 1.08;
-    const geo  = RoundedBox(size,size,size, 0.19, 4);
+    const geo  = RoundedBox(size,size,size, 0.18, 4);
     const diceA = new THREE.Mesh(geo, materialsForDie());
     const diceB = new THREE.Mesh(geo, materialsForDie());
     diceA.castShadow = diceB.castShadow = true;
@@ -682,16 +659,17 @@
     }
     centerPose();
 
-    // Render loop
     (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
 
-    // Tiny impact shake
-    const easeOut = t => 1 - Math.pow(1-t,3);
-    async function impactShake(ms=120, px=0.055){
-      const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
-      await new Promise(res=>{
+    // Easing + impact micro-shake
+    const easeInCubic  = t => t*t*t;
+    const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+    async function impactShake(ms=120, px=0.05){
+      const start=performance.now(); const ox=stage.position.x, oy=stage.position.y;
+      return new Promise(res=>{
         function f(t){
-          const p=Math.min(1,(t-t0)/ms), k=(1-p);
+          const p=Math.min(1,(t-start)/ms);
+          const k=(1-p);
           stage.position.x = ox + (Math.random()*2-1)*px*k;
           stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
           if(p<1) requestAnimationFrame(f); else{ stage.position.set(ox,oy,0); res(); }
@@ -700,40 +678,49 @@
       });
     }
 
-    // Realistic throw
+    // Realistic throw: side launch → spin → drop → abrupt snap
     async function throwDiceTo(a,b, totalMs=1150){
-      const endY = 0.28, startXA=-2.4, startXB= 2.4, startY=0.65;
+      const startYA = 0.65, startYB = 0.65, endY = 0.28;
+      const startXA = -2.4, startXB = 2.4;
 
-      diceA.position.set(startXA, startY, 0.0);
-      diceB.position.set(startXB, startY, 0.0);
+      diceA.position.set(startXA, startYA, 0.0);
+      diceB.position.set(startXB, startYB, 0.0);
+
       diceA.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
       diceB.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
 
       const yawA=(Math.random()*Math.PI*2 - Math.PI);
       const yawB=(Math.random()*Math.PI*2 - Math.PI);
 
-      const t0=performance.now();
+      const t0 = performance.now();
       await new Promise(res=>{
         function step(t){
-          const raw = Math.min(1,(t-t0)/totalMs);
-          const pAir = Math.min(1, raw/0.76);
-          const pDrop= Math.max(0,(raw-0.76)/0.24);
+          const raw = Math.min(1, (t - t0)/totalMs);
+          const pAir = Math.min(1, raw/0.75);
+          const pDrop= Math.max(0, (raw-0.75)/0.25);
 
-          const xA = startXA + (-0.95 - startXA) * easeOut(pAir);
-          const xB = startXB + ( 0.95 - startXB) * easeOut(pAir);
+          // horizontal slide to center
+          const xA = startXA + ( -0.95 - startXA )*easeOutCubic(pAir);
+          const xB = startXB + (  0.95 - startXB )*easeOutCubic(pAir);
 
-          const arc = 0.56*(1 - (2*pAir-1)**2);
-          const y   = endY + arc + 0.1;
-          diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
+          // arc
+          const arc = 0.55*(1 - (2*pAir-1)**2);
+          const yA = endY + arc + 0.1;
+          const yB = endY + arc + 0.1;
 
-          const s=36*(1 - pAir*0.85); const dt=0.016;
-          diceA.rotation.x += 1.00*s*dt; diceA.rotation.y += 1.30*s*dt; diceA.rotation.z += 0.70*s*dt;
-          diceB.rotation.x += 0.92*s*dt; diceB.rotation.y += 1.18*s*dt; diceB.rotation.z += 0.62*s*dt;
+          diceA.position.set(xA, yA, 0.0);
+          diceB.position.set(xB, yB, 0.0);
+
+          // spin in air
+          const s = 36*(1 - pAir*0.85);
+          const dt = 0.016;
+          diceA.rotation.x += 1.0*s*dt; diceA.rotation.y += 1.3*s*dt; diceA.rotation.z += 0.7*s*dt;
+          diceB.rotation.x += 0.9*s*dt; diceB.rotation.y += 1.2*s*dt; diceB.rotation.z += 0.6*s*dt;
 
           if (pDrop>0){
-            const k = easeOut(pDrop);
-            const mapA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
-            const mapB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
+            const k = easeOutCubic(pDrop);
+            const mapA = {1:[0,yawA,0], 2:[-Math.PI/2,yawA,0], 3:[0,yawA+Math.PI/2,0], 4:[0,yawA-Math.PI/2,0], 5:[Math.PI/2,yawA,0], 6:[Math.PI,yawA,0]}[a];
+            const mapB = {1:[0,yawB,0], 2:[-Math.PI/2,yawB,0], 3:[0,yawB+Math.PI/2,0], 4:[0,yawB-Math.PI/2,0], 5:[Math.PI/2,yawB,0], 6:[Math.PI,yawB,0]}[b];
             diceA.rotation.set(
               diceA.rotation.x + (mapA[0]-diceA.rotation.x)*k,
               diceA.rotation.y + (mapA[1]-diceA.rotation.y)*k,
@@ -752,7 +739,7 @@
       });
 
       // exact final + impact
-      setTop(diceA, a, yawA); setTop(diceB, b, yawB);
+      setTop(THREE, diceA, a, yawA); setTop(THREE, diceB, b, yawB);
       diceA.position.y = diceB.position.y = endY;
       await impactShake(120, 0.06);
     }
@@ -794,7 +781,7 @@
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    async function tumbleCss(ms=700){
+    async function fling(ms=700){
       const start=performance.now();
       return new Promise(res=>{
         function f(t){
@@ -810,7 +797,7 @@
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.();
       await sP; window.__bagSfx?.playRoll?.();
-      await tumbleCss(700);
+      await fling(700);
       setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
       setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
       await new Promise(r=>setTimeout(r, 150));
@@ -830,64 +817,100 @@
     }
   }
 
-  function fairDie(){ return 1 + Math.floor(Math.random()*6); }
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  // RNG with rarer come-out jackpots: suppress 7/11 most of the time on come-out
+  function pickFacesForRoll(comeOut){
+    function randDie(){ return (Math.random()*6|0)+1; }
+    if (!comeOut){
+      return [randDie(), randDie()];
+    }
+    // 70% of the time, avoid 7/11 to make jackpots "rare"
+    if (Math.random() < 0.70){
+      let a,b,sum;
+      do{ a=randDie(); b=randDie(); sum=a+b; } while (sum===7 || sum===11);
+      return [a,b];
+    }
+    return [randDie(), randDie()];
+  }
 
   async function rollOnce(){
-    // ensure stake is set on come-out
-    if (!ROUND.active || ROUND.point==null){
-      ROUND.currency = currentCurrency();
-      ROUND.stakeBag = stakeBag();
-      ROUND.stakeUsd = stakeUsd();
-      if (!(ROUND.stakeBag>0)){ alert('Enter a stake first.'); return; }
-      const ses = window.__bagSession;
-      if (ses && ses.spend) {
-        if (!ses.spend(ROUND.stakeBag)){ alert('Insufficient session balance.'); return; }
-      }
-      ROUND.active = true;
-      ROUND.point = null;
+    window.__bagSfx?.primeOnce?.();
+
+    // New round? Spend once at come-out.
+    if (isComeOut()){
+      const c = curToggle.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
+      const q = parseFloat(betQty.value||0)||0;
+      const sUsd = c==='BAG'?(PRICES.bagUsd>0?q*PRICES.bagUsd:0):(PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
+      const sBag = c==='BAG' ? q : (PRICES.bagUsd>0&&PRICES.xrpUsd>0 ? q*(PRICES.xrpUsd/PRICES.bagUsd) : 0);
+
+      if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
+      if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+      if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
+
+      ROUND.active=true; ROUND.point=null; ROUND.stakeBag=sBag; ROUND.stakeUsd=sUsd; ROUND.currency=c;
     }
 
     rollBtn.disabled = true;
+    rollText.className='t';
+    rollText.textContent = (isComeOut() ? 'Come-out roll — ' : '') + needText();
 
-    const a = fairDie(), b = fairDie(), sum = a+b;
-    await (window.__bagDiceRollImpl ? window.__bagDiceRollImpl(a,b) : new Promise(r=>setTimeout(r,600)));
+    // choose dice now (biased only on come-out) and animate
+    const [a,b] = pickFacesForRoll(isComeOut());
+    if (typeof window.__bagDiceRollImpl === 'function'){ await window.__bagDiceRollImpl(a,b); }
 
-    const res = evaluate(sum);
-    setStatusRolled(a,b,sum, res.label);
-    rollText.className = 't ' + res.cls;
+    const sum = a+b;
+    const ev = evaluate(sum);
 
-    if (!isComeOut() && !res.end){
-      // neutral in point phase
-      window.dispatchEvent(new CustomEvent('bag:diceResult', { detail:{ outcome:'neutral', sum, point:ROUND.point }}));
-      rollBtn.disabled = false;
-      return;
-    }
-
-    if (isComeOut() && res.type==='point-set'){
+    // State transitions
+    if (ev.type==='point-set'){
       ROUND.point = sum;
-      window.dispatchEvent(new CustomEvent('bag:diceResult', { detail:{ outcome:'point', point:ROUND.point }}));
-      rollBtn.disabled = false;
+      rollText.className = 't scratch';
+      setStatusRolled(a,b,sum,'POINT ESTABLISHED');
+      rollBtn.disabled=false;
       return;
     }
 
-    // round ends (win or lose)
-    if (res.type==='win'){
-      // pay winnings
-      const pay = ROUND.stakeBag * res.mult;
-      const ses = window.__bagSession;
-      if (ses && ses.credit) ses.credit(pay);
-      try{ window.showWin?.({message:'WIN', subtext: res.label}); }catch{}
-      window.dispatchEvent(new CustomEvent('bag:diceResult', { detail:{ outcome:'win', mult:res.mult, pay } }));
-    } else if (res.type==='lose'){
-      window.dispatchEvent(new CustomEvent('bag:diceResult', { detail:{ outcome:'lose' } }));
+    if (ev.type==='neutral'){
+      rollText.className = 't scratch';
+      setStatusRolled(a,b,sum,'No effect');
+      rollBtn.disabled=false;
+      return;
     }
 
-    // reset round
-    ROUND.active=false; ROUND.point=null; ROUND.stakeBag=0; ROUND.stakeUsd=0;
+    // End of round (win/lose)
+    if (ev.type==='win'){
+      const pay = ROUND.stakeBag * ev.mult;
+      credit(pay);
+      if (typeof showWin==='function'){
+        const delta = ROUND.stakeBag*(ev.mult-1);
+        showWin({ message:'WIN', subtext:`+${delta.toLocaleString()} BAG · ${fmtUsd(ROUND.stakeUsd)} → ${fmtUsd(ROUND.stakeUsd*ev.mult)}`, duration:4200 });
+      }
+      rollText.className = 't win';
+      setStatusRolled(a,b,sum, `${ev.label} · ${ev.mult.toFixed(2)}× · Come-out next`);
+      ROUND.active=false; ROUND.point=null;
+    } else if (ev.type==='lose'){
+      rollText.className = 't lose';
+      setStatusRolled(a,b,sum, `${ev.label} · You lose · Come-out next`);
+      ROUND.active=false; ROUND.point=null;
+    }
+
+    window.dispatchEvent(new CustomEvent('bag:diceResult', {
+      detail: { mult: ev.mult, outcome: ev.type, stakeBag: ROUND.stakeBag }
+    }));
+
     rollBtn.disabled = false;
   }
 
+  document.querySelector('#bagDiceDemo .unit').textContent='XRP';
+  updatePayoutPreview();
+  rollText.className='t';
+  rollText.textContent = 'Come-out roll — ' + needText();
+
   rollBtn.addEventListener('click', rollOnce);
+  window.addEventListener('keydown', e=>{ if(e.key==='r'||e.key==='R') rollOnce(); });
 })();
 </script>
 
