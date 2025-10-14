@@ -81,17 +81,15 @@
   canvas{position:absolute;inset:0;width:100%;height:100%}
   .hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;pointer-events:none}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
-  .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
+  .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6);pointer-events:none}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
 </style>
 </head>
 <body>
 
-<!-- 🔙 Back to Casino -->
 <a href="/casino/" class="back-casino">⬅ Back to Casino</a>
 
-<!-- Game header -->
 <section class="game-header">
   <img src="/assets/bag-plinko.png" alt="$BAG Plinko" class="hero-img">
   <h2>🪙 $BAG Plinko</h2>
@@ -261,41 +259,35 @@
   }
 
   function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
-  async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
 
-  function makeNoise(ac,dur=0.08){
-    const len=Math.max(1,Math.floor(dur*ac.sampleRate));
-    const buf=ac.createBuffer(1,len,ac.sampleRate);
-    const data=buf.getChannelData(0);
-    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
-    const src=ac.createBufferSource(); src.buffer=buf;
-    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
-    const g=ac.createGain(); g.gain.value=0;
-    src.connect(bp).connect(g);
-    return {src,g};
-  }
-
-  async function nudge(){
+  // “click” sound trigger without awaiting inside physics
+  function nudge(){
     const ac=getAC(); if(!ac) return;
-    if(ac.state!=='running'){ await tryResume(); return; }
+    if(ac.state!=='running'){ tryResume(); return; }
     const now=ac.currentTime;
     const comp=ac.createDynamicsCompressor();
     comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08;
     comp.connect(MASTER);
 
-    const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
-    nGain.connect(comp);
-    nGain.gain.setValueAtTime(0.0001,now);
-    nGain.linearRampToValueAtTime(0.12,now+0.008);
-    nGain.exponentialRampToValueAtTime(0.0001,now+0.08);
-    nSrc.start(now); nSrc.stop(now+0.09);
+    // noise tick
+    const buf=ac.createBuffer(1, Math.max(1,Math.floor(0.06*ac.sampleRate)), ac.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*0.9;
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
+    const g1=ac.createGain(); g1.gain.setValueAtTime(0.0001,now);
+    g1.gain.linearRampToValueAtTime(0.12,now+0.008);
+    g1.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
+    src.connect(bp).connect(g1).connect(comp);
+    src.start(now); src.stop(now+0.09);
 
-    const o=ac.createOscillator(), g=ac.createGain();
+    // tone tail
+    const o=ac.createOscillator(); const g2=ac.createGain();
     o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18);
-    g.gain.setValueAtTime(0.0001,now);
-    g.gain.linearRampToValueAtTime(0.10,now+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
-    o.connect(g).connect(comp);
+    g2.gain.setValueAtTime(0.0001,now);
+    g2.gain.linearRampToValueAtTime(0.10,now+0.02);
+    g2.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
+    o.connect(g2).connect(comp);
     o.start(now); o.stop(now+0.24);
   }
 
@@ -313,36 +305,37 @@
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
 
-  addEventListener('pointerdown', async function once(){
+  // one-time warmup on first user action
+  addEventListener('pointerdown', function once(){
     removeEventListener('pointerdown', once, {capture:false});
-    try{ await ensureInteractive(); await nudge(); }catch{}
+    tryResume(); nudge();
   }, {once:true});
 
-  window.__bagAudio = { ensureInteractive, nudge };
+  // expose a cheap, fire-and-forget tick (no awaits in physics)
+  window.__bagAudio = { nudge, ensureInteractive: tryResume };
 })();
 </script>
 
 <!-- PLINKO GAME LOGIC -->
 <script>
 (function(){
-  // House-edge payout map (L=lose)
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics / layout (small ball; tighter pegs)
+  // Physics / layout
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-  // Canvas (fixed logical size; CSS scales it)
+  // Canvas
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Board geometry (centered)
+  // Geometry
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // Peg grid spans down most of the board
+  // Pegs
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -361,7 +354,7 @@
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI hooks
+  // UI
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
@@ -371,97 +364,78 @@
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, ball=null, safetyTimer=null, lastPegTick=0;
 
-  function hud(){
-    balLbl.textContent=balance.toFixed(2);
-    betLbl.textContent=stake;
-    lastLbl.textContent=lastTxt;
-  }
+  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
   betInput.addEventListener('input', ()=>{
-    const raw = (betInput.value||'').replace(/[^\d]/g,'');
-    betInput.value = raw || '1';
+    const raw=(betInput.value||'').replace(/[^\d]/g,'');
+    betInput.value=raw||'1';
     stake = Math.max(1, parseInt(betInput.value,10)||1);
     hud();
   });
 
-  // Audio hooks
-  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
-  async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+  // cheap sound triggers (no awaits inside physics)
+  function pegSound(){ window.__bagAudio && window.__bagAudio.nudge(); }
+  function clickSound(){ window.__bagAudio && window.__bagAudio.nudge(); }
 
-  // Weighted fallback resolve (tab throttling) – favors house
+  // House-favor fallback
   function weightedSlotIndex(){
-    const weights=[28,10,28,2,28,10,28];
-    let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
-    for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
+    const w=[28,10,28,2,28,10,28];
+    let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
     return 3;
   }
 
-  // Price helper for $1 min logic
-  function stakeUsdEquivalent(){
+  // Used by the external listener
+  window.stakeUsdEquivalent = function(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
     if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
-  }
+  };
 
-  // Round reset (prevents “invisible coin / locked button”)
+  // Reset per round
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
-    ball=null;
-    dropping=false;
-    dropBtn.disabled=false;
-    lastPegTick=0;
+    ball=null; dropping=false; dropBtn.disabled=false; lastPegTick=0;
   }
 
-  // Click -> start a new round
-  dropBtn.addEventListener('click', async ()=>{
-    await clickSound();
+  dropBtn.addEventListener('click', ()=>{
+    clickSound();
     clearRoundState();
 
-    // Min $1 (allow in demo if prices not ready)
-    const usd = stakeUsdEquivalent();
+    const usd = window.stakeUsdEquivalent ? window.stakeUsdEquivalent() : 0;
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-    if (!passesMin){ resText.textContent = 'Min $1'; return; }
+    if (!passesMin){ resText.textContent='Min $1'; return; }
 
     balance = Math.max(0, balance - stake);
-    lastTxt='—';
-    resText.textContent='—';
-    stateText.textContent='Dropping…';
-    celeEl?.classList.remove('show');
-    hud();
-
+    lastTxt='—'; resText.textContent='—'; stateText.textContent='Dropping…';
+    celeEl?.classList.remove('show'); hud();
     startDrop();
   });
 
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
-    // varied entry
     const spread=(rightWall-leftWall)*0.30;
     const startOffset=(Math.random()-0.5)*spread;
     const initVx=(Math.random()-0.5)*1.2;
 
     ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
 
-    // Failsafe resolve
     safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  // Always-on RAF so board is visible immediately
+  // Always-on RAF
   (function raf(){
     drawBoard();
-    if(ball && ball.alive){
-      stepBall();
-      drawBall(ball.x,ball.y);
-    }
+    if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); }
     requestAnimationFrame(raf);
   })();
 
-  // Extra safety: if physics finished but flags stuck, free the button
+  // Extra safety
   setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ clearRoundState(); } }, 900);
 
   function stepBall(){
-    // integrate
     ball.vy += GRAVITY;
     ball.x  += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
@@ -489,7 +463,7 @@
       }
     }
 
-    // Landing
+    // landing
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
@@ -536,7 +510,6 @@
     hud();
   }
 
-  // Dice-like “pop” celebration
   function winFlash(text, color){
     if (!celeEl) return;
     celeEl.textContent = text;
@@ -546,7 +519,6 @@
     setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
   }
 
-  // Draw board & ball
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
@@ -583,7 +555,6 @@
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // Init UI
   hud();
 })();
 </script>
