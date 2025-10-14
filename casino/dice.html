@@ -76,7 +76,7 @@
   .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
-  .micro{font-size:.85rem;color:#aeb7af}
+  .micro{font-size:.85rem;color:#a8b5ab}
   .muted{color:#cfd6cf}
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
@@ -405,7 +405,7 @@
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
     liveDot.className = PRICES.source==='live-amm' ? 'ok' : (PRICES.source==='last-live' ? 'warn' : 'err');
-    liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
+    liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
     conversions(); updateLimits(); updatePayoutPreview();
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
@@ -497,237 +497,302 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-<script>
-/* ---------------- THREE.JS PATH — Pro Dice (beveled body + inlaid pips) ---------------- */
-function initThree(){
-  const THREE = window.THREE;
+  /* ---------------- THREE.JS PATH (pearl body + sticker faces) ---------------- */
+  function initThree(){
+    const THREE = window.THREE;
+    const scene = new THREE.Scene();
+    const w = container.clientWidth, h = container.clientHeight;
+    const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
+    camera.position.set(0.75, 1.9, 6.2); camera.lookAt(0,0,0);
 
-  // Scene / Camera / Renderer
-  const scene = new THREE.Scene();
-  const w = container.clientWidth, h = container.clientHeight;
-  const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-  camera.position.set(0.9, 1.7, 6.0); camera.lookAt(0,0,0);
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+    renderer.setSize(w, h);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    container.innerHTML = ''; container.appendChild(renderer.domElement);
 
-  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
-  renderer.setSize(w, h);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.06;
-  container.innerHTML = ''; container.appendChild(renderer.domElement);
-
-  addEventListener('resize', ()=>{
-    const W = container.clientWidth, H = container.clientHeight;
-    camera.aspect = W/H; camera.updateProjectionMatrix();
-    renderer.setSize(W,H);
-  });
-
-  // Neutral environment
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new THREE.Scene(), 0.03).texture;
-
-  // Table felt
-  const floorY = -1.06;
-  const felt = new THREE.Mesh(
-    new THREE.CylinderGeometry(3.8,3.8,0.02,64),
-    new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.92, metalness:0 })
-  );
-  felt.rotation.x = -Math.PI/2; felt.position.y = floorY+0.01; felt.receiveShadow = true;
-  scene.add(felt);
-
-  // Lights
-  const key=new THREE.DirectionalLight(0xffffff,1.18); key.position.set(3.6,5.9,4.1); key.castShadow=true;
-  key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
-  key.shadow.camera.near=1; key.shadow.camera.far=20;
-  key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
-  const fill=new THREE.DirectionalLight(0xffffff,0.46); fill.position.set(-4.2,3,2);
-  const rim =new THREE.DirectionalLight(0xffffff,0.28); rim.position.set(0,6.2,-5.8);
-  const amb =new THREE.AmbientLight(0xcfd7e2,0.34);
-  scene.add(key,fill,rim,amb);
-
-  // Rounded cube helper
-  function RoundedBox(w,h,d,r=0.19, seg=4){
-    const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
-    const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
-    for(let i=0;i<pos.count;i++){
-      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
-      const ix=Math.max(-hx+rx,Math.min(hx-rx,x));
-      const iy=Math.max(-hy+ry,Math.min(hy-ry,y));
-      const iz=Math.max(-hz+rz,Math.min(hz-rz,z));
-      const dx=x-ix, dy=y-iy, dz=z-iz, len=Math.hypot(dx,dy,dz);
-      if(len>1e-6) pos.setXYZ(i, ix+dx/len*rx, iy+dy/len*ry, iz+dz/len*rz);
-    }
-    pos.needsUpdate=true; g.computeVertexNormals(); return g;
-  }
-
-  // Premium materials
-  const bodyMat = new THREE.MeshPhysicalMaterial({
-    color: 0xf3efe8, roughness: 0.38, metalness: 0.02,
-    sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.6,
-    clearcoat: 0.72, clearcoatRoughness: 0.22,
-    iridescence: 0.08, iridescenceIOR: 1.22, iridescenceThicknessRange:[90,240],
-    envMapIntensity: 1.0
-  });
-  const pipMat  = new THREE.MeshPhysicalMaterial({
-    color: 0x0b0b0b, roughness: 0.58, metalness: 0.04,
-    clearcoat: 0.25, clearcoatRoughness: 0.45
-  });
-  // subtle edge “ink” for a crisp silhouette
-  const edgeMat = new THREE.MeshStandardMaterial({ color:0xdedcd8, roughness:0.75, metalness:0.0 });
-
-  // Dice with inlaid pips (geometry, not textures)
-  function makeDie(size=1.08){
-    const g = new THREE.Group();
-
-    const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-    body.castShadow = true; g.add(body);
-
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-    edge.scale.set(1.002,1.002,1.002);
-    g.add(edge);
-
-    const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
-    const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 36, 1, false);
-    const m = size*0.28, c = 0;
-    const spots = {
-      1:[[c,c]],
-      2:[[-m,-m],[m,m]],
-      3:[[-m,-m],[c,c],[m,m]],
-      4:[[-m,-m],[m,-m],[-m,m],[m,m]],
-      5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],
-      6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
-    };
-    const addFace = (n, nx,ny,nz)=>{
-      spots[n].forEach(([u,v])=>{
-        const pip = new THREE.Mesh(pipGeom, pipMat);
-        if(nx!==0){ pip.rotation.z = Math.PI/2; }
-        if(nz!==0){ pip.rotation.x = Math.PI/2; }
-        pip.position.set(u + nx*inset, v + ny*inset, nz*inset);
-        pip.castShadow = true;
-        g.add(pip);
-      });
-    };
-    // Standard opposite sides sum to 7
-    addFace(3,+1,0,0);  // +X
-    addFace(4,-1,0,0);  // -X
-    addFace(1,0,+1,0);  // +Y (top)
-    addFace(6,0,-1,0);  // -Y (bottom)
-    addFace(2,0,0,+1);  // +Z
-    addFace(5,0,0,-1);  // -Z
-
-    g.__setTop = function(value, yaw=0){
-      const map={
-        1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
-        4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
-      }[value]||[0,yaw,0];
-      g.rotation.set(map[0],map[1],map[2]);
-    };
-    return g;
-  }
-
-  const stage = new THREE.Group(); scene.add(stage);
-  const diceA = makeDie(1.08);
-  const diceB = makeDie(1.08);
-  stage.add(diceA, diceB);
-
-  function centerPose(){
-    diceA.position.set(-0.95, 0.28, 0.0);
-    diceB.position.set( 0.95, 0.28,  0.0);
-  }
-  centerPose();
-
-  (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
-
-  // Tactile impact
-  async function impactShake(ms=140, px=0.055){
-    const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
-    await new Promise(res=>{
-      (function step(t){
-        const p=Math.min(1,(t-t0)/ms), k=(1-p);
-        stage.position.x = ox + (Math.random()*2-1)*px*k;
-        stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
-        if(p<1) requestAnimationFrame(step); else{ stage.position.set(ox,oy,0); res(); }
-      })(t0);
+    addEventListener('resize', ()=>{
+      const w = container.clientWidth, h = container.clientHeight;
+      camera.aspect = w/h; camera.updateProjectionMatrix();
+      renderer.setSize(w,h);
     });
-  }
 
-  // Throw & settle
-  async function throwDiceTo(a,b, totalMs=1250){
-    const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
-    diceA.position.set(startXA,startY,0); diceB.position.set(startXB,startY,0);
-    diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
-    diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new THREE.Scene(), 0.1).texture;
 
-    const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-    const sA=36+Math.random()*8, sB=35+Math.random()*8;
+    // Felt
+    const floorY = -1.06;
+    const felt = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.5,3.5,0.02,64),
+      new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.9, metalness:0 })
+    );
+    felt.rotation.x = -Math.PI/2; felt.position.y = floorY+0.01; felt.receiveShadow = true;
+    scene.add(felt);
 
-    const t0=performance.now();
-    await new Promise(res=>{
-      function step(t){
-        const raw=Math.min(1,(t-t0)/totalMs);
-        const pAir=Math.min(1, raw/0.78), pDrop=Math.max(0,(raw-0.78)/0.22);
-        const ease=(x)=>1-Math.pow(1-x,3);
+    // Lights
+    const key=new THREE.DirectionalLight(0xffffff,1.05); key.position.set(3.5,5.8,4.2); key.castShadow=true;
+    key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
+    key.shadow.camera.near=1; key.shadow.camera.far=20;
+    key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
+    const fill=new THREE.DirectionalLight(0xffffff,0.45); fill.position.set(-4.2,3,2);
+    const rim =new THREE.DirectionalLight(0xffffff,0.28); rim.position.set(0,6.5,-6);
+    const amb =new THREE.AmbientLight(0xb7c3d1,0.34);
+    scene.add(key,fill,rim,amb);
 
-        const xA=startXA+(-0.95-startXA)*ease(pAir);
-        const xB=startXB+( 0.95-startXB)*ease(pAir);
-        const arc = 0.66*(1 - (2*pAir-1)**2);
-        const y=endY+arc+0.12;
-        diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
-
-        const dt=0.016;
-        diceA.rotation.x+=1.18*sA*dt; diceA.rotation.y+=1.42*sA*dt; diceA.rotation.z+=0.82*sA*dt;
-        diceB.rotation.x+=1.05*sB*dt; diceB.rotation.y+=1.30*sB*dt; diceB.rotation.z+=0.74*sB*dt;
-
-        if(pDrop>0){
-          const k=ease(pDrop);
-          const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
-          const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
-          diceA.rotation.set(
-            diceA.rotation.x+(toA[0]-diceA.rotation.x)*k,
-            diceA.rotation.y+(toA[1]-diceA.rotation.y)*k,
-            diceA.rotation.z+(toA[2]-diceA.rotation.z)*k
-          );
-          diceB.rotation.set(
-            diceB.rotation.x+(toB[0]-diceB.rotation.x)*k,
-            diceB.rotation.y+(toB[1]-diceB.rotation.y)*k,
-            diceB.rotation.z+(toB[2]-diceB.rotation.z)*k
-          );
-        }
-        if(raw<1) requestAnimationFrame(step); else res();
+    // Rounded cube
+    function RoundedBox(w,h,d,r=0.19, seg=4){
+      const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
+      const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
+      for(let i=0;i<pos.count;i++){
+        const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+        const ix=Math.max(-hx+rx,Math.min(hx-rx,x));
+        const iy=Math.max(-hy+ry,Math.min(hy-ry,y));
+        const iz=Math.max(-hz+rz,Math.min(hz-rz,z));
+        const dx=x-ix, dy=y-iy, dz=z-iz, len=Math.hypot(dx,dy,dz);
+        if(len>1e-6) pos.setXYZ(i, ix+dx/len*rx, iy+dy/len*ry, iz+dz/len*rz);
       }
-      requestAnimationFrame(step);
+      pos.needsUpdate=true; g.computeVertexNormals(); return g;
+    }
+
+    // Pearl body
+    const pearl = new THREE.MeshPhysicalMaterial({
+      color: 0xf6f3ec, roughness: 0.42, metalness: 0.0,
+      sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.8,
+      clearcoat: 0.65, clearcoatRoughness: 0.25, envMapIntensity: 1.0
     });
 
-    diceA.__setTop(a,yawA); diceB.__setTop(b,yawB);
-    diceA.position.y=diceB.position.y=endY;
+    // Sticker materials (avoid dark fringe)
+    const loader = new THREE.TextureLoader();
+    function loadSticker(n){
+      const t = loader.load(FACE_URLS[n]);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.premultiplyAlpha = true;
+      t.generateMipmaps = false;
+      t.minFilter = THREE.LinearFilter;
+      t.magFilter = THREE.LinearFilter;
+      t.anisotropy = 4;
+      return t;
+    }
+    function stickerMat(n){
+      return new THREE.MeshPhysicalMaterial({
+        map: loadSticker(n),
+        transparent: true,
+        alphaTest: 0.05,
+        color: 0xffffff,
+        roughness: 0.45, metalness: 0.0, clearcoat: 0.5, clearcoatRoughness: 0.3
+      });
+    }
 
-    await impactShake(140,0.06);
+    function makeDie(size=1.08){
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), pearl);
+      body.castShadow = true; g.add(body);
 
-    // Subtle settle wobble
-    const wob0=performance.now();
-    await new Promise(res=>{
-      (function wob(ts){
-        const t=(ts-wob0)/320; const k=Math.max(0,1-t);
-        if(k<=0) return res();
-        const w=0.06*k*Math.sin(ts*0.06);
-        diceA.rotation.x+=w*0.02; diceB.rotation.y-=w*0.02;
-        requestAnimationFrame(wob);
-      })(wob0);
-    });
+      const pad=0.02, s=size-pad*2, t=0.0015;
+      const plane = new THREE.PlaneGeometry(s,s);
+      const faces = [
+        {n:3, pos:[+size/2+t,0,0], rot:[0, Math.PI/2, 0]},
+        {n:4, pos:[-size/2-t,0,0], rot:[0,-Math.PI/2, 0]},
+        {n:1, pos:[0,+size/2+t,0], rot:[-Math.PI/2,0,0]},
+        {n:6, pos:[0,-size/2-t,0], rot:[+Math.PI/2,0,0]},
+        {n:2, pos:[0,0,+size/2+t], rot:[0,0,0]},
+        {n:5, pos:[0,0,-size/2-t], rot:[0,Math.PI,0]},
+      ];
+      faces.forEach(f=>{
+        const p = new THREE.Mesh(plane, stickerMat(f.n));
+        p.position.set(...f.pos); p.rotation.set(...f.rot);
+        g.add(p);
+      });
+
+      g.__setTop = function(value, yaw=0){
+        const map={
+          1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
+          4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
+        }[value]||[0,yaw,0];
+        g.rotation.set(map[0],map[1],map[2]);
+      };
+      return g;
+    }
+
+    const stage = new THREE.Group(); scene.add(stage);
+    const diceA = makeDie(1.08);
+    const diceB = makeDie(1.08);
+    stage.add(diceA, diceB);
+
+    function centerPose(){
+      diceA.position.set(-0.95, 0.28, 0.0);
+      diceB.position.set( 0.95, 0.28,  0.0);
+    }
+    centerPose();
+
+    (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
+
+    async function impactShake(ms=120, px=0.055){
+      const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
+      await new Promise(res=>{
+        function f(t){
+          const p=Math.min(1,(t-t0)/ms), k=(1-p);
+          stage.position.x = ox + (Math.random()*2-1)*px*k;
+          stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
+          if(p<1) requestAnimationFrame(f); else{ stage.position.set(ox,oy,0); res(); }
+        }
+        requestAnimationFrame(f);
+      });
+    }
+
+    async function throwDiceTo(a,b, totalMs=1150){
+      const endY=0.28, startXA=-2.4, startXB= 2.4, startY=0.65;
+      diceA.position.set(startXA,startY,0); diceB.position.set(startXB,startY,0);
+      diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+      diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+      const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+
+      const t0=performance.now();
+      await new Promise(res=>{
+        function step(t){
+          const raw=Math.min(1,(t-t0)/totalMs);
+          const pAir=Math.min(1, raw/0.76), pDrop=Math.max(0,(raw-0.76)/0.24);
+          const xA=startXA+(-0.95-startXA)*(1-Math.pow(1-pAir,3));
+          const xB=startXB+( 0.95-startXB)*(1-Math.pow(1-pAir,3));
+          const arc = 0.56*(1 - (2*pAir-1)**2);
+          const y=endY+arc+0.1;
+          diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
+          const s=36*(1-pAir*0.85), dt=0.016;
+          diceA.rotation.x+=1.00*s*dt; diceA.rotation.y+=1.30*s*dt; diceA.rotation.z+=0.70*s*dt;
+          diceB.rotation.x+=0.92*s*dt; diceB.rotation.y+=1.18*s*dt; diceB.rotation.z+=0.62*s*dt;
+
+          if(pDrop>0){
+            const k=(1-Math.pow(1-pDrop,3));
+            const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
+            const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
+            diceA.rotation.set(diceA.rotation.x+(toA[0]-diceA.rotation.x)*k, diceA.rotation.y+(toA[1]-diceA.rotation.y)*k, diceA.rotation.z+(toA[2]-diceA.rotation.z)*k);
+            diceB.rotation.set(diceB.rotation.x+(toB[0]-diceB.rotation.x)*k, diceB.rotation.y+(toB[1]-diceB.rotation.y)*k, diceB.rotation.z+(toB[2]-diceB.rotation.z)*k);
+          }
+          if(raw<1) requestAnimationFrame(step); else res();
+        }
+        requestAnimationFrame(step);
+      });
+
+      diceA.__setTop(a,yawA); diceB.__setTop(b,yawB);
+      diceA.position.y=diceB.position.y=endY;
+      await impactShake(120,0.06);
+    }
+
+    window.__bagDiceRollImpl = async function(a,b){
+      const sP = window.__bagSfx?.playShake?.(); await sP;
+      window.__bagSfx?.playRoll?.();
+      await throwDiceTo(a,b,1150);
+      await new Promise(r=>setTimeout(r,120));
+    };
   }
 
-  // Public roll API (keeps your wiring intact)
-  window.__bagDiceRollImpl = async function(a,b){
-    const sP = window.__bagSfx?.playShake?.(); await sP;
-    window.__bagSfx?.playRoll?.();
-    await throwDiceTo(a,b,1250);
-    await new Promise(r=>setTimeout(r,120));
-  };
-}
+  /* ---------------- CSS FALLBACK (also uses your PNGs) ---------------- */
+  function initCssFallback(){
+    cssWrap.innerHTML = '';
+    cssWrap.classList.add('active');
+    const mk = ()=> {
+      const d = document.createElement('div'); d.className='css-die';
+      ['f1','f2','f3','f4','f5','f6'].forEach((cls,i)=>{
+        const f=document.createElement('div'); f.className='css-face '+cls;
+        f.style.backgroundImage = `url(${FACE_URLS[i+1]})`;
+        d.appendChild(f);
+      });
+      cssWrap.appendChild(d);
+      return d;
+    };
+    const A = mk(), B = mk();
+    function setTop(el, val, yaw=0){
+      const map={
+        1:`rotateX(0rad) rotateY(${yaw}rad)`,
+        2:`rotateX(-1.5708rad) rotateY(${yaw}rad)`,
+        3:`rotateY(${yaw+1.5708}rad)`,
+        4:`rotateY(${yaw-1.5708}rad)`,
+        5:`rotateX(1.5708rad) rotateY(${yaw}rad)`,
+        6:`rotateX(3.1416rad) rotateY(${yaw}rad)`,
+      }[val]||`rotateX(0rad) rotateY(${yaw}rad)`;
+      el.style.transform = map;
+    }
+
+    window.__bagDiceRollImpl = async function(a,b){
+      A.classList.remove('settle'); B.classList.remove('settle');
+      const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+      A.style.transition=B.style.transition='transform .75s cubic-bezier(.2,.9,.2,1)';
+      A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
+      B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
+      const sP = window.__bagSfx?.playShake?.(); await sP; window.__bagSfx?.playRoll?.();
+      await new Promise(r=>setTimeout(r, 620));
+      setTop(A,a,yawA); setTop(B,b,yawB);
+      A.classList.add('settle'); B.classList.add('settle');
+      await new Promise(r=>setTimeout(r, 220));
+    };
+  }
+
+  // Boot after Three.js or fallback, then wire the roll button
+  (function boot(){
+    let tries = 0;
+    function tick(){
+      if (window.__THREE_READY__ && window.THREE){ initThree(); wireRoll(); }
+      else if (window.__THREE_FAILED__ || tries>30){ initCssFallback(); wireRoll(); }
+      else { tries++; setTimeout(tick, 100); }
+    }
+    tick();
+  })();
+
+  /* ---------------- Roll button + Pass-Line rules ---------------- */
+  function wireRoll(){
+    rollBtn?.addEventListener('click', async ()=>{
+      if (!window.__bagDiceRollImpl) return;
+      rollBtn.disabled = true;
+
+      const a = 1 + (Math.random()*6|0);
+      const b = 1 + (Math.random()*6|0);
+      const sum = a + b;
+
+      await window.__bagDiceRollImpl(a,b);
+
+      if (isComeOut()){
+        if (sum===7 || sum===11){
+          rollText.className='t win';
+          setStatusRolled(a,b,sum,'COME-OUT WIN (1.25×)');
+          window.showWin?.({message:'WIN', subtext:'Come-out 7/11!'});
+          window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win',phase:'comeout'}}));
+          ROUND.active=false; ROUND.point=null;
+        } else if (sum===2 || sum===3 || sum===12){
+          rollText.className='t lose';
+          setStatusRolled(a,b,sum,'CRAPS — you lose');
+          window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose',phase:'comeout'}}));
+          ROUND.active=false; ROUND.point=null;
+        } else {
+          ROUND.active=true; ROUND.point=sum;
+          rollText.className='t scratch';
+          setStatusRolled(a,b,sum,`Point established: ${sum}`);
+          window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'hold',point:sum}}));
+        }
+      } else {
+        if (sum===ROUND.point){
+          rollText.className='t win';
+          setStatusRolled(a,b,sum,'POINT MADE! (1.00×)');
+          window.showWin?.({message:'WIN', subtext:`Point ${ROUND.point}`});
+          window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win',phase:'point',point:ROUND.point}}));
+          ROUND.active=false; ROUND.point=null;
+        } else if (sum===7){
+          rollText.className='t lose';
+          setStatusRolled(a,b,sum,'SEVEN OUT — you lose');
+          window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose',phase:'point',point:ROUND.point}}));
+          ROUND.active=false; ROUND.point=null;
+        } else {
+          rollText.className='t scratch';
+          setStatusRolled(a,b,sum,'No effect — roll again');
+        }
+      }
+      rollBtn.disabled = false;
+    });
+  }
+})();
 </script>
-
-
 
 <!-- Xaman wallet connect -->
 <script>
