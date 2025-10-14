@@ -561,12 +561,12 @@
       const tex={};
       for(let n=1;n<=6;n++) tex[n]=makeFaceTex(THREE, n, base);
       return [
-        new THREE.MeshPhongMaterial({ map: tex[3] }), // +X
-        new THREE.MeshPhongMaterial({ map: tex[4] }), // -X
-        new THREE.MeshPhongMaterial({ map: tex[1] }), // +Y
-        new THREE.MeshPhongMaterial({ map: tex[6] }), // -Y
-        new THREE.MeshPhongMaterial({ map: tex[2] }), // +Z
-        new THREE.MeshPhongMaterial({ map: tex[5] }), // -Z
+        new THREE.MeshPhongMaterial({ map: tex[3] }), // +X (3)
+        new THREE.MeshPhongMaterial({ map: tex[4] }), // -X (4)
+        new THREE.MeshPhongMaterial({ map: tex[1] }), // +Y (1 top)
+        new THREE.MeshPhongMaterial({ map: tex[6] }), // -Y (6 bottom)
+        new THREE.MeshPhongMaterial({ map: tex[2] }), // +Z (2)
+        new THREE.MeshPhongMaterial({ map: tex[5] }), // -Z (5)
       ];
     }
     function makeFaceTex(THREE, n, base){
@@ -590,14 +590,15 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    // Dice meshes
+    // Dice meshes (grouped for a tiny impact shake)
+    const stage = new THREE.Group(); scene.add(stage);
     const size = 1.08;
     const geo  = RoundedBox(size,size,size, 0.18, 4);
     const matsA = makeMaterials(THREE,'#ffffff');
     const matsB = makeMaterials(THREE,'#fef9f4');
     const diceA = new THREE.Mesh(geo, matsA);
     const diceB = new THREE.Mesh(geo, matsB);
-    scene.add(diceA, diceB);
+    stage.add(diceA, diceB);
 
     function centerPose(){
       diceA.position.set(-0.9, 0.28, 0.0);
@@ -614,48 +615,107 @@
 
     (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
 
-    /* ----- In-place tumble (no shake, no throw) ----- */
-    function tumbleInPlace(ms=950){
-      centerPose();
-      let last = performance.now();
-      // angular velocities (rad/s)
-      let wxA=8, wyA=12, wzA=6, wxB=7.5, wyB=11, wzB=5.5;
-      const friction = 0.94;
+    /* ----- Airborne tumble → abrupt snap landing ----- */
+    function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
+    function easeInCubic(t){ return t*t*t; }
+
+    // quick micro camera/stage shake for impact
+    async function impactShake(ms=110, px=0.06){
+      const start=performance.now(); const ox=stage.position.x, oy=stage.position.y;
       return new Promise(res=>{
-        const start = last;
-        function step(t){
-          const dt = Math.min(0.033, (t - last)/1000); last = t;
-          const p  = Math.min(1, (t - start)/ms);
-
-          diceA.rotation.x += wxA*dt; diceA.rotation.y += wyA*dt; diceA.rotation.z += wzA*dt;
-          diceB.rotation.x += wxB*dt; diceB.rotation.y += wyB*dt; diceB.rotation.z += wzB*dt;
-
-          wxA*=friction; wyA*=friction; wzA*=friction;
-          wxB*=friction; wyB*=friction; wzB*=friction;
-
-          if (p < 1) requestAnimationFrame(step); else res();
+        function f(t){
+          const p=Math.min(1,(t-start)/ms);
+          const k=(1-p);
+          stage.position.x = ox + (Math.random()*2-1)*px*k;
+          stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
+          if(p<1) requestAnimationFrame(f); else{ stage.position.set(ox,oy,0); res(); }
         }
-        requestAnimationFrame(step);
+        requestAnimationFrame(f);
       });
     }
 
-    function snapToResult(a,b){
+    // airborne spin (up high), then hard drop + snap to exact faces
+    async function tumbleAndSnapTo(a,b, totalMs=900){
+      // raise dice, random rotations
+      const startY = 1.15, endY = 0.28;
+      diceA.position.set(-0.9, startY, 0.0);
+      diceB.position.set( 0.9, startY, 0.0);
+
+      diceA.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
+      diceB.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
+
+      // Phase 1: fast spin in air (60% time)
+      const t1 = totalMs * 0.60;
+      let last = performance.now();
+      await new Promise(res=>{
+        const t0=last;
+        function spin(t){
+          const dt = Math.min(.033,(t-last)/1000); last=t;
+          const p  = Math.min(1, (t - t0)/t1);
+          const s  = 28*(1 - p*p); // decelerate
+          diceA.rotation.x += 0.9*s*dt; diceA.rotation.y += 1.2*s*dt; diceA.rotation.z += 0.6*s*dt;
+          diceB.rotation.x += 0.8*s*dt; diceB.rotation.y += 1.1*s*dt; diceB.rotation.z += 0.55*s*dt;
+          // gentle hover arc
+          const yL = startY - (startY-endY)*0.25*easeInCubic(p);
+          diceA.position.y = yL; diceB.position.y = yL;
+          if (p<1) requestAnimationFrame(spin); else res();
+        }
+        requestAnimationFrame(spin);
+      });
+
+      // Phase 2: abrupt landing (40% time) → snap to faces during the drop
+      const t2 = totalMs * 0.40;
       const yawA=(Math.random()*Math.PI*2 - Math.PI);
       const yawB=(Math.random()*Math.PI*2 - Math.PI);
+
+      const fromA = diceA.rotation.clone(); const fromB = diceB.rotation.clone();
+      // rotations that produce the requested top faces:
+      const toA = {x:0,y:yawA,z:0}, toB = {x:0,y:yawB,z:0};
+      const mapA = {1:[0,yawA,0], 2:[-Math.PI/2,yawA,0], 3:[0,yawA+Math.PI/2,0], 4:[0,yawA-Math.PI/2,0], 5:[Math.PI/2,yawA,0], 6:[Math.PI,yawA,0]}[a];
+      const mapB = {1:[0,yawB,0], 2:[-Math.PI/2,yawB,0], 3:[0,yawB+Math.PI/2,0], 4:[0,yawB-Math.PI/2,0], 5:[Math.PI/2,yawB,0], 6:[Math.PI,yawB,0]}[b];
+
+      const t0 = performance.now();
+      await new Promise(res=>{
+        function drop(t){
+          const pRaw = Math.min(1, (t - t0)/t2);
+          // hard ease-in for abrupt slam
+          const p = easeInCubic(pRaw);
+
+          // y drop
+          const y = startY - (startY - endY) * (0.25 + 0.75*p);
+          diceA.position.y = y; diceB.position.y = y;
+
+          // interpolate rotation towards face orientation (snap feel near the end)
+          const k = easeOutCubic(pRaw); // quick alignment late
+          diceA.rotation.x = fromA.x + (mapA[0]-fromA.x)*k;
+          diceA.rotation.y = fromA.y + (mapA[1]-fromA.y)*k;
+          diceA.rotation.z = fromA.z + (mapA[2]-fromA.z)*k;
+          diceB.rotation.x = fromB.x + (mapB[0]-fromB.x)*k;
+          diceB.rotation.y = fromB.y + (mapB[1]-fromB.y)*k;
+          diceB.rotation.z = fromB.z + (mapB[2]-fromB.z)*k;
+
+          if (pRaw<1) requestAnimationFrame(drop); else res();
+        }
+        requestAnimationFrame(drop);
+      });
+
+      // ensure exact final
       setTop(THREE, diceA, a, yawA);
       setTop(THREE, diceB, b, yawB);
-      centerPose();
+      diceA.position.y = endY; diceB.position.y = endY;
+
+      // tiny settle shimmy for visual punch
+      await impactShake(120, 0.05);
     }
 
-    // Public roll: tumble during first clip → snap as roll starts
+    // Public roll: airborne tumble → abrupt snap to result
     window.__bagDiceRollImpl = async function(a,b){
-      centerPose();
+      // SFX
       const sP = window.__bagSfx?.playShake?.();
-      await tumbleInPlace(950);
       await sP;
       window.__bagSfx?.playRoll?.();
-      snapToResult(a,b);
-      await new Promise(r=>setTimeout(r, 200));
+      await tumbleAndSnapTo(a,b, 900);
+      await new Promise(r=>setTimeout(r, 120));
     };
   }
 
@@ -687,13 +747,13 @@
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    async function tumbleCss(ms=950){
+    async function tumbleCss(ms=700){
       const start=performance.now();
       return new Promise(res=>{
         function f(t){
-          const e=t-start, p=Math.min(1,e/ms), spin=26*(1-p*p);
-          dA.style.transform = `translate3d(-72px,0,0) rotateX(${t*0.12*spin/16}deg) rotateY(${t*0.17*spin/16}deg) rotateZ(${t*0.09*spin/16}deg)`;
-          dB.style.transform = `translate3d( 72px,0,0) rotateX(${t*0.11*spin/16}deg) rotateY(${t*0.16*spin/16}deg) rotateZ(${t*0.08*spin/16}deg)`;
+          const e=t-start, p=Math.min(1,e/ms), spin=30*(1-p*p);
+          dA.style.transform = `translate3d(-72px,-18px,0) rotateX(${t*0.15*spin/16}deg) rotateY(${t*0.2*spin/16}deg) rotateZ(${t*0.1*spin/16}deg)`;
+          dB.style.transform = `translate3d( 72px,-18px,0) rotateX(${t*0.14*spin/16}deg) rotateY(${t*0.19*spin/16}deg) rotateZ(${t*0.09*spin/16}deg)`;
           if(e<ms) requestAnimationFrame(f); else res();
         }
         requestAnimationFrame(f);
@@ -702,12 +762,11 @@
 
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.();
-      await tumbleCss(950);
-      await sP;
-      window.__bagSfx?.playRoll?.();
+      await sP; window.__bagSfx?.playRoll?.();
+      await tumbleCss(700);
       setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
       setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
-      await new Promise(r=>setTimeout(r, 200));
+      await new Promise(r=>setTimeout(r, 150));
     };
   }
 
@@ -764,7 +823,7 @@
     rollText.className='t';
     rollText.textContent = (isComeOut() ? 'Come-out roll — ' : '') + needText();
 
-    // choose dice now (biased only on come-out) and animate (tumble → snap)
+    // choose dice now (biased only on come-out) and animate (air tumble → abrupt snap)
     const [a,b] = pickFacesForRoll(isComeOut());
     if (typeof window.__bagDiceRollImpl === 'function'){ await window.__bagDiceRollImpl(a,b); }
 
