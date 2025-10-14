@@ -366,7 +366,7 @@
 })();
 </script>
 
-<!-- GAME + PRICES + DICE -->
+<!-- GAME + DICE -->
 <script>
 (function(){
   /* ---------- Dice UI helpers (status text) ---------- */
@@ -391,7 +391,7 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-  /* ---------------- THREE.JS PATH (pearl body + inlaid geometry pips) ---------------- */
+  /* ---------------- THREE.JS PATH (pearl body + PRECISE inlaid geometry pips) ---------------- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
@@ -483,16 +483,20 @@
     const edgeMat = new THREE.MeshStandardMaterial({ color: 0xdad7d2, roughness: 0.75, metalness: 0.0 });
     const pipMat  = new THREE.MeshPhysicalMaterial({ color: 0x0c0c0c, roughness: 0.55, metalness: 0.08, clearcoat: 0.25, clearcoatRoughness: 0.45 });
 
+    // PRECISE inlaid pips (quaternion-align cylinders to face normals)
     function makeDie(size=1.08){
       const g = new THREE.Group();
+
+      // Body + subtle outline
       const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
       body.castShadow = true; g.add(body);
 
-      const outline = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-      outline.scale.set(1.002,1.002,1.002); g.add(outline);
+      const shell = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
+      shell.scale.set(1.002,1.002,1.002); g.add(shell);
 
-      const pipR = size*0.082, pipDepth = size*0.14, inset = size*0.52;
-      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 32);
+      const pipR = size*0.082, pipDepth = size*0.14;
+      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 40);
+
       const m = size*0.28, c = 0;
       const pattern = {
         1:[[c,c]],
@@ -502,19 +506,36 @@
         5:[[-m,-m],[ m,-m],[ c, c],[-m, m],[ m, m]],
         6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]]
       };
-      const addFace = (face, nx,ny,nz)=>{
-        pattern[face].forEach(([u,v])=>{
+
+      const axisY = new THREE.Vector3(0,1,0);
+      const half  = size/2;
+      const insetEPS = 0.012; // tiny inset to prevent z-fighting
+      function addFace(faceNum, n, u, v){
+        const plane = half - insetEPS;
+        const quat = new THREE.Quaternion().setFromUnitVectors(axisY, n.clone().normalize());
+        const center = n.clone().multiplyScalar(plane - pipDepth*0.50);
+        for(const [uu,vv] of pattern[faceNum]){
           const pip = new THREE.Mesh(pipGeom, pipMat);
-          if(nx!==0){ pip.rotation.z = Math.PI/2; }
-          if(nz!==0){ pip.rotation.x = Math.PI/2; }
-          const push = pipDepth*0.48;
-          pip.position.set(u + nx*(inset - push), v + ny*(inset - push), nz*(inset - push));
-          pip.castShadow = true; g.add(pip);
-        });
-      };
-      addFace(3,+1,0,0); addFace(4,-1,0,0);
-      addFace(1,0,+1,0); addFace(6,0,-1,0);
-      addFace(2,0,0,+1); addFace(5,0,0,-1);
+          pip.castShadow = true;
+          pip.quaternion.copy(quat);
+          const offset = u.clone().multiplyScalar(uu).add(v.clone().multiplyScalar(vv));
+          pip.position.copy(center.clone().add(offset));
+          g.add(pip);
+        }
+      }
+
+      // Face frames
+      const Xp = new THREE.Vector3( 1,0,0), Xm = new THREE.Vector3(-1,0,0);
+      const Yp = new THREE.Vector3(0, 1,0), Ym = new THREE.Vector3(0,-1,0);
+      const Zp = new THREE.Vector3(0,0, 1), Zm = new THREE.Vector3(0,0,-1);
+
+      // u/v axes per face so grid aligns consistently
+      addFace(3, Xp, Zp, Yp); // +X
+      addFace(4, Xm, Zp, Yp); // -X
+      addFace(1, Yp, Xp, Zp); // +Y
+      addFace(6, Ym, Xp, Zp); // -Y
+      addFace(2, Zp, Xp, Yp); // +Z
+      addFace(5, Zm, Xp, Yp); // -Z
 
       g.__setTop = function(value, yaw=0){
         const map={1:[0,yaw,0],2:[-Math.PI/2,yaw,0],3:[0,yaw+Math.PI/2,0],4:[0,yaw-Math.PI/2,0],5:[Math.PI/2,yaw,0],6:[Math.PI,yaw,0]}[value]||[0,yaw,0];
@@ -523,15 +544,23 @@
       return g;
     }
 
+    // Stage + dice
     const stage = new THREE.Group(); scene.add(stage);
     const diceA = makeDie(1.08), diceB = makeDie(1.08);
     stage.add(diceA, diceB);
-    function centerPose(){ diceA.position.set(-0.95,0.28,0); diceB.position.set(0.95,0.28,0); }
+
+    // Park tightly in center
+    function centerPose(){
+      const endY = 0.28, gap = 0.40;
+      diceA.position.set(-gap, endY, -0.04);
+      diceB.position.set( gap, endY,  0.04);
+    }
     centerPose();
 
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-    async function impactShake(ms=120, px=0.055){
+    // Tiny impact shake
+    async function impactShake(ms=70, px=0.03){
       const t0=performance.now(), ox=stage.position.x, oy=stage.position.y;
       await new Promise(res=>{
         (function step(t){
@@ -543,75 +572,74 @@
       });
     }
 
-    async function throwDiceTo(a,b, totalMs=1200){
-      const endY=0.28, startXA=-2.5, startXB= 2.5, startY=0.72;
-      diceA.position.set(startXA,startY,0); diceB.position.set(startXB,startY,0);
+    // Snappy center tumble → abrupt stop
+    async function throwDiceTo(a,b, totalMs=900){
+      const endY=0.28, endXA=-0.40, endXB=+0.40, endZA=-0.04, endZB=+0.04;
+      const startXA=-2.0, startXB=+2.0, startY=0.90;
+
+      diceA.position.set(startXA,startY,endZA);
+      diceB.position.set(startXB,startY,endZB);
       diceA.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
       diceB.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+      const easeOutCubic = (x)=> 1 - Math.pow(1-x, 3);
 
       const t0=performance.now();
       await new Promise(res=>{
         function step(t){
-          const raw=Math.min(1,(t-t0)/totalMs);
-          const pAir=Math.min(1, raw/0.78);
-          const pDrop=Math.max(0,(raw-0.78)/0.22);
-          const ease=(x)=>1-Math.pow(1-x,3);
+          const raw = Math.min(1, (t-t0)/totalMs);
+          const pFly  = Math.min(1, raw/0.80);
+          const pSnap = Math.max(0,(raw-0.80)/0.20);
 
-          const xA=startXA+(-0.95-startXA)*ease(pAir);
-          const xB=startXB+( 0.95-startXB)*ease(pAir);
-          const arc = 0.62*(1 - (2*pAir-1)**2);
-          const y=endY+arc+0.11;
-          diceA.position.set(xA,y,0); diceB.position.set(xB,y,0);
+          const k = easeOutCubic(pFly);
+          const xA = startXA + (endXA - startXA)*k;
+          const xB = startXB + (endXB - startXB)*k;
+          const arc = 0.50*(1 - (2*pFly-1)**2);
+          const y   = endY + arc + 0.10;
 
-          const s=36*(1-pAir*0.85), dt=0.016;
-          diceA.rotation.x+=1.10*s*dt; diceA.rotation.y+=1.33*s*dt; diceA.rotation.z+=0.74*s*dt;
-          diceB.rotation.x+=1.02*s*dt; diceB.rotation.y+=1.25*s*dt; diceB.rotation.z+=0.68*s*dt;
+          diceA.position.set(xA,y,endZA);
+          diceB.position.set(xB,y,endZB);
 
-          if(pDrop>0){
-            const k=ease(pDrop);
+          const spin = 42*(1 - pFly*0.85);
+          const dt = 0.016;
+          diceA.rotation.x += 1.22*spin*dt; diceA.rotation.y += 1.40*spin*dt; diceA.rotation.z += 0.80*spin*dt;
+          diceB.rotation.x += 1.16*spin*dt; diceB.rotation.y += 1.32*spin*dt; diceB.rotation.z += 0.74*spin*dt;
+
+          if (pSnap>0){
+            const s = Math.min(1, Math.pow(pSnap, 6)); // steep snap
             const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
             const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
             diceA.rotation.set(
-              diceA.rotation.x + (toA[0]-diceA.rotation.x)*k,
-              diceA.rotation.y + (toA[1]-diceA.rotation.y)*k,
-              diceA.rotation.z + (toA[2]-diceA.rotation.z)*k
+              diceA.rotation.x + (toA[0]-diceA.rotation.x)*s,
+              diceA.rotation.y + (toA[1]-diceA.rotation.y)*s,
+              diceA.rotation.z + (toA[2]-diceA.rotation.z)*s
             );
             diceB.rotation.set(
-              diceB.rotation.x + (toB[0]-diceB.rotation.x)*k,
-              diceB.rotation.y + (toB[1]-diceB.rotation.y)*k,
-              diceB.rotation.z + (toB[2]-diceB.rotation.z)*k
+              diceB.rotation.x + (toB[0]-diceB.rotation.x)*s,
+              diceB.rotation.y + (toB[1]-diceB.rotation.y)*s,
+              diceB.rotation.z + (toB[2]-diceB.rotation.z)*s
             );
           }
-          if(raw<1) requestAnimationFrame(step); else res();
+
+          if (raw<1) requestAnimationFrame(step); else res();
         }
         requestAnimationFrame(step);
       });
 
+      // Force exact final pose/position and give a tiny impact tick
       diceA.__setTop(a,yawA); diceB.__setTop(b,yawB);
-      diceA.position.y=diceB.position.y=endY;
-
-      await impactShake(130,0.06);
-
-      const wob0=performance.now();
-      await new Promise(res=>{
-        (function wob(ts){
-          const t=(ts-wob0)/320, k=Math.max(0,1-t);
-          if(k<=0) return res();
-          const w=0.06*k*Math.sin(ts*0.06);
-          diceA.rotation.x+=w*0.02;
-          diceB.rotation.y-=w*0.02;
-          requestAnimationFrame(wob);
-        })(wob0);
-      });
+      diceA.position.set(endXA,endY,endZA);
+      diceB.position.set(endXB,endY,endZB);
+      await impactShake(70,0.03);
     }
 
     // Public hook used by the rest of your app
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.(); await sP;
       window.__bagSfx?.playRoll?.();
-      await throwDiceTo(a,b,1200);
-      await new Promise(r=>setTimeout(r,110));
+      await throwDiceTo(a,b,900);
+      await new Promise(r=>setTimeout(r,90));
     };
   }
 
@@ -645,14 +673,14 @@
     window.__bagDiceRollImpl = async function(a,b){
       A.classList.remove('settle'); B.classList.remove('settle');
       const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-      A.style.transition=B.style.transition='transform .75s cubic-bezier(.2,.9,.2,1)';
+      A.style.transition=B.style.transition='transform .65s cubic-bezier(.2,.9,.2,1)';
       A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
       B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
       const sP = window.__bagSfx?.playShake?.(); await sP; window.__bagSfx?.playRoll?.();
-      await new Promise(r=>setTimeout(r, 620));
+      await new Promise(r=>setTimeout(r, 520));
       setTop(A,a,yawA); setTop(B,b,yawB);
       A.classList.add('settle'); B.classList.add('settle');
-      await new Promise(r=>setTimeout(r, 220));
+      await new Promise(r=>setTimeout(r, 160));
     };
   }
 
@@ -1005,7 +1033,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
