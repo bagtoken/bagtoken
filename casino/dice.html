@@ -2,71 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta
-  http-equiv="Cache-Control"
-  content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
-/>
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>$BAG Dice — Clean Dice, Real Tumble ⚡ V2</title>
-
-<!-- 0) SELF-VERSION once per session to bust HTML cache -->
-<script>
-(function(){
-  try{
-    const Q = new URLSearchParams(location.search);
-    if(!sessionStorage.getItem('BAG_DICE_V2_BOOTED')){
-      sessionStorage.setItem('BAG_DICE_V2_BOOTED','1');
-      if(!Q.get('v')){
-        Q.set('v', Date.now().toString());
-        const u = location.pathname + '?' + Q.toString() + location.hash;
-        location.replace(u);
-      }
-    }
-  }catch(e){}
-})();
-</script>
-
-<!-- 1) NUKE any service worker + CacheStorage once -->
-<script>
-(async function(){
-  try{
-    if(!localStorage.getItem('BAG_DICE_SW_NUKED')){
-      if('serviceWorker' in navigator){
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for(const r of regs) { try{ await r.unregister(); }catch{} }
-      }
-      if('caches' in window){
-        const keys = await caches.keys();
-        for(const k of keys) { try{ await caches.delete(k); }catch{} }
-      }
-      localStorage.setItem('BAG_DICE_SW_NUKED','1');
-      // Don’t loop: only soft reload if no ?nocache flag
-      if(!/nocache=1/.test(location.search)){
-        const url = new URL(location.href);
-        url.searchParams.set('nocache','1');
-        location.replace(url.toString());
-      }
-    }
-  }catch(e){}
-})();
-</script>
-
-<!-- Three.js (robust loader with fallback) -->
-<script>
-(function(){
-  function load(src, ok, fail){
-    var s=document.createElement('script'); s.src=src; s.async=true;
-    s.onload=ok; s.onerror=fail; document.head.appendChild(s);
-  }
-  load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-    ()=>window.__THREE_READY__=true,
-    ()=>load('https://unpkg.com/three@0.158.0/build/three.min.js',
-      ()=>window.__THREE_READY__=true,
-      ()=>window.__THREE_FAILED__=true
-    )
-  );
-})();
-</script>
+<title>$BAG Dice — Clean Dice, Real Tumble (ESM)</title>
 
 <style>
   :root{
@@ -93,29 +31,17 @@
   .status .note{font-size:.9rem;color:#cfe0d6}
   .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-  /* CSS fallback */
-  .css-dice{position:absolute;inset:0;display:none;place-items:center;gap:64px}
-  .cube{position:relative;width:110px;height:110px;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.2,.9,.2,1)}
-  .face{position:absolute;inset:0;background:#f3f2ee;border-radius:20px;box-shadow:inset 0 0 0 2px #d9d7d2}
-  .f1{transform:translateZ(55px)} .f6{transform:rotateX(180deg) translateZ(55px)}
-  .f3{transform:rotateY(90deg) translateZ(55px)} .f4{transform:rotateY(-90deg) translateZ(55px)}
-  .f2{transform:rotateX(-90deg) translateZ(55px)} .f5{transform:rotateX(90deg) translateZ(55px)}
-  .css-dice.active{display:grid}
-
-  /* Build badge */
+  /* Debug badge */
   .dbg{position:absolute;top:8px;left:8px;z-index:9;font:700 12px/1.2 Inter,system-ui,sans-serif;padding:6px 8px;border-radius:8px;background:#0b1b13;box-shadow:0 0 0 1px #234e35;color:#d2f5e3}
   #stage{position:relative}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="hero">
-      <h1>🎲 $BAG Dice — Pass Line</h1>
-    </div>
+    <div class="hero"><h1>🎲 $BAG Dice — Pass Line</h1></div>
 
     <div class="table">
       <div id="stage" class="stage" aria-label="3D dice area">
-        <div id="cssFallback" class="css-dice"></div>
         <div id="dbg" class="dbg">BUILD: <b id="buildId"></b> · Booting…</div>
       </div>
 
@@ -146,11 +72,13 @@
 })();
 </script>
 
-<!-- GAME + DICE -->
-<script>
-(function(){
+<!-- MAIN (ES MODULE) -->
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+  import { RoomEnvironment } from 'https://unpkg.com/three@0.158.0/examples/jsm/environments/RoomEnvironment.js';
+
+  // DOM
   const stageEl = document.getElementById('stage');
-  const cssWrap = document.getElementById('cssFallback');
   const rollBtn = document.getElementById('rollBtn');
   const dbgEl   = document.getElementById('dbg');
   const buildIdEl = document.getElementById('buildId');
@@ -160,82 +88,47 @@
   const pointEl = document.getElementById('pointVal');
   const ctaEl   = document.getElementById('cta');
 
+  // Build badge
   const BUILD = new Date().toISOString().replace('T',' ').slice(0,19);
   buildIdEl.textContent = BUILD;
+  const shout = (msg)=>{ dbgEl.textContent = 'BUILD: ' + BUILD + ' · ' + msg; console.log('[BAG DICE]', msg); };
 
-  function shout(msg){ dbgEl.textContent = 'BUILD: ' + BUILD + ' · ' + msg; console.log('[BAG DICE]', msg); }
-
+  // Game state
   const ROUND = { active:false, point:null };
-  function resetComeOutUI(){
+  const resetComeOutUI = ()=>{
     phaseEl.textContent='Come-out';
     pointEl.textContent='—';
     ctaEl.innerHTML='Need <b>7 or 11</b> to <span class="ok">WIN</span>. <b>2/3/12</b> is <span class="bad">CRAPS</span>. Any other sets the <b>Point</b>.';
-  }
-  function setPointUI(p){
+  };
+  const setPointUI=(p)=>{
     ROUND.active=true; ROUND.point=p;
     phaseEl.textContent='Point';
     pointEl.textContent=String(p);
     ctaEl.innerHTML=`Point is <b>${p}</b> — Roll <b>${p}</b> to <span class="ok">WIN</span> before <b>7</b> (<span class="bad">SEVEN OUT</span>).`;
-  }
-  function winUI(msg){ ctaEl.innerHTML=`<span class="ok">WIN</span> — ${msg}`; }
-  function loseUI(msg){ ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`; }
+  };
+  const winUI =(msg)=>{ ctaEl.innerHTML=`<span class="ok">WIN</span> — ${msg}`; };
+  const loseUI=(msg)=>{ ctaEl.innerHTML=`<span class="bad">LOSE</span> — ${msg}`; };
   resetComeOutUI();
 
-  /* -------------------- THREE dice with real inlaid pips -------------------- */
-  function bootThree(){
-    const THREE = window.THREE;
-    const w = stageEl.clientWidth, h = stageEl.clientHeight;
-    const scene = new THREE.Scene();
-
-    const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.8, 1.7, 6.2); camera.lookAt(0,0,0);
-
-    const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
-    renderer.setSize(w,h);
-    renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
-    stageEl.innerHTML=''; stageEl.appendChild(renderer.domElement);
-
-    addEventListener('resize', ()=>{
-      const W = stageEl.clientWidth, H = stageEl.clientHeight;
-      camera.aspect = W/H; camera.updateProjectionMatrix();
-      renderer.setSize(W,H);
-    });
-
-    // Felt
-    const felt = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.8,3.8,0.02,64),
-      new THREE.MeshStandardMaterial({color:0x0e2419, roughness:.92})
-    );
-    felt.rotation.x = -Math.PI/2; felt.position.y = -1.06; felt.receiveShadow = true;
-    scene.add(felt);
-
-    // Lights
-    const key = new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3.5,5.8,4.2); key.castShadow=true;
-    key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
-    key.shadow.camera.near=1; key.shadow.camera.far=20;
-    key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
-    const fill = new THREE.DirectionalLight(0xffffff,.46); fill.position.set(-4.2,3,2);
-    const rim  = new THREE.DirectionalLight(0xffffff,.28); rim.position.set(0,6.5,-5.5);
-    const amb  = new THREE.AmbientLight(0xcfd7e2,.34);
-    scene.add(key,fill,rim,amb);
-
-    function RoundedBox(w,h,d,r=0.19, seg=4){
-      const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
-      const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
-      for(let i=0;i<pos.count;i++){
-        const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
-        const ix=Math.max(-hx+rx,Math.min(hx-rx,x));
-        const iy=Math.max(-hy+ry,Math.min(hy-ry,y));
-        const iz=Math.max(-hz+rz,Math.min(hz-rz,z));
-        const dx=x-ix, dy=y-iy, dz=z-iz, len=Math.hypot(dx,dy,dz);
-        if(len>1e-6) pos.setXYZ(i, ix+dx/len*rx, iy+dy/len*ry, iz+dz/len*rz);
-      }
-      pos.needsUpdate=true; g.computeVertexNormals(); return g;
+  /* -------------------- THREE: 3D dice with real inlaid pips -------------------- */
+  function RoundedBox(w,h,d,r=0.19, seg=4){
+    const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
+    const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+      const ix=Math.max(-hx+rx,Math.min(hx-rx,x));
+      const iy=Math.max(-hy+ry,Math.min(hy-ry,y));
+      const iz=Math.max(-hz+rz,Math.min(hz-rz,z));
+      const dx=x-ix, dy=y-iy, dz=z-iz, len=Math.hypot(dx,dy,dz);
+      if(len>1e-6) pos.setXYZ(i, ix+dx/len*rx, iy+dy/len*ry, iz+dz/len*rz);
     }
+    pos.needsUpdate=true; g.computeVertexNormals(); return g;
+  }
 
+  function makeDie(size=1.08){
+    const g = new THREE.Group();
+
+    // Materials
     const bodyMat = new THREE.MeshPhysicalMaterial({
       color:0xf3efe8, roughness:.38, metalness:0.02,
       sheen:1.0, sheenColor:new THREE.Color(0xffffff), sheenRoughness:.6,
@@ -247,255 +140,250 @@
     });
     const edgeMat = new THREE.MeshStandardMaterial({ color:0xd9d7d2, roughness:.7, metalness:0 });
 
-    function makeDie(size=1.08){
-      const g = new THREE.Group();
+    // Body + subtle outline
+    const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
+    body.castShadow = true; g.add(body);
+    const ink = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
+    ink.scale.set(1.002,1.002,1.002); g.add(ink);
 
-      const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-      body.castShadow = true; g.add(body);
-
-      const ink = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
-      ink.scale.set(1.002,1.002,1.002); g.add(ink);
-
-      const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
-      const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 32);
-
-      const m = size*0.28, c = 0;
-      const positions = {
-        1:[[c,c]],
-        2:[[-m,-m],[m,m]],
-        3:[[-m,-m],[c,c],[m,m]],
-        4:[[-m,-m],[m,-m],[-m,m],[m,m]],
-        5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],
-        6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
-      };
-
-      function addFace(face, normal){
-        const [nx,ny,nz]=normal;
-        positions[face].forEach(([u,v])=>{
-          const pip = new THREE.Mesh(pipGeom, pipMat);
-          if(nx!==0){ pip.rotation.z = Math.PI/2; }
-          if(nz!==0){ pip.rotation.x = Math.PI/2; }
-          pip.position.set(u + nx*inset, v + ny*inset, nz*inset);
-          pip.castShadow = true; g.add(pip);
-        });
-      }
-
-      // Opposites sum to 7
-      addFace(3,[+1,0,0]); // +X
-      addFace(4,[-1,0,0]); // -X
-      addFace(1,[0,+1,0]); // +Y
-      addFace(6,[0,-1,0]); // -Y
-      addFace(2,[0,0,+1]); // +Z
-      addFace(5,[0,0,-1]); // -Z
-
-      g.__setTop = function(value, yaw=0){
-        const m={
-          1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
-          4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
-        }[value]||[0,yaw,0];
-        g.rotation.set(m[0],m[1],m[2]);
-      };
-      return g;
-    }
-
-    const stage = new THREE.Group(); scene.add(stage);
-    const A = makeDie(1.08), B = makeDie(1.08);
-    stage.add(A,B);
-
-    function centerPose(){
-      A.position.set(-0.95, 0.28, 0.0);
-      B.position.set( 0.95, 0.28,  0.0);
-    }
-    centerPose();
-
-    // Hooks for verification if you need them later
-    window.__setDiePoseHook = (a,b)=>{ try{ A.__setTop(a,0.15); B.__setTop(b,-0.2); }catch{} };
-    window.__tweakDieLook = ({pipDepth, bodyTint})=>{
-      try{
-        A.children.concat(B.children).forEach(m=>{
-          if (m.geometry && m.geometry.type === 'CylinderGeometry') {
-            const n = m.position.clone().normalize().multiplyScalar((pipDepth||0.18));
-            m.position.copy(n);
-          }
-        });
-        if (bodyTint){
-          A.children[0].material.color.set(bodyTint);
-          B.children[0].material.color.set(bodyTint);
-        }
-      }catch(e){}
+    // Inlaid pip cylinders
+    const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
+    const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 32);
+    const m = size*0.28, c = 0;
+    const positions = {
+      1:[[c,c]],
+      2:[[-m,-m],[m,m]],
+      3:[[-m,-m],[c,c],[m,m]],
+      4:[[-m,-m],[m,-m],[-m,m],[m,m]],
+      5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],
+      6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]],
     };
-
-    (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
-
-    async function impact(ms=140, px=0.055){
-      const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
-      await new Promise(res=>{
-        (function step(t){
-          const p=Math.min(1,(t-t0)/ms), k=(1-p);
-          stage.position.x = ox + (Math.random()*2-1)*px*k;
-          stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
-          if(p<1) requestAnimationFrame(step); else{ stage.position.set(ox,oy,0); res(); }
-        })(t0);
+    const addFace = (face, nx,ny,nz)=>{
+      positions[face].forEach(([u,v])=>{
+        const pip = new THREE.Mesh(pipGeom, pipMat);
+        if(nx!==0){ pip.rotation.z = Math.PI/2; }
+        if(nz!==0){ pip.rotation.x = Math.PI/2; }
+        pip.position.set(u + nx*inset, v + ny*inset, nz*inset);
+        pip.castShadow = true; g.add(pip);
       });
-    }
-
-    async function throwTo(a,b, totalMs=1250){
-      const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
-      A.position.set(startXA,startY,0); B.position.set(startXB,startY,0);
-      A.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
-      B.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
-
-      const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
-      const sA=36+Math.random()*8, sB=35+Math.random()*8;
-
-      const t0=performance.now();
-      await new Promise(res=>{
-        function step(t){
-          const raw=Math.min(1,(t-t0)/totalMs);
-          const pAir=Math.min(1, raw/0.78), pDrop=Math.max(0,(raw-0.78)/0.22);
-          const ease=(x)=>1-Math.pow(1-x,3);
-
-          const xA=startXA+(-0.95-startXA)*ease(pAir);
-          const xB=startXB+( 0.95-startXB)*ease(pAir);
-          const arc = 0.66*(1 - (2*pAir-1)**2);
-          const y=endY+arc+0.12;
-          A.position.set(xA,y,0); B.position.set(xB,y,0);
-
-          const dt=0.016;
-          A.rotation.x+=1.18*sA*dt; A.rotation.y+=1.42*sA*dt; A.rotation.z+=0.82*sA*dt;
-          B.rotation.x+=1.05*sB*dt; B.rotation.y+=1.30*sB*dt; B.rotation.z+=0.74*sB*dt;
-
-          if(pDrop>0){
-            const k=ease(pDrop);
-            const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
-            const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
-            A.rotation.set(A.rotation.x+(toA[0]-A.rotation.x)*k, A.rotation.y+(toA[1]-A.rotation.y)*k, A.rotation.z+(toA[2]-A.rotation.z)*k);
-            B.rotation.set(B.rotation.x+(toB[0]-B.rotation.x)*k, B.rotation.y+(toB[1]-B.rotation.y)*k, B.rotation.z+(toB[2]-B.rotation.z)*k);
-          }
-          if(raw<1) requestAnimationFrame(step); else res();
-        }
-        requestAnimationFrame(step);
-      });
-
-      A.__setTop(a,yawA); B.__setTop(b,yawB);
-      A.position.y=B.position.y=endY;
-
-      await impact(140,0.06);
-
-      const wob0=performance.now();
-      await new Promise(res=>{
-        (function wob(ts){
-          const t=(ts-wob0)/320; const k=Math.max(0,1-t);
-          if(k<=0) return res();
-          const w=0.06*k*Math.sin(ts*0.06);
-          A.rotation.x+=w*0.02; B.rotation.y-=w*0.02;
-          requestAnimationFrame(wob);
-        })(wob0);
-      });
-    }
-
-    window.__rollDiceImpl = async function(a,b){
-      await window.SFX?.shake();
-      window.SFX?.roll();
-      await throwTo(a,b,1250);
     };
+    // Opposites sum to 7
+    addFace(3,+1,0,0); // +X
+    addFace(4,-1,0,0); // -X
+    addFace(1,0,+1,0); // +Y
+    addFace(6,0,-1,0); // -Y
+    addFace(2,0,0,+1); // +Z
+    addFace(5,0,0,-1); // -Z
 
-    // Idle pose shows 1 & 6 as proof
-    A.__setTop(1, 0.15); B.__setTop(6, -0.2);
-
-    shout('THREE + GEOMETRY PIPS ✅');
+    // Pose helper
+    g.__setTop = function(value, yaw=0){
+      const m={
+        1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
+        4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
+      }[value]||[0,yaw,0];
+      g.rotation.set(m[0],m[1],m[2]);
+    };
+    return g;
   }
 
-  /* CSS fallback */
-  function bootCSS(){
-    cssWrap.innerHTML=''; cssWrap.classList.add('active');
-    function makeCube(){
-      const c=document.createElement('div'); c.className='cube';
-      ['f1','f2','f3','f4','f5','f6'].forEach(cls=>{
-        const d=document.createElement('div'); d.className='face '+cls; c.appendChild(d);
+  // Scene
+  const w = stageEl.clientWidth, h = stageEl.clientHeight;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
+  camera.position.set(0.8, 1.7, 6.2); camera.lookAt(0,0,0);
+
+  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+  renderer.setSize(w,h);
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
+  stageEl.innerHTML=''; stageEl.appendChild(renderer.domElement);
+
+  // Resize
+  addEventListener('resize', ()=>{
+    const W = stageEl.clientWidth, H = stageEl.clientHeight;
+    camera.aspect = W/H; camera.updateProjectionMatrix();
+    renderer.setSize(W,H);
+  });
+
+  // Environment — ESM, no legacy warning; sigma clamped
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envRT = pmrem.fromScene(new RoomEnvironment(), 0.025);
+  scene.environment = envRT.texture;
+
+  // Felt
+  const felt = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.8,3.8,0.02,64),
+    new THREE.MeshStandardMaterial({color:0x0e2419, roughness:.92})
+  );
+  felt.rotation.x = -Math.PI/2; felt.position.y = -1.06; felt.receiveShadow = true;
+  scene.add(felt);
+
+  // Lights
+  const key = new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3.5,5.8,4.2); key.castShadow=true;
+  key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
+  key.shadow.camera.near=1; key.shadow.camera.far=20;
+  key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
+  const fill = new THREE.DirectionalLight(0xffffff,.46); fill.position.set(-4.2,3,2);
+  const rim  = new THREE.DirectionalLight(0xffffff,.28); rim.position.set(0,6.5,-5.5);
+  const amb  = new THREE.AmbientLight(0xcfd7e2,.34);
+  scene.add(key,fill,rim,amb);
+
+  // Dice
+  const stage = new THREE.Group(); scene.add(stage);
+  const A = makeDie(1.08), B = makeDie(1.08);
+  stage.add(A,B);
+  const centerPose = ()=>{
+    A.position.set(-0.95, 0.28, 0.0);
+    B.position.set( 0.95, 0.28,  0.0);
+  };
+  centerPose();
+
+  // Hooks (debug)
+  window.__setDiePoseHook = (a,b)=>{ try{ A.__setTop(a,0.15); B.__setTop(b,-0.2); }catch{} };
+  window.__tweakDieLook = ({pipDepth, bodyTint})=>{
+    try{
+      A.children.concat(B.children).forEach(m=>{
+        if (m.geometry && m.geometry.type === 'CylinderGeometry') {
+          const n = m.position.clone().normalize().multiplyScalar((pipDepth||0.18));
+          m.position.copy(n);
+        }
       });
-      cssWrap.appendChild(c); return c;
-    }
-    const A=makeCube(), B=makeCube();
-    function setTop(el, val, yaw=0){
-      const map={
-        1:`rotateX(0rad) rotateY(${yaw}rad)`,
-        2:`rotateX(-1.5708rad) rotateY(${yaw}rad)`,
-        3:`rotateY(${yaw+1.5708}rad)`,
-        4:`rotateY(${yaw-1.5708}rad)`,
-        5:`rotateX(1.5708rad) rotateY(${yaw}rad)`,
-        6:`rotateX(3.1416rad) rotateY(${yaw}rad)`,
-      }[val]||`rotateX(0rad) rotateY(${yaw}rad)`;
-      el.style.transform = map;
-    }
-    window.__setDiePoseHook = (a,b)=>{ setTop(A,a,0.15); setTop(B,b,-0.2); };
-    window.__tweakDieLook = ()=>{};
-    window.__rollDiceImpl = async function(a,b){
-      A.style.transition=B.style.transition='transform .8s cubic-bezier(.2,.9,.2,1)';
-      A.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
-      B.style.transform=`rotateX(${Math.random()*8}rad) rotateY(${Math.random()*8}rad)`;
-      await new Promise(r=>setTimeout(r, 560));
-      setTop(A,a, Math.random()*6-3);
-      setTop(B,b, Math.random()*6-3);
-      await new Promise(r=>setTimeout(r, 220));
-    };
-    shout('CSS FALLBACK ⚠️ (Three failed to load)');
-  }
+      if (bodyTint){ A.children[0].material.color.set(bodyTint); B.children[0].material.color.set(bodyTint); }
+    }catch(e){}
+  };
 
-  // Boot
-  (function boot(){
-    let tries=0;
-    function tick(){
-      if (window.__THREE_READY__ && window.THREE){ bootThree(); wireRoll(); }
-      else if (window.__THREE_FAILED__ || tries>30){ bootCSS(); wireRoll(); }
-      else { tries++; setTimeout(tick, 100); }
-    }
-    tick();
-  })();
+  // Render loop
+  (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
 
-  /* Rules + UI */
-  function isComeOut(){ return !ROUND.active || ROUND.point==null; }
-  function setStatus(rollA, rollB, extra){
-    const sum = rollA+rollB;
-    lastEl.textContent = `${rollA} + ${rollB} = ${sum}` + (extra?`  ·  ${extra}`:'');
-  }
-  function wireRoll(){
-    rollBtn.addEventListener('click', async ()=>{
-      if (!window.__rollDiceImpl) return;
-      rollBtn.disabled=true;
-
-      const a = 1 + (Math.random()*6|0);
-      const b = 1 + (Math.random()*6|0);
-      const sum = a + b;
-
-      await window.__rollDiceImpl(a,b);
-
-      if (isComeOut()){
-        if (sum===7 || sum===11){
-          setStatus(a,b,'Come-out WIN (1.25×)');
-          winUI('Come-out 7/11'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
-        } else if (sum===2 || sum===3 || sum===12){
-          setStatus(a,b,'CRAPS');
-          loseUI('CRAPS on come-out'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
-        } else {
-          setStatus(a,b,'Point set'); setPointUI(sum);
-        }
-      } else {
-        if (sum===ROUND.point){
-          setStatus(a,b,'POINT MADE (1.00×)');
-          winUI(`Point ${ROUND.point} made`); ROUND.active=false; ROUND.point=null; resetComeOutUI();
-        } else if (sum===7){
-          setStatus(a,b,'SEVEN OUT');
-          loseUI('Seven out'); ROUND.active=false; ROUND.point=null; resetComeOutUI();
-        } else {
-          setStatus(a,b,'Neutral — roll again');
-        }
-      }
-
-      rollBtn.disabled=false;
+  // Impact shake
+  async function impact(ms=140, px=0.055){
+    const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
+    await new Promise(res=>{
+      (function step(t){
+        const p=Math.min(1,(t-t0)/ms), k=(1-p);
+        stage.position.x = ox + (Math.random()*2-1)*px*k;
+        stage.position.y = oy + (Math.random()*2-1)*px*k*0.6;
+        if(p<1) requestAnimationFrame(step); else{ stage.position.set(ox,oy,0); res(); }
+      })(t0);
     });
   }
-})();
+
+  // Throw & settle
+  async function throwTo(a,b, totalMs=1250){
+    const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
+    A.position.set(startXA,startY,0); B.position.set(startXB,startY,0);
+    A.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+    B.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);
+
+    const yawA=(Math.random()*Math.PI*2-Math.PI), yawB=(Math.random()*Math.PI*2-Math.PI);
+    const sA=36+Math.random()*8, sB=35+Math.random()*8;
+
+    const t0=performance.now();
+    await new Promise(res=>{
+      function step(t){
+        const raw=Math.min(1,(t-t0)/totalMs);
+        const pAir=Math.min(1, raw/0.78), pDrop=Math.max(0,(raw-0.78)/0.22);
+        const ease=(x)=>1-Math.pow(1-x,3);
+
+        const xA=startXA+(-0.95-startXA)*ease(pAir);
+        const xB=startXB+( 0.95-startXB)*ease(pAir);
+        const arc = 0.66*(1 - (2*pAir-1)**2);
+        const y=endY+arc+0.12;
+        A.position.set(xA,y,0); B.position.set(xB,y,0);
+
+        const dt=0.016;
+        A.rotation.x+=1.18*sA*dt; A.rotation.y+=1.42*sA*dt; A.rotation.z+=0.82*sA*dt;
+        B.rotation.x+=1.05*sB*dt; B.rotation.y+=1.30*sB*dt; B.rotation.z+=0.74*sB*dt;
+
+        if(pDrop>0){
+          const k=ease(pDrop);
+          const toA={1:[0,yawA,0],2:[-Math.PI/2,yawA,0],3:[0,yawA+Math.PI/2,0],4:[0,yawA-Math.PI/2,0],5:[Math.PI/2,yawA,0],6:[Math.PI,yawA,0]}[a];
+          const toB={1:[0,yawB,0],2:[-Math.PI/2,yawB,0],3:[0,yawB+Math.PI/2,0],4:[0,yawB-Math.PI/2,0],5:[Math.PI/2,yawB,0],6:[Math.PI,yawB,0]}[b];
+          A.rotation.set(A.rotation.x+(toA[0]-A.rotation.x)*k, A.rotation.y+(toA[1]-A.rotation.y)*k, A.rotation.z+(toA[2]-A.rotation.z)*k);
+          B.rotation.set(B.rotation.x+(toB[0]-B.rotation.x)*k, B.rotation.y+(toB[1]-B.rotation.y)*k, B.rotation.z+(toB[2]-B.rotation.z)*k);
+        }
+        if(raw<1) requestAnimationFrame(step); else res();
+      }
+      requestAnimationFrame(step);
+    });
+
+    A.__setTop(a,yawA); B.__setTop(b,yawB);
+    A.position.y=B.position.y=endY;
+
+    await impact(140,0.06);
+
+    const wob0=performance.now();
+    await new Promise(res=>{
+      (function wob(ts){
+        const t=(ts-wob0)/320; const k=Math.max(0,1-t);
+        if(k<=0) return res();
+        const w=0.06*k*Math.sin(ts*0.06);
+        A.rotation.x+=w*0.02; B.rotation.y-=w*0.02;
+        requestAnimationFrame(wob);
+      })(wob0);
+    });
+  }
+
+  // Public roll
+  window.__rollDiceImpl = async function(a,b){
+    await window.SFX?.shake();
+    window.SFX?.roll();
+    await throwTo(a,b,1250);
+  };
+
+  // Idle proof
+  A.__setTop(1, 0.15); B.__setTop(6, -0.2);
+  shout('THREE (ESM) + GEOMETRY PIPS ✅');
+
+  // UI wire
+  const isComeOut = ()=> !ROUND.active || ROUND.point==null;
+  const setStatus = (ra,rb,extra)=>{
+    const sum = ra+rb;
+    lastEl.textContent = `${ra} + ${rb} = ${sum}` + (extra?`  ·  ${extra}`:'');
+  };
+  rollBtn.addEventListener('click', async ()=>{
+    rollBtn.disabled=true;
+
+    const a = 1 + (Math.random()*6|0);
+    const b = 1 + (Math.random()*6|0);
+    const sum = a + b;
+
+    await window.__rollDiceImpl(a,b);
+
+    if (isComeOut()){
+      if (sum===7 || sum===11){
+        setStatus(a,b,'Come-out WIN (1.25×)');
+        winUI('Come-out 7/11');
+        ROUND.active=false; ROUND.point=null; resetComeOutUI();
+      } else if (sum===2 || sum===3 || sum===12){
+        setStatus(a,b,'CRAPS');
+        loseUI('CRAPS on come-out');
+        ROUND.active=false; ROUND.point=null; resetComeOutUI();
+      } else {
+        setStatus(a,b,'Point set');
+        setPointUI(sum);
+      }
+    } else {
+      if (sum===ROUND.point){
+        setStatus(a,b,'POINT MADE (1.00×)');
+        winUI(`Point ${ROUND.point} made`);
+        ROUND.active=false; ROUND.point=null; resetComeOutUI();
+      } else if (sum===7){
+        setStatus(a,b,'SEVEN OUT');
+        loseUI('Seven out');
+        ROUND.active=false; ROUND.point=null; resetComeOutUI();
+      } else {
+        setStatus(a,b,'Neutral — roll again');
+      }
+    }
+
+    rollBtn.disabled=false;
+  });
+
+  // Cleanup PMREM target (optional)
+  setTimeout(()=>{ envRT.dispose?.(); pmrem.dispose?.(); }, 0);
 </script>
 </body>
 </html>
