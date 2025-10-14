@@ -497,11 +497,12 @@
     rollText.textContent = `Rolled ${a}+${b}=${sum} — ${needText()}${extra ? ' · ' + extra : ''}`;
   }
 
-/* ---------------- THREE.JS PATH — Pro Dice (beveled body + inlaid pips) ---------------- */
+<script>
+/* ---------------- THREE.JS PATH — Pro Dice (beveled + inlaid pips) ---------------- */
 function initThree(){
   const THREE = window.THREE;
 
-  // Scene / Camera / Renderer
+  // ——— Scene / Camera / Renderer
   const scene = new THREE.Scene();
   const w = container.clientWidth, h = container.clientHeight;
   const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
@@ -522,30 +523,31 @@ function initThree(){
     renderer.setSize(W,H);
   });
 
-  // Neutral environment
+  // ——— Neutral environment for clean specular
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new THREE.Scene(), 0.03).texture;
 
-  // Table felt
-  const floorY = -1.06;
+  // ——— Table felt
+  const feltY = -1.06;
   const felt = new THREE.Mesh(
     new THREE.CylinderGeometry(3.8,3.8,0.02,64),
     new THREE.MeshStandardMaterial({ color:0x0e2419, roughness:0.92, metalness:0 })
   );
-  felt.rotation.x = -Math.PI/2; felt.position.y = floorY+0.01; felt.receiveShadow = true;
+  felt.rotation.x = -Math.PI/2; felt.position.y = feltY+0.01; felt.receiveShadow = true;
   scene.add(felt);
 
-  // Lights
-  const key=new THREE.DirectionalLight(0xffffff,1.18); key.position.set(3.6,5.9,4.1); key.castShadow=true;
+  // ——— Lighting (key/fill/rim + soft ambient)
+  const key  = new THREE.DirectionalLight(0xffffff, 1.18); key.position.set(3.6,5.9,4.1); key.castShadow=true;
   key.shadow.mapSize.set(1024,1024); key.shadow.radius=3;
   key.shadow.camera.near=1; key.shadow.camera.far=20;
   key.shadow.camera.left=-7; key.shadow.camera.right=7; key.shadow.camera.top=7; key.shadow.camera.bottom=-7;
-  const fill=new THREE.DirectionalLight(0xffffff,0.46); fill.position.set(-4.2,3,2);
-  const rim =new THREE.DirectionalLight(0xffffff,0.28); rim.position.set(0,6.2,-5.8);
-  const amb =new THREE.AmbientLight(0xcfd7e2,0.34);
+
+  const fill = new THREE.DirectionalLight(0xffffff, 0.46); fill.position.set(-4.2,3.0,2.0);
+  const rim  = new THREE.DirectionalLight(0xffffff, 0.28); rim.position.set(0,6.2,-5.8);
+  const amb  = new THREE.AmbientLight(0xcfd7e2, 0.34);
   scene.add(key,fill,rim,amb);
 
-  // Rounded cube helper
+  // ——— Helper: rounded cube geometry
   function RoundedBox(w,h,d,r=0.19, seg=4){
     const g=new THREE.BoxGeometry(w,h,d,seg,seg,seg);
     const pos=g.attributes.position, hx=w/2,hy=h/2,hz=d/2, rx=Math.min(r,hx),ry=Math.min(r,hy),rz=Math.min(r,hz);
@@ -560,32 +562,39 @@ function initThree(){
     pos.needsUpdate=true; g.computeVertexNormals(); return g;
   }
 
-  // Premium materials
+  // ——— Premium materials
   const bodyMat = new THREE.MeshPhysicalMaterial({
-    color: 0xf3efe8, roughness: 0.38, metalness: 0.02,
+    color: 0xf3efe8,           // ivory/pearl
+    roughness: 0.38,
+    metalness: 0.02,
     sheen: 1.0, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.6,
     clearcoat: 0.72, clearcoatRoughness: 0.22,
     iridescence: 0.08, iridescenceIOR: 1.22, iridescenceThicknessRange:[90,240],
     envMapIntensity: 1.0
   });
   const pipMat  = new THREE.MeshPhysicalMaterial({
-    color: 0x0b0b0b, roughness: 0.58, metalness: 0.04,
+    color: 0x0b0b0b,
+    roughness: 0.58,
+    metalness: 0.04,
     clearcoat: 0.25, clearcoatRoughness: 0.45
   });
-  // subtle edge “ink” for a crisp silhouette
+  // subtle edge “ink” for nicer silhouette
   const edgeMat = new THREE.MeshStandardMaterial({ color:0xdedcd8, roughness:0.75, metalness:0.0 });
 
-  // Dice with inlaid pips (geometry, not textures)
+  // ——— Build a die with inlaid pips (no face textures needed)
   function makeDie(size=1.08){
     const g = new THREE.Group();
 
+    // Body + a slightly larger shell to give a crisp edge line
     const body = new THREE.Mesh(RoundedBox(size,size,size,0.19,4), bodyMat);
-    body.castShadow = true; g.add(body);
+    body.castShadow = true;
+    g.add(body);
 
     const edge = new THREE.Mesh(new THREE.BoxGeometry(size*0.998,size*0.998,size*0.998), edgeMat);
     edge.scale.set(1.002,1.002,1.002);
     g.add(edge);
 
+    // Inlaid cylinders for pips
     const pipR = size*0.08, pipDepth = size*0.14, inset = size*0.52;
     const pipGeom = new THREE.CylinderGeometry(pipR, pipR, pipDepth, 36, 1, false);
     const m = size*0.28, c = 0;
@@ -615,16 +624,18 @@ function initThree(){
     addFace(2,0,0,+1);  // +Z
     addFace(5,0,0,-1);  // -Z
 
+    // Pose helper (same API you already use)
     g.__setTop = function(value, yaw=0){
-      const map={
+      const m={
         1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
         4:[0,yaw-Math.PI/2,0], 5:[Math.PI/2,yaw,0], 6:[Math.PI,yaw,0],
       }[value]||[0,yaw,0];
-      g.rotation.set(map[0],map[1],map[2]);
+      g.rotation.set(m[0],m[1],m[2]);
     };
     return g;
   }
 
+  // ——— Stage + two dice
   const stage = new THREE.Group(); scene.add(stage);
   const diceA = makeDie(1.08);
   const diceB = makeDie(1.08);
@@ -636,9 +647,10 @@ function initThree(){
   }
   centerPose();
 
+  // ——— Render loop
   (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
 
-  // Tactile impact
+  // ——— Camera/Stage “impact” for tactile landing
   async function impactShake(ms=140, px=0.055){
     const t0=performance.now(); const ox=stage.position.x, oy=stage.position.y;
     await new Promise(res=>{
@@ -651,7 +663,7 @@ function initThree(){
     });
   }
 
-  // Throw & settle
+  // ——— Throw motion + settle to exact faces
   async function throwDiceTo(a,b, totalMs=1250){
     const endY=0.28, startXA=-2.6, startXB= 2.6, startY=0.75;
     diceA.position.set(startXA,startY,0); diceB.position.set(startXB,startY,0);
@@ -703,7 +715,7 @@ function initThree(){
 
     await impactShake(140,0.06);
 
-    // Subtle settle wobble
+    // tiny wobble to sell the settle
     const wob0=performance.now();
     await new Promise(res=>{
       (function wob(ts){
@@ -716,7 +728,7 @@ function initThree(){
     });
   }
 
-  // Public roll API (keeps your wiring intact)
+  // ——— Public rolling entry (keeps your existing API)
   window.__bagDiceRollImpl = async function(a,b){
     const sP = window.__bagSfx?.playShake?.(); await sP;
     window.__bagSfx?.playRoll?.();
@@ -724,6 +736,8 @@ function initThree(){
     await new Promise(r=>setTimeout(r,120));
   };
 }
+</script>
+
 
 
 <!-- Xaman wallet connect -->
