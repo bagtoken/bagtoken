@@ -484,6 +484,8 @@
   // Round state (Pass Line)
   const ROUND = { active:false, point:null, stakeBag:0, stakeUsd:0, currency:'XRP' };
 
+  function isComeOut(){ return !ROUND.active || ROUND.point==null; }
+
   function statusLine(sum, a, b){
     const inPoint = ROUND.active && ROUND.point!=null;
     const need = inPoint ? `Need ${ROUND.point} before 7` : 'Need 7/11 to WIN · 2/3/12 is CRAPS';
@@ -527,25 +529,49 @@
       new THREE.MeshBasicMaterial({ color: 0x0c2016, transparent:true, opacity:0.55 }));
     floor.rotation.x = -Math.PI/2; floor.position.y = floorY; scene.add(floor);
 
-    // Rounded-corner cube via bevel
+    /* ---------- Rounded dice geometry (self-contained) ---------- */
+    function createRoundedBoxGeometry(w,h,d,r,seg){
+      r = Math.min(r, Math.min(w,h,d) * 0.5);
+      const shape = new THREE.Shape();
+      const x = -w/2, y = -h/2, rx = r, ry = r;
+      shape.moveTo(x+rx, y);
+      shape.lineTo(x+w-rx, y);
+      shape.quadraticCurveTo(x+w, y, x+w, y+ry);
+      shape.lineTo(x+w, y+h-ry);
+      shape.quadraticCurveTo(x+w, y+h, x+w-rx, y+h);
+      shape.lineTo(x+rx, y+h);
+      shape.quadraticCurveTo(x, y+h, x, y+h-ry);
+      shape.lineTo(x, y+ry);
+      shape.quadraticCurveTo(x, y, x+rx, y);
+
+      const extrude = new THREE.ExtrudeGeometry(shape, {
+        depth: d-2*r,
+        bevelEnabled: true,
+        bevelSegments: seg,
+        steps: 1,
+        bevelSize: r,
+        bevelThickness: r,
+        curveSegments: seg
+      });
+      extrude.center();
+      extrude.computeVertexNormals();
+      return extrude;
+    }
+
+    // Materials (canvas pips)
+    const matA = makeMaterials(THREE,'#ffffff');
+    const matB = makeMaterials(THREE,'#fef9f4');
     const size = 1.08;
-    const geo  = new THREE.BoxGeometry(size,size,size,4,4,4);
-    const matsA = makeMaterials(THREE,'#ffffff');
-    const matsB = makeMaterials(THREE,'#fef9f4');
-    const diceA = new THREE.Mesh(geo, matsA);
-    const diceB = new THREE.Mesh(geo, matsB);
+    const geo  = createRoundedBoxGeometry(size,size,size, 0.18, 5);
+    const diceA = new THREE.Mesh(geo, matA);
+    const diceB = new THREE.Mesh(geo, matB);
     scene.add(diceA, diceB);
 
-    // State for simple physics
-    const HALF=size/2, G=-14.0, REST=0.48, FRIC=0.985, ANG_F=0.985;
-
-    function resetPose(){
-      diceA.position.set(-1.1, 0.2, 0);
-      diceB.position.set( 1.1, 0.3, 0);
-      diceA.rotation.set(0.6, 0.6, 0.2);
-      diceB.rotation.set(-0.4, -0.2, 0.4);
+    function centerPose(){
+      diceA.position.set(-0.9, 0.28, 0.0);
+      diceB.position.set( 0.9, 0.30, 0.0);
     }
-    resetPose();
+    centerPose();
 
     function onResize(){
       const w = container.clientWidth, h = container.clientHeight;
@@ -591,96 +617,43 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    /* --- Shake (while audio) --- */
-    function shakePhase(ms=700){
-      const start=performance.now();
-      const a0=diceA.position.clone(), b0=diceB.position.clone();
-      const ra=diceA.rotation.clone(), rb=diceB.rotation.clone();
+    /* ----- In-place tumble (no shake, no throw) ----- */
+    function tumbleInPlace(ms=950){
+      centerPose();
+      const start = performance.now();
       return new Promise(res=>{
         function f(t){
-          const e=t-start, p=Math.min(1,e/ms);
-          const amp=0.09*(1-p);
-          diceA.position.set(a0.x + (Math.random()-0.5)*amp, a0.y + 0.22 + Math.sin(e*0.04)*amp*2, a0.z + (Math.random()-0.5)*amp);
-          diceB.position.set(b0.x + (Math.random()-0.5)*amp, b0.y + 0.22 + Math.sin(e*0.045+1)*amp*2, b0.z + (Math.random()-0.5)*amp);
-          diceA.rotation.set(ra.x + (Math.random()-0.5)*0.04, ra.y + (Math.random()-0.5)*0.04, ra.z + (Math.random()-0.5)*0.04);
-          diceB.rotation.set(rb.x + (Math.random()-0.5)*0.04, rb.y + (Math.random()-0.5)*0.04, rb.z + (Math.random()-0.5)*0.04);
-          if(e<ms) requestAnimationFrame(f); else res();
+          const e = t - start, p = Math.min(1, e/ms);
+          const spin = 26 * (1 - p*p); // quick then ease
+          diceA.rotation.x += 0.12*spin * 0.016;
+          diceA.rotation.y += 0.17*spin * 0.016;
+          diceA.rotation.z += 0.09*spin * 0.016;
+          diceB.rotation.x += 0.11*spin * 0.016;
+          diceB.rotation.y += 0.16*spin * 0.016;
+          diceB.rotation.z += 0.08*spin * 0.016;
+          if (e < ms) requestAnimationFrame(f); else res();
         }
         requestAnimationFrame(f);
       });
     }
 
-    /* --- Throw with simple physics, bounce, settle to target --- */
-    function throwAndSettle(targetA, targetB){
-      diceA.position.set(-0.8, 0.9, 0.0);
-      diceB.position.set( 0.8, 1.1, 0.0);
-
-      const vA = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.5+3.4), - (Math.random()*1.2+0.6) );
-      const vB = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.8+3.8), - (Math.random()*1.2+0.6) );
-      const wA = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
-      const wB = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
-
-      const tmpQ = new THREE.Quaternion();
-      let tPrev = performance.now();
-
-      return new Promise(res=>{
-        function step(tNow){
-          let dt = (tNow - tPrev)/1000; if(dt>0.05) dt=0.05; tPrev = tNow;
-
-          vA.y += -14.0*dt; vB.y += -14.0*dt;
-          diceA.position.addScaledVector(vA, dt);
-          diceB.position.addScaledVector(vB, dt);
-
-          const floorY = -1.06, HALF= size/2;
-          if (diceA.position.y - HALF <= floorY){
-            diceA.position.y = floorY + HALF; vA.y = -vA.y * 0.48; vA.x*=0.985; vA.z*=0.985; wA.multiplyScalar(0.985);
-          }
-          if (diceB.position.y - HALF <= floorY){
-            diceB.position.y = floorY + HALF; vB.y = -vB.y * 0.48; vB.x*=0.985; vB.z*=0.985; wB.multiplyScalar(0.985);
-          }
-
-          const awA = wA.clone().multiplyScalar(dt), awB = wB.clone().multiplyScalar(dt);
-          tmpQ.setFromEuler(new THREE.Euler(awA.x, awA.y, awA.z)); diceA.quaternion.multiply(tmpQ).normalize();
-          tmpQ.setFromEuler(new THREE.Euler(awB.x, awB.y, awB.z)); diceB.quaternion.multiply(tmpQ).normalize();
-
-          vA.multiplyScalar(0.995); vB.multiplyScalar(0.995);
-          wA.multiplyScalar(0.995); wB.multiplyScalar(0.995);
-
-          const speed = vA.lengthSq()+vB.lengthSq()+wA.lengthSq()*0.03+wB.lengthSq()*0.03;
-          const slow  = speed < 0.035;
-
-          if (!slow){
-            requestAnimationFrame(step);
-          } else {
-            const yawA=(Math.random()*Math.PI*2 - Math.PI);
-            const yawB=(Math.random()*Math.PI*2 - Math.PI);
-            Promise.all([ tweenTo(diceA,targetA,yawA,620), tweenTo(diceB,targetB,yawB,620) ]).then(res);
-          }
-        }
-        requestAnimationFrame(step);
-      });
+    function snapToResult(a,b){
+      const yawA=(Math.random()*Math.PI*2 - Math.PI);
+      const yawB=(Math.random()*Math.PI*2 - Math.PI);
+      setTop(THREE, diceA, a, yawA);
+      setTop(THREE, diceB, b, yawB);
+      centerPose();
     }
 
-    function tweenTo(mesh,val,yaw,ms=600){
-      const start=performance.now(), r0=mesh.rotation.clone(), tmp=new THREE.Object3D();
-      setTop(THREE,tmp,val,yaw); const rx=tmp.rotation.x, ry=tmp.rotation.y, rz=tmp.rotation.z;
-      return new Promise(res=>{
-        function f(t){
-          const e=t-start, p=Math.min(1,e/ms), s=p<.5?2*p*p:-1+(4-2*p)*p;
-          mesh.rotation.set(r0.x+(rx-r0.x)*s, r0.y+(ry-r0.y)*s, r0.z+(rz-r0.z)*s);
-          if(e<ms) requestAnimationFrame(f); else res();
-        }
-        requestAnimationFrame(f);
-      });
-    }
-
+    // Public roll: tumble during first clip → snap right as roll starts
     window.__bagDiceRollImpl = async function(a,b){
-      resetPose();
-      const shakeP = window.__bagSfx?.playShake?.();
-      await shakePhase(750);
-      await shakeP;
+      centerPose();
+      const sP = window.__bagSfx?.playShake?.();
+      await tumbleInPlace(950);
+      await sP;
       window.__bagSfx?.playRoll?.();
-      await throwAndSettle(a,b);
+      snapToResult(a,b);
+      await new Promise(r=>setTimeout(r, 200));
     };
   }
 
@@ -708,40 +681,20 @@
         1:'rotateX(0deg) rotateY(0deg)', 2:'rotateX(-90deg)', 3:'rotateY(90deg)',
         4:'rotateY(-90deg)', 5:'rotateX(90deg)', 6:'rotateX(180deg)',
       }[val]||'rotateX(0) rotateY(0)';
-      el.style.transform = map + ` rotateZ(${yaw}rad) translateZ(0)`;
+      el.style.transform = `translate3d(0,0,0) ${map} rotateZ(${yaw}rad)`;
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    async function shakeCss(ms=700){
+    async function tumbleCss(ms=950){
       const start=performance.now();
       return new Promise(res=>{
         function f(t){
-          const e=t-start, p=Math.min(1,e/ms), amp=8*(1-p);
-          dA.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-8+Math.sin(e*0.04)*amp}px, 0) rotateX(${(Math.random()-.5)*8}deg) rotateY(${(Math.random()-.5)*8}deg) rotateZ(${(Math.random()-.5)*6}deg)`;
-          dB.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-8+Math.sin(e*0.047+1)*amp}px, 0) rotateX(${(Math.random()-.5)*8}deg) rotateY(${(Math.random()-.5)*8}deg) rotateZ(${(Math.random()-.5)*6}deg)`;
+          const e=t-start, p=Math.min(1,e/ms);
+          const spin=26*(1-p*p);
+          // keep them side-by-side and centered — only rotation changes
+          dA.style.transform = `translate3d(-72px,0,0) rotateX(${t*0.12*spin/16}deg) rotateY(${t*0.17*spin/16}deg) rotateZ(${t*0.09*spin/16}deg)`;
+          dB.style.transform = `translate3d( 72px,0,0) rotateX(${t*0.11*spin/16}deg) rotateY(${t*0.16*spin/16}deg) rotateZ(${t*0.08*spin/16}deg)`;
           if(e<ms) requestAnimationFrame(f); else res();
-        }
-        requestAnimationFrame(f);
-      });
-    }
-    function throwCssTo(a,b,ms=1400){
-      const start=performance.now();
-      let yA=0, vyA=-380, yB=0, vyB=-420; const g=980;
-      return new Promise(res=>{
-        function f(t){
-          const dt=Math.min(0.05,(t-start)/1000);
-          vyA+=g*dt; yA+=vyA*dt;
-          vyB+=g*dt; yB+=vyB*dt;
-          if (yA>0){ yA=0; vyA*=-0.45; }
-          if (yB>0){ yB=0; vyB*=-0.45; }
-          dA.style.transform = `translate3d(-70px, ${yA}px, 0) rotateX(${t*0.35}deg) rotateY(${t*0.55}deg) rotateZ(${t*0.22}deg)`;
-          dB.style.transform = `translate3d( 70px, ${yB}px, 0) rotateX(${t*0.33}deg) rotateY(${t*0.50}deg) rotateZ(${t*0.20}deg)`;
-          if ((t-start)<ms) requestAnimationFrame(f);
-          else {
-            setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
-            setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
-            res();
-          }
         }
         requestAnimationFrame(f);
       });
@@ -749,16 +702,16 @@
 
     window.__bagDiceRollImpl = async function(a,b){
       const sP = window.__bagSfx?.playShake?.();
-      await shakeCss(750);
+      await tumbleCss(950);
       await sP;
       window.__bagSfx?.playRoll?.();
-      await throwCssTo(a,b,1400);
+      setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
+      setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
+      await new Promise(r=>setTimeout(r, 200));
     };
   }
 
   /* ---------- Pass Line evaluation & round handling ---------- */
-  function isComeOut(){ return !ROUND.active || ROUND.point==null; }
-
   function evaluate(sum){
     if (isComeOut()){
       if (sum===7 || sum===11) return { type:'win', label:'PASS LINE WIN', mult:1.25, cls:'win', end:true };
@@ -794,10 +747,10 @@
 
     rollBtn.disabled = true;
     rollText.className='t'; rollText.textContent = isComeOut()
-      ? 'Shaking… Come-out roll'
-      : `Shaking… Point is ${ROUND.point} (need ${ROUND.point} before 7)`;
+      ? 'Rolling… Come-out roll'
+      : `Rolling… Point is ${ROUND.point} (need ${ROUND.point} before 7)`;
 
-    // choose dice now and animate (shake → throw → settle)
+    // choose dice now and animate (tumble → snap)
     const a = (Math.random()*6|0)+1;
     const b = (Math.random()*6|0)+1;
     if (typeof window.__bagDiceRollImpl === 'function'){ await window.__bagDiceRollImpl(a,b); }
@@ -810,7 +763,6 @@
       ROUND.point = sum;
       rollText.className = 't scratch';
       rollText.textContent = `Rolled ${a}+${b}=${sum} — POINT ESTABLISHED at ${ROUND.point} · Need ${ROUND.point} before 7`;
-      // hold stake; no credit yet
       rollBtn.disabled=false;
       return;
     }
@@ -831,12 +783,11 @@
       }
       rollText.className = 't win';
       rollText.textContent = `Rolled ${a}+${b}=${sum} — ${ev.label} · ${ev.mult.toFixed(2)}× · Come-out next`;
-      ROUND.active=false; ROUND.point=null; // reset for next come-out
+      ROUND.active=false; ROUND.point=null;
     } else if (ev.type==='lose'){
-      // nothing to credit (stake already spent)
       rollText.className = 't lose';
       rollText.textContent = `Rolled ${a}+${b}=${sum} — ${ev.label} · You lose · Come-out next`;
-      ROUND.active=false; ROUND.point=null; // reset for next come-out
+      ROUND.active=false; ROUND.point=null;
     }
 
     window.dispatchEvent(new CustomEvent('bag:diceResult', {
@@ -878,7 +829,7 @@
 
   function render(){
     if (connectedNow && currentAddr){
-      statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+short(currentAddr)+'</span>';
+      statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b)">'+short(currentAddr)+'</span>';
       btn.textContent = 'Disconnect';
     } else {
       statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
