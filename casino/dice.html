@@ -277,41 +277,44 @@
   </div>
 </div>
 
-<!-- AUDIO: play diceshake once, then diceroll once on release -->
+<!-- AUDIO: diceshake.mp3 once, then diceroll.mp3 once -->
 <script>
 (function(){
   const SHAKE_SRC = '/assets/sounds/diceshake.mp3';
   const ROLL_SRC  = '/assets/sounds/diceroll.mp3';
 
   let primed=false;
-  const shake = new Audio(SHAKE_SRC);
-  const roll  = new Audio(ROLL_SRC);
-  [shake, roll].forEach(a=>{ a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95; });
+  const baseShake = new Audio(SHAKE_SRC);
+  const baseRoll  = new Audio(ROLL_SRC);
+  [baseShake, baseRoll].forEach(a=>{
+    a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95;
+  });
 
   function primeOnce(){
     if (primed) return;
     try{
-      shake.muted=true;
-      const p=shake.play();
-      if (p?.then) p.then(()=>{ shake.pause(); shake.muted=false; primed=true; }).catch(()=>{});
-      else { shake.pause(); shake.muted=false; primed=true; }
+      baseShake.muted=true; const p=baseShake.play();
+      if (p && p.then){
+        p.then(()=>{ baseShake.pause(); baseShake.muted=false; primed=true; }).catch(()=>{});
+      } else { baseShake.pause(); baseShake.muted=false; primed=true; }
     }catch{}
   }
   addEventListener('pointerdown', primeOnce, {once:true, passive:true});
 
-  function playOnce(srcEl){
+  function playOnce(tmpl){
     return new Promise(res=>{
       try{
-        const a = srcEl.cloneNode(true);
+        const a = tmpl.cloneNode(true);
+        a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
         a.addEventListener('ended', ()=>res(), {once:true});
-        a.play().catch(()=>setTimeout(res, 1000));
-        setTimeout(()=>res(), 4000); // safety
+        a.play().catch(()=>setTimeout(res, 900));
+        setTimeout(()=>res(), 5000); // hard cap
       }catch{ res(); }
     });
   }
 
-  function playShake(){ return playOnce(shake); }
-  function playRoll(){  return playOnce(roll);  }
+  function playShake(){ return playOnce(baseShake); }
+  function playRoll(){ return playOnce(baseRoll); }
 
   window.__bagSfx = { playShake, playRoll, primeOnce };
 })();
@@ -348,7 +351,7 @@
 })();
 </script>
 
-<!-- GAME + PRICES + DICE (WebGL w/ shake→throw physics, CSS 3D fallback) -->
+<!-- GAME + PRICES + DICE (WebGL side-tumble → throw physics, CSS 3D fallback) -->
 <script>
 (function(){
   /* ---------- Prices (unchanged helpers) ---------- */
@@ -459,7 +462,7 @@
     updatePayoutPreview();
   });
 
-  /* ---------- DICE ENGINE: shake → throw → bounce → settle ---------- */
+  /* ---------- DICE ENGINE: side-tumble → throw → bounce → settle ---------- */
   const container = document.getElementById('dice3d');
   const cssWrap   = document.getElementById('cssDice');
 
@@ -511,8 +514,9 @@
     const HALF=size/2, G=-14.0, REST=0.48, FRIC=0.985, ANG_F=0.985;
 
     function resetPose(){
-      diceA.position.set(-1.1, 0.2, 0);
-      diceB.position.set( 1.1, 0.3, 0);
+      // off-center side-by-side (left/right), ready to tumble
+      diceA.position.set(-1.2, 0.25, 0);
+      diceB.position.set( 1.2, 0.30, 0);
       diceA.rotation.set(0.6, 0.6, 0.2);
       diceB.rotation.set(-0.4, -0.2, 0.4);
     }
@@ -562,47 +566,65 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    /* --- Shake in hand --- */
-    function shakePhase(ms=700){
+    /* --- Side-by-side TUMBLE (no shaking) while diceshake.mp3 plays --- */
+    function sideTumble(ms=750){
       const start=performance.now();
-      const a0=diceA.position.clone(), b0=diceB.position.clone();
-      const ra=diceA.rotation.clone(), rb=diceB.rotation.clone();
+      // random base angles and rates so they spin fast
+      const a0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
+      const b0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
       return new Promise(res=>{
         function f(t){
-          const e=t-start, p=Math.min(1,e/ms);
-          const amp=0.09*(1-p);
-          diceA.position.set(a0.x + (Math.random()-0.5)*amp, a0.y + 0.22 + Math.sin(e*0.04)*amp*2, a0.z + (Math.random()-0.5)*amp);
-          diceB.position.set(b0.x + (Math.random()-0.5)*amp, b0.y + 0.22 + Math.sin(e*0.045+1)*amp*2, b0.z + (Math.random()-0.5)*amp);
-          diceA.rotation.set(ra.x + (Math.random()-0.5)*0.04, ra.y + (Math.random()-0.5)*0.04, ra.z + (Math.random()-0.5)*0.04);
-          diceB.rotation.set(rb.x + (Math.random()-0.5)*0.04, rb.y + (Math.random()-0.5)*0.04, rb.z + (Math.random()-0.5)*0.04);
-          if(e<ms) requestAnimationFrame(f); else res();
+          const e = (t-start)/1000; // seconds
+          // strong, smooth angular velocity
+          diceA.rotation.set(
+            THREE.MathUtils.degToRad(a0.x + e*520),
+            THREE.MathUtils.degToRad(a0.y + e*840),
+            THREE.MathUtils.degToRad(a0.z + e*360)
+          );
+          diceB.rotation.set(
+            THREE.MathUtils.degToRad(b0.x + e*500),
+            THREE.MathUtils.degToRad(b0.y + e*800),
+            THREE.MathUtils.degToRad(b0.z + e*340)
+          );
+          // keep them frozen side-by-side (no position jitter)
+          diceA.position.set(-1.2, 0.25, 0);
+          diceB.position.set( 1.2, 0.30, 0);
+          if (t-start < ms) requestAnimationFrame(f); else res();
         }
         requestAnimationFrame(f);
       });
     }
 
-    /* --- Throw with simple physics, bounce, settle to target --- */
+    /* --- Throw with simple physics, bounce, then snap centered and settle --- */
     function throwAndSettle(targetA, targetB){
-      // initial positions (release)
-      diceA.position.set(-0.8, 0.9, 0.0);
-      diceB.position.set( 0.8, 1.1, 0.0);
+      // release positions
+      diceA.position.set(-1.0, 0.9, 0.0);
+      diceB.position.set( 1.0, 1.1, 0.0);
 
       // velocities (units/s) + angular velocities (rad/s)
-      const vA = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.5+3.4), - (Math.random()*1.2+0.6) );
-      const vB = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.8+3.8), - (Math.random()*1.2+0.6) );
+      const vA = new THREE.Vector3( (Math.random()*0.8+0.9)*-0.9,  (Math.random()*2.5+3.4),  - (Math.random()*1.2+0.6) );
+      const vB = new THREE.Vector3( (Math.random()*0.8+0.9)* 0.9,  (Math.random()*2.8+3.8),  - (Math.random()*1.2+0.6) );
       const wA = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
       const wB = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
 
+      // slight horizontal spring towards center lanes (left/right)
+      const springK = 2.1;  // center pull
+      const lane = 0.7;     // final x separation
+
       const tmpQ = new THREE.Quaternion();
-      const tmpV = new THREE.Vector3();
       let tPrev = performance.now();
 
       return new Promise(res=>{
         function step(tNow){
           let dt = (tNow - tPrev)/1000; if(dt>0.05) dt=0.05; tPrev = tNow;
 
-          // integrate linear
+          // integrate linear + gravity
           vA.y += G*dt; vB.y += G*dt;
+
+          // x spring toward -lane / +lane
+          vA.x += (-springK * (diceA.position.x + lane)) * dt;
+          vB.x += (-springK * (diceB.position.x - lane)) * dt;
+
           diceA.position.addScaledVector(vA, dt);
           diceB.position.addScaledVector(vB, dt);
 
@@ -614,12 +636,12 @@
             diceB.position.y = floorY + HALF; vB.y = -vB.y * REST; vB.x*=FRIC; vB.z*=FRIC; wB.multiplyScalar(ANG_F);
           }
 
-          // integrate angular: convert angular velocity vector → quaternion delta
+          // integrate angular
           const awA = wA.clone().multiplyScalar(dt), awB = wB.clone().multiplyScalar(dt);
           tmpQ.setFromEuler(new THREE.Euler(awA.x, awA.y, awA.z)); diceA.quaternion.multiply(tmpQ).normalize();
           tmpQ.setFromEuler(new THREE.Euler(awB.x, awB.y, awB.z)); diceB.quaternion.multiply(tmpQ).normalize();
 
-          // damp everything a touch
+          // damping
           vA.multiplyScalar(0.995); vB.multiplyScalar(0.995);
           wA.multiplyScalar(0.995); wB.multiplyScalar(0.995);
 
@@ -629,7 +651,10 @@
           if (!slow){
             requestAnimationFrame(step);
           } else {
-            // tween to exact target face up (keep a random table yaw for flavor)
+            // snap positions neatly centered with small separation
+            diceA.position.set(-lane, floorY + HALF, 0);
+            diceB.position.set( lane, floorY + HALF, 0);
+            // tween to exact faces with tiny table yaw
             const yawA=(Math.random()*Math.PI*2 - Math.PI);
             const yawB=(Math.random()*Math.PI*2 - Math.PI);
             Promise.all([ tweenTo(diceA,targetA,yawA,620), tweenTo(diceB,targetB,yawB,620) ]).then(res);
@@ -655,17 +680,17 @@
     // public roll implementation used by game logic
     window.__bagDiceRollImpl = async function(a,b){
       resetPose();
-      // 1) shake while playing shake SFX
+      // 1) side-by-side tumble while playing shake SFX (no jitter)
       const shakeP = window.__bagSfx?.playShake?.();
-      await shakePhase(750);
+      await sideTumble(750);
       await shakeP;
-      // 2) release: play roll SFX and throw
+      // 2) throw into center lanes on roll SFX, bounce, settle to values
       window.__bagSfx?.playRoll?.();
       await throwAndSettle(a,b);
     };
   }
 
-  /* ----- CSS FALLBACK (kept simple but more animated than before) ----- */
+  /* ----- CSS FALLBACK (side-tumble → throw) ----- */
   function initCssFallback(){
     usingCSS = true;
     cssWrap.classList.add('active');
@@ -684,7 +709,6 @@
     const dA = buildDie(); const dB = buildDie();
     cssWrap.appendChild(dA); cssWrap.appendChild(dB);
 
-    // tiny helper
     function setTopCss(el,val,yaw=0){
       const map={
         1:'rotateX(0deg) rotateY(0deg)', 2:'rotateX(-90deg)', 3:'rotateY(90deg)',
@@ -694,22 +718,22 @@
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    // fake shake + throw with style transforms
-    async function shakeCss(ms=700){
+    function tumbleCss(ms=750){
       const start=performance.now();
       return new Promise(res=>{
         function f(t){
-          const e=t-start, p=Math.min(1,e/ms), amp=8*(1-p);
-          dA.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-8+Math.sin(e*0.04)*amp}px, 0) rotateX(${(Math.random()-.5)*8}deg) rotateY(${(Math.random()-.5)*8}deg) rotateZ(${(Math.random()-.5)*6}deg)`;
-          dB.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-8+Math.sin(e*0.047+1)*amp}px, 0) rotateX(${(Math.random()-.5)*8}deg) rotateY(${(Math.random()-.5)*8}deg) rotateZ(${(Math.random()-.5)*6}deg)`;
+          const e=t-start;
+          dA.style.transform = `translate3d(-84px,0,0) rotateX(${e*0.55}deg) rotateY(${e*0.90}deg) rotateZ(${e*0.40}deg)`;
+          dB.style.transform = `translate3d( 84px,0,0) rotateX(${e*0.52}deg) rotateY(${e*0.85}deg) rotateZ(${e*0.38}deg)`;
           if(e<ms) requestAnimationFrame(f); else res();
         }
         requestAnimationFrame(f);
       });
     }
+
     function throwCssTo(a,b,ms=1400){
       const start=performance.now();
-      let yA=0, vyA=-380, yB=0, vyB=-420; // px/s (negative is up for translateY)
+      let yA=0, vyA=-380, yB=0, vyB=-420;
       const g=980; // px/s^2
       return new Promise(res=>{
         function f(t){
@@ -718,8 +742,9 @@
           vyB+=g*dt; yB+=vyB*dt;
           if (yA>0){ yA=0; vyA*=-0.45; }
           if (yB>0){ yB=0; vyB*=-0.45; }
-          dA.style.transform = `translate3d(-70px, ${yA}px, 0) rotateX(${t*0.35}deg) rotateY(${t*0.55}deg) rotateZ(${t*0.22}deg)`;
-          dB.style.transform = `translate3d( 70px, ${yB}px, 0) rotateX(${t*0.33}deg) rotateY(${t*0.50}deg) rotateZ(${t*0.20}deg)`;
+          // glide into centered lanes
+          dA.style.transform = `translate3d(-60px, ${yA}px, 0) rotateX(${t*0.35}deg) rotateY(${t*0.55}deg) rotateZ(${t*0.22}deg)`;
+          dB.style.transform = `translate3d( 60px, ${yB}px, 0) rotateX(${t*0.33}deg) rotateY(${t*0.50}deg) rotateZ(${t*0.20}deg)`;
           if ((t-start)<ms) requestAnimationFrame(f);
           else {
             setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
@@ -732,11 +757,9 @@
     }
 
     window.__bagDiceRollImpl = async function(a,b){
-      // shake
       const sP = window.__bagSfx?.playShake?.();
-      await shakeCss(750);
+      await tumbleCss(750);
       await sP;
-      // throw
       window.__bagSfx?.playRoll?.();
       await throwCssTo(a,b,1400);
     };
@@ -769,13 +792,13 @@
     if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
     if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
 
-    rollBtn.disabled = true; rollText.className='t'; rollText.textContent='Shaking…';
+    rollBtn.disabled = true; rollText.className='t'; rollText.textContent='Tumbling…';
 
     // choose results now
     const a = (Math.random()*6|0)+1;
     const b = (Math.random()*6|0)+1;
 
-    // animate (shake → throw → settle), with audio sync inside __bagDiceRollImpl
+    // animate (tumble → throw → settle), with audio sync inside __bagDiceRollImpl
     if (typeof window.__bagDiceRollImpl === 'function'){
       await window.__bagDiceRollImpl(a,b);
     }
