@@ -9,7 +9,7 @@
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 <script>window.__BAG_FORCE_DEMO = true;</script>
 
-<!-- Robust Three.js loader: jsDelivr → unpkg; sets window.__THREE_READY__ or __THREE_FAILED__ -->
+<!-- Robust Three.js loader -->
 <script>
 (function(){
   function load(src, done, fail){
@@ -35,6 +35,7 @@
     --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
     --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
     --win-bg: rgba(10,12,16,.70);
+    --lose:#e25b5b; --warn:#e8a85c;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);
     font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
@@ -106,9 +107,9 @@
   .btn-roll:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
   .btn-roll:disabled{opacity:.65;cursor:not-allowed}
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
-  .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}
+  .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
 
-  /* CSS fallback dice (used only if Three.js fails) */
+  /* CSS fallback dice (only if Three.js fails) */
   .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
   .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
   .css-face{
@@ -224,11 +225,15 @@
       <!-- Payouts preview -->
       <div class="callout mono" id="payoutBox">
         <div class="payout-grid">
-          <div class="row"><div class="lab"><strong>WIN</strong> (1.00×):</div><div class="val" id="payScratch">—</div></div>
-          <div class="row"><div class="lab"><strong>POINT WIN</strong> (1.25×):</div><div class="val" id="payNormal">— <span class="micro" id="payNormalGain" style="opacity:.9"></span></div></div>
-          <div class="row"><div class="lab"><strong>JACKPOT</strong> (2.00×):</div><div class="val" id="payJackpot">— <span class="micro" id="payJackpotGain" style="opacity:.9"></span></div></div>
+          <div class="row"><div class="lab"><strong>Come-out WIN</strong> (7/11):</div><div class="val" id="payComeout">—</div></div>
+          <div class="row"><div class="lab"><strong>Rare JACKPOT (come-out)</strong>:</div><div class="val" id="payJackpot">—</div></div>
+          <div class="row"><div class="lab"><strong>Point WIN</strong> (point made):</div><div class="val" id="payPoint">—</div></div>
+          <div class="row"><div class="lab"><strong>SEVEN OUT / CRAPS</strong>:</div><div class="val">0 BAG ($0.00)</div></div>
         </div>
-        <div class="micro" style="margin-top:6px;opacity:.85;">Craps Pass Line: 7/11 → POINT WIN (1.25×) · Doubles → JACKPOT (2.00×) · Otherwise WIN (1.00× push)</div>
+        <div class="micro" style="margin-top:6px;opacity:.85;">
+          Come-out: 7/11 = WIN (<b>1.25× total</b>; small chance of <b>JACKPOT 2.00×</b>) · 2/3/12 = CRAPS (lose).  
+          Point phase: hit the point to WIN <b>1.00× total</b>; 7 = SEVEN OUT (lose).
+        </div>
       </div>
 
       <!-- DICE table -->
@@ -237,11 +242,10 @@
         <div class="table">
           <div class="felt">
             <div id="dice3d" class="stage3d" aria-label="3D dice area">
-              <!-- CSS fallback container -->
               <div id="cssDice" class="css-dice-wrap"></div>
             </div>
             <div class="roll-row"><button id="rollBtn" class="btn-roll">ROLL</button></div>
-            <div class="result"><div class="t" id="rollText">Tap ROLL</div></div>
+            <div class="result"><div class="t" id="rollText">Come-out roll — Need 7/11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
           </div>
         </div>
       </div>
@@ -249,19 +253,29 @@
 
     <!-- RIGHT -->
     <div class="panel" style="padding:16px">
-      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
+      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays (Pass Line)</h3>
+
+      <h4 style="margin:12px 0 6px;">Come-out roll</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li>Two dice · instant result</li>
-        <li>Results: <b>WIN</b> (1.00×), <b>POINT WIN</b> (1.25×), <b>JACKPOT</b> (2.00×)</li>
-        <li><b>POINT WIN</b> on 7 or 11 · <b>JACKPOT</b> on doubles · otherwise <b>WIN</b> (push)</li>
+        <li><b>7 or 11</b> → <b>Pass Line WIN</b> (pays <b>1.25× total</b> here; rare <b>JACKPOT 2.00×</b>).</li>
+        <li><b>2, 3, or 12</b> → <b>CRAPS</b> (you lose, round ends).</li>
+        <li><b>4, 5, 6, 8, 9, or 10</b> → That number becomes the <b>Point</b>. Your stake stays up.</li>
       </ul>
-      <h4 style="margin:12px 0 6px;">Payouts:</h4>
+
+      <h4 style="margin:12px 0 6px;">Point phase</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>WIN</b> — 1.00× (push)</li>
-        <li><b>POINT WIN</b> — 1.25× total</li>
-        <li><b>JACKPOT</b> — 2.00× total</li>
+        <li>Roll until either the <b>Point</b> is made (you <b>WIN 1.00× total</b>) or a <b>7</b> appears (that’s <b>SEVEN OUT</b>, you lose).</li>
+        <li>Other totals are <b>neutral</b> — no payout, stake remains.</li>
       </ul>
-      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA.</p>
+
+      <h4 style="margin:12px 0 6px;">Payouts</h4>
+      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+        <li><b>Come-out WIN</b> — <b>1.25× total</b> (rare <b>JACKPOT 2.00×</b>)</li>
+        <li><b>Point WIN</b> — <b>1.00× total</b></li>
+        <li><b>CRAPS / SEVEN OUT</b> — <b>lose</b></li>
+      </ul>
+
+      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA. All payouts settle in <b>$BAG</b>. $XRP stakes convert at live rate automatically.</p>
     </div>
 
   </div>
@@ -308,7 +322,7 @@
         a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
         a.addEventListener('ended', ()=>res(), {once:true});
         a.play().catch(()=>setTimeout(res, 900));
-        setTimeout(()=>res(), 5000); // hard cap
+        setTimeout(()=>res(), 5000);
       }catch{ res(); }
     });
   }
@@ -351,11 +365,11 @@
 })();
 </script>
 
-<!-- GAME + PRICES + DICE (Rounded d6: continuous side tumble through both SFX → abrupt stop) -->
+<!-- GAME + PRICES + DICE (WebGL + CSS fallback) -->
 <script>
 (function(){
-  /* ---------- Prices (unchanged helpers) ---------- */
-  const PRICES = (window.__PRICES__ = window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' });
+  /* ---------- Prices ---------- */
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
@@ -394,60 +408,57 @@
     conversions(); updateLimits(); updatePayoutPreview();
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
-  if (!window.__bagPriceTimer){
-    (async function refresh(){
-      try{
-        const timed=(url,ms=8000)=>{ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); };
-        async function fetchXrpUsd(){ try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{} return false; }
-        async function fetchBagUsdViaAMM(){
-          return new Promise(resolve=>{
-            const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},asset2:{currency:'XRP'}};
-            const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
-            ws.onopen=()=>ws.send(JSON.stringify(req));
-            ws.onmessage=ev=>{ try{
-              const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
-              const bag=Number(j.result.amm.amount?.value||0);
-              const x2=j.result.amm.amount2;
-              const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
-              if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
-            }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
-            ws.onerror=()=>{ clearTimeout(to); resolve(false); };
-          });
-        }
-        await fetchXrpUsd();
-        const ok = await fetchBagUsdViaAMM();
-        if(!ok) PRICES.source='last-live';
-        updateLive();
-        window.__bagPriceTimer=setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); },15000);
-      }catch{}
-    })();
+  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
+  async function fetchXrpUsd(){
+    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
+    return false;
   }
+  async function fetchBagUsdViaAMM(){
+    return new Promise(resolve=>{
+      const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:'BAG',issuer:'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr'},asset2:{currency:'XRP'}};
+      const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
+      ws.onopen=()=>ws.send(JSON.stringify(req));
+      ws.onmessage=ev=>{ try{
+        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
+        const bag=Number(j.result.amm.amount?.value||0);
+        const x2=j.result.amm.amount2;
+        const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
+        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
+      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
+      ws.onerror=()=>{ clearTimeout(to); resolve(false); };
+    });
+  }
+  (async function refresh(){
+    await fetchXrpUsd();
+    const ok = await fetchBagUsdViaAMM();
+    if(!ok) PRICES.source='last-live';
+    updateLive();
+    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
+  })();
 
-  /* ---------- Payout preview ---------- */
-  const payScratch=document.getElementById('payScratch');
-  const payNormal =document.getElementById('payNormal');
-  const payNormalGain=document.getElementById('payNormalGain');
+  /* ---------- Payout preview (come-out 1.25×, rare 2.00×; point 1.00×) ---------- */
+  const payComeout=document.getElementById('payComeout');
   const payJackpot=document.getElementById('payJackpot');
-  const payJackpotGain=document.getElementById('payJackpotGain');
+  const payPoint=document.getElementById('payPoint');
 
-  function stakeUsd(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
+  function stakeUsd(qOverride){
+    const q = Number.isFinite(qOverride) ? qOverride : (parseFloat(betQty.value||0)||0);
+    if(!q) return 0;
     return currentCurrency()==='BAG' ? (PRICES.bagUsd>0?q*PRICES.bagUsd:0) : (PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
   }
-  function stakeBag(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
+  function stakeBag(qOverride){
+    const q = Number.isFinite(qOverride) ? qOverride : (parseFloat(betQty.value||0)||0);
+    if(!q) return 0;
     if(currentCurrency()==='BAG') return q;
     if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerX = PRICES.xrpUsd/PRICES.bagUsd; return q*bagPerX; }
     return 0;
   }
   function updatePayoutPreview(){
     const s=stakeBag(), u=stakeUsd();
-    if(!(s>0)){ payScratch.textContent=payNormal.textContent=payJackpot.textContent='—'; payNormalGain.textContent=payJackpotGain.textContent=''; return; }
-    payScratch.textContent = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
-    payNormal.textContent  = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
-    payNormalGain.textContent = `(gain +${fmt(s*0.25)} BAG)`;
+    if(!(s>0)){ payComeout.textContent=payJackpot.textContent=payPoint.textContent='—'; return; }
+    payComeout.textContent = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
     payJackpot.textContent = `${fmt(s*2.00)} BAG (${fmtUsd(u*2.00)})`;
-    payJackpotGain.textContent = `(gain +${fmt(s*1.00)} BAG)`;
+    payPoint.textContent   = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
   }
   betQty.addEventListener('input', ()=>{ const u=stakeUsd(); usdBet.value = u>0 ? u.toFixed(2) : ''; updatePayoutPreview(); });
   usdBet.addEventListener('input', ()=>{
@@ -463,9 +474,31 @@
     updatePayoutPreview();
   });
 
-  /* ---------- DICE ENGINE: rounded d6 tumbling side-by-side → abrupt stop ---------- */
+  /* ---------- Dice engine (Three.js or CSS fallback) ---------- */
   const container = document.getElementById('dice3d');
   const cssWrap   = document.getElementById('cssDice');
+  const rollBtn   = document.getElementById('rollBtn');
+  const rollText  = document.getElementById('rollText');
+
+  // Round state
+  const ROUND = { active:false, point:null, stakeBag:0, stakeUsd:0, currency:'XRP' };
+
+  // Payout tuning
+  const PAY = {
+    COMEOUT_BASE: 1.25,   // 7/11 base
+    COMEOUT_JP: 2.00,     // rare jackpot on come-out
+    POINT_WIN: 1.00       // point made
+  };
+  const JACKPOT_CHANCE = 0.04; // ~4% chance (rare). Tweak as desired.
+
+  function statusLine(sum, a, b){
+    const inPoint = ROUND.active && ROUND.point!=null;
+    const need = inPoint ? `Need ${ROUND.point} before 7` : 'Need 7/11 to WIN · 2/3/12 is CRAPS';
+    const rolled = (sum!=null) ? `Rolled ${a}+${b}=${sum} — ` : '';
+    const pointTxt = inPoint ? `Point is ${ROUND.point} — ` : 'Come-out roll — ';
+    return `${rolled}${pointTxt}${need}`;
+  }
+
   let usingCSS = false;
 
   // boot after Three.js or fallback
@@ -476,51 +509,69 @@
     else { tries++; setTimeout(boot, 100); }
   })();
 
-  /* --- Rounded box helper (true chamfered cube without addons) --- */
-  function makeRoundedBox(THREE, size=1, radius=0.12, seg=6){
-    const g = new THREE.BoxGeometry(size,size,size, seg,seg,seg);
-    const pos = g.attributes.position;
-    const half = size/2, r = Math.min(radius, half*0.999);
-    for (let i=0; i<pos.count; i++){
-      const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
-      const cx = Math.max(-half+r, Math.min(half-r, x));
-      const cy = Math.max(-half+r, Math.min(half-r, y));
-      const cz = Math.max(-half+r, Math.min(half-r, z));
-      const vx = x - cx, vy = y - cy, vz = z - cz;
-      const len = Math.hypot(vx,vy,vz) || 1;
-      const nx = cx + (vx/len)*r, ny = cy + (vy/len)*r, nz = cz + (vz/len)*r;
-      pos.setXYZ(i, nx, ny, nz);
-    }
-    g.computeVertexNormals();
-    return g;
-  }
-
   /* ----- THREE.JS PATH ----- */
   function initThree(){
     const THREE = window.THREE;
     const scene = new THREE.Scene();
     const w = container.clientWidth, h = container.clientHeight;
     const camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-    camera.position.set(0.5, 1.4, 5.5); camera.lookAt(0,0,0);
+    camera.position.set(0.6, 1.6, 6.0); camera.lookAt(0,0,0);
 
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     renderer.setSize(w, h);
     container.innerHTML = ''; container.appendChild(renderer.domElement);
 
-    // Lights tuned for glossy dice
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x1b2a20, 0.75);
-    const key  = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(2.5,4,3);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-3,2,2);
-    const rim  = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(0,6,-4);
-    scene.add(hemi, key, fill, rim);
+    // Lights + table glow
+    const key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(2,4,3);
+    const fill= new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-3,2,2);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(0,6,-4);
+    const amb = new THREE.AmbientLight(0x7a8fa3, 0.55);
+    scene.add(key, fill, rim, amb);
 
     const floorY = -1.06;
     const floor = new THREE.Mesh(new THREE.CircleGeometry(5.2, 48),
       new THREE.MeshBasicMaterial({ color: 0x0c2016, transparent:true, opacity:0.55 }));
     floor.rotation.x = -Math.PI/2; floor.position.y = floorY; scene.add(floor);
 
-    // Face textures (same as before, stays crisp)
+    // Rounded-ish dice (more segments -> smoother shading)
+    const size = 1.08;
+    const geo  = new THREE.BoxGeometry(size,size,size,6,6,6);
+    const matsA = makeMaterials(THREE,'#ffffff');
+    const matsB = makeMaterials(THREE,'#fef9f4');
+    const diceA = new THREE.Mesh(geo, matsA);
+    const diceB = new THREE.Mesh(geo, matsB);
+    diceA.material.forEach(m=>{m.roughness=0.44; m.metalness=0.02;});
+    diceB.material.forEach(m=>{m.roughness=0.42; m.metalness=0.02;});
+    scene.add(diceA, diceB);
+
+    // State for simple physics
+    const HALF=size/2, G=-14.0, REST=0.48, FRIC=0.985, ANG_F=0.985;
+
+    function resetPose(){
+      diceA.position.set(-1.1, 0.2, 0);
+      diceB.position.set( 1.1, 0.3, 0);
+      diceA.rotation.set(0.6, 0.6, 0.2);
+      diceB.rotation.set(-0.4, -0.2, 0.4);
+    }
+    resetPose();
+
+    function onResize(){
+      const w = container.clientWidth, h = container.clientHeight;
+      camera.aspect = w/h; camera.updateProjectionMatrix();
+      renderer.setSize(w,h);
+    }
+    addEventListener('resize', onResize);
+
+    (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
+
+    /* --- face textures --- */
+    function makeMaterials(THREE, base){
+      const tex={};
+      for(let n=1;n<=6;n++) tex[n]=makeFaceTex(THREE, n, base);
+      const mk = (map)=>new THREE.MeshPhysicalMaterial({ map, roughness:0.45, metalness:0.02, clearcoat:0.25, clearcoatRoughness:0.4 });
+      return [mk(tex[3]),mk(tex[4]),mk(tex[1]),mk(tex[6]),mk(tex[2]),mk(tex[5])];
+    }
     function makeFaceTex(THREE, n, base){
       const c = document.createElement('canvas'); c.width=c.height=256;
       const g = c.getContext('2d');
@@ -534,39 +585,7 @@
       g.fillStyle='#0d0d10'; map.forEach(i=>{ const [x,y]=pos(i); g.beginPath(); g.arc(x,y,16,0,Math.PI*2); g.fill(); });
       const t = new THREE.CanvasTexture(c); t.anisotropy=8; t.needsUpdate=true; return t;
     }
-    function makeMaterials(THREE, base='#ffffff'){
-      const tex={}; for(let n=1;n<=6;n++) tex[n]=makeFaceTex(THREE,n,base);
-      function face(m){ return new THREE.MeshPhysicalMaterial({ map:m, metalness:0.0, roughness:0.38, clearcoat:0.6, clearcoatRoughness:0.1 }); }
-      return [ face(tex[3]), face(tex[4]), face(tex[1]), face(tex[6]), face(tex[2]), face(tex[5]) ];
-    }
 
-    // Rounded dice
-    const size = 1.1, radius = 0.18, seg = 10;
-    const geo  = makeRoundedBox(THREE, size, radius, seg);
-    const diceA = new THREE.Mesh(geo, makeMaterials(THREE,'#ffffff'));
-    const diceB = new THREE.Mesh(geo, makeMaterials(THREE,'#fef9f4'));
-    scene.add(diceA, diceB);
-
-    // Keep them centered, side-by-side
-    const lane = 0.65;
-    function resetPose(){
-      diceA.position.set(-lane, 0.22, 0);
-      diceB.position.set( lane, 0.22, 0);
-      diceA.rotation.set(0.5, 0.7, 0.2);
-      diceB.rotation.set(-0.4, -0.2, 0.6);
-    }
-    resetPose();
-
-    function onResize(){
-      const w = container.clientWidth, h = container.clientHeight;
-      camera.aspect = w/h; camera.updateProjectionMatrix();
-      renderer.setSize(w,h);
-    }
-    addEventListener('resize', onResize);
-
-    (function loop(){ renderer.render(scene, camera); requestAnimationFrame(loop); })();
-
-    // Map top face to orientation (keep yaw for flavor)
     function setTop(THREE, mesh, value, yaw=0){
       const map={
         1:[0,yaw,0], 2:[-Math.PI/2,yaw,0], 3:[0,yaw+Math.PI/2,0],
@@ -575,59 +594,105 @@
       mesh.rotation.set(map[0],map[1],map[2]);
     }
 
-    /* --- Continuous side-by-side tumble loop (cancellable) --- */
-    let tumbleReq = 0;
-    function startSideTumble(){
-      const req = ++tumbleReq;
-      const a0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
-      const b0 = new THREE.Vector3(Math.random()*360, Math.random()*360, Math.random()*360);
-      const speedA = { x:520, y:840, z:360 };
-      const speedB = { x:500, y:800, z:340 };
-      const t0 = performance.now();
-      function step(now){
-        if (req !== tumbleReq) return;
-        const e = (now - t0) / 1000;
-        diceA.rotation.set(
-          THREE.MathUtils.degToRad(a0.x + e*speedA.x),
-          THREE.MathUtils.degToRad(a0.y + e*speedA.y),
-          THREE.MathUtils.degToRad(a0.z + e*speedA.z)
-        );
-        diceB.rotation.set(
-          THREE.MathUtils.degToRad(b0.x + e*speedB.x),
-          THREE.MathUtils.degToRad(b0.y + e*speedB.y),
-          THREE.MathUtils.degToRad(b0.z + e*speedB.z)
-        );
-        // keep them perfectly centered & next to each other
-        diceA.position.set(-lane, 0.22, 0);
-        diceB.position.set( lane, 0.22, 0);
-        requestAnimationFrame(step);
-      }
-      requestAnimationFrame(step);
+    /* --- tumble while shaking --- */
+    function shakePhase(ms=800){
+      const start=performance.now();
+      const a0=diceA.position.clone(), b0=diceB.position.clone();
+      const ra=diceA.rotation.clone(), rb=diceB.rotation.clone();
+      return new Promise(res=>{
+        function f(t){
+          const e=t-start, p=Math.min(1,e/ms);
+          const amp=0.12*(1-p);
+          diceA.position.set(a0.x + (Math.random()-0.5)*amp, a0.y + 0.26 + Math.sin(e*0.055)*amp*2, a0.z + (Math.random()-0.5)*amp);
+          diceB.position.set(b0.x + (Math.random()-0.5)*amp, b0.y + 0.26 + Math.sin(e*0.06 + .9)*amp*2, b0.z + (Math.random()-0.5)*amp);
+          diceA.rotation.set(ra.x + (Math.random()-0.5)*0.06, ra.y + (Math.random()-0.5)*0.06, ra.z + (Math.random()-0.5)*0.06);
+          diceB.rotation.set(rb.x + (Math.random()-0.5)*0.06, rb.y + (Math.random()-0.5)*0.06, rb.z + (Math.random()-0.5)*0.06);
+          if(e<ms) requestAnimationFrame(f); else res();
+        }
+        requestAnimationFrame(f);
+      });
     }
-    function stopTumble(){ tumbleReq++; }
 
-    // public roll implementation used by game logic
+    /* --- throw + bounce + settle --- */
+    function throwAndSettle(targetA, targetB){
+      diceA.position.set(-0.8, 0.9, 0.0);
+      diceB.position.set( 0.8, 1.1, 0.0);
+
+      const vA = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.5+3.4), - (Math.random()*1.2+0.6) );
+      const vB = new THREE.Vector3( (Math.random()*1.6+0.6)*(Math.random()<.5?-1:1),  (Math.random()*2.8+3.8), - (Math.random()*1.2+0.6) );
+      const wA = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
+      const wB = new THREE.Vector3( (Math.random()*8+6)*(Math.random()<.5?-1:1),  (Math.random()*10+8)*(Math.random()<.5?-1:1), (Math.random()*6+4)*(Math.random()<.5?-1:1) );
+
+      const tmpQ = new THREE.Quaternion();
+      let tPrev = performance.now();
+
+      return new Promise(res=>{
+        function step(tNow){
+          let dt = (tNow - tPrev)/1000; if(dt>0.05) dt=0.05; tPrev = tNow;
+
+          vA.y += -14.0*dt; vB.y += -14.0*dt;
+          diceA.position.addScaledVector(vA, dt);
+          diceB.position.addScaledVector(vB, dt);
+
+          const floorY = -1.06, HALF= size/2;
+          if (diceA.position.y - HALF <= floorY){
+            diceA.position.y = floorY + HALF; vA.y = -vA.y * 0.48; vA.x*=0.985; vA.z*=0.985; wA.multiplyScalar(0.985);
+          }
+          if (diceB.position.y - HALF <= floorY){
+            diceB.position.y = floorY + HALF; vB.y = -vB.y * 0.48; vB.x*=0.985; vB.z*=0.985; wB.multiplyScalar(0.985);
+          }
+
+          const awA = wA.clone().multiplyScalar(dt), awB = wB.clone().multiplyScalar(dt);
+          tmpQ.setFromEuler(new THREE.Euler(awA.x, awA.y, awA.z)); diceA.quaternion.multiply(tmpQ).normalize();
+          tmpQ.setFromEuler(new THREE.Euler(awB.x, awB.y, awB.z)); diceB.quaternion.multiply(tmpQ).normalize();
+
+          vA.multiplyScalar(0.995); vB.multiplyScalar(0.995);
+          wA.multiplyScalar(0.995); wB.multiplyScalar(0.995);
+
+          const speed = vA.lengthSq()+vB.lengthSq()+wA.lengthSq()*0.03+wB.lengthSq()*0.03;
+          const slow  = speed < 0.035;
+
+          if (!slow){
+            requestAnimationFrame(step);
+          } else {
+            const yawA=(Math.random()*Math.PI*2 - Math.PI);
+            const yawB=(Math.random()*Math.PI*2 - Math.PI);
+            Promise.all([ tweenTo(diceA,targetA,yawA,620), tweenTo(diceB,targetB,yawB,620) ]).then(res);
+          }
+        }
+        requestAnimationFrame(step);
+      });
+    }
+
+    function tweenTo(mesh,val,yaw,ms=600){
+      const start=performance.now(), r0=mesh.rotation.clone(), tmp=new THREE.Object3D();
+      setTop(THREE,tmp,val,yaw); const rx=tmp.rotation.x, ry=tmp.rotation.y, rz=tmp.rotation.z;
+      return new Promise(res=>{
+        function f(t){
+          const e=t-start, p=Math.min(1,e/ms), s=p<.5?2*p*p:-1+(4-2*p)*p;
+          mesh.rotation.set(r0.x+(rx-r0.x)*s, r0.y+(ry-r0.y)*s, r0.z+(rz-r0.z)*s);
+          if(e<ms) requestAnimationFrame(f); else res();
+        }
+        requestAnimationFrame(f);
+      });
+    }
+
     window.__bagDiceRollImpl = async function(a,b){
       resetPose();
-      // 1) tumble during first SFX
-      startSideTumble();
-      await (window.__bagSfx?.playShake?.() || Promise.resolve());
-      // 2) keep tumbling during second SFX
-      await (window.__bagSfx?.playRoll?.() || Promise.resolve());
-      // 3) abrupt stop on the result
-      stopTumble();
-      const yawA = (Math.random()*Math.PI*2 - Math.PI);
-      const yawB = (Math.random()*Math.PI*2 - Math.PI);
-      setTop(THREE, diceA, a, yawA);
-      setTop(THREE, diceB, b, yawB);
+      const shakeP = window.__bagSfx?.playShake?.();
+      await shakePhase(800);
+      await shakeP;
+      window.__bagSfx?.playRoll?.();
+      await throwAndSettle(a,b);
     };
   }
 
-  /* ----- CSS FALLBACK (kept) ----- */
+  /* ----- CSS FALLBACK ----- */
   function initCssFallback(){
     usingCSS = true;
     cssWrap.classList.add('active');
     cssWrap.innerHTML='';
+
     function buildDie(){
       const die=document.createElement('div'); die.className='css-die';
       const faces={ f1:[5], f2:[1,9], f3:[1,5,9], f4:[1,3,7,9], f5:[1,3,5,7,9], f6:[1,3,4,6,7,9] };
@@ -650,40 +715,68 @@
       el.classList.remove('settle'); void el.offsetWidth; el.classList.add('settle');
     }
 
-    // Continuous tumble
-    let req=0;
-    function startTumble(){
-      const r=++req; const t0=performance.now();
-      function f(now){
-        if (r!==req) return;
-        const e=now-t0;
-        dA.style.transform = `translate3d(-60px,0,0) rotateX(${e*0.55}deg) rotateY(${e*0.90}deg) rotateZ(${e*0.40}deg)`;
-        dB.style.transform = `translate3d( 60px,0,0) rotateX(${e*0.52}deg) rotateY(${e*0.85}deg) rotateZ(${e*0.38}deg)`;
+    async function shakeCss(ms=800){
+      const start=performance.now();
+      return new Promise(res=>{
+        function f(t){
+          const e=t-start, p=Math.min(1,e/ms), amp=10*(1-p);
+          dA.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-10+Math.sin(e*0.055)*amp}px, 0) rotateX(${(Math.random()-.5)*10}deg) rotateY(${(Math.random()-.5)*10}deg) rotateZ(${(Math.random()-.5)*8}deg)`;
+          dB.style.transform = `translate3d(${(Math.random()-.5)*amp}px, ${-10+Math.sin(e*0.06 + .9)*amp}px, 0) rotateX(${(Math.random()-.5)*10}deg) rotateY(${(Math.random()-.5)*10}deg) rotateZ(${(Math.random()-.5)*8}deg)`;
+          if(e<ms) requestAnimationFrame(f); else res();
+        }
         requestAnimationFrame(f);
-      }
-      requestAnimationFrame(f);
-      return ()=>{ req++; };
+      });
+    }
+    function throwCssTo(a,b,ms=1400){
+      const start=performance.now();
+      let yA=0, vyA=-380, yB=0, vyB=-420; const g=980;
+      return new Promise(res=>{
+        function f(t){
+          const dt=Math.min(0.05,(t-start)/1000);
+          vyA+=g*dt; yA+=vyA*dt;
+          vyB+=g*dt; yB+=vyB*dt;
+          if (yA>0){ yA=0; vyA*=-0.45; }
+          if (yB>0){ yB=0; vyB*=-0.45; }
+          dA.style.transform = `translate3d(-70px, ${yA}px, 0) rotateX(${t*0.35}deg) rotateY(${t*0.55}deg) rotateZ(${t*0.22}deg)`;
+          dB.style.transform = `translate3d( 70px, ${yB}px, 0) rotateX(${t*0.33}deg) rotateY(${t*0.50}deg) rotateZ(${t*0.20}deg)`;
+          if ((t-start)<ms) requestAnimationFrame(f);
+          else {
+            setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
+            setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
+            res();
+          }
+        }
+        requestAnimationFrame(f);
+      });
     }
 
     window.__bagDiceRollImpl = async function(a,b){
-      const stop = startTumble();
-      await (window.__bagSfx?.playShake?.() || Promise.resolve());
-      await (window.__bagSfx?.playRoll?.()  || Promise.resolve());
-      stop();
-      setTopCss(dA,a,(Math.random()*Math.PI*2 - Math.PI));
-      setTopCss(dB,b,(Math.random()*Math.PI*2 - Math.PI));
+      const sP = window.__bagSfx?.playShake?.();
+      await shakeCss(800);
+      await sP;
+      window.__bagSfx?.playRoll?.();
+      await throwCssTo(a,b,1400);
     };
   }
 
-  /* ---------- Roll + payouts (unchanged) ---------- */
-  const rollBtn = document.getElementById('rollBtn');
-  const rollText = document.getElementById('rollText');
+  /* ---------- Evaluation & round handling ---------- */
+  function isComeOut(){ return !ROUND.active || ROUND.point==null; }
 
-  function evaluate(a,b){
-    const sum=a+b;
-    if(a===b) return {label:'JACKPOT', mult:2.00, cls:'win'};
-    if(sum===7 || sum===11) return {label:'POINT WIN', mult:1.25, cls:'win'};
-    return {label:'WIN', mult:1.00, cls:'scratch'};
+  function evaluate(sum){
+    if (isComeOut()){
+      if (sum===7 || sum===11){
+        const jackpot = Math.random() < JACKPOT_CHANCE;
+        return jackpot
+          ? { type:'jackpot', label:'COME-OUT JACKPOT', mult:PAY.COMEOUT_JP, cls:'win', end:true }
+          : { type:'win',     label:'COME-OUT WIN',    mult:PAY.COMEOUT_BASE, cls:'win', end:true };
+      }
+      if (sum===2 || sum===3 || sum===12) return { type:'lose', label:'CRAPS', mult:0.00, cls:'lose', end:true };
+      return { type:'point-set', label:'POINT ESTABLISHED', mult:0.00, cls:'scratch', end:false };
+    } else {
+      if (sum===ROUND.point) return { type:'win', label:'POINT MADE', mult:PAY.POINT_WIN, cls:'win', end:true };
+      if (sum===7)          return { type:'lose', label:'SEVEN OUT', mult:0.00, cls:'lose', end:true };
+      return { type:'neutral', label:'NO EFFECT', mult:0.00, cls:'scratch', end:false };
+    }
   }
 
   function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
@@ -693,45 +786,67 @@
   async function rollOnce(){
     window.__bagSfx?.primeOnce?.();
 
-    const c = curToggle.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
-    const q = parseFloat(betQty.value||0)||0;
-    const sUsd = c==='BAG'?(PRICES.bagUsd>0?q*PRICES.bagUsd:0):(PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
-    const sBag = c==='BAG' ? q : (PRICES.bagUsd>0&&PRICES.xrpUsd>0 ? q*(PRICES.xrpUsd/PRICES.bagUsd) : 0);
+    // Spend at come-out only
+    if (isComeOut()){
+      const c = curToggle.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
+      const q = parseFloat(betQty.value||0)||0;
+      const sUsd = c==='BAG'?(PRICES.bagUsd>0?q*PRICES.bagUsd:0):(PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
+      const sBag = c==='BAG' ? q : (PRICES.bagUsd>0&&PRICES.xrpUsd>0 ? q*(PRICES.xrpUsd/PRICES.bagUsd) : 0);
 
-    if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
-    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
-    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
+      if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
+      if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+      if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
 
-    rollBtn.disabled = true; rollText.className='t'; rollText.textContent='Tumbling…';
-
-    // choose results now
-    const a = (Math.random()*6|0)+1;
-    const b = (Math.random()*6|0)+1;
-
-    // animate (continuous tumble through both SFX → abrupt stop)
-    if (typeof window.__bagDiceRollImpl === 'function'){
-      await window.__bagDiceRollImpl(a,b);
+      ROUND.active=true; ROUND.point=null; ROUND.stakeBag=sBag; ROUND.stakeUsd=sUsd; ROUND.currency=c;
     }
 
-    const ev = evaluate(a,b);
-    rollText.className = 't ' + (ev.cls||'');
-    rollText.textContent = `${ev.label} — ${a}+${b}=${a+b} · ${ev.mult.toFixed(2)}×`;
+    rollBtn.disabled = true;
+    rollText.className='t'; rollText.textContent = isComeOut()
+      ? 'Shaking… Come-out roll'
+      : `Shaking… Point is ${ROUND.point} (need ${ROUND.point} before 7)`;
 
-    const pay = sBag * ev.mult;
-    credit(pay);
+    // roll the dice (true faces chosen now)
+    const a = (Math.random()*6|0)+1;
+    const b = (Math.random()*6|0)+1;
+    if (typeof window.__bagDiceRollImpl === 'function'){ await window.__bagDiceRollImpl(a,b); }
 
-    if (typeof showWin==='function'){
-      if (ev.mult===2.00){
-        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*2.00)}`, duration:5600 });
-      }else if (ev.mult===1.25){
-        showWin({ message:'POINT WIN', subtext:`+${(sBag*0.25).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.25)}`, duration:3800 });
-      }else{
-        showWin({ message:'WIN', subtext:`1.00× returned`, duration:2000 });
+    const sum = a+b;
+    const ev = evaluate(sum);
+
+    // State transitions & UI
+    if (ev.type==='point-set'){
+      ROUND.point = sum;
+      rollText.className = 't scratch';
+      rollText.textContent = `Rolled ${a}+${b}=${sum} — POINT ESTABLISHED at ${ROUND.point} · Need ${ROUND.point} before 7`;
+      rollBtn.disabled=false;
+      return;
+    }
+
+    if (ev.type==='neutral'){
+      rollText.className = 't scratch';
+      rollText.textContent = `Rolled ${a}+${b}=${sum} — No effect · Point is ${ROUND.point} · Need ${ROUND.point} before 7`;
+      rollBtn.disabled=false;
+      return;
+    }
+
+    if (ev.type==='win' || ev.type==='jackpot'){
+      const pay = ROUND.stakeBag * ev.mult;
+      credit(pay);
+      if (typeof showWin==='function'){
+        const title = (ev.type==='jackpot') ? 'JACKPOT!' : (isComeOut() ? 'COME-OUT WIN' : 'POINT WIN');
+        showWin({ message:title, subtext:`Return ${ev.mult.toFixed(2)}× · ${fmtUsd(ROUND.stakeUsd)} → ${fmtUsd(ROUND.stakeUsd*ev.mult)}`, duration:(ev.type==='jackpot')?5200:4200 });
       }
+      rollText.className = 't win';
+      rollText.textContent = `Rolled ${a}+${b}=${sum} — ${ev.label} · ${ev.mult.toFixed(2)}× · Come-out next`;
+      ROUND.active=false; ROUND.point=null;
+    } else if (ev.type==='lose'){
+      rollText.className = 't lose';
+      rollText.textContent = `Rolled ${a}+${b}=${sum} — ${ev.label} · You lose · Come-out next`;
+      ROUND.active=false; ROUND.point=null;
     }
 
     window.dispatchEvent(new CustomEvent('bag:diceResult', {
-      detail: { mult: ev.mult, scratch: ev.mult===1.00, jackpot: ev.mult===2.00, stakeBag: sBag }
+      detail: { mult: ev.mult, outcome: ev.type, stakeBag: ROUND.stakeBag }
     }));
 
     rollBtn.disabled = false;
@@ -739,6 +854,8 @@
 
   document.querySelector('#bagDiceDemo .unit').textContent='XRP';
   updatePayoutPreview();
+  rollText.className='t';
+  rollText.textContent = 'Come-out roll — Need 7/11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point';
 
   rollBtn.addEventListener('click', rollOnce);
   window.addEventListener('keydown', e=>{ if(e.key==='r'||e.key==='R') rollOnce(); });
@@ -904,7 +1021,7 @@
           clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
         }
       }catch{} };
-      ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onerror=()=>{ clearTimeout(t); resolve(null); };
     });
   }
 
@@ -1083,9 +1200,10 @@
   window.addEventListener('bag:diceResult', (ev)=>{
     if (!window.__BAG_FORCE_DEMO) return;
     const d = ev?.detail || {};
-    if (d.mult === 2.00)      toast('JACKPOT pays 2× on-ledger. Connect when ready to play live');
-    else if (d.mult === 1.25) toast('POINT WIN pays 1.25× on-ledger. Connect when ready to play live');
-    else if (d.mult === 1.00) toast('WIN returns 1.00× (push). Connect when ready to play live');
+    if (d.outcome === 'jackpot')  toast('COME-OUT JACKPOT pays 2× on-ledger. Connect when ready to play live');
+    else if (d.outcome === 'win') toast('WIN pays as shown. Connect when ready to play live');
+    else if (d.outcome === 'lose')toast('Round lost. Connect when ready to play live');
+    else                          toast('Point is set — roll again');
   });
 
   window.addEventListener('bag:walletConnected', enableLive);
