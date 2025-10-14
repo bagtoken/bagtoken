@@ -157,7 +157,7 @@
       </div>
 
       <!-- SESSION -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
@@ -268,18 +268,14 @@
   </div>
 </div>
 
-<!-- AUDIO: shake×2 then roll×1 -->
+<!-- AUDIO: single diceshake.mp3 once per roll -->
 <script>
 (function(){
   const SHAKE_SRC = '/assets/sounds/diceshake.mp3';
-  const ROLL_SRC  = '/assets/sounds/diceroll.mp3';
 
   let primed=false;
   const baseShake = new Audio(SHAKE_SRC);
-  const baseRoll  = new Audio(ROLL_SRC);
-  [baseShake, baseRoll].forEach(a=>{
-    a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.9;
-  });
+  baseShake.preload='auto'; baseShake.crossOrigin='anonymous'; baseShake.setAttribute('playsinline',''); baseShake.volume=0.95;
 
   function primeOnce(){
     if (primed) return;
@@ -292,25 +288,19 @@
   }
   addEventListener('pointerdown', primeOnce, {once:true, passive:true});
 
-  function playOnce(el){
+  function playShakeOnce(){
     return new Promise(res=>{
       try{
-        const a = el.cloneNode(true);
-        a.loop=false; a.currentTime=0; a.volume=el.volume;
+        const a = baseShake.cloneNode(true);
+        a.loop=false; a.currentTime=0; a.volume=baseShake.volume;
         a.addEventListener('ended', ()=>res(), {once:true});
-        a.play().catch(()=>setTimeout(res, 1000));
-        setTimeout(()=>res(), 4000);
+        a.play().catch(()=>setTimeout(res, 1200));
+        setTimeout(()=>res(), 2500);
       }catch{ res(); }
     });
   }
 
-  async function rollFx(){
-    await playOnce(baseShake);
-    await playOnce(baseShake);
-    await playOnce(baseRoll);
-  }
-
-  window.__bagSfx = { rollFx, primeOnce };
+  window.__bagSfx = { playShakeOnce, primeOnce };
 })();
 </script>
 
@@ -347,7 +337,7 @@
 <!-- GAME + PRICES + 3D DICE -->
 <script>
 (function(){
-  /* ---------- Prices (same as before) ---------- */
+  /* ---------- Prices ---------- */
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
@@ -400,7 +390,8 @@
       ws.onmessage=ev=>{ try{
         const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
         const bag=Number(j.result.amm.amount?.value||0);
-        const xrp=('value' in (j.result.amm.amount2||{}))? Number(j.result.amm.amount2.value): (Number(j.result.amm.amount2)/1_000_000);
+        const x2=j.result.amm.amount2;
+        const xrp=(x2&&typeof x2==='object'&&'value' in x2)? Number(x2.value): (Number(x2)/1_000_000);
         if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
       }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
       ws.onerror=()=>{ clearTimeout(to); resolve(false); };
@@ -455,13 +446,12 @@
   });
 
   /* ---------- 3D Dice helpers ---------- */
-  // Build one die (six faces with proper pip patterns)
   function makeDie(el){
     el.innerHTML='';
     const faces=[
       {cls:'top',    val:1, pips:[5]},
       {cls:'bottom', val:6, pips:[1,3,4,6,7,9]},
-      {cls:'right',  val:2, pips:[3,7]},
+      {cls:'right',  val:2, pips:[1,9]},           /* conventional diagonal */
       {cls:'left',   val:5, pips:[1,3,5,7,9]},
       {cls:'front',  val:3, pips:[1,5,9]},
       {cls:'back',   val:4, pips:[1,3,7,9]},
@@ -475,7 +465,6 @@
       }
       el.appendChild(face);
     });
-    // Orientation mapping: which rotation makes number n on top
     const ORIENT = {
       1:'rotateX(0deg) rotateY(0deg)',
       2:'rotateY(-90deg)',
@@ -494,7 +483,7 @@
   const dieA = makeDie(document.getElementById('dieA'));
   const dieB = makeDie(document.getElementById('dieB'));
 
-  // Physics-ish tumble: spin for duration, then settle to target
+  // Spin animation (3 axes) then settle
   function tumble(elList, ms){
     const start = performance.now();
     const base = elList.map(()=>({ rx:Math.random()*360, ry:Math.random()*360, rz:Math.random()*360 }));
@@ -514,7 +503,7 @@
     return new Promise(res=>setTimeout(res, ms));
   }
 
-  // Craps-ish labels & payouts
+  /* ---------- Roll & Resolve ---------- */
   const rollBtn = document.getElementById('rollBtn');
   const rollText = document.getElementById('rollText');
 
@@ -541,18 +530,16 @@
 
     rollBtn.disabled = true; rollText.className='t'; rollText.textContent='Rolling…';
 
-    // Start audio sequence and tumble while shakes play
-    const audioSeq = window.__bagSfx?.rollFx?.();
+    const sfx = window.__bagSfx?.playShakeOnce?.();
     const cubes = [document.getElementById('dieA'), document.getElementById('dieB')];
-    await tumble(cubes, 2200);
+    await tumble(cubes, 1200);
 
-    // Choose results and orient dice to show the correct top pip value
     const a = Math.floor(Math.random()*6)+1;
     const b = Math.floor(Math.random()*6)+1;
     dieA.setTop(a);
     dieB.setTop(b);
 
-    await audioSeq; // wait for final roll sfx
+    await sfx;
 
     const ev = evaluate(a,b);
     rollText.className = 't ' + (ev.cls||'');
@@ -563,11 +550,11 @@
 
     if (typeof showWin==='function'){
       if (ev.mult===2.00){
-        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*2.00)}`, duration:6200 });
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*2.00)}`, duration:5600 });
       }else if (ev.mult===1.25){
-        showWin({ message:'POINT WIN', subtext:`+${(sBag*0.25).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.25)}`, duration:4200 });
+        showWin({ message:'POINT WIN', subtext:`+${(sBag*0.25).toLocaleString()} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.25)}`, duration:3800 });
       }else{
-        showWin({ message:'WIN', subtext:`1.00× returned`, duration:2200 });
+        showWin({ message:'WIN', subtext:`1.00× returned`, duration:2000 });
       }
     }
 
@@ -578,7 +565,6 @@
     rollBtn.disabled = false;
   }
 
-  // Defaults
   document.querySelector('#bagDiceDemo .unit').textContent='XRP';
   updatePayoutPreview();
 
@@ -871,7 +857,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
