@@ -325,23 +325,28 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 });
 </script>
 
-<!-- PLINKO GAME LOGIC (round-scoped timers to stop disappearing coin) -->
+<!-- PLINKO GAME LOGIC — singleton + round-scoped resolves (fixes disappearing coin) -->
 <script>
 (function(){
-  // Pay map
+  // If an older instance exists, destroy it so its timers can't touch the new round
+  if (window.__BAG_PLINKO && typeof window.__BAG_PLINKO.destroy === 'function') {
+    window.__BAG_PLINKO.destroy();
+  }
+
+  // Payouts (unchanged)
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics (your original)
+  // Physics / board (unchanged)
   const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
   const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
 
-  // Canvas — fixed logical size (keeps proportions identical)
+  // Canvas (unchanged)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Board geometry (your original)
+  // Geometry (unchanged)
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=110, bottomBoard=H-120;
 
@@ -359,48 +364,38 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     }
   }
 
-  // Slots
+  // Slots (unchanged)
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI refs
+  // UI refs (unchanged)
   const $=id=>document.getElementById(id);
-  const balLbl=$('balLbl'), ccyLbl=$('ccyLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
+  const modeLbl=$('modeLbl'), balLbl=$('balLbl'), ccyLbl=$('ccyLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   const resText=$('resText'), dropBtn=$('dropBtn'), curToggle=$('curToggle');
   const unitSpan=document.querySelector('#bagPlinko .unit');
   const betInput=$('demoBet'), usdInput=$('usdBet'), cele=$('cele'), stateText=$('stateText');
 
   // State
-  let balance=100, stake=1, currency='XRP', lastTxt='—';
+  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0, lastPegTs=0;
 
-  // 🔐 ROUND SCOPING — the key fix
-  let roundSeq = 0;           // increments every new drop
-  let safetyTimer = null;     // timeout handle for that round
+  // 🔐 Round & lifecycle
+  let roundSeq=0;                // current round id
+  let safetyTimer=null;          // timeout for this round only
+  let rafId=null, running=true;  // RAF control for this singleton
 
-  // RAF lifecycle — immortal
-  let rafStarted=false;
-  function startLoop(){
-    if (rafStarted) return;
-    rafStarted = true;
-    (function loop(ts){
-      drawBoard();
-      if(ball && ball.alive){
-        stepBall(ts);
-        drawBall(ball.x, ball.y);
-        if(ball.y > H + 200 || ts - dropStartedAt > 12000){
-          resolveByIndex(boundarySlotIndex(ball.x), roundSeq);
-        }
-      }
-      // guard: if physics ended but flags stuck, free button
-      if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
-      requestAnimationFrame(loop);
-    })(performance.now());
-  }
+  // Public singleton handle so next script init can shut this one down
+  window.__BAG_PLINKO = {
+    destroy(){
+      try{ running=false; if (rafId) cancelAnimationFrame(rafId); }catch{}
+      try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
+      try{ dropBtn.removeEventListener('click', onDropClick); }catch{}
+    }
+  };
 
   function hud(){ balLbl.textContent=Number(balance).toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
 
-  // inputs
+  // Inputs (unchanged)
   function sanitizeBet(){
     const raw = (betInput.value||'').replace(/[^\d]/g,'');
     betInput.value = raw || '1';
@@ -409,6 +404,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   }
   betInput.addEventListener('input', sanitizeBet);
   betInput.addEventListener('blur', sanitizeBet);
+
   function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
   function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
@@ -417,6 +413,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   }
   window.stakeUsdEquivalent = stakeUsdEquivalent;
+
   usdInput.addEventListener('blur', ()=>{
     const u = parseFloat(usdInput.value||'0'); const P=window.__PRICES__||{};
     if (!(u>0)) return;
@@ -424,38 +421,38 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     else if (currentCurrency()==='BAG' && P.bagUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.bagUsd)).toString(); }
     sanitizeBet();
   });
+
   window.addEventListener('bag:pricesUpdated', ()=>{
     const usd = stakeUsdEquivalent();
     if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
   });
+
   curToggle.addEventListener('change', ()=>{
     currency = currentCurrency(); ccyLbl.textContent = currency; unitSpan.textContent = currency;
     const usd = stakeUsdEquivalent(); usdInput.value = usd>0 ? usd.toFixed(2) : '';
   });
 
-  // SFX
+  // SFX (unchanged)
   function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Round reset — does NOT touch other rounds’ timers now
+  // Reset just the *current* round
   function resetRoundState(){
-    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer=null; }
+    if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
     ball=null; dropping=false; dropBtn.disabled=false; lastPegTs=0;
     cele?.classList.remove('show');
   }
 
-  // Start round
-  dropBtn.addEventListener('click', async ()=>{
+  async function onDropClick(){
     try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
-    // fully clear current round only
+    // clear any lingering state from a prior round of THIS instance
     resetRoundState();
 
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    // new round ID
-    roundSeq += 1;
+    roundSeq += 1;                     // new round id
     const myRound = roundSeq;
 
     dropBtn.disabled = true;
@@ -465,9 +462,14 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     stateText.textContent = 'Dropping…';
     hud();
 
+    // Start new ball
     startDrop(myRound);
-    startLoop();
-  });
+
+    // Ensure the RAF is running
+    ensureLoop();
+  }
+
+  dropBtn.addEventListener('click', onDropClick);
 
   function startDrop(myRound){
     dropping=true;
@@ -475,15 +477,40 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     lastPegTs = 0;
     dropStartedAt = performance.now();
 
-    // safety resolve is now round-scoped
+    // Round-scoped safety resolve
     safetyTimer = setTimeout(()=>{
-      if(dropping && roundSeq===myRound){
+      if(dropping && myRound===roundSeq){
         resolveByIndex(boundarySlotIndex((ball&&ball.x)||W/2), myRound);
       }
     }, 9000);
   }
 
-  // step
+  function ensureLoop(){
+    if (rafId!=null) return; // already running
+    const loop = (ts)=>{
+      if (!running){ rafId=null; return; }
+
+      drawBoard();
+
+      if (ball && ball.alive){
+        stepBall(ts);
+        drawBall(ball.x, ball.y);
+        // Hard stop if something went sideways
+        if (ball.y > H + 200 || (dropStartedAt && ts - dropStartedAt > 12000)){
+          resolveByIndex(boundarySlotIndex(ball.x), ball.round);
+        }
+      }
+      // Safety: if ball ended but flags stuck
+      if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
+
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // Extra periodic guard
+  setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ resetRoundState(); } }, 900);
+
   function stepBall(ts){
     if (!ball) return;
     ball.frames++;
@@ -528,17 +555,17 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-  // Now round-checked resolve: old timers cannot nuke the new coin
   function resolveByIndex(idx, myRound){
-    if (myRound !== roundSeq) return; // ignore stale resolve from a previous round
-    if (!ball) { resetRoundState(); return; }
+    // Ignore stale resolves (from an old round or old script instance)
+    if (myRound !== roundSeq) return;
 
+    if (!ball){ resetRoundState(); return; }
     ball.alive = false;
     ball = null;
-    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer=null; }
 
-    dropping = false;
-    dropBtn.disabled = false;
+    if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
+
+    dropping=false; dropBtn.disabled=false;
 
     const rule = PAY_MAP[idx] ?? 'L';
     cele?.classList.remove('show');
@@ -570,46 +597,10 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     hud();
   }
 
-  // Render
-  function drawBoard(){
-    ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
-
-    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
-    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
-
-    ctx.fillStyle='#704d1d';
-    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
-
-    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
-    for(let i=1;i<SLOTS;i++){
-      const x = slotX(i);
-      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
-    }
-
-    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
-    ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
-    for(let i=0;i<SLOTS;i++){
-      const rule = PAY_MAP[i];
-      const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
-      ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
-      ctx.fillText(txt, centers[i], bottomBoard+72);
-    }
-  }
-
-  function drawBall(x,y){
-    const r=BALL_R;
-    const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
-    g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
-  }
-
-  // initial UI + immortal loop so the board is drawn before first drop
+  // Init UI + start loop so board is visible before first play
   ccyLbl.textContent = currency; unitSpan.textContent = currency;
   hud();
-  startLoop();
+  ensureLoop();
 })();
 </script>
 
