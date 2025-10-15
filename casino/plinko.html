@@ -318,46 +318,28 @@
 
 <!-- PLINKO GAME LOGIC -->
 <script>
-/* Kill any older instance cleanly */
+/* Clean up any older instance so we don't double-bind */
 if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
   window.__bagPlinko.destroy();
 }
 
 (function(){
-  // Payouts (unchanged)
+  // ----- Config (unchanged odds / physics / layout) -----
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics / layout (unchanged params)
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-  // Base canvas (board) from DOM
+  // ----- Canvases (board only) -----
   const board = document.getElementById('game');
   const bctx  = board.getContext('2d');
+  const W=640, H=880; board.width=W; board.height=H;
 
-  // Create an overlay canvas purely for the coin (prevents other loops from “wiping” it)
-  const wrap = board.parentElement;
-  const coin = document.createElement('canvas');
-  coin.style.position = 'absolute';
-  coin.style.inset = '0';
-  coin.style.width = '100%';
-  coin.style.height = '100%';
-  coin.style.pointerEvents = 'none';
-  coin.style.zIndex = '2'; // above board
-  wrap.appendChild(coin);
-  const cctx = coin.getContext('2d');
-
-  // Fixed logical size (CSS scales it)
-  const W = 640, H = 880;
-  board.width = W; board.height = H;
-  coin.width  = W; coin.height  = H;
-
-  // Board geometry
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // Peg grid
+  // Peg grid (spans down the board)
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -376,18 +358,18 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI refs
+  // ----- UI refs -----
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
   const betInput=$('demoBet'), stateText=$('stateText');
 
-  // State
+  // ----- State -----
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, ball=null, lastPegTick=0, resolved=false;
   let safetyTimer=null, freeGuard=null, rafId=null;
 
-  // Make stakeUsdEquivalent visible (your pricesUpdated listener uses it)
+  // Make stakeUsdEquivalent available for your pricesUpdated listener
   window.stakeUsdEquivalent = function(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
@@ -403,31 +385,54 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
     stake = Math.max(1, parseInt(betInput.value,10)||1); hud();
   });
 
-  // Audio nudges (no await)
+  // Audio nudges (no awaits so they never block)
   function pegSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
   function clickSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // House-weighted emergency resolve
+  // Weighted fallback (house edge) if tab throttles
   function weightedSlotIndex(){
     const w=[28,10,28,2,28,10,28]; let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
     for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
   }
 
-  // Round reset
+  // ----- COIN AS DOM NODE (immune to canvas clears) -----
+  const wrap = board.parentElement;
+  const coinNode = document.createElement('div');
+  coinNode.style.position='absolute';
+  coinNode.style.inset='0';
+  coinNode.style.pointerEvents='none';
+  coinNode.style.zIndex='2';
+  // the visual coin
+  const coinDot = document.createElement('div');
+  coinDot.style.position='absolute';
+  coinDot.style.width = (BALL_R*2)+'px';
+  coinDot.style.height= (BALL_R*2)+'px';
+  coinDot.style.borderRadius='50%';
+  coinDot.style.boxShadow='0 0 0 1px rgba(0,0,0,.35)';
+  // gradient (matches your theme)
+  coinDot.style.background='radial-gradient(circle at 35% 35%, #fff2a6 0%, #d9a93e 55%, #8b5e13 100%)';
+  coinNode.appendChild(coinDot);
+  wrap.appendChild(coinNode);
+
+  function drawCoin(x,y){
+    // center the dot on (x,y)
+    coinDot.style.transform = `translate(${Math.round(x-BALL_R)}px,${Math.round(y-BALL_R)}px)`;
+    coinDot.style.display = 'block';
+  }
+  function clearCoin(){ coinDot.style.display='none'; }
+
+  // ----- Round mgmt -----
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
     clearTimeout(freeGuard);   freeGuard=null;
     ball=null; dropping=false; dropBtn.disabled=false; lastPegTick=0; resolved=false;
-    // clear coin overlay
-    cctx.clearRect(0,0,W,H);
+    clearCoin();
   }
 
-  // Start round
   dropBtn.addEventListener('click', ()=>{
     clickSound();
     clearRoundState();
 
-    // $1 min (allow in demo if prices not ready)
     const usd = window.stakeUsdEquivalent ? window.stakeUsdEquivalent() : 0;
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent='Min $1'; return; }
@@ -448,18 +453,18 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
 
     ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
 
-    // Safety resolves
     safetyTimer=setTimeout(()=>{ if(dropping && !resolved){ resolveByIndex(weightedSlotIndex()); } }, 9000);
     freeGuard=setTimeout(()=>{ if(dropping && !ball){ clearRoundState(); } }, 12000);
   }
 
-  // Single RAF loop (board + coin overlay)
+  // ----- Single RAF for life (keeps board visible even before first drop) -----
   function loop(){
-    drawBoard();                   // draws only on base canvas
-    if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); } // coin drawn on overlay
+    drawBoard();
+    if(ball && ball.alive){ stepBall(); drawCoin(ball.x,ball.y); }
+    else clearCoin();
     rafId = requestAnimationFrame(loop);
   }
-  rafId = requestAnimationFrame(loop); // board visible immediately
+  rafId = requestAnimationFrame(loop);
 
   // Physics
   function stepBall(){
@@ -490,7 +495,7 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
       }
     }
 
-    // landing
+    // land
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
@@ -538,8 +543,7 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
       pegSound();
     }
     hud();
-    // clear coin overlay at end so next round starts clean
-    cctx.clearRect(0,0,W,H);
+    clearCoin(); // ready for next round
   }
 
   function winFlash(text, color){
@@ -551,7 +555,7 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
     setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
   }
 
-  /* Drawing — board on base canvas only */
+  // Draw the board (only on base canvas)
   function drawBoard(){
     bctx.clearRect(0,0,W,H);
     bctx.fillStyle='#0b1b13'; bctx.fillRect(0,0,W,H);
@@ -579,27 +583,16 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
     }
   }
 
-  /* Draw coin on overlay canvas only */
-  function drawBall(x,y){
-    const r=BALL_R;
-    cctx.clearRect(0,0,W,H);
-    const g=cctx.createRadialGradient(x-3,y-3,2,x,y,r);
-    g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
-    cctx.fillStyle=g;
-    cctx.beginPath(); cctx.arc(x,y,r,0,Math.PI*2); cctx.fill();
-    cctx.lineWidth=1; cctx.strokeStyle='rgba(0,0,0,.35)'; cctx.stroke();
-  }
-
-  // Public teardown so future loads don’t conflict
+  // Public teardown (future replacements won’t conflict)
   window.__bagPlinko = {
     destroy(){
       try{ cancelAnimationFrame(rafId); }catch{}
       clearTimeout(safetyTimer); clearTimeout(freeGuard);
-      try{ coin.remove(); }catch{}  // remove overlay
+      try{ coinNode.remove(); }catch{}
     }
   };
 
-  hud();
+  hud(); // initial labels
 })();
 </script>
 
