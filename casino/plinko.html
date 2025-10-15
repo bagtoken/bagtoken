@@ -228,9 +228,9 @@
   </div>
 </section>
 
-<!-- AUDIO ENGINE (unchanged) -->
 <script>
 (function(){
+  // === WebAudio bootstrap (same behavior) ===
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC = null, MASTER = null, lastInteractTs = 0, watchdogTimer = null;
 
@@ -263,42 +263,119 @@
   function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
 
-  function makeNoise(ac,dur=0.08){
-    const len=Math.max(1,Math.floor(dur*ac.sampleRate));
-    const buf=ac.createBuffer(1,len,ac.sampleRate);
-    const data=buf.getChannelData(0);
-    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*0.9;
-    const src=ac.createBufferSource(); src.buffer=buf;
-    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1200; bp.Q.value=2.0;
-    const g=ac.createGain(); g.gain.value=0;
-    src.connect(bp).connect(g);
-    return {src,g};
-  }
-
-  async function nudge(){
-    const ac=getAC(); if(!ac) return;
-    if(ac.state!=='running'){ await tryResume(); return; }
-    const now=ac.currentTime;
+  // === Plinko voices ===
+  function mkComp(ac){
     const comp=ac.createDynamicsCompressor();
-    comp.threshold.value=-26; comp.knee.value=16; comp.ratio.value=3.5; comp.attack.value=0.003; comp.release.value=0.08;
+    comp.threshold.value=-20; comp.knee.value=18; comp.ratio.value=3.5; comp.attack.value=0.001; comp.release.value=0.12;
     comp.connect(MASTER);
-
-    const {src:nSrc,g:nGain}=makeNoise(ac,0.06);
-    nGain.connect(comp);
-    nGain.gain.setValueAtTime(0.0001,now);
-    nGain.gain.linearRampToValueAtTime(0.12,now+0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
-    nSrc.start(now); nSrc.stop(now+0.09);
-
-    const o=ac.createOscillator(), g=ac.createGain();
-    o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18);
-    g.gain.setValueAtTime(0.0001,now);
-    g.gain.linearRampToValueAtTime(0.10,now+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001,now+0.22);
-    o.connect(g).connect(comp);
-    o.start(now); o.stop(now+0.24);
+    return comp;
   }
 
+  // Metallic ping (peg hit)
+  function playPeg(){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const now=ac.currentTime;
+    const comp=mkComp(ac);
+
+    // two short FM-ish partials for a metallic click
+    const o1=ac.createOscillator(), o2=ac.createOscillator();
+    const m1=ac.createOscillator(), m2=ac.createOscillator();
+    const g=ac.createGain();
+
+    o1.type='sine'; o2.type='triangle';
+    m1.type='sine'; m2.type='sine';
+
+    // base freqs
+    o1.frequency.setValueAtTime(2100, now);
+    o2.frequency.setValueAtTime(2800, now);
+
+    // tiny FM for metallic bite
+    const m1Gain=ac.createGain(); m1Gain.gain.setValueAtTime(85, now);
+    const m2Gain=ac.createGain(); m2Gain.gain.setValueAtTime(60, now);
+
+    m1.connect(m1Gain).connect(o1.frequency);
+    m2.connect(m2Gain).connect(o2.frequency);
+
+    m1.frequency.setValueAtTime(4200, now);
+    m2.frequency.setValueAtTime(3600, now);
+
+    // amplitude env
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.12, now+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
+
+    o1.connect(g); o2.connect(g); g.connect(comp);
+
+    o1.start(now); o2.start(now); m1.start(now); m2.start(now);
+    o1.stop(now+0.12); o2.stop(now+0.12); m1.stop(now+0.12); m2.stop(now+0.12);
+  }
+
+  // Wall thunk: lower, softer
+  function playWall(){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const now=ac.currentTime;
+    const comp=mkComp(ac);
+    const o=ac.createOscillator(), g=ac.createGain();
+
+    o.type='square';
+    o.frequency.setValueAtTime(380, now);
+    o.frequency.exponentialRampToValueAtTime(180, now+0.12);
+
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.09, now+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
+
+    o.connect(g).connect(comp);
+    o.start(now); o.stop(now+0.16);
+  }
+
+  // Lose: tiny noise puff
+  function playLose(){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const now=ac.currentTime;
+    const buf=ac.createBuffer(1, Math.floor(ac.sampleRate*0.06), ac.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*0.6*(1-i/d.length);
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=1.2;
+    const g=ac.createGain(); g.gain.setValueAtTime(0.12, now); g.gain.exponentialRampToValueAtTime(0.0001, now+0.08);
+    src.connect(bp).connect(g).connect(MASTER);
+    src.start(now); src.stop(now+0.09);
+  }
+
+  // Win: quick arpeggio (short, not Dice roll)
+  function playWin(jackpot=false){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const now=ac.currentTime;
+    const comp=mkComp(ac);
+    const notes = jackpot ? [880, 1175, 1568, 2093] : [660, 880, 1175];
+
+    notes.forEach((f,i)=>{
+      const start = now + i*0.06;
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type='triangle';
+      o.frequency.setValueAtTime(f, start);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.12, start+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+0.14);
+      o.connect(g).connect(comp);
+      o.start(start); o.stop(start+0.16);
+    });
+  }
+
+  // Public API:
+  // - nudge(): used by your code on peg hits/clicks → now plays the Plinko peg "ping"
+  // - peg(), wall(), win(), lose() available if you want to wire them later
+  window.__bagAudio = {
+    ensureInteractive,
+    nudge: playPeg,
+    peg: playPeg,
+    wall: playWall,
+    win: (jackpot=false)=>playWin(!!jackpot),
+    lose: playLose
+  };
+
+  // resume helpers
   if(!watchdogTimer){
     watchdogTimer=setInterval(()=>{
       const ac=AC; if(!ac) return;
@@ -306,19 +383,17 @@
       if(active && ac.state==='suspended') tryResume();
     },1500);
   }
-
   const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
   INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
   addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
 
+  // one-time warmup
   addEventListener('pointerdown', async function once(){
     removeEventListener('pointerdown', once, {capture:false});
-    try{ await ensureInteractive(); await nudge(); }catch{}
+    try{ await ensureInteractive(); playPeg(); }catch{}
   }, {once:true});
-
-  window.__bagAudio = { ensureInteractive, nudge };
 })();
 </script>
 
