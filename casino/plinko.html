@@ -325,15 +325,13 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 });
 </script>
 
-<!-- PLINKO GAME LOGIC — keep board/physics; fix disappearing-after-first-play -->
+<!-- PLINKO GAME LOGIC — keep visuals/physics; fix disappearing coin on 2nd play -->
 <script>
 (function(){
-  // Kill any previous instance so old timeouts/RAFs can't touch the new round.
-  if (window.__BAG_PLINKO && typeof window.__BAG_PLINKO.destroy === 'function') {
-    window.__BAG_PLINKO.destroy();
-  }
+  // Cancel any prior instance so old timers/loops can't interfere
+  if (window.__BAG_PLINKO && window.__BAG_PLINKO.destroy) window.__BAG_PLINKO.destroy();
 
-  // ===== Your unchanged payout + physics + board numbers =====
+  // ===== Your original payout/physics/board numbers (unchanged) =====
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
@@ -350,6 +348,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   const PEG_ROWS = 12, PEG_COLS = 11;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
+
   const pegs=[];
   for(let r=0;r<PEG_ROWS;r++){
     const off=(r%2===0)?0:pegSpacingX/2;
@@ -371,28 +370,14 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   const curToggle=$('curToggle'); const unitSpan=document.querySelector('#bagPlinko .unit');
   const betInput=$('demoBet'), usdInput=$('usdBet'), ccyLbl=$('ccyLbl');
 
-  // ===== Game state =====
+  // ===== State =====
   let balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0, lastPegTs=0;
-
-  // Round / lifecycle guards
-  let roundSeq=0;                 // increments each click
-  let safetyTimer=null;           // emergency resolve timer
-  let rafId=null, running=true;   // main RAF
-  let framesDrawnThisRound=0;     // ensure ball is visibly drawn before resolve
-
-  window.__BAG_PLINKO = {
-    destroy(){
-      running=false;
-      try{ if (rafId) cancelAnimationFrame(rafId); }catch{}
-      try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
-      try{ dropBtn && dropBtn.removeEventListener('click', onDropClick); }catch{}
-    }
-  };
+  let framesDrawnThisRound=0, roundSeq=0, safetyTimer=null;
 
   function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; ccyLbl.textContent=currency; }
 
-  // Bet sanitization (unchanged)
+  // sanitize bet (unchanged)
   function sanitizeBet(){
     const raw = (betInput.value||'').replace(/[^\d]/g,'');
     betInput.value = raw || '1';
@@ -429,7 +414,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 
   function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Loss-weighted emergency resolver (used only if physics hangs)
+  // Loss-weighted fallback (used only if physics hangs)
   function weightedSlotIndex(){
     const weights = [28,10,28,2,28,10,28];
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
@@ -444,68 +429,66 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   }
 
   async function onDropClick(){
+    // wake audio
     try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
-    // Clean any stale state before starting
+    // clear any stale state from previous round (prevents invisible coin)
     resetRoundState();
 
+    // $1 min (allow demo if prices missing)
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
+    // start new round
     roundSeq += 1; const myRound = roundSeq;
-
     dropping=true; dropBtn.disabled=true;
     balance = Math.max(0, balance - stake);
     lastTxt='—'; resText.textContent='—';
     stateText && (stateText.textContent='Dropping…'); hud();
 
-    // New ball
     ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, round:myRound};
     dropStartedAt = performance.now();
     framesDrawnThisRound = 0;
 
-    // Emergency resolve — but only after we’ve visibly drawn several frames
+    // emergency resolve — ONLY after the ball has been visibly drawn for a few frames
     safetyTimer = setTimeout(()=>{
       if(dropping && myRound===roundSeq && framesDrawnThisRound>=8){
         resolveByIndex(weightedSlotIndex(), myRound);
       }
     }, 9000);
-
-    ensureLoop();
   }
 
   dropBtn.addEventListener('click', onDropClick);
 
-  function ensureLoop(){
-    if (rafId!=null) return;
-    const loop = (ts)=>{
-      if (!running){ rafId=null; return; }
+  // Single, continuous RAF loop from page load — never stops between rounds.
+  let running = true;
+  function loop(ts){
+    if (!running) return;
 
-      drawBoard();
+    drawBoard();
 
-      if (ball && ball.alive){
-        stepBall(ts);
-        drawBall(ball.x, ball.y);
-        framesDrawnThisRound++;               // <-- proves the ball was actually visible
+    if (ball && ball.alive){
+      stepBall(ts);
+      drawBall(ball.x, ball.y);
+      framesDrawnThisRound++;
 
-        const tooLong = dropStartedAt && ts - dropStartedAt > 12000;
-        const outBottom = ball.y > H + 200;
-        if ((tooLong || outBottom) && framesDrawnThisRound>=8){
-          resolveByIndex(weightedSlotIndex(), ball.round);
-        }
+      const tooLong = dropStartedAt && ts - dropStartedAt > 12000;
+      const outBottom = ball.y > H + 200;
+      if ((tooLong || outBottom) && framesDrawnThisRound>=8){
+        resolveByIndex(boundarySlotIndex(ball.x), ball.round);
       }
+    }
 
-      if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
-      rafId = requestAnimationFrame(loop);
-    };
-    rafId = requestAnimationFrame(loop);
+    if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
+    requestAnimationFrame(loop);
   }
+  requestAnimationFrame(loop);
 
-  // Extra guard against stale flags
+  // extra guard against stuck flags
   setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ resetRoundState(); } }, 900);
 
-  function stepBall(ts){
+  function stepBall(){
     if (!ball) return;
     ball.vy += GRAVITY;
     ball.x  += ball.vx; ball.y += ball.vy;
@@ -534,7 +517,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       }
     }
 
-    // Normal landing (only after we've visibly drawn)
+    // Normal landing (only after visible frames)
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (framesDrawnThisRound>=8 && ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x), ball.round);
@@ -548,10 +531,9 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   }
 
   function resolveByIndex(idx, myRound){
-    // Ignore any stale resolve from previous rounds
-    if (myRound !== roundSeq) return;
-
+    if (myRound !== roundSeq) return;        // ignore stale resolves
     if (!ball){ resetRoundState(); return; }
+
     ball.alive=false; ball=null;
     if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
 
@@ -599,13 +581,13 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
-      ctx.fillText(txt, slotCenters[i], bottomBoard+72);
+      ctx.fillText(txt, centers[i], bottomBoard+72);
     }
   }
 
@@ -617,9 +599,17 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // Init UI & start RAF immediately so the board is visible pre-click
+  // expose a destroy hook in case of hot-reload
+  window.__BAG_PLINKO = {
+    destroy(){
+      try{ dropBtn && dropBtn.removeEventListener('click', onDropClick); }catch{}
+      try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
+      // RAF loop intentionally left running for lifetime of page
+    }
+  };
+
+  // boot UI
   hud();
-  (function bootOnce(){ if (rafId==null) ensureLoop(); })();
 })();
 </script>
 
