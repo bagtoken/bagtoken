@@ -373,7 +373,7 @@
 })();
 </script>
 
-<!-- GAME + DICE (CSS 3D; inline SVG pips) — shake → tumble → throw → FACE-OUT land -->
+<!-- GAME + DICE (CSS 3D; inline SVG pips) — tumble → throw → square face-out land -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
@@ -403,21 +403,7 @@
       .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
       .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
 
-      /* 1) Small SHAKE (subtle jitter) */
-      @keyframes shakeA {
-        0%{transform:translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg) rotateZ(0deg)}
-        50%{transform:translate3d(-72px,15px,0) rotateX(11deg) rotateY(-15deg) rotateZ(.6deg)}
-        100%{transform:translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg) rotateZ(0deg)}
-      }
-      @keyframes shakeB {
-        0%{transform:translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg) rotateZ(0deg)}
-        50%{transform:translate3d( 76px,19px,0) rotateX(-7deg) rotateY(19deg) rotateZ(-.6deg)}
-        100%{transform:translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg) rotateZ(0deg)}
-      }
-      .shakingA{ animation:shakeA .12s linear infinite; }
-      .shakingB{ animation:shakeB .12s linear infinite; }
-
-      /* 2) TUMBLE (true spin) */
+      /* 1) TUMBLE (true spin; a touch faster) */
       @keyframes tumbleA {
         from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
         to  { transform:translate3d(-74px,16px,0) rotateX(1.55turn) rotateY(.85turn) rotateZ(.55turn); }
@@ -426,10 +412,10 @@
         from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
         to  { transform:translate3d( 74px,20px,0) rotateX(1.45turn) rotateY(1.05turn) rotateZ(-.50turn); }
       }
-      .tumblingA{ animation:tumbleA .50s linear infinite; } /* a tiny bit faster */
+      .tumblingA{ animation:tumbleA .50s linear infinite; }
       .tumblingB{ animation:tumbleB .50s linear infinite; }
 
-      /* 3) THROW to center (we set the final transform per roll) */
+      /* 2) THROW to center; we set final transform per roll */
       .tossing{ transition: transform .80s cubic-bezier(.2,.9,.2,1); }
     </style>
     <div class="cssstage">
@@ -440,7 +426,7 @@
     </div>
   `;
 
-  /* Perfect pips: inline SVG, white body, black pips */
+  /* White body + large black pips, inline SVG (no assets) */
   function faceSVG(val){
     const r = 0.22, m = 0.56, c = 0;
     const P = {
@@ -453,8 +439,7 @@
     }[val];
     const dots = P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'>
-      <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>
-      ${dots}
+      <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}
     </svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   }
@@ -470,57 +455,41 @@
   const dieB = document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
-  /* FACE-OUT orientation: ensures the requested number is the FRONT face */
-  // Our faces: f1=front, f6=back(180°Y), f3=right(+90°Y), f4=left(-90°Y), f2=top(+90°X), f5=bottom(-90°X)
+  /* FACE-OUT orientation: requested number becomes the FRONT face, no tilt/yaw */
   const FRONT = {
-    1: (yaw)=>`rotateY(0rad) rotateX(0rad) rotateZ(${yaw}rad)`,
-    2: (yaw)=>`rotateX( 1.5708rad) rotateZ(${yaw}rad)`,   // top -> front
-    3: (yaw)=>`rotateY(-1.5708rad) rotateZ(${yaw}rad)`,   // right -> front
-    4: (yaw)=>`rotateY( 1.5708rad) rotateZ(${yaw}rad)`,   // left  -> front
-    5: (yaw)=>`rotateX(-1.5708rad) rotateZ(${yaw}rad)`,   // bottom -> front
-    6: (yaw)=>`rotateY( 3.1416rad) rotateZ(${yaw}rad)`,   // back -> front
+    1: ()=>`rotateY(0rad) rotateX(0rad)`,
+    2: ()=>`rotateX( 1.5708rad)`,   // top -> front
+    3: ()=>`rotateY(-1.5708rad)`,   // right -> front
+    4: ()=>`rotateY( 1.5708rad)`,   // left  -> front
+    5: ()=>`rotateX(-1.5708rad)`,   // bottom -> front
+    6: ()=>`rotateY( 3.1416rad)`,   // back -> front
   };
-  const poseToFront = (v,y)=> (FRONT[v]||FRONT[1])(y);
+  const poseToFront = (v)=> (FRONT[v]||FRONT[1])();
 
-  /* Sequence controller: SHAKE -> TUMBLE -> ROLL SFX -> THROW -> LAND */
+  /* Sequence: TUMBLE → start roll SFX → THROW → LAND square (face-out) */
   async function rollCssDice(a,b){
     await window.__bagSfx?.primeOnce?.();
 
-    // 1) tiny shake + start shake audio
-    dieA.classList.add('shakingA'); dieB.classList.add('shakingB');
-    const sp = window.__bagSfx?.playShake?.();
-    await Promise.race([
-      (async()=>{ try{ await sp; }catch{} })(),
-      new Promise(r=>setTimeout(r, 260)) // ~¼ second micro-shake
-    ]);
+    // Start tumbling
+    dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
 
-    // 2) switch to tumble until we begin the throw
-    dieA.classList.remove('shakingA'); dieB.classList.remove('shakingB');
-    dieA.classList.add('tumblingA');   dieB.classList.add('tumblingB');
+    // brief tumble lead-in, then start roll sound and throw
+    await new Promise(r=>setTimeout(r, 260));
+    (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
 
-    // give tumble a brief beat before throw and start roll SFX a touch later
-    await new Promise(r=>setTimeout(r, 240));
-    const rp = (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
-
-    // 3) throw to middle and LAND face-out on the results
-    const yawA = (Math.random()*Math.PI*2 - Math.PI);
-    const yawB = (Math.random()*Math.PI*2 - Math.PI);
-
+    // Throw to middle; set exact final orientation (square, no yaw/tilt)
     dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
 
-    // square, no tilt; just a yaw for variety
-    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a,yawA)}`;
-    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b,yawB)}`;
+    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
+    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
 
-    await new Promise(r=>setTimeout(r, 800)); // wait for toss
+    await new Promise(r=>setTimeout(r, 800));     // wait for throw
     dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // hard stop on result
-
-    await rp; // let the roll clip finish
   }
 
-  /* Short, no-math status text (your game logic unchanged) */
+  /* Short, no-math status line */
   const ROUND = (window.ROUND = { active:false, point:null });
   const isComeOut = ()=>!ROUND.active || ROUND.point==null;
 
