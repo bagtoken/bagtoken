@@ -373,14 +373,13 @@
 })();
 </script>
 
-<!-- GAME + DICE (CSS 3D; encoded SVG faces; lands FACE-OUT) -->
+<!-- GAME + DICE (CSS 3D; encoded SVG; TUMBLE -> TOSS -> FACE-OUT LAND) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  /* ---------- DOM ---------- */
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
@@ -388,8 +387,7 @@
       .die{position:absolute;width:96px;height:96px;transform-style:preserve-3d;will-change:transform;}
       .face{
         position:absolute;inset:0;background:#fff no-repeat center/cover;transform-style:preserve-3d;
-        border-radius:12px;box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);
-        backface-visibility:hidden;
+        border-radius:12px;box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;
       }
       /* cube depth = 96 => translateZ = 48 */
       .f1{ transform: translateZ(48px); }
@@ -399,30 +397,30 @@
       .f2{ transform: rotateX(-90deg) translateZ(48px); }
       .f5{ transform: rotateX( 90deg) translateZ(48px); }
 
-      /* Start poses (closer & smaller) */
-      .dieA{ transform: translate3d(-86px,16px,0) rotateX(12deg) rotateY(-18deg); }
-      .dieB{ transform: translate3d( 86px,20px,0) rotateX(-9deg) rotateY(22deg); }
+      /* Start poses (close & neat) */
+      .dieA{ transform: translate3d(-80px,14px,0) rotateX(12deg) rotateY(-18deg); }
+      .dieB{ transform: translate3d( 80px,18px,0) rotateX(-9deg) rotateY(22deg); }
 
-      /* Continuous rattle (slightly faster) */
-      @keyframes rattleA {
-        0%{   transform: translate3d(-86px,16px,0) rotateX(16deg) rotateY(-20deg) rotateZ(0deg); }
-        25%{  transform: translate3d(-84px,15px,0) rotateX(19deg) rotateY(-17deg) rotateZ( 2deg); }
-        50%{  transform: translate3d(-87px,18px,0) rotateX(14deg) rotateY(-22deg) rotateZ(-2deg); }
-        75%{  transform: translate3d(-85px,17px,0) rotateX(18deg) rotateY(-19deg) rotateZ( 1.2deg); }
-        100%{ transform: translate3d(-86px,16px,0) rotateX(16deg) rotateY(-20deg) rotateZ(0deg); }
+      /* Continuous TUMBLE (true spin, not jitter) */
+      @keyframes tumbleA {
+        0%   { transform: translate3d(-80px,14px,0) rotateX(0turn)    rotateY(0turn)    rotateZ(0turn); }
+        25%  { transform: translate3d(-80px,14px,0) rotateX(.35turn)  rotateY(.18turn) rotateZ(.12turn); }
+        50%  { transform: translate3d(-80px,14px,0) rotateX(.70turn)  rotateY(.36turn) rotateZ(.24turn); }
+        75%  { transform: translate3d(-80px,14px,0) rotateX(1.05turn) rotateY(.54turn) rotateZ(.36turn); }
+        100% { transform: translate3d(-80px,14px,0) rotateX(1.40turn) rotateY(.72turn) rotateZ(.48turn); }
       }
-      @keyframes rattleB {
-        0%{   transform: translate3d(86px,20px,0) rotateX(-12deg) rotateY(24deg) rotateZ(0deg); }
-        25%{  transform: translate3d(88px,19px,0) rotateX(-9deg)  rotateY(26deg) rotateZ(-1.6deg); }
-        50%{  transform: translate3d(85px,22px,0) rotateX(-14deg) rotateY(23deg) rotateZ( 1.6deg); }
-        75%{  transform: translate3d(87px,21px,0) rotateX(-10deg) rotateY(25deg) rotateZ(-1.0deg); }
-        100%{ transform: translate3d(86px,20px,0) rotateX(-12deg) rotateY(24deg) rotateZ(0deg); }
+      @keyframes tumbleB {
+        0%   { transform: translate3d( 80px,18px,0) rotateX(0turn)    rotateY(0turn)    rotateZ(0turn); }
+        25%  { transform: translate3d( 80px,18px,0) rotateX(.32turn)  rotateY(.22turn) rotateZ(-.10turn); }
+        50%  { transform: translate3d( 80px,18px,0) rotateX(.64turn)  rotateY(.44turn) rotateZ(-.20turn); }
+        75%  { transform: translate3d( 80px,18px,0) rotateX(.96turn)  rotateY(.66turn) rotateZ(-.30turn); }
+        100% { transform: translate3d( 80px,18px,0) rotateX(1.28turn) rotateY(.88turn) rotateZ(-.40turn); }
       }
-      .shakeA{ animation:rattleA .08s linear infinite; }
-      .shakeB{ animation:rattleB .08s linear infinite; }
+      .tumblingA{ animation:tumbleA .55s linear infinite; }
+      .tumblingB{ animation:tumbleB .55s linear infinite; }
 
       /* Throw to center; final transform set per roll */
-      .tossing{ transition: transform .78s cubic-bezier(.2,.9,.2,1); }
+      .tossing{ transition: transform .76s cubic-bezier(.2,.9,.2,1); }
     </style>
     <div class="cssstage">
       <div class="dice-row">
@@ -432,13 +430,11 @@
     </div>
   `;
 
-  /* ---------- Encoded SVG faces (works on iOS Safari) ---------- */
+  /* Encoded SVG faces: white with black pips */
   function faceSVG(val){
     const r = 0.23, m = 0.56, c = 0;
     const P = {
-      1:[[c,c]],
-      2:[[-m,-m],[ m, m]],
-      3:[[-m,-m],[ c, c],[ m, m]],
+      1:[[c,c]], 2:[[-m,-m],[ m, m]], 3:[[-m,-m],[ c, c],[ m, m]],
       4:[[-m,-m],[ m,-m],[-m, m],[ m, m]],
       5:[[-m,-m],[ m,-m],[ c, c],[-m, m],[ m, m]],
       6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]],
@@ -446,18 +442,11 @@
     const dots = P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
     const svg = `
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'>
-        <defs>
-          <linearGradient id="g" x1="-1" y1="-1" x2="1" y2="1">
-            <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F3F3F3"/>
-          </linearGradient>
-        </defs>
-        <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='url(#g)'/>
+        <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>
         ${dots}
       </svg>`;
-    // URL-encode for Safari
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   }
-
   function makeDie(el){
     el.innerHTML = '';
     for (let i=1;i<=6;i++){
@@ -467,12 +456,11 @@
       el.appendChild(f);
     }
   }
-
   const dieA = document.getElementById('dieA');
   const dieB = document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
-  /* ---------- Orientation: FACE-OUT mapping ---------- */
+  /* Face-OUT mapping: number on the FRONT toward viewer */
   const FRONT = {
     1: (yaw)=>`rotateZ(${yaw}rad)`,
     2: (yaw)=>`rotateX(-1.5708rad) rotateZ(${yaw}rad)`,
@@ -483,40 +471,41 @@
   };
   const poseToFront = (v,y)=> (FRONT[v]||FRONT[1])(y);
 
-  /* ---------- Shake → (short cap) → Roll → toss → hard stop ---------- */
+  /* TUMBLE -> (short cap) -> ROLL SFX -> TOSS -> LAND FACE-OUT */
   async function rollCssDice(a,b){
     await window.__bagSfx?.primeOnce?.();
-    // Start shake + first clip
-    dieA.classList.add('shakeA'); dieB.classList.add('shakeB');
+
+    // start tumble + first clip
+    dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
     const shakeP = window.__bagSfx?.playShake?.();
-    // Cap: always proceed after 1400ms max
+
+    // always continue after max 1300ms (or when shake ends)
     await Promise.race([
       (async()=>{ try{ await shakeP; }catch{} })(),
-      new Promise(r=>setTimeout(r, 1400))
+      new Promise(r=>setTimeout(r, 1300))
     ]);
 
-    // Begin roll clip
+    // roll clip
     const rollP = (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
 
-    // Stop shaking, prep toss
-    dieA.classList.remove('shakeA'); dieB.classList.remove('shakeB');
+    // stop tumbling; prep toss
+    dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
 
     const yawA = (Math.random()*Math.PI*2 - Math.PI);
     const yawB = (Math.random()*Math.PI*2 - Math.PI);
-    const micro = ()=> (Math.random()*0.10 - 0.05);
 
-    // Throw to center (land face-out on results)
-    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a,yawA)} rotateX(${micro()}rad)`;
-    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b,yawB)} rotateX(${micro()}rad)`;
+    // Throw to middle & land FACE-OUT on result (no tilt so it's clearly face-first)
+    dieA.style.transform = `translate3d(-58px,6px,0) ${poseToFront(a,yawA)}`;
+    dieB.style.transform = `translate3d( 58px,6px,0) ${poseToFront(b,yawB)}`;
 
-    await new Promise(r=>setTimeout(r, 780));   // finish toss
-    dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // freeze
-    await rollP; // let roll sfx finish
+    await new Promise(r=>setTimeout(r, 760));
+    dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // hard stop
+    await rollP;
   }
 
-  /* ---------- Text (no math) ---------- */
+  /* Text: short, no math */
   const ROUND = (window.ROUND = { active:false, point:null });
   const isComeOut = ()=>!ROUND.active || ROUND.point==null;
 
@@ -530,32 +519,24 @@
 
     if (isComeOut()){
       if (sum===7 || sum===11){
-        rollText.className='t win';
-        rollText.textContent = `Rolled a ${sum} — Come-out WIN`;
-        window.showWin?.({message:'WIN', subtext:'Come-out 7/11!'});
-        ROUND.active=false; ROUND.point=null;
+        rollText.className='t win';   rollText.textContent = `Rolled a ${sum} — Come-out WIN`;
+        window.showWin?.({message:'WIN', subtext:'Come-out 7/11!'}); ROUND.active=false; ROUND.point=null;
       } else if (sum===2 || sum===3 || sum===12){
-        rollText.className='t lose';
-        rollText.textContent = `Rolled a ${sum} — CRAPS — You lose`;
+        rollText.className='t lose';  rollText.textContent = `Rolled a ${sum} — CRAPS — You lose`;
         ROUND.active=false; ROUND.point=null;
       } else {
         ROUND.active=true; ROUND.point=sum;
-        rollText.className='t scratch';
-        rollText.textContent = `Rolled a ${sum} — Need ${sum} before 7`;
+        rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${sum} before 7`;
       }
     } else {
       if (sum===ROUND.point){
-        rollText.className='t win';
-        rollText.textContent = `Rolled a ${sum} — POINT MADE`;
-        window.showWin?.({message:'WIN', subtext:`Point ${ROUND.point}`});
-        ROUND.active=false; ROUND.point=null;
+        rollText.className='t win';   rollText.textContent = `Rolled a ${sum} — POINT MADE`;
+        window.showWin?.({message:'WIN', subtext:`Point ${ROUND.point}`}); ROUND.active=false; ROUND.point=null;
       } else if (sum===7){
-        rollText.className='t lose';
-        rollText.textContent = `Rolled a 7 — SEVEN OUT — You lose`;
+        rollText.className='t lose';  rollText.textContent = `Rolled a 7 — SEVEN OUT — You lose`;
         ROUND.active=false; ROUND.point=null;
       } else {
-        rollText.className='t scratch';
-        rollText.textContent = `Rolled a ${sum} — Need ${ROUND.point} before 7`;
+        rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${ROUND.point} before 7`;
       }
     }
     rollBtn.disabled = false;
