@@ -163,7 +163,7 @@
   </footer>
 </div>
 
-<!-- 🔊 Sound toggle with first-tap trigger -->
+<!-- 🔊 Sound toggle with more sensitive first-tap unlock -->
 <script>
 (function(){
   const btn = document.getElementById('soundToggle');
@@ -178,8 +178,17 @@
 
   function playAudio(){
     audio.volume = 0.35;
-    audio.play().then(()=>{ playing = true; setIcon(); localStorage.setItem(KEY,'on'); })
-                 .catch(()=>{ playing = false; setIcon(); });
+    return audio.play().then(()=>{
+      playing = true;
+      setIcon();
+      localStorage.setItem(KEY,'on');
+      removeGestureUnlock();
+    }).catch((e)=>{
+      // Keep listeners armed for the next gesture
+      playing = false;
+      setIcon();
+      return Promise.reject(e);
+    });
   }
 
   function pauseAudio(){
@@ -187,18 +196,53 @@
     playing = false;
     setIcon();
     localStorage.setItem(KEY,'off');
+    // Re-arm gesture unlock so the next tap can resume if they change their mind
+    armGestureUnlock();
   }
 
-  btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio());
+  btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
 
-  // ▶️ First tap anywhere starts sound if pref = on or first visit
-  document.addEventListener('click', function firstTap(){
+  // --- MORE SENSITIVE GESTURE UNLOCK ---
+  const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
+  let armed = false;
+
+  function gestureHandler(){
     const pref = localStorage.getItem(KEY);
-    if (pref !== 'off' && !playing) playAudio();
-    document.removeEventListener('click', firstTap);
-  }, {once:true});
+    if (pref !== 'off' && !playing){
+      playAudio().catch(()=>{ /* stay armed until a successful play */ });
+    }
+  }
+  function armGestureUnlock(){
+    if (armed) return;
+    armed = true;
+    GESTURES.forEach(t => document.addEventListener(t, gestureHandler, {capture:true, passive:true}));
+  }
+  function removeGestureUnlock(){
+    if (!armed) return;
+    armed = false;
+    GESTURES.forEach(t => document.removeEventListener(t, gestureHandler, {capture:true}));
+  }
 
-  // restore icon
+  // Also try when tab gains focus or becomes visible again
+  window.addEventListener('focus', () => {
+    const pref = localStorage.getItem(KEY);
+    if (pref !== 'off' && !playing) playAudio().catch(()=>{});
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden){
+      const pref = localStorage.getItem(KEY);
+      if (pref !== 'off' && !playing) playAudio().catch(()=>{});
+    }
+  });
+
+  // Initial state: respect preference (default to "on" for first visit)
+  const pref = localStorage.getItem(KEY);
+  if (pref === 'off'){
+    playing = false;
+  } else {
+    // User hasn't opted out: arm unlock so the very first gesture starts audio
+    armGestureUnlock();
+  }
   setIcon();
 })();
 </script>
