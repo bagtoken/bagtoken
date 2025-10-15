@@ -273,7 +273,7 @@
       <h4 style="margin:12px 0 6px;">Payouts</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
         <li><b>Come-out WIN</b> (7/11) — <b>1.25× total</b></li>
-        <li><b>Point WIN</b> — <b>1.00× total</li>
+        <li><b>Point WIN</b> — <b>1.00× total</b></li>
         <li><b>CRAPS / SEVEN OUT</b> — lose</li>
       </ul>
 
@@ -283,7 +283,7 @@
   </div>
 </section>
 
-<!-- WIN overlay UI (required by showWin) -->
+<!-- WIN overlay UI (required by showResult) -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
   <div id="win-card">
@@ -293,7 +293,7 @@
   </div>
 </div>
 
-<!-- WIN overlay logic (shows "Bet → Payout") -->
+<!-- WIN overlay logic -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -303,28 +303,80 @@
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
   let rafId=null, particles=[], start=0, dur=2000;
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+
+  function size(){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
+    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
   size(); addEventListener('resize', size);
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++){ particles.push({ x:innerWidth*0.5, y:innerHeight*0.4,
-      vx:(Math.random()-.5)*6, vy:-(3+Math.random()*5), g:.16, rot:Math.random()*6.28, vr:(Math.random()-.5)*.25, sz:6+Math.random()*10, col:colors[(Math.random()*colors.length)|0], shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri') }); } }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
+
+  function fire(n){
+    particles.length=0;
+    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++){
+      particles.push({
+        x:innerWidth*0.5, y:innerHeight*0.4,
+        vx:(Math.random()-.5)*6, vy:-(3+Math.random()*5), g:.16,
+        rot:Math.random()*6.28, vr:(Math.random()-.5)*.25,
+        sz:6+Math.random()*10, col:colors[(Math.random()*colors.length)|0],
+        shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')
+      });
+    }
+  }
+  function draw(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+      ctx.fillStyle=p.col; const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
   function show(){ overlay.style.display='grid'; }
   function hide(){ overlay.style.display='none'; stop(); }
-  closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  closeBtn.addEventListener('click', hide);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice roll', duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext;
-    show(); canvas.style.display='block'; fire(190);
-    cancelAnimationFrame(rafId); start=0; dur=2300; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
+  // helpers
+  function fmt(n, max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  // Public API: showResult
+  window.showResult=function({kind='win', bagDelta=0, beforeUsd=0, afterUsd=0, duration=3800}={}){
+    const isWin = kind==='win';
+    title.textContent = isWin ? 'WIN' : 'LOSE';
+    title.style.background = isWin
+      ? 'linear-gradient(90deg, #fff, #00ffb2, #fff)'
+      : 'linear-gradient(90deg, #fff, #ff6b6b, #fff)';
+
+    const sign = isWin ? '+' : '−';
+    sub.textContent = `${sign}${fmt(Math.abs(bagDelta))} BAG · ${fmtUsd(beforeUsd)} → ${fmtUsd(afterUsd)}`;
+
+    show();
+    if (isWin){ canvas.style.display='block'; fire(180); }
+    cancelAnimationFrame(rafId); start=0; dur=isWin?2300:1200;
+    if (isWin) rafId=requestAnimationFrame(anim);
+
+    clearTimeout(window.__winTimer);
+    window.__winTimer=setTimeout(hide, Math.max(1200, duration));
+  };
+
+  // Backward-compat
+  window.showWin=function(opts={}){
+    const { bagDelta=0, beforeUsd=0, afterUsd=0, duration=3800 } = opts;
+    window.showResult({ kind:'win', bagDelta, beforeUsd, afterUsd, duration });
   };
 })();
 </script>
 
-<!-- AUDIO (diceshakeroll.mp3 for roll, + win/thud sounds) -->
+<!-- AUDIO (roll / win / thud) -->
 <script>
 (function(){
   const ROLL_SRC = '/assets/sounds/diceshakeroll.mp3'; // ~2s
@@ -619,6 +671,12 @@
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
 
+  // helpers
+  const PR = ()=>window.__PRICES__||{};
+  const getBagPrice = ()=> PR().bagUsd||0;
+  const getSessionBag = ()=> (window.__bagSession?.get?.()||{}).bag||0;
+  const usd = n => (getBagPrice()>0 ? n*getBagPrice() : 0);
+
   // 2s roll: ~1.2s tumble + ~0.7s settle
   async function rollCssDice(a,b){
     await window.__bagSfx?.primeOnce?.();
@@ -645,14 +703,14 @@
     dieB.classList.remove('tossing');
   }
 
-  // helpers for overlay text (safe when prices missing)
+  // UI helpers
   function getBetInput(){
     const qty=Number(document.getElementById('betQty')?.value||0)||0;
     const unit=(document.querySelector('input[name="betCur"]:checked')?.value||'XRP').toUpperCase();
     return {qty,unit};
   }
   function bagFrom(qty,unit){
-    const P=window.__PRICES__||{};
+    const P=PR();
     if(unit==='BAG') return qty;
     if(unit==='XRP' && P.xrpUsd>0 && P.bagUsd>0) return qty*(P.xrpUsd/P.bagUsd);
     return qty;
@@ -674,12 +732,16 @@
     const {qty:betQty,unit:betUnit}=getBetInput();
     const betBag=bagFrom(betQty,betUnit);
 
+    const beforeBag = getSessionBag();
+    const beforeUsd = usd(beforeBag);
+
     if(isComeOut()){
       if(sum===7||sum===11){
+        const bagDelta = betBag*1.25;
         rollText.className='t win';
         rollText.textContent=`Rolled a ${sum} — Come-out WIN`;
         window.__bagSfx?.playWin?.();
-        window.showWin?.({message:'WIN', subtext:`Bet ${fmt(betQty)} ${betUnit} → Payout ${fmt(betBag*1.25)} BAG`});
+        window.showResult?.({kind:'win', bagDelta, beforeUsd, afterUsd: beforeUsd + usd(bagDelta)});
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-comeout'}}));
       } else if(sum===2||sum===3||sum===12){
@@ -696,10 +758,11 @@
       }
     } else {
       if(sum===ROUND.point){
+        const bagDelta = betBag*1.00;
         rollText.className='t win';
         rollText.textContent=`Rolled a ${sum} — POINT MADE`;
         window.__bagSfx?.playWin?.();
-        window.showWin?.({message:'WIN', subtext:`Bet ${fmt(betQty)} ${betUnit} → Payout ${fmt(betBag*1.00)} BAG`});
+        window.showResult?.({kind:'win', bagDelta, beforeUsd, afterUsd: beforeUsd + usd(bagDelta)});
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-point'}}));
       } else if(sum===7){
