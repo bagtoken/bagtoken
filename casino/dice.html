@@ -327,65 +327,80 @@
 
 
 
-<!-- AUDIO (roll + win + thud) with diagnostics + tiny fallback -->
+<!-- AUDIO (diceshakeroll.mp3 for roll, + win/thud sounds) -->
 <script>
 (function(){
-  const ROLL_SRC = '/assets/sounds/diceroll.mp3';
+  const ROLL_SRC = '/assets/sounds/diceshakeroll.mp3'; // ~2s
   const WIN_SRC  = '/assets/sounds/win.mp3';
   const THUD_SRC = '/assets/sounds/thud.mp3';
 
-  let primed=false;
+  let primed = false;
+
   function mk(src){
     const a = new Audio(src);
-    a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95;
+    a.preload = 'auto';
+    a.crossOrigin = 'anonymous';
+    a.setAttribute('playsinline', '');
+    a.volume = 0.95;
     a.addEventListener('error', ()=>console.warn('[bag] audio failed:', src));
     return a;
   }
+
   const baseRoll = mk(ROLL_SRC);
   const baseWin  = mk(WIN_SRC);
   const baseThud = mk(THUD_SRC);
 
-  // minimal WebAudio “beep” fallback if files fail
-  function fallbackBeep(freq=880, len=0.18){
+  // tiny WebAudio beep fallback if a file can't play
+  function beep(freq=880, len=0.18, vol=0.08){
     try{
       const AC = window.AudioContext || window.webkitAudioContext;
       if(!AC) return;
       const ac = new AC();
       const o = ac.createOscillator(), g = ac.createGain();
-      o.type='triangle'; o.frequency.value=freq; g.gain.value=0.08;
-      o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+len);
+      o.type='triangle'; o.frequency.value=freq; g.gain.value=vol;
+      o.connect(g).connect(ac.destination); o.start();
+      o.stop(ac.currentTime + len);
       setTimeout(()=>ac.close().catch(()=>{}), (len*1000)+40);
     }catch{}
   }
 
   function primeOnce(){
     if (primed) return;
-    try{
-      baseRoll.muted=true;
-      const p=baseRoll.play();
-      if (p && p.then){
-        p.then(()=>{ baseRoll.pause(); baseRoll.muted=false; primed=true; })
-         .catch(()=>{ /* ignore */ });
-      } else { baseRoll.pause(); baseRoll.muted=false; primed=true; }
-    }catch{}
+    const tryPlay = (el)=> {
+      try {
+        el.muted = true;
+        const p = el.play();
+        if (p && p.then) {
+          p.then(()=>{ el.pause(); el.muted = false; }).catch(()=>{});
+        } else {
+          el.pause(); el.muted = false;
+        }
+      } catch {}
+    };
+    tryPlay(baseRoll);
+    tryPlay(baseWin);
+    tryPlay(baseThud);
+    primed = true;
   }
   addEventListener('pointerdown', primeOnce, {once:true, passive:true});
 
-  function playOnce(tmpl, fb){
+  function playFrom(tmpl, fb){
     return new Promise(res=>{
       try{
         const a = tmpl.cloneNode(true);
-        a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
+        a.loop = false; a.currentTime = 0; a.volume = tmpl.volume;
         a.addEventListener('ended', ()=>res(), {once:true});
         a.play().catch(()=>{ fb&&fb(); setTimeout(res, 300); });
         setTimeout(()=>res(), 10000);
-      }catch{ fb&&fb(); res(); }
+      }catch{
+        fb&&fb(); res();
+      }
     });
   }
 
-  function playRoll(){ return playOnce(baseRoll); }
-  function playWin(){  return playOnce(baseWin,  ()=>fallbackBeep(1320, .22)); }
-  function playThud(){ return playOnce(baseThud, ()=>fallbackBeep(220,  .12)); }
+  function playRoll(){ return playFrom(baseRoll); }
+  function playWin(){  return playFrom(baseWin,  ()=>beep(1320, .22, .09)); }
+  function playThud(){ return playFrom(baseThud, ()=>beep(220,  .12, .10)); }
 
   window.__bagSfx = { primeOnce, playRoll, playWin, playThud };
 })();
@@ -609,21 +624,36 @@
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
 
-  async function rollCssDice(a,b){
-    await window.__bagSfx?.primeOnce?.();
-    // tumble
-    dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
-    await new Promise(r=>setTimeout(r,220));
-    (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
-    dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    // throw to pose
-    dieA.classList.add('tossing'); dieB.classList.add('tossing');
-    dieA.style.transform=`translate3d(-60px,6px,0) ${poseToFront(a)}`;
-    dieB.style.transform=`translate3d( 60px,6px,0) ${poseToFront(b)}`;
-    await new Promise(r=>setTimeout(r,760));
-    dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
-  }
+<script>
+/* ... keep the rest of your GAME + DICE block as-is, just swap this function ... */
+async function rollCssDice(a,b){
+  await window.__bagSfx?.primeOnce?.();
+
+  // Start tumbling immediately
+  dieA.classList.add('tumblingA'); 
+  dieB.classList.add('tumblingB');
+
+  // Start roll sound right away
+  (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
+
+  // Keep tumbling for ~3 seconds total to outlast the 2s audio
+  await new Promise(r=>setTimeout(r, 3000));
+
+  // Stop tumbling, then land to exact faces
+  dieA.classList.remove('tumblingA'); 
+  dieB.classList.remove('tumblingB');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+  dieA.classList.add('tossing'); 
+  dieB.classList.add('tossing');
+  dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
+  dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
+  await new Promise(r=>setTimeout(r, 760));
+  dieA.classList.remove('tossing'); 
+  dieB.classList.remove('tossing');
+}
+</script>
+
 
   // helpers for overlay text (safe when prices missing)
   function getBetInput(){
