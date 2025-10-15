@@ -373,54 +373,64 @@
 })();
 </script>
 
-<!-- GAME + DICE (CSS 3D; encoded SVG; TUMBLE -> TOSS -> FACE-OUT LAND) -->
+<!-- GAME + DICE (CSS 3D; inline SVG pips) — shake → tumble → throw → FACE-OUT land -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
+  /* Build stage */
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
       .dice-row{position:relative;width:100%;height:100%;display:grid;place-items:center;}
-      .die{position:absolute;width:96px;height:96px;transform-style:preserve-3d;will-change:transform;}
+      .die{position:absolute;width:104px;height:104px;transform-style:preserve-3d;will-change:transform;}
       .face{
-        position:absolute;inset:0;background:#fff no-repeat center/cover;transform-style:preserve-3d;
-        border-radius:12px;box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;
+        position:absolute;inset:0;background:#fff no-repeat center/cover;
+        transform-style:preserve-3d;border-radius:13px;
+        box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;
       }
-      /* cube depth = 96 => translateZ = 48 */
-      .f1{ transform: translateZ(48px); }
-      .f6{ transform: rotateX(180deg) translateZ(48px); }
-      .f3{ transform: rotateY( 90deg) translateZ(48px); }
-      .f4{ transform: rotateY(-90deg) translateZ(48px); }
-      .f2{ transform: rotateX(-90deg) translateZ(48px); }
-      .f5{ transform: rotateX( 90deg) translateZ(48px); }
+      /* cube depth = 104 => translateZ = 52 */
+      .f1{ transform: translateZ(52px); }                 /* FRONT (1)  */
+      .f6{ transform: rotateY(180deg) translateZ(52px); } /* BACK  (6)  */
+      .f3{ transform: rotateY( 90deg) translateZ(52px); } /* RIGHT (3)  */
+      .f4{ transform: rotateY(-90deg) translateZ(52px); } /* LEFT  (4)  */
+      .f2{ transform: rotateX( 90deg) translateZ(52px); } /* TOP   (2)  */
+      .f5{ transform: rotateX(-90deg) translateZ(52px); } /* BOTTOM(5)  */
 
-      /* Start poses (close & neat) */
-      .dieA{ transform: translate3d(-80px,14px,0) rotateX(12deg) rotateY(-18deg); }
-      .dieB{ transform: translate3d( 80px,18px,0) rotateX(-9deg) rotateY(22deg); }
+      /* Start pose (close together) */
+      .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
+      .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
 
-      /* Continuous TUMBLE (true spin, not jitter) */
+      /* 1) Small SHAKE (subtle jitter) */
+      @keyframes shakeA {
+        0%{transform:translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg) rotateZ(0deg)}
+        50%{transform:translate3d(-72px,15px,0) rotateX(11deg) rotateY(-15deg) rotateZ(.6deg)}
+        100%{transform:translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg) rotateZ(0deg)}
+      }
+      @keyframes shakeB {
+        0%{transform:translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg) rotateZ(0deg)}
+        50%{transform:translate3d( 76px,19px,0) rotateX(-7deg) rotateY(19deg) rotateZ(-.6deg)}
+        100%{transform:translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg) rotateZ(0deg)}
+      }
+      .shakingA{ animation:shakeA .12s linear infinite; }
+      .shakingB{ animation:shakeB .12s linear infinite; }
+
+      /* 2) TUMBLE (true spin) */
       @keyframes tumbleA {
-        0%   { transform: translate3d(-80px,14px,0) rotateX(0turn)    rotateY(0turn)    rotateZ(0turn); }
-        25%  { transform: translate3d(-80px,14px,0) rotateX(.35turn)  rotateY(.18turn) rotateZ(.12turn); }
-        50%  { transform: translate3d(-80px,14px,0) rotateX(.70turn)  rotateY(.36turn) rotateZ(.24turn); }
-        75%  { transform: translate3d(-80px,14px,0) rotateX(1.05turn) rotateY(.54turn) rotateZ(.36turn); }
-        100% { transform: translate3d(-80px,14px,0) rotateX(1.40turn) rotateY(.72turn) rotateZ(.48turn); }
+        from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
+        to  { transform:translate3d(-74px,16px,0) rotateX(1.55turn) rotateY(.85turn) rotateZ(.55turn); }
       }
       @keyframes tumbleB {
-        0%   { transform: translate3d( 80px,18px,0) rotateX(0turn)    rotateY(0turn)    rotateZ(0turn); }
-        25%  { transform: translate3d( 80px,18px,0) rotateX(.32turn)  rotateY(.22turn) rotateZ(-.10turn); }
-        50%  { transform: translate3d( 80px,18px,0) rotateX(.64turn)  rotateY(.44turn) rotateZ(-.20turn); }
-        75%  { transform: translate3d( 80px,18px,0) rotateX(.96turn)  rotateY(.66turn) rotateZ(-.30turn); }
-        100% { transform: translate3d( 80px,18px,0) rotateX(1.28turn) rotateY(.88turn) rotateZ(-.40turn); }
+        from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
+        to  { transform:translate3d( 74px,20px,0) rotateX(1.45turn) rotateY(1.05turn) rotateZ(-.50turn); }
       }
-      .tumblingA{ animation:tumbleA .55s linear infinite; }
-      .tumblingB{ animation:tumbleB .55s linear infinite; }
+      .tumblingA{ animation:tumbleA .50s linear infinite; } /* a tiny bit faster */
+      .tumblingB{ animation:tumbleB .50s linear infinite; }
 
-      /* Throw to center; final transform set per roll */
-      .tossing{ transition: transform .76s cubic-bezier(.2,.9,.2,1); }
+      /* 3) THROW to center (we set the final transform per roll) */
+      .tossing{ transition: transform .80s cubic-bezier(.2,.9,.2,1); }
     </style>
     <div class="cssstage">
       <div class="dice-row">
@@ -430,28 +440,28 @@
     </div>
   `;
 
-  /* Encoded SVG faces: white with black pips */
+  /* Perfect pips: inline SVG, white body, black pips */
   function faceSVG(val){
-    const r = 0.23, m = 0.56, c = 0;
+    const r = 0.22, m = 0.56, c = 0;
     const P = {
-      1:[[c,c]], 2:[[-m,-m],[ m, m]], 3:[[-m,-m],[ c, c],[ m, m]],
+      1:[[c,c]],
+      2:[[-m,-m],[ m, m]],
+      3:[[-m,-m],[ c, c],[ m, m]],
       4:[[-m,-m],[ m,-m],[-m, m],[ m, m]],
       5:[[-m,-m],[ m,-m],[ c, c],[-m, m],[ m, m]],
       6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]],
     }[val];
     const dots = P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-    const svg = `
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'>
-        <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>
-        ${dots}
-      </svg>`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'>
+      <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>
+      ${dots}
+    </svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   }
   function makeDie(el){
     el.innerHTML = '';
     for (let i=1;i<=6;i++){
-      const f = document.createElement('div');
-      f.className = 'face f'+i;
+      const f = document.createElement('div'); f.className = 'face f'+i;
       f.style.backgroundImage = faceSVG(i);
       el.appendChild(f);
     }
@@ -460,57 +470,63 @@
   const dieB = document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
-  /* Face-OUT mapping: number on the FRONT toward viewer */
+  /* FACE-OUT orientation: ensures the requested number is the FRONT face */
+  // Our faces: f1=front, f6=back(180°Y), f3=right(+90°Y), f4=left(-90°Y), f2=top(+90°X), f5=bottom(-90°X)
   const FRONT = {
-    1: (yaw)=>`rotateZ(${yaw}rad)`,
-    2: (yaw)=>`rotateX(-1.5708rad) rotateZ(${yaw}rad)`,
-    3: (yaw)=>`rotateY(-1.5708rad) rotateZ(${yaw}rad)`,
-    4: (yaw)=>`rotateY( 1.5708rad) rotateZ(${yaw}rad)`,
-    5: (yaw)=>`rotateX( 1.5708rad) rotateZ(${yaw}rad)`,
-    6: (yaw)=>`rotateX( 3.1416rad) rotateZ(${yaw}rad)`
+    1: (yaw)=>`rotateY(0rad) rotateX(0rad) rotateZ(${yaw}rad)`,
+    2: (yaw)=>`rotateX( 1.5708rad) rotateZ(${yaw}rad)`,   // top -> front
+    3: (yaw)=>`rotateY(-1.5708rad) rotateZ(${yaw}rad)`,   // right -> front
+    4: (yaw)=>`rotateY( 1.5708rad) rotateZ(${yaw}rad)`,   // left  -> front
+    5: (yaw)=>`rotateX(-1.5708rad) rotateZ(${yaw}rad)`,   // bottom -> front
+    6: (yaw)=>`rotateY( 3.1416rad) rotateZ(${yaw}rad)`,   // back -> front
   };
   const poseToFront = (v,y)=> (FRONT[v]||FRONT[1])(y);
 
-  /* TUMBLE -> (short cap) -> ROLL SFX -> TOSS -> LAND FACE-OUT */
+  /* Sequence controller: SHAKE -> TUMBLE -> ROLL SFX -> THROW -> LAND */
   async function rollCssDice(a,b){
     await window.__bagSfx?.primeOnce?.();
 
-    // start tumble + first clip
-    dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
-    const shakeP = window.__bagSfx?.playShake?.();
-
-    // always continue after max 1300ms (or when shake ends)
+    // 1) tiny shake + start shake audio
+    dieA.classList.add('shakingA'); dieB.classList.add('shakingB');
+    const sp = window.__bagSfx?.playShake?.();
     await Promise.race([
-      (async()=>{ try{ await shakeP; }catch{} })(),
-      new Promise(r=>setTimeout(r, 1300))
+      (async()=>{ try{ await sp; }catch{} })(),
+      new Promise(r=>setTimeout(r, 260)) // ~¼ second micro-shake
     ]);
 
-    // roll clip
-    const rollP = (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
+    // 2) switch to tumble until we begin the throw
+    dieA.classList.remove('shakingA'); dieB.classList.remove('shakingB');
+    dieA.classList.add('tumblingA');   dieB.classList.add('tumblingB');
 
-    // stop tumbling; prep toss
+    // give tumble a brief beat before throw and start roll SFX a touch later
+    await new Promise(r=>setTimeout(r, 240));
+    const rp = (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
+
+    // 3) throw to middle and LAND face-out on the results
+    const yawA = (Math.random()*Math.PI*2 - Math.PI);
+    const yawB = (Math.random()*Math.PI*2 - Math.PI);
+
     dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
 
-    const yawA = (Math.random()*Math.PI*2 - Math.PI);
-    const yawB = (Math.random()*Math.PI*2 - Math.PI);
+    // square, no tilt; just a yaw for variety
+    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a,yawA)}`;
+    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b,yawB)}`;
 
-    // Throw to middle & land FACE-OUT on result (no tilt so it's clearly face-first)
-    dieA.style.transform = `translate3d(-58px,6px,0) ${poseToFront(a,yawA)}`;
-    dieB.style.transform = `translate3d( 58px,6px,0) ${poseToFront(b,yawB)}`;
+    await new Promise(r=>setTimeout(r, 800)); // wait for toss
+    dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // hard stop on result
 
-    await new Promise(r=>setTimeout(r, 760));
-    dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // hard stop
-    await rollP;
+    await rp; // let the roll clip finish
   }
 
-  /* Text: short, no math */
+  /* Short, no-math status text (your game logic unchanged) */
   const ROUND = (window.ROUND = { active:false, point:null });
   const isComeOut = ()=>!ROUND.active || ROUND.point==null;
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled = true;
+
     const a = 1 + (Math.random()*6|0);
     const b = 1 + (Math.random()*6|0);
     const sum = a + b;
@@ -539,6 +555,7 @@
         rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${ROUND.point} before 7`;
       }
     }
+
     rollBtn.disabled = false;
   });
 })();
