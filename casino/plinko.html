@@ -325,28 +325,28 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 });
 </script>
 
-<!-- PLINKO GAME LOGIC — singleton + round-scoped resolves (fixes disappearing coin) -->
+<!-- PLINKO GAME LOGIC — singleton + round-scoped timers, no forced jackpots -->
 <script>
 (function(){
-  // If an older instance exists, destroy it so its timers can't touch the new round
+  // Kill any previous instance so old timers/RAFs can’t touch the new round.
   if (window.__BAG_PLINKO && typeof window.__BAG_PLINKO.destroy === 'function') {
     window.__BAG_PLINKO.destroy();
   }
 
-  // Payouts (unchanged)
+  // ===== Payout map (unchanged visuals/physics) =====
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics / board (unchanged)
+  // ===== Physics / board (same as your stable version) =====
   const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
   const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
 
-  // Canvas (unchanged)
+  // Canvas (fixed logical size; CSS scales)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Geometry (unchanged)
+  // Geometry
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=110, bottomBoard=H-120;
 
@@ -364,38 +364,39 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     }
   }
 
-  // Slots (unchanged)
+  // Slots
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI refs (unchanged)
+  // UI refs
   const $=id=>document.getElementById(id);
-  const modeLbl=$('modeLbl'), balLbl=$('balLbl'), ccyLbl=$('ccyLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
-  const resText=$('resText'), dropBtn=$('dropBtn'), curToggle=$('curToggle');
+  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
+  const resText=$('resText'), dropBtn=$('dropBtn'), cele=$('cele'), stateText=$('stateText');
+  const curToggle=$('curToggle');
   const unitSpan=document.querySelector('#bagPlinko .unit');
-  const betInput=$('demoBet'), usdInput=$('usdBet'), cele=$('cele'), stateText=$('stateText');
+  const betInput=$('demoBet'), usdInput=$('usdBet'), ccyLbl=$('ccyLbl');
 
-  // State
-  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
+  // ===== Game state =====
+  let balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0, lastPegTs=0;
 
-  // 🔐 Round & lifecycle
-  let roundSeq=0;                // current round id
-  let safetyTimer=null;          // timeout for this round only
-  let rafId=null, running=true;  // RAF control for this singleton
+  // Round / lifecycle guards
+  let roundSeq=0;
+  let safetyTimer=null;
+  let rafId=null, running=true;
 
-  // Public singleton handle so next script init can shut this one down
   window.__BAG_PLINKO = {
     destroy(){
-      try{ running=false; if (rafId) cancelAnimationFrame(rafId); }catch{}
+      running=false;
+      try{ if (rafId) cancelAnimationFrame(rafId); }catch{}
       try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
-      try{ dropBtn.removeEventListener('click', onDropClick); }catch{}
+      try{ dropBtn && dropBtn.removeEventListener('click', onDropClick); }catch{}
     }
   };
 
-  function hud(){ balLbl.textContent=Number(balance).toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
+  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; ccyLbl.textContent=currency; }
 
-  // Inputs (unchanged)
+  // Sanitize bet (unchanged)
   function sanitizeBet(){
     const raw = (betInput.value||'').replace(/[^\d]/g,'');
     betInput.value = raw || '1';
@@ -414,79 +415,81 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   }
   window.stakeUsdEquivalent = stakeUsdEquivalent;
 
-  usdInput.addEventListener('blur', ()=>{
+  usdInput?.addEventListener('blur', ()=>{
     const u = parseFloat(usdInput.value||'0'); const P=window.__PRICES__||{};
     if (!(u>0)) return;
     if (currentCurrency()==='XRP' && P.xrpUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.xrpUsd)).toString(); }
     else if (currentCurrency()==='BAG' && P.bagUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.bagUsd)).toString(); }
     sanitizeBet();
   });
-
   window.addEventListener('bag:pricesUpdated', ()=>{
     const usd = stakeUsdEquivalent();
     if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
   });
-
   curToggle.addEventListener('change', ()=>{
     currency = currentCurrency(); ccyLbl.textContent = currency; unitSpan.textContent = currency;
-    const usd = stakeUsdEquivalent(); usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    const usd = stakeUsdEquivalent(); if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
   });
 
-  // SFX (unchanged)
+  // Sounds
   function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Reset just the *current* round
+  // House-edge weighted fallback (used ONLY for emergency resolves)
+  function weightedSlotIndex(){
+    // Favor losses; small chance of 1.2x; rare 2x
+    const weights = [28,10,28,2,28,10,28];
+    let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
+    return 0;
+  }
+
+  // Reset just this round’s state
   function resetRoundState(){
     if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
-    ball=null; dropping=false; dropBtn.disabled=false; lastPegTs=0;
+    ball=null; dropping=false; lastPegTs=0;
+    if (dropBtn) dropBtn.disabled=false;
     cele?.classList.remove('show');
   }
 
   async function onDropClick(){
     try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
-    // clear any lingering state from a prior round of THIS instance
+    // Clean up any stale state before starting
     resetRoundState();
 
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    roundSeq += 1;                     // new round id
-    const myRound = roundSeq;
+    roundSeq += 1; const myRound = roundSeq;
 
-    dropBtn.disabled = true;
+    dropping=true;
+    dropBtn.disabled=true;
     balance = Math.max(0, balance - stake);
-    lastTxt = '—';
-    resText.textContent = '—';
-    stateText.textContent = 'Dropping…';
+    lastTxt='—';
+    resText.textContent='—';
+    stateText && (stateText.textContent='Dropping…');
     hud();
 
-    // Start new ball
-    startDrop(myRound);
+    // New ball (same entry as your stable version)
+    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, round:myRound};
+    lastPegTs = 0;
+    dropStartedAt = performance.now();
 
-    // Ensure the RAF is running
+    // Emergency resolve (weighted; no forced jackpot)
+    safetyTimer = setTimeout(()=>{
+      if(dropping && myRound===roundSeq){
+        resolveByIndex(weightedSlotIndex(), myRound);
+      }
+    }, 9000);
+
     ensureLoop();
   }
 
   dropBtn.addEventListener('click', onDropClick);
 
-  function startDrop(myRound){
-    dropping=true;
-    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, frames:0, round:myRound};
-    lastPegTs = 0;
-    dropStartedAt = performance.now();
-
-    // Round-scoped safety resolve
-    safetyTimer = setTimeout(()=>{
-      if(dropping && myRound===roundSeq){
-        resolveByIndex(boundarySlotIndex((ball&&ball.x)||W/2), myRound);
-      }
-    }, 9000);
-  }
-
   function ensureLoop(){
-    if (rafId!=null) return; // already running
+    if (rafId!=null) return;
     const loop = (ts)=>{
       if (!running){ rafId=null; return; }
 
@@ -495,54 +498,59 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       if (ball && ball.alive){
         stepBall(ts);
         drawBall(ball.x, ball.y);
-        // Hard stop if something went sideways
-        if (ball.y > H + 200 || (dropStartedAt && ts - dropStartedAt > 12000)){
-          resolveByIndex(boundarySlotIndex(ball.x), ball.round);
+
+        // Hard stop if outside or taking too long → use weighted (no jackpot bias)
+        const tooLong = dropStartedAt && ts - dropStartedAt > 12000;
+        const outBottom = ball.y > H + 200;
+        if (tooLong || outBottom){
+          resolveByIndex(weightedSlotIndex(), ball.round);
         }
       }
-      // Safety: if ball ended but flags stuck
-      if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
 
+      if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
   }
 
-  // Extra periodic guard
+  // Periodic guard against stale flags
   setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ resetRoundState(); } }, 900);
 
   function stepBall(ts){
     if (!ball) return;
-    ball.frames++;
     ball.vy += GRAVITY;
-    ball.x += ball.vx; ball.y += ball.vy;
+    ball.x  += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
 
     // walls
-    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
     if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
     if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
     // pegs
+    const now=performance.now();
     for(const p of pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
       const dist=Math.hypot(dx,dy) || 0.0001;
       const minD=BALL_R + p.r;
       if(dist < minD){
-        const nx = dx / dist, ny = dy / dist;
+        const nx=dx/dist, ny=dy/dist;
+        // push out
         const overlap = (minD - dist) + 0.25;
         ball.x += nx * overlap; ball.y += ny * overlap;
-        const vDotN = ball.vx*nx + ball.vy*ny;
-        ball.vx = (ball.vx - 2*vDotN*nx) * RESTITUTION;
-        ball.vy = (ball.vy - 2*vDotN*ny) * RESTITUTION;
-        const nowMs = performance.now();
-        if (nowMs - lastPegTs > 50){ lastPegTs = nowMs; pegKnock(); }
+        // reflect
+        const vDot=ball.vx*nx + ball.vy*ny;
+        ball.vx = (ball.vx - 2*vDot*nx)*RESTITUTION;
+        ball.vy = (ball.vy - 2*vDot*ny)*RESTITUTION;
+        // sfx
+        if(now - lastPegTs > 55){ lastPegTs=now; pegKnock(); }
+        // avoid stalls
         const speed = Math.hypot(ball.vx, ball.vy);
         if(speed < 0.22){ ball.vx += (Math.random()-.5)*0.65; ball.vy += 0.45; }
       }
     }
 
-    // Landing
+    // Normal landing → use physical slot
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x), ball.round);
@@ -556,13 +564,11 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   }
 
   function resolveByIndex(idx, myRound){
-    // Ignore stale resolves (from an old round or old script instance)
+    // Ignore stale resolves from any previous round
     if (myRound !== roundSeq) return;
 
     if (!ball){ resetRoundState(); return; }
-    ball.alive = false;
-    ball = null;
-
+    ball.alive=false; ball=null;
     if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
 
     dropping=false; dropBtn.disabled=false;
@@ -571,36 +577,69 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     cele?.classList.remove('show');
 
     if (rule === 'L'){
-      lastTxt = 'Scratch';
-      resText.textContent = 'Scratch (lose)';
-      stateText.textContent = 'Resolved';
+      lastTxt='Scratch';
+      resText.textContent='Scratch (lose)';
+      stateText && (stateText.textContent='Resolved');
       try{ __bagAudio?.nudge?.(); }catch{}
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
       if (mult === 2){
-        lastTxt = 'Jackpot 2×';
-        resText.textContent = '🎉 Jackpot 2×';
-        cele.style.color = '#ffd700';
+        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
+        if (cele){ cele.style.color='#ffd700'; cele.textContent=resText.textContent; cele.classList.add('show'); setTimeout(()=>cele.classList.remove('show'),1200); }
       } else {
-        lastTxt = 'Win 1.2×';
-        resText.textContent = 'Win 1.2×';
-        cele.style.color = '#baf2cd';
+        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
+        if (cele){ cele.style.color='#baf2cd'; cele.textContent=resText.textContent; cele.classList.add('show'); setTimeout(()=>cele.classList.remove('show'),1200); }
       }
+      stateText && (stateText.textContent='Resolved');
       try{ window.__bagSession?.credit?.(payout); }catch{}
-      cele.textContent = resText.textContent;
-      cele.classList.add('show');
-      setTimeout(()=> cele.classList.remove('show'), 1200);
-      stateText.textContent = 'Resolved';
     }
     hud();
   }
 
-  // Init UI + start loop so board is visible before first play
-  ccyLbl.textContent = currency; unitSpan.textContent = currency;
+  // Draw board (unchanged look)
+  function drawBoard(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
+
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
+    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
+
+    // pegs
+    ctx.fillStyle='#704d1d';
+    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+
+    // floor & dividers
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
+    for(let i=1;i<SLOTS;i++){
+      const x = slotX(i);
+      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
+    }
+
+    // labels
+    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
+    for(let i=0;i<SLOTS;i++){
+      const rule = PAY_MAP[i];
+      const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
+      ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
+      ctx.fillText(txt, slotCenters[i], bottomBoard+72);
+    }
+  }
+
+  function drawBall(x,y){
+    const r=BALL_R;
+    const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
+    g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+  }
+
+  // Init UI and start RAF so the board is visible before first play
   hud();
-  ensureLoop();
+  (function bootOnce(){ if (rafId==null) ensureLoop(); })();
 })();
 </script>
 
