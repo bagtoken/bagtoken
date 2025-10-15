@@ -153,6 +153,10 @@
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
   @keyframes shine{ 0%{ background-position:0% 50% } 100%{ background-position:200% 50% } }
+  @media (prefers-reduced-motion: reduce){
+    #win-card{ animation:none; transform:none; opacity:1; }
+    #win-text{ animation:none; }
+  }
 </style>
 </head>
 <body>
@@ -417,6 +421,36 @@
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
+  /* ----- Stake helpers (mirror Slots) ----- */
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const betQtyEl = document.getElementById('betQty');
+  const usdBetEl = document.getElementById('usdBet');
+  const curToggle = document.getElementById('curToggle');
+
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+  function stakeBag(){
+    const q = parseFloat(betQtyEl?.value||0) || 0;
+    if (!q) return 0;
+    const {bagUsd,xrpUsd} = PR();
+    if (currentCurrency()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd); // XRP → BAG
+    return 0;
+  }
+  function stakeUsd(){
+    // Prefer explicit USD input if present, else derive from prices
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return direct;
+    const q = parseFloat(betQtyEl?.value||0) || 0;
+    const {bagUsd,xrpUsd} = PR();
+    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+    return xrpUsd>0 ? q*xrpUsd : 0;
+  }
+  function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
   // Build CSS dice
   container.innerHTML = `
     <style>
@@ -503,43 +537,57 @@
 
     await rollCssDice(a,b);
 
+    // stake snapshot (for overlay feedback parity with Slots)
+    const sBag = stakeBag();
+    const sUsd = stakeUsd();
+
     if(isComeOut()){
       if(sum===7||sum===11){
         rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — Come-out WIN`;
-        try{ window.__bagAudio && __bagAudio.chime(); }catch{}
-        window.showWin?.({ message:'WIN', subtext:'Nice roll', duration:5200, sound:false });
+        rollText.textContent=`Rolled ${sum} — WIN (1.25×)`;
+        // Gain +0.25× (same overlay style as Slots)
+        showWin({
+          message:'WIN',
+          subtext:`+${fmt(sBag*0.25)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.25)}`,
+          duration:5200,
+          sound:true
+        });
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-comeout'}}));
       } else if(sum===2||sum===3||sum===12){
         rollText.className='t lose';
-        rollText.textContent=`Rolled a ${sum} — CRAPS — You lose`;
+        rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${sum} before 7`;
+        rollText.textContent=`Rolled ${sum} — Need ${sum} before 7`;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
       }
     } else {
       if(sum===ROUND.point){
         rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — POINT MADE`;
-        try{ window.__bagAudio && __bagAudio.chime(); }catch{}
-        window.showWin?.({ message:'WIN', subtext:'Point made', duration:4200, sound:false });
+        rollText.textContent=`Rolled ${sum} — POINT MADE (1.00×)`;
+        // Point win per spec: 1.00× total (no net gain)
+        showWin({
+          message:'WIN',
+          subtext:`+${fmt(0)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.00)}`,
+          duration:4200,
+          sound:true
+        });
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-point'}}));
       } else if(sum===7){
         rollText.className='t lose';
-        rollText.textContent=`Rolled a 7 — SEVEN OUT — You lose`;
+        rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
       } else {
         rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${ROUND.point} before 7`;
+        rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
       }
     }
