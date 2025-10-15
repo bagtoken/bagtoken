@@ -1135,142 +1135,273 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 })();
 </script>
 
-<!-- 🎲 BAG Dice — Game logic -->
 <script>
 (function(){
-  const container = document.getElementById('dice3d');
-  const rollBtn   = document.getElementById('rollBtn');
-  const rollText  = document.getElementById('rollText');
+  // ===== Global state so the ball can't be lost between closures/scripts =====
+  const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
+  G.ball = G.ball || null;           // the only ball reference used everywhere
+  G.rafLive = G.rafLive || false;    // render loop flag
+  G.lastBallId = G.lastBallId || 0;  // incremental id
 
-  // Build CSS dice
-  container.innerHTML = `
-    <style>
-      .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
-      .dice-row{position:relative;width:100%;height:100%;display:grid;place-items:center;}
-      .die{position:absolute;width:104px;height:104px;transform-style:preserve-3d;will-change:transform;}
-      .face{position:absolute;inset:0;background:#fff no-repeat center/cover;
-            transform-style:preserve-3d;border-radius:13px;
-            box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;}
-      .f1{ transform: translateZ(52px); } .f6{ transform: rotateY(180deg) translateZ(52px); }
-      .f3{ transform: rotateY( 90deg) translateZ(52px); } .f4{ transform: rotateY(-90deg) translateZ(52px); }
-      .f2{ transform: rotateX( 90deg) translateZ(52px); } .f5{ transform: rotateX(-90deg) translateZ(52px); }
+  // ---- Config (same visuals/physics/payouts as you have) ----
+  const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
+  const SLOTS = PAY_MAP.length;
 
-      .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
-      .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
+  const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
+  const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-      @keyframes tumbleA { from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d(-74px,16px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn);} }
-      @keyframes tumbleB { from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d( 74px,20px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn);} }
-      .tumblingA{ animation:tumbleA .42s linear infinite; }
-      .tumblingB{ animation:tumbleB .42s linear infinite; }
-      .tossing{ transition: transform .70s cubic-bezier(.2,.9,.2,1); }
-    </style>
-    <div class="cssstage">
-      <div class="dice-row">
-        <div class="die dieA" id="dieA"></div>
-        <div class="die dieB" id="dieB"></div>
-      </div>
-    </div>
-  `;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  function faceSVG(val){
-    const r=0.22,m=0.56,c=0;
-    const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
-    const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-    return `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`
-    )}")`;
-  }
-  function makeDie(el){ el.innerHTML=''; for(let i=1;i<=6;i++){ const f=document.createElement('div'); f.className='face f'+i; f.style.backgroundImage=faceSVG(i); el.appendChild(f);} }
-  const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
-  makeDie(dieA); makeDie(dieB);
+  const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
+  const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  const FRONT={
-    1:()=>`rotateX(0rad) rotateY(0rad)`,
-    2:()=>`rotateX(-1.5708rad)`,
-    3:()=>`rotateY(-1.5708rad)`,
-    4:()=>`rotateY( 1.5708rad)`,
-    5:()=>`rotateX( 1.5708rad)`,
-    6:()=>`rotateY( 3.1416rad)`,
-  };
-  const poseToFront=v=>(FRONT[v]||FRONT[1])();
-
-  // Roll animation & immediate dice sound
-  async function rollCssDice(a,b){
-    try{ window.__bagDiceAudio && __bagDiceAudio.roll(); }catch{}
-    try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
-
-    dieA.classList.add('tumblingA');
-    dieB.classList.add('tumblingB');
-    await new Promise(r=>setTimeout(r, 1200));
-
-    dieA.classList.remove('tumblingA');
-    dieB.classList.remove('tumblingB');
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-
-    dieA.classList.add('tossing');
-    dieB.classList.add('tossing');
-    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
-    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
-    await new Promise(r=>setTimeout(r, 700));
-    dieA.classList.remove('tossing');
-    dieB.classList.remove('tossing');
+  const PEG_ROWS=15, PEG_COLS=13;
+  const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
+  const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
+  const pegs=[];
+  for(let r=0;r<PEG_ROWS;r++){
+    const off=(r%2===0)?0:pegSpacingX/2;
+    for(let c=0;c<PEG_COLS;c++){
+      const x=leftWall+20+c*pegSpacingX+off;
+      if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
+      const y=topBoard+r*pegSpacingY;
+      pegs.push({x,y,r:PEG_R});
+    }
   }
 
-  const ROUND={active:false,point:null};
-  const isComeOut=()=>!ROUND.active||ROUND.point==null;
+  const slotWidth=(rightWall-leftWall)/SLOTS;
+  const slotX=i=>leftWall+i*slotWidth;
 
-  rollBtn?.addEventListener('click', async ()=>{
-    rollBtn.disabled=true;
+  // ---- UI hooks (unchanged) ----
+  const $=id=>document.getElementById(id);
+  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
+  const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
+  const betInput=$('demoBet'), stateText=$('stateText');
 
-    const a=1+(Math.random()*6|0);
-    const b=1+(Math.random()*6|0);
-    const sum=a+b;
+  // ---- Game state ----
+  let balance=100, stake=1, lastTxt='—';
+  let dropping=false, safetyTimer=null, lastPegTick=0;
 
-    await rollCssDice(a,b);
+  function hud(){
+    balLbl.textContent=balance.toFixed(2);
+    betLbl.textContent=stake;
+    lastLbl.textContent=lastTxt;
+  }
+  betInput.addEventListener('input', ()=>{
+    const raw=(betInput.value||'').replace(/[^\d]/g,'');
+    betInput.value = raw || '1';
+    stake = Math.max(1, parseInt(betInput.value,10)||1);
+    hud();
+  });
 
-    if(isComeOut()){
-      if(sum===7||sum===11){
-        rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — Come-out WIN`;
-        try{ window.__bagAudio && __bagAudio.chime(); }catch{}
-        window.showWin?.({ message:'WIN', subtext:'Nice roll', duration:5200, sound:false });
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-comeout'}}));
-      } else if(sum===2||sum===3||sum===12){
-        rollText.className='t lose';
-        rollText.textContent=`Rolled a ${sum} — CRAPS — You lose`;
-        try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
-      } else {
-        ROUND.active=true; ROUND.point=sum;
-        rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${sum} before 7`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
+  // ---- Audio passthrough (unchanged) ----
+  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+  async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+
+  // ---- House-weighted fallback (unchanged logic) ----
+  function weightedSlotIndex(){
+    const w=[28,10,28,2,28,10,28]; let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
+  }
+
+  // ---- Pricing helper exposed for your other snippet ----
+  function stakeUsdEquivalent(){
+    const qty = Math.max(0, parseFloat(betInput.value||0));
+    const P=window.__PRICES__||{};
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
+    return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
+  }
+  window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
+
+  // ---- Helpers ----
+  function clearRoundState(){
+    clearTimeout(safetyTimer); safetyTimer=null;
+    // Do NOT null G.ball here; next round will overwrite it. If previous ball still “alive”,
+    // we’ll mark it dead at resolve time.
+    dropping=false;
+    dropBtn.disabled=false;
+    lastPegTick=0;
+  }
+
+  // Start a round (only global ball is used)
+  dropBtn.addEventListener('click', async ()=>{
+    await clickSound();
+
+    clearRoundState();
+
+    const usd = stakeUsdEquivalent();
+    const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
+    if (!passesMin){ resText.textContent = 'Min $1'; return; }
+
+    balance = Math.max(0, balance - stake);
+    lastTxt='—';
+    resText.textContent='—';
+    stateText.textContent='Dropping…';
+    celeEl?.classList.remove('show');
+    hud();
+
+    startDrop();
+    ensureLoop();
+  });
+
+  function startDrop(){
+    dropping=true; dropBtn.disabled=true;
+
+    const spread=(rightWall-leftWall)*0.30;
+    const startOffset=(Math.random()-0.5)*spread;
+    const initVx=(Math.random()-0.5)*1.2;
+
+    const id = ++G.lastBallId;
+    G.ball = { id, x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
+
+    safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
+  }
+
+  function ensureLoop(){
+    if(G.rafLive) return;
+    G.rafLive = true;
+    const tick = ()=>{
+      drawBoard();
+      const b = G.ball;
+      if(b && b.alive){
+        stepBall(b);
+        drawBall(b.x, b.y);
       }
-    } else {
-      if(sum===ROUND.point){
-        rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — POINT MADE`;
-        try{ window.__bagAudio && __bagAudio.chime(); }catch{}
-        window.showWin?.({ message:'WIN', subtext:'Point made', duration:4200, sound:false });
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-point'}}));
-      } else if(sum===7){
-        rollText.className='t lose';
-        rollText.textContent=`Rolled a 7 — SEVEN OUT — You lose`;
-        try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
-      } else {
-        rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${ROUND.point} before 7`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // Guarantee loop is running from the start (board visible before first drop)
+  ensureLoop();
+
+  // Safety: free button if anything stalls
+  setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)){ clearRoundState(); } }, 900);
+
+  function stepBall(b){
+    b.vy += GRAVITY;
+    b.x  += b.vx; b.y += b.vy;
+    b.vx *= FRICTION; b.vy *= FRICTION;
+    b.vx += (Math.random()-0.5)*0.02;
+
+    if(b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R; b.vx =  Math.abs(b.vx)*RESTITUTION; pegSound(); }
+    if(b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; pegSound(); }
+    if(b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
+
+    const now=performance.now();
+    for(const p of pegs){
+      const dx=b.x-p.x, dy=b.y-p.y;
+      const dist=Math.hypot(dx,dy) || 0.0001;
+      const minD=BALL_R + p.r;
+      if(dist < minD){
+        const nx=dx/dist, ny=dy/dist;
+        b.x += nx*(minD-dist);
+        b.y += ny*(minD-dist);
+        const vDot=b.vx*nx + b.vy*ny;
+        b.vx = (b.vx - 2*vDot*nx)*RESTITUTION;
+        b.vy = (b.vy - 2*vDot*ny)*RESTITUTION;
+        if(now - lastPegTick > 55){ lastPegTick=now; pegSound(); }
       }
     }
 
-    rollBtn.disabled=false;
-  });
+    const slowEnough = Math.abs(b.vy) < 0.22;
+    if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
+      resolveByIndex(boundarySlotIndex(b.x));
+    }
+    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
+  }
+
+  function boundarySlotIndex(x){
+    const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
+    const idx = Math.floor((clamped - leftWall) / slotWidth);
+    return Math.max(0, Math.min(SLOTS-1, idx));
+  }
+
+  function resolveByIndex(idx){
+    const b = G.ball;
+    if(!b){ clearRoundState(); return; }
+    b.alive = false;          // mark dead first — next round overwrites G.ball
+    clearTimeout(safetyTimer); safetyTimer=null;
+
+    dropping=false; dropBtn.disabled=false;
+
+    const rule = PAY_MAP[idx] ?? 'L';
+    celeEl?.classList.remove('show');
+
+    if (rule === 'L'){
+      lastTxt='Scratch';
+      resText.textContent='Scratch (lose)';
+      stateText.textContent='Resolved';
+      pegSound();
+    } else {
+      const mult = Number(rule);
+      const payout = Math.floor(stake * mult * 100)/100;
+      balance += payout; hud();
+      if (mult === 2){
+        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
+        winFlash(resText.textContent, '#ffd700');
+      } else {
+        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
+        winFlash(resText.textContent, '#baf2cd');
+      }
+      stateText.textContent='Resolved';
+      try{ window.__bagSession?.credit?.(payout); }catch{}
+      pegSound();
+    }
+    hud();
+    // Do NOT null G.ball here; keep last object around (alive=false) so nothing “steals” the reference.
+  }
+
+  function winFlash(text, color){
+    if (!celeEl) return;
+    celeEl.textContent = text;
+    celeEl.style.color = color || '#ffd700';
+    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
+    celeEl.classList.add('show');
+    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
+  }
+
+  function drawBoard(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
+
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
+    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
+
+    ctx.fillStyle='#704d1d';
+    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
+    for(let i=1;i<SLOTS;i++){
+      const x = slotX(i);
+      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
+    }
+
+    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
+    for(let i=0;i<SLOTS;i++){
+      const rule = PAY_MAP[i];
+      const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
+      ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
+      ctx.fillText(txt, centers[i], bottomBoard+72);
+    }
+  }
+
+  function drawBall(x,y){
+    const r=BALL_R;
+    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
+    g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+  }
+
+  // Initial HUD
+  hud();
 })();
 </script>
 
