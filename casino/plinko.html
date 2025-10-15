@@ -318,25 +318,30 @@
 
 <!-- PLINKO GAME LOGIC -->
 <script>
+/* Ensure only ONE Plinko instance runs */
+if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
+  window.__bagPlinko.destroy();
+}
+
 (function(){
   // Payouts (unchanged)
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Physics / layout (unchanged)
+  // Physics / layout (unchanged parameters)
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
-  // Canvas (unchanged)
+  // Canvas (fixed logical size)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Board geometry (unchanged)
+  // Board geometry
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // Peg grid (unchanged)
+  // Peg grid
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -351,11 +356,11 @@
     }
   }
 
-  // Slots (unchanged)
+  // Slots
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // UI hooks (unchanged)
+  // UI refs
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
@@ -363,31 +368,10 @@
 
   // State
   let balance=100, stake=1, lastTxt='—';
-  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0;
-  let resolved=false;   // guard against multi-resolve
-  let rafStarted=false; // single RAF loop
+  let dropping=false, ball=null, lastPegTick=0, resolved=false;
+  let safetyTimer=null, freeGuard=null, rafId=null;
 
-  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
-  betInput.addEventListener('input', ()=>{
-    const raw=(betInput.value||'').replace(/[^\d]/g,'');
-    betInput.value=raw||'1';
-    stake = Math.max(1, parseInt(betInput.value,10)||1);
-    hud();
-  });
-
-  // Sound (unchanged pattern; no awaits inside physics)
-  function pegSound(){ window.__bagAudio && window.__bagAudio.nudge(); }
-  function clickSound(){ window.__bagAudio && window.__bagAudio.nudge(); }
-
-  // Fallback resolver (house-favor) – unchanged weights
-  function weightedSlotIndex(){
-    const w=[28,10,28,2,28,10,28];
-    let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
-    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
-    return 3;
-  }
-
-  // Expose stakeUsdEquivalent (used by your pricing listener)
+  // Expose stakeUsdEquivalent for your pricesUpdated listener
   window.stakeUsdEquivalent = function(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
@@ -396,57 +380,75 @@
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   };
 
-  // Clean slate before every round (prevents “one play only” bug)
+  /* ---------- HUD / input ---------- */
+  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
+  betInput.addEventListener('input', ()=>{
+    const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value=raw||'1';
+    stake = Math.max(1, parseInt(betInput.value,10)||1); hud();
+  });
+
+  /* ---------- Audio helpers (no awaits inside physics) ---------- */
+  function pegSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
+  function clickSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
+
+  /* ---------- House-weighted fallback resolve ---------- */
+  function weightedSlotIndex(){
+    const w=[28,10,28,2,28,10,28]; let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
+  }
+
+  /* ---------- Round control ---------- */
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
+    clearTimeout(freeGuard);   freeGuard=null;
     ball=null; dropping=false; dropBtn.disabled=false; lastPegTick=0; resolved=false;
   }
 
-  // Click -> new round
   dropBtn.addEventListener('click', ()=>{
     clickSound();
-    clearRoundState();
+    clearRoundState();                 // kill any stale state from prior round
 
+    // $1 min (allow in demo if prices not ready)
     const usd = window.stakeUsdEquivalent ? window.stakeUsdEquivalent() : 0;
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent='Min $1'; return; }
 
+    // Spend & UI
     balance = Math.max(0, balance - stake);
     lastTxt='—'; resText.textContent='—'; stateText.textContent='Dropping…';
     celeEl?.classList.remove('show'); hud();
 
     startDrop();
-    startRAF(); // ensure the loop is running
   });
 
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
+    // varied entry so outcomes aren’t center-biased
     const spread=(rightWall-leftWall)*0.30;
     const startOffset=(Math.random()-0.5)*spread;
     const initVx=(Math.random()-0.5)*1.2;
 
     ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
 
-    // safety resolve if background-throttled
+    // Safety resolve in background-throttle cases
     safetyTimer=setTimeout(()=>{ if(dropping && !resolved){ resolveByIndex(weightedSlotIndex()); } }, 9000);
+
+    // Extra guard to re-enable button if something stalls
+    freeGuard=setTimeout(()=>{ if(dropping && !ball){ clearRoundState(); } }, 12000);
   }
 
-  // Always-on render loop so board & ball draw every time
-  function startRAF(){
-    if (rafStarted) return;
-    rafStarted=true;
-    (function raf(){
-      drawBoard();
-      if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); }
-      requestAnimationFrame(raf);
-    })();
+  /* ---------- RAF render loop (single, persistent) ---------- */
+  function loop(){
+    // reset drawing state every frame in case another script changed it
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    drawBoard();
+    if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); }
+    rafId = requestAnimationFrame(loop);
   }
-  startRAF(); // begin immediately so the board is visible on load
+  rafId = requestAnimationFrame(loop); // board visible immediately
 
-  // Extra safety
-  setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ clearRoundState(); } }, 900);
-
+  /* ---------- Physics ---------- */
   function stepBall(){
     ball.vy += GRAVITY;
     ball.x  += ball.vx; ball.y += ball.vy;
@@ -534,7 +536,7 @@
     setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
   }
 
-  // Drawing (unchanged visuals)
+  /* ---------- Drawing (visuals unchanged) ---------- */
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
@@ -571,7 +573,20 @@
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // Initial HUD
+  /* ---------- Public teardown so future loads don't conflict ---------- */
+  window.__bagPlinko = {
+    destroy(){
+      try{ cancelAnimationFrame(rafId); }catch{}
+      clearTimeout(safetyTimer); clearTimeout(freeGuard);
+      // remove the click handler by cloning the button (minimal & safe)
+      try{
+        const newBtn = dropBtn.cloneNode(true);
+        dropBtn.parentNode.replaceChild(newBtn, dropBtn);
+      }catch{}
+    }
+  };
+
+  // HUD up front
   hud();
 })();
 </script>
