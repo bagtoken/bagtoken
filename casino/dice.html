@@ -361,58 +361,121 @@
 })();
 </script>
 
-<!-- AUDIO: first-touch unlock (from Slots) + Slots win/lose + Dice roll -->
+<!-- AUDIO: unified WebAudio (reliable) + HTMLAudio fallback -->
 <script>
 (function(){
-  /* === Slots audio module (unchanged) === */
+  /* === Slots audio core (unchanged) === */
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
+  let AC=null, MASTER=null, lastTap=0, watchdog=null;
 
-  function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null;
-    AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC;}
-  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } }
+  function getAC(){
+    if (AC && AC.state!=='closed') return AC;
+    if (!AudioCtx) return null;
+    AC = new AudioCtx();
+    MASTER = AC.createGain();
+    MASTER.gain.value = .22;
+    MASTER.connect(AC.destination);
+    return AC;
+  }
+  async function resume(){
+    const ac = getAC();
+    if (!ac) return;
+    if (ac.state === 'suspended'){ try{ await ac.resume(); }catch{} }
+  }
 
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
-  addEventListener('pointerdown', async ()=>{ if(armed) return; armed=true; await resume();
-    try{ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+.02);}catch{} }, {once:true, passive:true});
+  // Re-arm on EVERY touch (not once) to recover after backgrounding
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
-  if(!watchdog) watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); },1500);
 
-  function noise(ac,lenSec=.08){ const n=Math.max(1,Math.floor(lenSec*ac.sampleRate));
-    const b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*.9;
-    const s=ac.createBufferSource(); s.buffer=b; return s; }
+  if(!watchdog){
+    watchdog = setInterval(()=>{ const ac=getAC(); if(!ac) return;
+      if(Date.now()-lastTap<30000 && ac.state==='suspended') resume();
+    }, 1500);
+  }
 
+  // tiny oscillator ping keeps AC "used" for some browsers
+  function ping(){
+    try{
+      const ac=getAC(); if(!ac||ac.state!=='running') return;
+      const o=ac.createOscillator(), g=ac.createGain();
+      g.gain.value=.0001; o.connect(g).connect(MASTER);
+      const t=ac.currentTime; o.start(t); o.stop(t+.02);
+    }catch{}
+  }
+
+  /* === Slots win/lose synths (unchanged) === */
   function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
     [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
       const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
+  }
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
+    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
     const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
-
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27);
+  }
   window.__bagAudio = { chime, thud, resume };
 
-  /* === Dice roll sound (fires instantly on button tap) === */
-  const rollSound = new Audio('/assets/sounds/diceshakeroll.mp3');
-  rollSound.preload='auto'; rollSound.crossOrigin='anonymous'; rollSound.setAttribute('playsinline',''); rollSound.volume=.95;
+  /* === Dice roll via WebAudio buffer (primary) === */
+  let diceBuf=null, diceGain=null, bufLoading=false;
 
-  // prime both WebAudio and the HTMLAudio on first touch so first roll has sound
-  addEventListener('pointerdown', ()=> {
-    try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
+  async function loadDiceBuffer(){
+    if (diceBuf || bufLoading) return diceBuf;
+    const ac=getAC(); if(!ac) return null;
     try{
-      rollSound.muted = true;
-      const p = rollSound.play();
-      if (p && p.then) p.then(()=>{ rollSound.pause(); rollSound.currentTime=0; rollSound.muted=false; }).catch(()=>{});
-      else { rollSound.pause(); rollSound.currentTime=0; rollSound.muted=false; }
-    }catch{}
-  }, {once:true, passive:true});
+      bufLoading=true;
+      const res = await fetch('/assets/sounds/diceshakeroll.mp3', {cache:'force-cache'});
+      const arr = await res.arrayBuffer();
+      diceBuf = await ac.decodeAudioData(arr);
+      if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
+    }catch{} finally{ bufLoading=false; }
+    return diceBuf;
+  }
 
-  window.__bagDiceAudio = {
-    roll(){ try{ rollSound.currentTime=0; rollSound.play().catch(()=>{}); }catch{} }
-  };
+  function playDiceWebAudio(){
+    const ac=getAC(); if(!ac || !diceBuf || ac.state!=='running') return false;
+    try{
+      const src = ac.createBufferSource();
+      src.buffer = diceBuf;
+      src.connect(diceGain || MASTER);
+      src.start();
+      return true;
+    }catch{ return false; }
+  }
+
+  /* === HTMLAudio fallback (only if buffer failed) === */
+  const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
+  rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
+
+  function primeHtmlAudio(){
+    // try to get it into a "playable" state after user gesture
+    try{
+      rollTag.muted = true;
+      const p = rollTag.play();
+      if (p && p.then) p.then(()=>{ rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }).catch(()=>{});
+      else { rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }
+    }catch{}
+  }
+
+  async function roll(){
+    try{ await resume(); }catch{}
+    await loadDiceBuffer();
+    // Try WebAudio first (most reliable), else HTMLAudio
+    if (!playDiceWebAudio()){
+      try{
+        rollTag.pause();            // ensure clean restart (iOS)
+        rollTag.currentTime = 0;
+        rollTag.play().catch(()=>{ /* ignore */ });
+      }catch{}
+    }
+  }
+
+  // Public API used by the game code
+  window.__bagDiceAudio = { roll };
 })();
 </script>
+
 
 <!-- 🎲 BAG Dice — Game logic -->
 <script>
