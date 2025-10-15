@@ -316,191 +316,208 @@
 })();
 </script>
 
-<!-- PLINKO GAME LOGIC -->
+<!-- PLINKO GAME LOGIC (revert to previous; minimal fix to keep coin visible every round) -->
 <script>
-/* Clean up any older instance so we don't double-bind */
-if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
-  window.__bagPlinko.destroy();
-}
-
 (function(){
-  // ----- Config (unchanged odds / physics / layout) -----
+  // --- Payouts (unchanged) ---
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-  const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
+  // --- Physics / layout (unchanged) ---
+  const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
+  const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
 
-  // ----- Canvases (board only) -----
-  const board = document.getElementById('game');
-  const bctx  = board.getContext('2d');
-  const W=640, H=880; board.width=W; board.height=H;
+  // --- Canvas (fixed logical size; CSS scales) ---
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W=640, H=880; canvas.width=W; canvas.height=H;
 
+  // --- Board geometry ---
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
-  const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
+  const topBoard=110, bottomBoard=H-120;
 
-  // Peg grid (spans down the board)
-  const PEG_ROWS=15, PEG_COLS=13;
+  const PEG_ROWS = 12, PEG_COLS = 11;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
-  const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
+  const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
+
   const pegs=[];
   for(let r=0;r<PEG_ROWS;r++){
     const off=(r%2===0)?0:pegSpacingX/2;
     for(let c=0;c<PEG_COLS;c++){
-      const x=leftWall+20+c*pegSpacingX+off;
+      let x=leftWall+20+c*pegSpacingX+off;
       if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
-      const y=topBoard+r*pegSpacingY;
+      let y=topBoard+r*pegSpacingY;
       pegs.push({x,y,r:PEG_R});
     }
   }
 
-  // Slots
+  // --- Slots ---
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // ----- UI refs -----
+  // --- UI refs (unchanged) ---
   const $=id=>document.getElementById(id);
-  const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
-  const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
-  const betInput=$('demoBet'), stateText=$('stateText');
+  const modeLbl=$('modeLbl'), balLbl=$('balLbl'), ccyLbl=$('ccyLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
+  const resText=$('resText');
+  const dropBtn=$('dropBtn');
+  const curToggle=document.getElementById('curToggle');
+  const unitSpan=document.querySelector('#bagPlinko .unit');
+  const betInput=document.getElementById('demoBet');
+  const usdInput=document.getElementById('usdBet');
+  const cele = document.getElementById('cele');
+  const stateText = document.getElementById('stateText');
 
-  // ----- State -----
-  let balance=100, stake=1, lastTxt='—';
-  let dropping=false, ball=null, lastPegTick=0, resolved=false;
-  let safetyTimer=null, freeGuard=null, rafId=null;
+  let mode='Demo', balance=100, stake=1, currency='XRP', lastTxt='—';
 
-  // Make stakeUsdEquivalent available for your pricesUpdated listener
-  window.stakeUsdEquivalent = function(){
+  // --- Round state ---
+  let dropping=false, ball=null, dropStartedAt=0;
+  let lastPegTs=0, safetyTimer=null;
+
+  // ====== MINIMAL FIX: robust per-round reset to ensure the coin reappears ======
+  function resetRoundState(){
+    clearTimeout(safetyTimer); safetyTimer=null;
+    ball=null;
+    dropping=false;
+    dropBtn.disabled=false;
+    lastPegTs=0;
+    // also clear any residual celebration overlay
+    cele?.classList.remove('show');
+  }
+  // ==============================================================================
+
+  function hud(){ balLbl.textContent=Number(balance).toFixed(2); ccyLbl.textContent=currency; betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; }
+
+  // keypad-only: sanitize numeric (unchanged)
+  function sanitizeBet(){
+    const raw = (betInput.value||'').replace(/[^\d]/g,'');
+    betInput.value = raw || '1';
+    stake = Math.max(1, parseInt(betInput.value,10)||1);
+    betLbl.textContent = String(stake);
+  }
+  betInput.addEventListener('input', sanitizeBet);
+  betInput.addEventListener('blur', sanitizeBet);
+
+  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+  function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
-    if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
+    if (currentCurrency()==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
-  };
+  }
+  // keep your external listener working
+  window.stakeUsdEquivalent = stakeUsdEquivalent;
 
-  // HUD
-  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
-  betInput.addEventListener('input', ()=>{
-    const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value=raw||'1';
-    stake = Math.max(1, parseInt(betInput.value,10)||1); hud();
+  usdInput.addEventListener('blur', ()=>{
+    const u = parseFloat(usdInput.value||'0'); const P=window.__PRICES__||{};
+    if (!(u>0)) return;
+    if (currentCurrency()==='XRP' && P.xrpUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.xrpUsd)).toString(); }
+    else if (currentCurrency()==='BAG' && P.bagUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.bagUsd)).toString(); }
+    sanitizeBet();
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    const usd = stakeUsdEquivalent();
+    if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    if (stateText && window.__PRICES__) {
+      stateText.textContent = (window.__PRICES__.source === 'live-amm') ? 'Live pricing ready' :
+                              (window.__PRICES__.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+    }
   });
 
-  // Audio nudges (no awaits so they never block)
-  function pegSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
-  function clickSound(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
+  curToggle.addEventListener('change', ()=>{
+    currency = currentCurrency(); ccyLbl.textContent = currency; unitSpan.textContent = currency;
+    const usd = stakeUsdEquivalent(); usdInput.value = usd>0 ? usd.toFixed(2) : '';
+  });
 
-  // Weighted fallback (house edge) if tab throttles
-  function weightedSlotIndex(){
-    const w=[28,10,28,2,28,10,28]; let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
-    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
-  }
+  // peg / wall “tick”
+  function pegKnock(){ try{ if (window.__bagAudio) { window.__bagAudio.nudge(); } }catch{} }
 
-  // ----- COIN AS DOM NODE (immune to canvas clears) -----
-  const wrap = board.parentElement;
-  const coinNode = document.createElement('div');
-  coinNode.style.position='absolute';
-  coinNode.style.inset='0';
-  coinNode.style.pointerEvents='none';
-  coinNode.style.zIndex='2';
-  // the visual coin
-  const coinDot = document.createElement('div');
-  coinDot.style.position='absolute';
-  coinDot.style.width = (BALL_R*2)+'px';
-  coinDot.style.height= (BALL_R*2)+'px';
-  coinDot.style.borderRadius='50%';
-  coinDot.style.boxShadow='0 0 0 1px rgba(0,0,0,.35)';
-  // gradient (matches your theme)
-  coinDot.style.background='radial-gradient(circle at 35% 35%, #fff2a6 0%, #d9a93e 55%, #8b5e13 100%)';
-  coinNode.appendChild(coinDot);
-  wrap.appendChild(coinNode);
+  // ---- Drop handler (unchanged visuals; uses the new reset) ----
+  dropBtn.addEventListener('click', async ()=>{
+    if (dropping) return;
 
-  function drawCoin(x,y){
-    // center the dot on (x,y)
-    coinDot.style.transform = `translate(${Math.round(x-BALL_R)}px,${Math.round(y-BALL_R)}px)`;
-    coinDot.style.display = 'block';
-  }
-  function clearCoin(){ coinDot.style.display='none'; }
+    // wake audio each click
+    try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
-  // ----- Round mgmt -----
-  function clearRoundState(){
-    clearTimeout(safetyTimer); safetyTimer=null;
-    clearTimeout(freeGuard);   freeGuard=null;
-    ball=null; dropping=false; dropBtn.disabled=false; lastPegTick=0; resolved=false;
-    clearCoin();
-  }
+    // reset any stale state from previous round (FIX)
+    resetRoundState();
 
-  dropBtn.addEventListener('click', ()=>{
-    clickSound();
-    clearRoundState();
-
-    const usd = window.stakeUsdEquivalent ? window.stakeUsdEquivalent() : 0;
+    const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-    if (!passesMin){ resText.textContent='Min $1'; return; }
+    if (!passesMin){
+      resText.textContent = 'Min $1';
+      return;
+    }
 
+    dropBtn.disabled = true;
     balance = Math.max(0, balance - stake);
-    lastTxt='—'; resText.textContent='—'; stateText.textContent='Dropping…';
-    celeEl?.classList.remove('show'); hud();
-
+    lastTxt = '—';
+    resText.textContent = '—';
+    stateText.textContent = 'Dropping…';
+    hud();
     startDrop();
   });
 
   function startDrop(){
-    dropping=true; dropBtn.disabled=true;
+    dropping=true;
+    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, frames:0};
+    lastPegTs = 0;
+    dropStartedAt = performance.now();
 
-    const spread=(rightWall-leftWall)*0.30;
-    const startOffset=(Math.random()-0.5)*spread;
-    const initVx=(Math.random()-0.5)*1.2;
-
-    ball={ x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
-
-    safetyTimer=setTimeout(()=>{ if(dropping && !resolved){ resolveByIndex(weightedSlotIndex()); } }, 9000);
-    freeGuard=setTimeout(()=>{ if(dropping && !ball){ clearRoundState(); } }, 12000);
+    // failsafe resolve in case of throttling
+    clearTimeout(safetyTimer);
+    safetyTimer = setTimeout(()=>{ if(dropping){ resolveByIndex(boundarySlotIndex((ball&&ball.x)||W/2)); } }, 8000);
   }
 
-  // ----- Single RAF for life (keeps board visible even before first drop) -----
-  function loop(){
+  // --- Single RAF loop (always on; keeps board visible before any drop) ---
+  (function loop(ts){
     drawBoard();
-    if(ball && ball.alive){ stepBall(); drawCoin(ball.x,ball.y); }
-    else clearCoin();
-    rafId = requestAnimationFrame(loop);
-  }
-  rafId = requestAnimationFrame(loop);
+    if(ball && ball.alive){
+      stepBall(ts);
+      drawBall(ball.x, ball.y);
+      if(ball.y > H + 200 || ts - dropStartedAt > 12000){
+        resolveByIndex(boundarySlotIndex(ball.x));
+      }
+    }
+    // safety: if physics ended but flags stuck, free things
+    if (!ball && dropping) { dropping = false; dropBtn.disabled = false; }
+    requestAnimationFrame(loop);
+  })(performance.now());
 
-  // Physics
-  function stepBall(){
+  function stepBall(ts){
+    ball.frames++;
     ball.vy += GRAVITY;
-    ball.x  += ball.vx; ball.y += ball.vy;
+    ball.x += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
-    ball.vx += (Math.random()-0.5)*0.02;
 
     // walls
-    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegSound(); }
-    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegSound(); }
+    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx = Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
     if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
     // pegs
-    const now=performance.now();
     for(const p of pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
       const dist=Math.hypot(dx,dy) || 0.0001;
       const minD=BALL_R + p.r;
       if(dist < minD){
-        const nx=dx/dist, ny=dy/dist;
-        ball.x += nx*(minD-dist);
-        ball.y += ny*(minD-dist);
-        const vDot=ball.vx*nx + ball.vy*ny;
-        ball.vx = (ball.vx - 2*vDot*nx)*RESTITUTION;
-        ball.vy = (ball.vy - 2*vDot*ny)*RESTITUTION;
-        if(now - lastPegTick > 55){ lastPegTick=now; pegSound(); }
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = (minD - dist) + 0.25;
+        ball.x += nx * overlap; ball.y += ny * overlap;
+        const vDotN = ball.vx*nx + ball.vy*ny;
+        ball.vx = (ball.vx - 2*vDotN*nx) * RESTITUTION;
+        ball.vy = (ball.vy - 2*vDotN*ny) * RESTITUTION;
+        const nowMs = performance.now();
+        if (nowMs - lastPegTs > 50){ lastPegTs = nowMs; pegKnock(); }
+        const speed = Math.hypot(ball.vx, ball.vy);
+        if(speed < 0.22){ ball.vx += (Math.random()-.5)*0.65; ball.vy += 0.45; }
       }
     }
 
-    // land
+    // Landing
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x));
     }
-    if (ball.y > H + 200){ resolveByIndex(boundarySlotIndex(ball.x)); }
   }
 
   function boundarySlotIndex(x){
@@ -510,91 +527,99 @@ if (window.__bagPlinko && typeof window.__bagPlinko.destroy === 'function') {
   }
 
   function resolveByIndex(idx){
-    if (resolved) return;
-    resolved = true;
-
-    if (ball){ ball.alive=false; }
-    ball=null;
+    // if something already cleared the ball, still fully reset (FIX)
+    if (!ball){
+      resetRoundState();
+      return;
+    }
+    ball.alive = false;
+    ball = null;
     clearTimeout(safetyTimer); safetyTimer=null;
 
-    dropping=false; dropBtn.disabled=false;
-
     const rule = PAY_MAP[idx] ?? 'L';
-    celeEl?.classList.remove('show');
+    let color = '#ffd700';
+
+    dropping = false;
+    dropBtn.disabled = false;
+
+    cele?.classList.remove('show');
 
     if (rule === 'L'){
-      lastTxt='Scratch';
-      resText.textContent='Scratch (lose)';
-      stateText.textContent='Resolved';
-      pegSound();
+      lastTxt = 'Scratch';
+      resText.textContent = 'Scratch (lose)';
+      stateText.textContent = 'Resolved';
+      try{ __bagAudio?.nudge?.(); }catch{}
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
       if (mult === 2){
-        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-        winFlash(resText.textContent, '#ffd700');
+        lastTxt = 'Jackpot 2×';
+        resText.textContent = '🎉 Jackpot 2×';
+        color = '#ffd700';
       } else {
-        lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
-        winFlash(resText.textContent, '#baf2cd');
+        lastTxt = 'Win 1.2×';
+        resText.textContent = 'Win 1.2×';
+        color = '#baf2cd';
       }
-      stateText.textContent='Resolved';
       try{ window.__bagSession?.credit?.(payout); }catch{}
-      pegSound();
+      if (cele){
+        cele.style.color = color;
+        cele.textContent = resText.textContent;
+        cele.classList.add('show');
+        setTimeout(()=> cele.classList.remove('show'), 1200);
+      }
+      stateText.textContent = 'Resolved';
     }
+
     hud();
-    clearCoin(); // ready for next round
   }
 
-  function winFlash(text, color){
-    if (!celeEl) return;
-    celeEl.textContent = text;
-    celeEl.style.color = color || '#ffd700';
-    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
-    celeEl.classList.add('show');
-    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
-  }
-
-  // Draw the board (only on base canvas)
+  // --- Render board / ball (unchanged visuals) ---
   function drawBoard(){
-    bctx.clearRect(0,0,W,H);
-    bctx.fillStyle='#0b1b13'; bctx.fillRect(0,0,W,H);
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
-    bctx.strokeStyle='#1c3b27'; bctx.lineWidth=4;
-    bctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
+    ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
+    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
 
-    bctx.fillStyle='#704d1d';
-    for(const p of pegs){ bctx.beginPath(); bctx.arc(p.x,p.y,p.r,0,Math.PI*2); bctx.fill(); }
+    // pegs
+    ctx.fillStyle='#704d1d';
+    for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
-    bctx.strokeStyle='#2a4d38'; bctx.lineWidth=3;
-    bctx.beginPath(); bctx.moveTo(leftWall, bottomBoard); bctx.lineTo(rightWall, bottomBoard); bctx.stroke();
+    // floor & dividers
+    ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
     for(let i=1;i<SLOTS;i++){
       const x = slotX(i);
-      bctx.beginPath(); bctx.moveTo(x, bottomBoard); bctx.lineTo(x, bottomBoard+50); bctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
-    bctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; bctx.textAlign='center';
+    // labels
+    const slotCenters=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
       const rule = PAY_MAP[i];
       const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.2×');
-      bctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
-      bctx.fillText(txt, centers[i], bottomBoard+72);
+      ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
+      ctx.fillText(txt, slotCenters[i], bottomBoard+72);
     }
   }
 
-  // Public teardown (future replacements won’t conflict)
-  window.__bagPlinko = {
-    destroy(){
-      try{ cancelAnimationFrame(rafId); }catch{}
-      clearTimeout(safetyTimer); clearTimeout(freeGuard);
-      try{ coinNode.remove(); }catch{}
-    }
-  };
+  function drawBall(x,y){
+    const r=BALL_R;
+    const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
+    g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+  }
 
-  hud(); // initial labels
+  // initial UI
+  ccyLbl.textContent = currency; unitSpan.textContent = currency;
+  hud();
 })();
 </script>
+
 
 
 
