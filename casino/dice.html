@@ -284,56 +284,6 @@
 </section>
 
 <!-- WIN overlay -->
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
-  <div id="win-card">
-    <button id="win-close" aria-label="Close">×</button>
-    <div id="win-text">WIN</div>
-    <div id="win-sub">Nice roll</div>
-  </div>
-</div>
-
-<!-- AUDIO (roll only — shake removed) -->
-<script>
-(function(){
-  const ROLL_SRC = '/assets/sounds/diceroll.mp3';
-
-  let primed=false;
-  const baseRoll  = new Audio(ROLL_SRC);
-  [baseRoll].forEach(a=>{
-    a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95;
-  });
-
-  function primeOnce(){
-    if (primed) return;
-    try{
-      baseRoll.muted=true; const p=baseRoll.play();
-      if (p && p.then){
-        p.then(()=>{ baseRoll.pause(); baseRoll.muted=false; primed=true; }).catch(()=>{});
-      } else { baseRoll.pause(); baseRoll.muted=false; primed=true; }
-    }catch{}
-  }
-  addEventListener('pointerdown', primeOnce, {once:true, passive:true});
-
-  function playOnce(tmpl){
-    return new Promise(res=>{
-      try{
-        const a = tmpl.cloneNode(true);
-        a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
-        a.addEventListener('ended', ()=>res(), {once:true});
-        a.play().catch(()=>setTimeout(res, 900));
-        setTimeout(()=>res(), 10000);
-      }catch{ res(); }
-    });
-  }
-
-  function playRoll(){ return playOnce(baseRoll); }
-
-  window.__bagSfx = { primeOnce, playRoll };
-})();
-</script>
-
-<!-- WIN overlay logic -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -345,8 +295,7 @@
   let rafId=null, particles=[], start=0, dur=2000;
   function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++){ particles.push({ x:innerWidth*0.5, y:innerHeight*0.4,
-      vx:(Math.random()-.5)*6, vy:-(3+Math.random()*5), g:.16, rot:Math.random()*6.28, vr:(Math.random()-.5)*.25, sz:6+Math.random()*10, col:colors[(Math.random()*colors.length)|0], shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri') }); } }
+  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
   function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
     if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
@@ -355,57 +304,79 @@
   function hide(){ overlay.style.display='none'; stop(); }
   closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice roll', duration=4000 }=opts;
+  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+    if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
     cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
     clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
   };
 })();
 </script>
 
-<!-- GAME + DICE (CSS 3D; inline SVG pips) — tumble → throw → square face-out land -->
+
+<!-- AUDIO (WebAudio: chime, scratch, thud) -->
+<script>
+(function(){
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
+
+  function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null;
+    AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC;}
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } }
+
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
+  addEventListener('pointerdown', async ()=>{ if(armed) return; armed=true; await resume();
+    try{ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+.02);}catch{} }, {once:true, passive:true});
+  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  if(!watchdog) watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); },1500);
+
+  function noise(ac,lenSec=.08){ const n=Math.max(1,Math.floor(lenSec*ac.sampleRate));
+    const b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*.9;
+    const s=ac.createBufferSource(); s.buffer=b; return s; }
+
+  // short “rolling / tumble” tick (we’ll call once at roll start)
+  function scratch(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const s=noise(ac,.06), g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
+    const t=ac.currentTime; g.gain.linearRampToValueAtTime(.08,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.09); s.start(t); s.stop(t+.1); }
+
+  // win sparkle
+  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
+
+  // lose thud
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
+
+  window.__bagAudio = { resume, scratch, chime, thud };
+})();
+</script>
+
+
+<!-- GAME + DICE (scratch/chime/thud) + celebration -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  /* Build stage */
+  /* Build stage (white dice, black pips; same landing) */
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
       .dice-row{position:relative;width:100%;height:100%;display:grid;place-items:center;}
       .die{position:absolute;width:104px;height:104px;transform-style:preserve-3d;will-change:transform;}
-      .face{
-        position:absolute;inset:0;background:#fff no-repeat center/cover;
-        transform-style:preserve-3d;border-radius:13px;
-        box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;
-      }
-      /* cube depth = 104 => translateZ = 52 */
-      .f1{ transform: translateZ(52px); }                 /* FRONT (1)  */
-      .f6{ transform: rotateY(180deg) translateZ(52px); } /* BACK  (6)  */
-      .f3{ transform: rotateY( 90deg) translateZ(52px); } /* RIGHT (3)  */
-      .f4{ transform: rotateY(-90deg) translateZ(52px); } /* LEFT  (4)  */
-      .f2{ transform: rotateX( 90deg) translateZ(52px); } /* TOP   (2)  */
-      .f5{ transform: rotateX(-90deg) translateZ(52px); } /* BOTTOM(5)  */
-
-      /* Start pose (close together) */
+      .face{position:absolute;inset:0;background:#fff no-repeat center/cover;transform-style:preserve-3d;border-radius:13px;box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;}
+      .f1{ transform: translateZ(52px); } .f6{ transform: rotateY(180deg) translateZ(52px); }
+      .f3{ transform: rotateY( 90deg) translateZ(52px); } .f4{ transform: rotateY(-90deg) translateZ(52px); }
+      .f2{ transform: rotateX( 90deg) translateZ(52px); } .f5{ transform: rotateX(-90deg) translateZ(52px); }
       .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
       .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
-
-      /* 1) TUMBLE (true spin; slightly faster) */
-      @keyframes tumbleA {
-        from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
-        to  { transform:translate3d(-74px,16px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn); }
-      }
-      @keyframes tumbleB {
-        from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
-        to  { transform:translate3d( 74px,20px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn); }
-      }
-      .tumblingA{ animation:tumbleA .42s linear infinite; }
-      .tumblingB{ animation:tumbleB .42s linear infinite; }
-
-      /* 2) THROW to center; we set final transform per roll */
+      @keyframes tumbleA { from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d(-74px,16px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn);} }
+      @keyframes tumbleB { from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d( 74px,20px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn);} }
+      .tumblingA{ animation:tumbleA .42s linear infinite; } .tumblingB{ animation:tumbleB .42s linear infinite; }
       .tossing{ transition: transform .74s cubic-bezier(.2,.9,.2,1); }
     </style>
     <div class="cssstage">
@@ -416,74 +387,54 @@
     </div>
   `;
 
-  /* White body + large black pips, inline SVG (no assets) */
   function faceSVG(val){
-    const r = 0.22, m = 0.56, c = 0;
-    const P = {
-      1:[[c,c]],
-      2:[[-m,-m],[ m, m]],
-      3:[[-m,-m],[ c, c],[ m, m]],
-      4:[[-m,-m],[ m,-m],[-m, m],[ m, m]],
-      5:[[-m,-m],[ m,-m],[ c, c],[-m, m],[ m, m]],
-      6:[[-m,-m],[ m,-m],[-m, c],[ m, c],[-m, m],[ m, m]],
-    }[val];
-    const dots = P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'>
-      <rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}
-    </svg>`;
-    return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+    const r=.22,m=.56,c=0;
+    const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
+    const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
+    return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`)}")`;
   }
-  function makeDie(el){
-    el.innerHTML = '';
-    for (let i=1;i<=6;i++){
-      const f = document.createElement('div'); f.className = 'face f'+i;
-      f.style.backgroundImage = faceSVG(i);
-      f.style.backgroundSize = 'cover';
-      el.appendChild(f);
-    }
-  }
-  const dieA = document.getElementById('dieA');
-  const dieB = document.getElementById('dieB');
-  makeDie(dieA); makeDie(dieB);
+  function makeDie(el){ el.innerHTML=''; for(let i=1;i<=6;i++){ const f=document.createElement('div'); f.className='face f'+i; f.style.backgroundImage=faceSVG(i); el.appendChild(f);} }
+  const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB'); makeDie(dieA); makeDie(dieB);
 
-  /* FACE-OUT orientation: requested number becomes the FRONT (+Z) face, no yaw/tilt */
-  /* Face layout (at rest): 1=front(+Z), 6=back(-Z), 3=right(+X), 4=left(-X), 2=top(+Y), 5=bottom(-Y) */
   const FRONT = {
     1: ()=>`rotateX(0rad) rotateY(0rad)`,
-    2: ()=>`rotateX(-1.5708rad)`,   // +Y -> +Z
-    3: ()=>`rotateY(-1.5708rad)`,   // +X -> +Z
-    4: ()=>`rotateY( 1.5708rad)`,   // -X -> +Z
-    5: ()=>`rotateX( 1.5708rad)`,   // -Y -> +Z
-    6: ()=>`rotateY( 3.1416rad)`,   // -Z -> +Z
+    2: ()=>`rotateX(-1.5708rad)`,
+    3: ()=>`rotateY(-1.5708rad)`,
+    4: ()=>`rotateY( 1.5708rad)`,
+    5: ()=>`rotateX( 1.5708rad)`,
+    6: ()=>`rotateY( 3.1416rad)`,
   };
-  const poseToFront = (v)=> (FRONT[v]||FRONT[1])();
+  const poseToFront = v => (FRONT[v]||FRONT[1])();
 
-  /* Sequence: TUMBLE → start roll SFX → THROW → LAND square (face-out) */
   async function rollCssDice(a,b){
-    await window.__bagSfx?.primeOnce?.();
-
-    // Start tumbling (continuous)
+    try{ await window.__bagAudio?.resume?.(); window.__bagAudio?.scratch?.(); }catch{}
+    // tumble
     dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
-
-    // short lead-in then roll SFX
     await new Promise(r=>setTimeout(r, 220));
-    (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
-
-    // stop tumble, prep throw
+    // throw & land face-out (square)
     dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
-
-    // exact landing pose (square, face-out)
     dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
     dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
-
-    // allow throw to finish, then remove transition so they "rest"
-    await new Promise(r=>setTimeout(r, 760));
+    await new Promise(r=>setTimeout(r, 740));
     dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
   }
 
-  /* Short, no-math status line */
+  // helpers for Bet → Payout subtext
+  function getBetInput(){
+    const qty = Number(document.getElementById('betQty')?.value||0) || 0;
+    const unit = (document.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+    return { qty, unit };
+  }
+  function bagFrom(qty, unit){
+    const P=window.__PRICES__||{};
+    if(unit==='BAG') return qty;
+    if(unit==='XRP' && P.xrpUsd>0 && P.bagUsd>0) return qty*(P.xrpUsd/P.bagUsd);
+    return qty; // fallback display only
+  }
+  function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+
   const ROUND = (window.ROUND = { active:false, point:null });
   const isComeOut = ()=>!ROUND.active || ROUND.point==null;
 
@@ -496,32 +447,47 @@
 
     await rollCssDice(a,b);
 
+    const { qty:betQty, unit:betUnit } = getBetInput();
+    const betBag = bagFrom(betQty, betUnit);
+
+    let outcome='neutral';
+
     if (isComeOut()){
       if (sum===7 || sum===11){
-        rollText.className='t win';   rollText.textContent = `Rolled a ${sum} — Come-out WIN`;
-        window.showWin?.({message:'WIN', subtext:'Come-out 7/11!'}); ROUND.active=false; ROUND.point=null;
+        outcome='win';
+        rollText.className='t win'; rollText.textContent=`Rolled a ${sum} — Come-out WIN`;
+        try{ window.__bagAudio?.chime?.(); }catch{}
+        showWin({ message:'WIN', subtext:`Bet ${fmt(betQty)} ${betUnit} → Payout ${fmt(betBag*1.25)} BAG`, sound:false, duration:5000 });
+        ROUND.active=false; ROUND.point=null;
       } else if (sum===2 || sum===3 || sum===12){
-        rollText.className='t lose';  rollText.textContent = `Rolled a ${sum} — CRAPS — You lose`;
+        outcome='lose';
+        rollText.className='t lose'; rollText.textContent=`Rolled a ${sum} — CRAPS — You lose`;
+        try{ window.__bagAudio?.thud?.(); }catch{}
         ROUND.active=false; ROUND.point=null;
       } else {
+        outcome='point';
         ROUND.active=true; ROUND.point=sum;
-        rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${sum} before 7`;
+        rollText.className='t scratch'; rollText.textContent=`Rolled a ${sum} — Need ${sum} before 7`;
       }
     } else {
       if (sum===ROUND.point){
-        rollText.className='t win';   rollText.textContent = `Rolled a ${sum} — POINT MADE`;
-        window.showWin?.({message:'WIN', subtext:`Point ${ROUND.point}`}); ROUND.active=false; ROUND.point=null;
+        outcome='win';
+        rollText.className='t win'; rollText.textContent=`Rolled a ${sum} — POINT MADE`;
+        try{ window.__bagAudio?.chime?.(); }catch{}
+        showWin({ message:'WIN', subtext:`Bet ${fmt(betQty)} ${betUnit} → Payout ${fmt(betBag*1.00)} BAG`, sound:false, duration:4800 });
+        ROUND.active=false; ROUND.point=null;
       } else if (sum===7){
-        rollText.className='t lose';  rollText.textContent = `Rolled a 7 — SEVEN OUT — You lose`;
+        outcome='lose';
+        rollText.className='t lose'; rollText.textContent='Rolled a 7 — SEVEN OUT — You lose';
+        try{ window.__bagAudio?.thud?.(); }catch{}
         ROUND.active=false; ROUND.point=null;
       } else {
-        rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${ROUND.point} before 7`;
+        outcome='neutral';
+        rollText.className='t scratch'; rollText.textContent=`Rolled a ${sum} — Need ${ROUND.point} before 7`;
       }
     }
 
-    // emit for demo toast & hooks
-    window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:rollText.className.replace('t ','')}}));
-
+    window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome}}));
     rollBtn.disabled = false;
   });
 })();
