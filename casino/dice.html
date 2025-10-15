@@ -501,14 +501,14 @@
 })();
 </script>
 
-<!-- GAME + DICE — CSS dice with sounds & overlay -->
+<!-- 🎲 BAG Dice — Final Script (2s roll, new dice sound) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  // Build simple CSS dice stage
+  // 🎲 Build CSS dice
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
@@ -538,135 +538,102 @@
     </div>
   `;
 
+  // 🎯 SVG faces
   function faceSVG(val){
     const r=0.22,m=0.56,c=0;
     const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
     const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
     return `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#fff'/>${dots}</svg>`
     )}")`;
   }
+
   function makeDie(el){ el.innerHTML=''; for(let i=1;i<=6;i++){ const f=document.createElement('div'); f.className='face f'+i; f.style.backgroundImage=faceSVG(i); el.appendChild(f);} }
   const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
   const FRONT={
-    1:()=>`rotateX(0rad) rotateY(0rad)`,
-    2:()=>`rotateX(-1.5708rad)`,
-    3:()=>`rotateY(-1.5708rad)`,
-    4:()=>`rotateY( 1.5708rad)`,
-    5:()=>`rotateX( 1.5708rad)`,
-    6:()=>`rotateY( 3.1416rad)`,
+    1:`rotateX(0rad) rotateY(0rad)`,
+    2:`rotateX(-1.5708rad)`,
+    3:`rotateY(-1.5708rad)`,
+    4:`rotateY(1.5708rad)`,
+    5:`rotateX(1.5708rad)`,
+    6:`rotateY(3.1416rad)`,
   };
-  const poseToFront=v=>(FRONT[v]||FRONT[1])();
 
-  // helpers
-  const PR = ()=>window.__PRICES__||{};
-  const getBagPrice = ()=> PR().bagUsd||0;
-  const getSessionBag = ()=> (window.__bagSession?.get?.()||{}).bag||0;
-  const usd = n => (getBagPrice()>0 ? n*getBagPrice() : 0);
+  // 🎧 Audio setup (new dice roll)
+  const rollSound = new Audio('/assets/sounds/diceshakeroll.mp3');
+  const winSound  = new Audio('/assets/sounds/win.mp3');
+  const thudSound = new Audio('/assets/sounds/thud.mp3');
+  [rollSound,winSound,thudSound].forEach(a=>{
+    a.preload='auto'; a.volume=0.95; a.crossOrigin='anonymous'; a.setAttribute('playsinline','');
+  });
+  window.addEventListener('pointerdown',()=>{[rollSound,winSound,thudSound].forEach(a=>{a.muted=true;a.play().then(()=>{a.pause();a.muted=false;});});},{once:true,passive:true});
 
-  // 2s roll: ~1.2s tumble + ~0.7s settle
+  const playRoll=()=>{rollSound.currentTime=0;rollSound.play().catch(()=>{});};
+  const playWin=()=>{winSound.currentTime=0;winSound.play().catch(()=>{});};
+  const playThud=()=>{thudSound.currentTime=0;thudSound.play().catch(()=>{});};
+
+  // 🎲 Animation: 2 seconds total
   async function rollCssDice(a,b){
-    await window.__bagSfx?.primeOnce?.();
-
-    // Start tumbling and sound immediately
+    playRoll();
     dieA.classList.add('tumblingA');
     dieB.classList.add('tumblingB');
-    (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
-
-    // Tumble ~1.2s
-    await new Promise(r=>setTimeout(r, 1200));
-
-    // Stop tumbling, then land to exact faces (~0.7s)
-    dieA.classList.remove('tumblingA');
-    dieB.classList.remove('tumblingB');
+    await new Promise(r=>setTimeout(r,1200));
+    dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-
-    dieA.classList.add('tossing');
-    dieB.classList.add('tossing');
-    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
-    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
-    await new Promise(r=>setTimeout(r, 700));
-    dieA.classList.remove('tossing');
-    dieB.classList.remove('tossing');
+    dieA.classList.add('tossing'); dieB.classList.add('tossing');
+    dieA.style.transform = `translate3d(-60px,6px,0) ${FRONT[a]}`;
+    dieB.style.transform = `translate3d(60px,6px,0) ${FRONT[b]}`;
+    await new Promise(r=>setTimeout(r,700));
+    dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
   }
 
-  // UI helpers
-  function getBetInput(){
-    const qty=Number(document.getElementById('betQty')?.value||0)||0;
-    const unit=(document.querySelector('input[name="betCur"]:checked')?.value||'XRP').toUpperCase();
-    return {qty,unit};
-  }
-  function bagFrom(qty,unit){
-    const P=PR();
-    if(unit==='BAG') return qty;
-    if(unit==='XRP' && P.xrpUsd>0 && P.bagUsd>0) return qty*(P.xrpUsd/P.bagUsd);
-    return qty;
-  }
-  function fmt(n,max=4){ return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:max}):'—'; }
-
+  // 💰 Roll handler
   const ROUND={active:false,point:null};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
-  rollBtn?.addEventListener('click', async ()=>{
+  rollBtn.addEventListener('click',async()=>{
     rollBtn.disabled=true;
-
     const a=1+(Math.random()*6|0);
     const b=1+(Math.random()*6|0);
     const sum=a+b;
-
     await rollCssDice(a,b);
-
-    const {qty:betQty,unit:betUnit}=getBetInput();
-    const betBag=bagFrom(betQty,betUnit);
-
-    const beforeBag = getSessionBag();
-    const beforeUsd = usd(beforeBag);
 
     if(isComeOut()){
       if(sum===7||sum===11){
-        const bagDelta = betBag*1.25;
         rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — Come-out WIN`;
-        window.__bagSfx?.playWin?.();
-        window.showResult?.({kind:'win', bagDelta, beforeUsd, afterUsd: beforeUsd + usd(bagDelta)});
+        rollText.textContent=`Rolled ${sum} — WIN`;
+        playWin();
+        window.showResult?.({kind:'win',bagDelta:1,beforeUsd:0,afterUsd:1});
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-comeout'}}));
-      } else if(sum===2||sum===3||sum===12){
+      }else if([2,3,12].includes(sum)){
         rollText.className='t lose';
-        rollText.textContent=`Rolled a ${sum} — CRAPS — You lose`;
-        window.__bagSfx?.playThud?.();
+        rollText.textContent=`Rolled ${sum} — CRAPS — Lose`;
+        playThud();
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
-      } else {
+      }else{
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${sum} before 7`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
+        rollText.textContent=`Rolled ${sum} — Point set, need ${sum} before 7`;
       }
-    } else {
+    }else{
       if(sum===ROUND.point){
-        const bagDelta = betBag*1.00;
         rollText.className='t win';
-        rollText.textContent=`Rolled a ${sum} — POINT MADE`;
-        window.__bagSfx?.playWin?.();
-        window.showResult?.({kind:'win', bagDelta, beforeUsd, afterUsd: beforeUsd + usd(bagDelta)});
+        rollText.textContent=`Rolled ${sum} — POINT MADE`;
+        playWin();
+        window.showResult?.({kind:'win',bagDelta:1,beforeUsd:0,afterUsd:1});
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'win-point'}}));
-      } else if(sum===7){
+      }else if(sum===7){
         rollText.className='t lose';
-        rollText.textContent=`Rolled a 7 — SEVEN OUT — You lose`;
-        window.__bagSfx?.playThud?.();
+        rollText.textContent=`Rolled 7 — SEVEN OUT`;
+        playThud();
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
-      } else {
+      }else{
         rollText.className='t scratch';
-        rollText.textContent=`Rolled a ${sum} — Need ${ROUND.point} before 7`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
+        rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
       }
     }
-
     rollBtn.disabled=false;
   });
 })();
