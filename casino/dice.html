@@ -9,7 +9,7 @@
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 <script>window.__BAG_FORCE_DEMO = true;</script>
 
-<!-- Robust Three.js loader -->
+<!-- Robust Three.js loader (kept for future) -->
 <script>
 (function(){
   function load(src, done, fail){
@@ -166,7 +166,7 @@
       </div>
 
       <!-- SESSION -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
@@ -293,27 +293,24 @@
   </div>
 </div>
 
-<!-- AUDIO (strictly sequential: shake → GAP → roll) -->
+<!-- AUDIO (roll only — shake removed) -->
 <script>
 (function(){
-  const SHAKE_SRC = '/assets/sounds/diceshake.mp3';
-  const ROLL_SRC  = '/assets/sounds/diceroll.mp3';
-  const GAP_MS    = 140;          // small breathing room between clips
+  const ROLL_SRC = '/assets/sounds/diceroll.mp3';
 
   let primed=false;
-  const baseShake = new Audio(SHAKE_SRC);
   const baseRoll  = new Audio(ROLL_SRC);
-  [baseShake, baseRoll].forEach(a=>{
+  [baseRoll].forEach(a=>{
     a.preload='auto'; a.crossOrigin='anonymous'; a.setAttribute('playsinline',''); a.volume=0.95;
   });
 
   function primeOnce(){
     if (primed) return;
     try{
-      baseShake.muted=true; const p=baseShake.play();
+      baseRoll.muted=true; const p=baseRoll.play();
       if (p && p.then){
-        p.then(()=>{ baseShake.pause(); baseShake.muted=false; primed=true; }).catch(()=>{});
-      } else { baseShake.pause(); baseShake.muted=false; primed=true; }
+        p.then(()=>{ baseRoll.pause(); baseRoll.muted=false; primed=true; }).catch(()=>{});
+      } else { baseRoll.pause(); baseRoll.muted=false; primed=true; }
     }catch{}
   }
   addEventListener('pointerdown', primeOnce, {once:true, passive:true});
@@ -325,21 +322,14 @@
         a.loop=false; a.currentTime=0; a.volume=tmpl.volume;
         a.addEventListener('ended', ()=>res(), {once:true});
         a.play().catch(()=>setTimeout(res, 900));
-        setTimeout(()=>res(), 10000); // hard cap
+        setTimeout(()=>res(), 10000);
       }catch{ res(); }
     });
   }
 
-  function playShake(){ return playOnce(baseShake); }
   function playRoll(){ return playOnce(baseRoll); }
 
-  async function playShakeThenRoll(){
-    await playShake();
-    await new Promise(r=>setTimeout(r, GAP_MS));
-    await playRoll();
-  }
-
-  window.__bagSfx = { primeOnce, playShake, playRoll, playShakeThenRoll };
+  window.__bagSfx = { primeOnce, playRoll };
 })();
 </script>
 
@@ -403,20 +393,20 @@
       .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
       .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
 
-      /* 1) TUMBLE (true spin; a touch faster) */
+      /* 1) TUMBLE (true spin; slightly faster) */
       @keyframes tumbleA {
         from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
-        to  { transform:translate3d(-74px,16px,0) rotateX(1.55turn) rotateY(.85turn) rotateZ(.55turn); }
+        to  { transform:translate3d(-74px,16px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn); }
       }
       @keyframes tumbleB {
         from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn); }
-        to  { transform:translate3d( 74px,20px,0) rotateX(1.45turn) rotateY(1.05turn) rotateZ(-.50turn); }
+        to  { transform:translate3d( 74px,20px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn); }
       }
-      .tumblingA{ animation:tumbleA .50s linear infinite; }
-      .tumblingB{ animation:tumbleB .50s linear infinite; }
+      .tumblingA{ animation:tumbleA .42s linear infinite; }
+      .tumblingB{ animation:tumbleB .42s linear infinite; }
 
       /* 2) THROW to center; we set final transform per roll */
-      .tossing{ transition: transform .80s cubic-bezier(.2,.9,.2,1); }
+      .tossing{ transition: transform .74s cubic-bezier(.2,.9,.2,1); }
     </style>
     <div class="cssstage">
       <div class="dice-row">
@@ -448,6 +438,7 @@
     for (let i=1;i<=6;i++){
       const f = document.createElement('div'); f.className = 'face f'+i;
       f.style.backgroundImage = faceSVG(i);
+      f.style.backgroundSize = 'cover';
       el.appendChild(f);
     }
   }
@@ -455,14 +446,15 @@
   const dieB = document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
-  /* FACE-OUT orientation: requested number becomes the FRONT face, no tilt/yaw */
+  /* FACE-OUT orientation: requested number becomes the FRONT (+Z) face, no yaw/tilt */
+  /* Face layout (at rest): 1=front(+Z), 6=back(-Z), 3=right(+X), 4=left(-X), 2=top(+Y), 5=bottom(-Y) */
   const FRONT = {
-    1: ()=>`rotateY(0rad) rotateX(0rad)`,
-    2: ()=>`rotateX( 1.5708rad)`,   // top -> front
-    3: ()=>`rotateY(-1.5708rad)`,   // right -> front
-    4: ()=>`rotateY( 1.5708rad)`,   // left  -> front
-    5: ()=>`rotateX(-1.5708rad)`,   // bottom -> front
-    6: ()=>`rotateY( 3.1416rad)`,   // back -> front
+    1: ()=>`rotateX(0rad) rotateY(0rad)`,
+    2: ()=>`rotateX(-1.5708rad)`,   // +Y -> +Z
+    3: ()=>`rotateY(-1.5708rad)`,   // +X -> +Z
+    4: ()=>`rotateY( 1.5708rad)`,   // -X -> +Z
+    5: ()=>`rotateX( 1.5708rad)`,   // -Y -> +Z
+    6: ()=>`rotateY( 3.1416rad)`,   // -Z -> +Z
   };
   const poseToFront = (v)=> (FRONT[v]||FRONT[1])();
 
@@ -470,23 +462,25 @@
   async function rollCssDice(a,b){
     await window.__bagSfx?.primeOnce?.();
 
-    // Start tumbling
+    // Start tumbling (continuous)
     dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
 
-    // brief tumble lead-in, then start roll sound and throw
-    await new Promise(r=>setTimeout(r, 260));
+    // short lead-in then roll SFX
+    await new Promise(r=>setTimeout(r, 220));
     (async()=>{ try{ await window.__bagSfx?.playRoll?.(); }catch{} })();
 
-    // Throw to middle; set exact final orientation (square, no yaw/tilt)
+    // stop tumble, prep throw
     dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
 
+    // exact landing pose (square, face-out)
     dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
     dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
 
-    await new Promise(r=>setTimeout(r, 800));     // wait for throw
-    dieA.classList.remove('tossing'); dieB.classList.remove('tossing'); // hard stop on result
+    // allow throw to finish, then remove transition so they "rest"
+    await new Promise(r=>setTimeout(r, 760));
+    dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
   }
 
   /* Short, no-math status line */
@@ -524,6 +518,9 @@
         rollText.className='t scratch'; rollText.textContent = `Rolled a ${sum} — Need ${ROUND.point} before 7`;
       }
     }
+
+    // emit for demo toast & hooks
+    window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:rollText.className.replace('t ','')}}));
 
     rollBtn.disabled = false;
   });
@@ -721,7 +718,7 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
@@ -774,9 +771,9 @@
   window.addEventListener('bag:diceResult', (ev)=>{
     if (!window.__BAG_FORCE_DEMO) return;
     const d = ev?.detail || {};
-    if (d.outcome === 'win')      toast('WIN paid — connect when ready to play live');
-    else if (d.outcome === 'lose') toast('Round lost — connect when ready to play live');
-    else                           toast('Point set — roll again');
+    if (d.outcome?.includes('win'))      toast('WIN paid — connect when ready to play live');
+    else if (d.outcome?.includes('lose')) toast('Round lost — connect when ready to play live');
+    else                                   toast('Point set — roll again');
   });
 
   window.addEventListener('bag:walletConnected', enableLive);
