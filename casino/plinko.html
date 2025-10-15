@@ -19,7 +19,6 @@
   img{display:block;max-width:100%;height:auto}
   button,input{font-size:16px}
 
-  /* 🔙 Back to Casino button — unchanged */
   .back-casino {
     position: fixed; top: 18px; left: 18px; z-index: 1000;
     background: linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
@@ -30,7 +29,6 @@
   .back-casino:active { transform: translateY(1px); box-shadow: 0 3px 0 #9a7315; }
   @media (max-width: 640px){ .back-casino{ font-size:.9rem; padding:7px 12px; } }
 
-  /* ===== Layout — unchanged ===== */
   .game-header{text-align:center;padding:36px 10px 14px}
   .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
@@ -71,9 +69,15 @@
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.05rem}
 
-  /* ===== Plinko visuals — unchanged shell ===== */
+  /* ===== Plinko visuals (unchanged design) ===== */
   .stage{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:10px}
-  .canvas-wrap{position:relative;width:100%;max-width:640px;aspect-ratio:8/11}
+  .canvas-wrap{
+    position:relative;width:100%;max-width:720px;
+    aspect-ratio:3/4;
+    border-radius:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+    background: radial-gradient(120% 120% at 50% 0%, #0b2016 0%, #07120d 60%, #060a08 100%);
+  }
   canvas{position:absolute;inset:0;width:100%;height:100%}
   .hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;pointer-events:none}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
@@ -84,8 +88,10 @@
 </head>
 <body>
 
+<!-- 🔙 Back to Casino -->
 <a href="/casino/" class="back-casino">⬅ Back to Casino</a>
 
+<!-- Game header -->
 <section class="game-header">
   <img src="/assets/bag-plinko.png" alt="$BAG Plinko" class="hero-img">
   <h2>🪙 $BAG Plinko</h2>
@@ -97,7 +103,7 @@
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
 
-    <!-- LEFT: Connect + Stake + Board (unchanged UI) -->
+    <!-- LEFT PANEL -->
     <div class="panel mock" id="bagPlinko">
       <div id="demo-badge" style="display:none;position:relative;margin:6px 0 10px 0;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.3px;">
         <span style="padding:6px 10px;border:1px solid #aaa;border-radius:6px;opacity:.9;">PRACTICE MODE — No real bets or payouts</span>
@@ -124,7 +130,6 @@
 
       <div class="stake-box">
         <div class="stack">
-
           <div>
             <div style="display:flex;align-items:center;gap:6px">
               <input id="usdBet" class="mono" type="tel" inputmode="decimal" pattern="[0-9.]*"
@@ -201,7 +206,7 @@
       </div>
     </div>
 
-    <!-- RIGHT: Rules (unchanged) -->
+    <!-- RIGHT: Rules -->
     <div class="panel" style="padding:16px">
       <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
@@ -223,7 +228,7 @@
   </div>
 </section>
 
-<!-- AUDIO ENGINE (unchanged behavior) -->
+<!-- AUDIO ENGINE (unchanged) -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -231,25 +236,31 @@
 
   function makeAC(){
     if(!AudioCtx) return null;
-    const ac=new AudioCtx();
-    const master=ac.createGain();
-    master.gain.value=0.28;
+    const ac = new AudioCtx();
+    const master = ac.createGain();
+    master.gain.value = 0.28;
     master.connect(ac.destination);
-    AC=ac; MASTER=master;
-    ac.onstatechange=function(){ if(ac.state==='suspended') tryResume(); };
+    AC = ac; MASTER = master;
+    ac.onstatechange = ()=>{ if (ac.state === 'suspended') tryResume(); };
     return ac;
   }
-  function getAC(){ if(AC && AC.state!=='closed') return AC; return makeAC(); }
+  function getAC(){ if (AC && AC.state!=='closed') return AC; return makeAC(); }
+
   function silentTick(ac){
-    const o=ac.createOscillator(); const g=ac.createGain();
-    g.gain.value=0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01);
+    try{
+      const o=ac.createOscillator(), g=ac.createGain();
+      g.gain.value=0.00001; o.connect(g).connect(MASTER);
+      o.start(); o.stop(ac.currentTime+0.01);
+    }catch{}
   }
+
   async function tryResume(){
-    const ac=getAC(); if(!ac) return;
-    if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} }
+    const ac = getAC(); if(!ac) return;
+    if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} }
     if(ac.state==='running'){ silentTick(ac); }
   }
-  function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
+
+  function markInteract(){ lastInteractTs = Date.now(); tryResume(); }
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running'){ await tryResume(); } return ac; }
 
   function makeNoise(ac,dur=0.08){
@@ -263,6 +274,7 @@
     src.connect(bp).connect(g);
     return {src,g};
   }
+
   async function nudge(){
     const ac=getAC(); if(!ac) return;
     if(ac.state!=='running'){ await tryResume(); return; }
@@ -278,7 +290,7 @@
     nGain.gain.exponentialRampToValueAtTime(0.0001,now+0.08);
     nSrc.start(now); nSrc.stop(now+0.09);
 
-    const o=ac.createOscillator(); const g=ac.createGain();
+    const o=ac.createOscillator(), g=ac.createGain();
     o.type='sine'; o.frequency.setValueAtTime(420,now); o.frequency.exponentialRampToValueAtTime(200,now+0.18);
     g.gain.setValueAtTime(0.0001,now);
     g.gain.linearRampToValueAtTime(0.10,now+0.02);
@@ -287,31 +299,417 @@
     o.start(now); o.stop(now+0.24);
   }
 
+  if(!watchdogTimer){
+    watchdogTimer=setInterval(()=>{
+      const ac=AC; if(!ac) return;
+      const active = Date.now()-lastInteractTs < 30000;
+      if(active && ac.state==='suspended') tryResume();
+    },1500);
+  }
+
   const INTERACT_EVENTS=['pointerdown','mousedown','touchstart','keydown','click'];
   INTERACT_EVENTS.forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
   addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
 
-  if(!watchdogTimer){
-    watchdogTimer=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30_000; if(active && ac.state==='suspended') tryResume(); },1500);
-  }
-
   addEventListener('pointerdown', async function once(){
     removeEventListener('pointerdown', once, {capture:false});
     try{ await ensureInteractive(); await nudge(); }catch{}
   }, {once:true});
 
-  window.__bagAudio={ensureInteractive,nudge};
+  window.__bagAudio = { ensureInteractive, nudge };
 })();
 </script>
 
-<!-- (Wallet / Session / Prices blocks unchanged from your version) -->
+<!-- Xaman wallet connect (same as Dice) -->
 <script>
-/* your Xaman + session + prices code here, unchanged */
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+
+  function safeShort(a){
+    try{ const s = a == null ? '' : String(a); if (!s) return ''; return s.slice(0,6) + '…' + s.slice(-4); }catch{ return ''; }
+  }
+
+  function render(){
+    try{
+      const w = read();
+      if (w && w.address){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(w.address)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      console.warn('[bag] render failed', e);
+      statusEl.textContent = 'Wallet: error';
+      btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
+    if (ready) return true;
+    if (typeof window.Xumm === 'function'){
+      xumm = new Xumm(API_KEY);
+      ready = true;
+
+      const w = read();
+      if (w?.address){
+        window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(w.address) }}));
+      }
+
+      xumm.on('success', () => {
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
+            render();
+          }
+        }catch(e){ console.warn('[bag] success handler error', e); }
+      });
+
+      xumm.on('ready', () => { render(); });
+      return true;
+    }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
+    return false;
+  }
+
+  async function connectXaman(){
+    if (!ready && !initIfSdk()){
+      alert('Loading Xaman… try again in a moment.');
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const auth = await xumm.authorize();
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      write({ address: String(acct), ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: String(acct) }}));
+      render();
+    } catch (e) {
+      console.warn('Xaman connect failed/cancelled', e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    const w = read();
+    if (w && w.address){
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+  initIfSdk();
+})();
 </script>
 
-<!-- Your bag:pricesUpdated UI hook (as requested) -->
+<!-- TAB SESSION (same as Dice) -->
+<script>
+(function(){
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 1;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      startBtn.style.display = 'none';
+      if (topUpBtn) topUpBtn.style.display = 'inline-block';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      if (topUpBtn) topUpBtn.style.display = 'none';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const PRICES = window.__PRICES__ || {bagUsd:0,xrpUsd:0};
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
+    const depositUsd = Math.max(1, suggestDepositUsd());
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    try{
+      const { created, resolved } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('PLINKO_SESSION')}}] },
+        options: { submit:true, expire:300 }
+      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      const res = await resolved;
+      if (!res?.signed) throw new Error('User declined in Xaman');
+      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      if (!txid) throw new Error('No txid returned');
+      const validated = await waitForTx(txid, 60000);
+      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      alert('Session started — you’re good to play!');
+    } catch (err){
+      console.error('[bag] startSession error', err);
+      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  async function topUpSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+    const s = read();
+    if (!(s && s.addr)){ alert('Start a session first.'); return; }
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('PLINKO_TOPUP')}}] },
+        options: { submit:true, expire:300 }
+      }, ()=>{});
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+      const addBag = (depositUsd / PRICES.bagUsd);
+      const cur = read() || { addr: s.addr, bag: 0 };
+      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
+      write(cur); render();
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
+    } catch(e){
+      console.warn('Top-up failed', e); alert('Top-up cancelled or failed.');
+    } finally {
+      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
+    }
+  }
+
+  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
+
+  startBtn?.addEventListener('click', startSession);
+  topUpBtn?.addEventListener('click', topUpSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
+</script>
+
+<!-- PRICES (unchanged) -->
+<script>
+(function(){
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY = 'bag_last_live_v1';
+
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+  const diagSpan = document.getElementById('bagDiag');
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k, ttlMs){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; const age = Date.now() - (o.t||0); return age<=ttlMs ? o.v : null; }catch{ return null; } }
+
+  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl = new AbortController(); const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{
+      const u = new URL(url, location.origin); u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(), { ...opts, headers: { Accept:'application/json', ...(opts.headers||{}) }, mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', signal:ctrl.signal });
+    } finally { setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  async function fetchXrpUsd(){
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0; const v=(await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet('xrp_usd',PRICES.xrpUsd); return true; }
+    }catch(_){}
+    const cached = cacheGet('xrp_usd', 24*60*60*1000);
+    if(Number(cached)>0){ PRICES.xrpUsd=Number(cached); return true; }
+    return false;
+  }
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object'){ if (a.currency === 'XRP' && a.value!=null) return Number(a.value); } return null; }
+  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+
+  async function fetchBagUsdFromAMM(){
+    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+    const xrpPerBag = await new Promise((resolve)=>{
+      const ws = new WebSocket(XRPL_WSS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
+          const bagBal = parseIouAmount(amm.amount);
+          const xrpBal = parseXrpAmount(amm.amount2);
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price = xrpBal / bagBal;
+          if (!(price>0) || !isFinite(price)) return resolve(null);
+          if (diagSpan) diagSpan.textContent = `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
+          resolve(price);
+        }catch{ resolve(null); }
+      };
+    });
+    if (!xrpPerBag || !Number.isFinite(xrpPerBag) || xrpPerBag<=0) return false;
+    if (PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd }); return true; }
+    return false;
+  }
+
+  function loadViewCache(){ const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS); const x = cacheGet('xrp_usd', VIEW_CACHE_TTL_MS);
+    let used=false; if (v && Number(v.bagUsd)>0){ PRICES.bagUsd=v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=v.xrpUsd; used=true; } if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=x; used=true; } return used; }
+  function loadLastLive(){ const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = v.bagUsd; if (Number(v.xrpUsd)>0) PRICES.xrpUsd = v.xrpUsd; PRICES.source = 'last-live'; return true; } return false; }
+
+  function updateLiveLine(){
+    const liveDot = document.getElementById('liveDot');
+    const liveBAG = document.getElementById('liveBAG');
+    const liveXRP = document.getElementById('liveXRP');
+    const liveNote = document.getElementById('liveNote');
+    const liveConv = document.getElementById('liveConv');
+    if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
+    if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
+    if (liveDot){
+      const dotClass = PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err';
+      liveDot.className = dotClass;
+    }
+    if (liveNote){
+      liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
+    }
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  async function refreshPrices(){
+    const hadX = PRICES.xrpUsd>0;
+    const gotX = hadX || await fetchXrpUsd();
+    let gotLive = false;
+    try { gotLive = await fetchBagUsdFromAMM(); } catch {}
+    if (gotLive && gotX){ PRICES.source = 'live-amm'; cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0}); }
+    else if (loadLastLive()) {/* keep */} else if (loadViewCache()){ PRICES.source = 'last-live'; } else { PRICES.source = '—'; }
+    updateLiveLine();
+  }
+
+  if (loadViewCache()){ updateLiveLine(); }
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+})();
+</script>
+
+<!-- Reflect pricing readiness in UI (your snippet) -->
 <script>
 window.addEventListener('bag:pricesUpdated', ()=>{
   const usd = (typeof stakeUsdEquivalent==='function') ? stakeUsdEquivalent() : 0;
@@ -325,188 +723,177 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 });
 </script>
 
-<!-- PLINKO GAME LOGIC — keep visuals/physics; fix “coin disappears after first play” race -->
+<!-- PLINKO GAME LOGIC (design unchanged; adds ball-integrity patch) -->
 <script>
 (function(){
-  // Kill any older instance (hot-reloads / double-includes)
-  if (window.__BAG_PLINKO && window.__BAG_PLINKO.destroy) window.__BAG_PLINKO.destroy();
+  /* ---------- BALL INTEGRITY PATCH (prevents disappearing coin) ---------- */
+  window.__BAG_PLINKO_GLOBAL = window.__BAG_PLINKO_GLOBAL || {};
+  if (window.__BAG_PLINKO_GLOBAL.activeBallGuard) {
+    clearInterval(window.__BAG_PLINKO_GLOBAL.activeBallGuard);
+  }
+  window.__BAG_PLINKO_GLOBAL.lastBallId = window.__BAG_PLINKO_GLOBAL.lastBallId || 0;
+  /* ---------------------------------------------------------------------- */
 
-  // ===== Your original config (unchanged) =====
+  // House-edge payout map (L=lose)
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  const GRAVITY = 0.36, RESTITUTION = 0.78, FRICTION = 0.997;
-  const PEG_R = 6, BALL_R = 9, WALL_PAD = 16;
+  // Physics / layout (unchanged)
+  const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
+  const PEG_R = 5, BALL_R = 6, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
+  // Canvas (fixed logical size; CSS scales it)
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
+  // Board geometry (centered)
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
-  const topBoard=110, bottomBoard=H-120;
+  const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  const PEG_ROWS = 12, PEG_COLS = 11;
+  // Peg grid spans down most of the board
+  const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
-  const pegSpacingY=(bottomBoard-topBoard-100)/(PEG_ROWS-1);
-
+  const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
   const pegs=[];
   for(let r=0;r<PEG_ROWS;r++){
     const off=(r%2===0)?0:pegSpacingX/2;
     for(let c=0;c<PEG_COLS;c++){
-      let x=leftWall+20+c*pegSpacingX+off;
+      const x=leftWall+20+c*pegSpacingX+off;
       if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
-      let y=topBoard+r*pegSpacingY;
+      const y=topBoard+r*pegSpacingY;
       pegs.push({x,y,r:PEG_R});
     }
   }
 
+  // Slots
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // ===== UI (unchanged) =====
+  // UI hooks
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
-  const resText=$('resText'), dropBtn=$('dropBtn'), cele=$('cele'), stateText=$('stateText');
-  const curToggle=$('curToggle'); const unitSpan=document.querySelector('#bagPlinko .unit');
-  const betInput=$('demoBet'), usdInput=$('usdBet'), ccyLbl=$('ccyLbl');
+  const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
+  const betInput=$('demoBet'), stateText=$('stateText');
 
-  let balance=100, stake=1, currency='XRP', lastTxt='—';
-  let dropping=false, ball=null, dropStartedAt=0, lastPegTs=0;
-  let framesDrawnThisRound=0, roundSeq=0, safetyTimer=null;
+  // State
+  let balance=100, stake=1, lastTxt='—';
+  let dropping=false, ball=null, safetyTimer=null, lastPegTick=0, rafLive=false;
 
-  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; ccyLbl.textContent=currency; }
-
-  // bet sanitize
-  function sanitizeBet(){
+  function hud(){
+    balLbl.textContent=balance.toFixed(2);
+    betLbl.textContent=stake;
+    lastLbl.textContent=lastTxt;
+  }
+  betInput.addEventListener('input', ()=>{
     const raw = (betInput.value||'').replace(/[^\d]/g,'');
     betInput.value = raw || '1';
     stake = Math.max(1, parseInt(betInput.value,10)||1);
-    betLbl.textContent = String(stake);
-  }
-  betInput.addEventListener('input', sanitizeBet);
-  betInput.addEventListener('blur', sanitizeBet);
+    hud();
+  });
 
-  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+  // Audio hooks
+  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+  async function clickSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); }catch{} }
+
+  // Weighted fallback resolve (tab throttling) – favors house
+  function weightedSlotIndex(){
+    const weights=[28,10,28,2,28,10,28];
+    let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
+    for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
+    return 3;
+  }
+
+  // Price helper used only for the $1 min logic
   function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput.value||0));
     const P=window.__PRICES__||{};
-    if (currentCurrency()==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   }
-  window.stakeUsdEquivalent = stakeUsdEquivalent;
+  window.stakeUsdEquivalent = stakeUsdEquivalent; // so the pricing snippet can read it
 
-  usdInput?.addEventListener('blur', ()=>{
-    const u = parseFloat(usdInput.value||'0'); const P=window.__PRICES__||{};
-    if (!(u>0)) return;
-    if (currentCurrency()==='XRP' && P.xrpUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.xrpUsd)).toString(); }
-    else if (currentCurrency()==='BAG' && P.bagUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.bagUsd)).toString(); }
-    sanitizeBet();
-  });
-
-  window.addEventListener('bag:pricesUpdated', ()=>{
-    const usd = stakeUsdEquivalent();
-    if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
-    const st = document.getElementById('stateText');
-    if (st && window.__PRICES__) {
-      st.textContent = (window.__PRICES__.source === 'live-amm') ? 'Live pricing ready'
-                     : (window.__PRICES__.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
-    }
-  });
-
-  curToggle.addEventListener('change', ()=>{
-    currency = currentCurrency(); ccyLbl.textContent = currency; unitSpan.textContent = currency;
-    const usd = stakeUsdEquivalent(); if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
-  });
-
-  function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
-
-  // House-weighted fallback (only if physics hangs)
-  function weightedSlotIndex(){
-    const weights = [28,10,28,2,28,10,28];
-    let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
-    for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
-    return 0;
+  // Round reset
+  function clearRoundState(){
+    clearTimeout(safetyTimer); safetyTimer=null;
+    ball=null;
+    dropping=false;
+    dropBtn.disabled=false;
+    lastPegTick=0;
   }
 
-  function resetRoundState(){
-    if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
-    ball=null; dropping=false; lastPegTs=0; framesDrawnThisRound=0;
-    dropBtn.disabled=false; cele?.classList.remove('show');
-  }
+  // Click -> start a new round
+  dropBtn.addEventListener('click', async ()=>{
+    await clickSound();
 
-  async function onDropClick(){
-    // wake audio
-    try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
+    // Reset stale state first
+    clearRoundState();
 
-    // IMPORTANT: don’t nuke a live ball; just clear stale timers/flags
-    if (!ball) resetRoundState();
-
-    // $1 min (allow demo if prices missing)
+    // Min $1 check (allow in demo if prices not ready)
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    roundSeq += 1; const myRound = roundSeq;
-    dropping=true; dropBtn.disabled=true;
+    // Spend & UI
     balance = Math.max(0, balance - stake);
-    lastTxt='—'; resText.textContent='—';
-    stateText && (stateText.textContent='Dropping…'); hud();
+    lastTxt='—';
+    resText.textContent='—';
+    stateText.textContent='Dropping…';
+    celeEl?.classList.remove('show');
+    hud();
 
-    ball = {x:W/2, y:60, vx:(Math.random()-.5)*0.35, vy:0, r:BALL_R, alive:true, round:myRound};
-    dropStartedAt = performance.now();
-    framesDrawnThisRound = 0;
+    startDrop();
+    ensureLoop();
+  });
 
-    // emergency resolve – only after visible frames
-    safetyTimer = setTimeout(()=>{
-      if(dropping && myRound===roundSeq && framesDrawnThisRound>=8){
-        resolveByIndex(weightedSlotIndex(), myRound);
-      }
-    }, 9000);
+  function startDrop(){
+    dropping=true; dropBtn.disabled=true;
+
+    // varied entry so outcomes aren’t biased center-only
+    const spread=(rightWall-leftWall)*0.30;
+    const startOffset=(Math.random()-0.5)*spread;
+    const initVx=(Math.random()-0.5)*1.2;
+
+    /* Assign a stable id and publish it globally so no other script can null it */
+    const ballId = ++window.__BAG_PLINKO_GLOBAL.lastBallId;
+    ball={ id:ballId, x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
+    window.__BAG_PLINKO_GLOBAL.currentBall = ball;
+
+    // Failsafe resolve
+    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
 
-  dropBtn.addEventListener('click', onDropClick);
-
-  // Single continuous RAF loop
-  let running = true;
-  function loop(ts){
-    if (!running) return;
-
-    drawBoard();
-
-    if (ball && ball.alive){
-      stepBall(ts);
-      drawBall(ball.x, ball.y);
-      framesDrawnThisRound++;
-
-      const tooLong = dropStartedAt && ts - dropStartedAt > 12000;
-      const outBottom = ball.y > H + 200;
-      if ((tooLong || outBottom) && framesDrawnThisRound>=8){
-        resolveByIndex(boundarySlotIndex(ball.x), ball.round);
-      }
-    }
-
-    // (Removed the old “clear if !ball” watchdog — that was the race)
-    requestAnimationFrame(loop);
+  function ensureLoop(){
+    if(rafLive) return;
+    rafLive=true;
+    const tick = ()=>{
+      drawBoard();
+      if(ball && ball.alive){ stepBall(); drawBall(ball.x,ball.y); }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(loop);
 
-  // New gentle guard: only if >2s after click and still no ball (true-stuck case)
-  setInterval(()=>{
-    if (dropping && !ball && (performance.now() - dropStartedAt > 2000)){
-      resetRoundState();
-    }
-  }, 600);
+  // Start loop immediately so the board is visible before first drop
+  ensureLoop();
+
+  // Extra safety: if physics finished but flags stuck, free the button
+  setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ clearRoundState(); } }, 900);
 
   function stepBall(){
-    if (!ball) return;
+    // integrate
     ball.vy += GRAVITY;
     ball.x  += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
+    ball.vx += (Math.random()-0.5)*0.02;
 
-    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
-    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
+    // walls
+    if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegSound(); }
+    if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegSound(); }
     if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
+    // pegs
     const now=performance.now();
     for(const p of pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
@@ -514,20 +901,21 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       const minD=BALL_R + p.r;
       if(dist < minD){
         const nx=dx/dist, ny=dy/dist;
-        const overlap = (minD - dist) + 0.25;
-        ball.x += nx * overlap; ball.y += ny * overlap;
+        ball.x += nx*(minD-dist);
+        ball.y += ny*(minD-dist);
         const vDot=ball.vx*nx + ball.vy*ny;
         ball.vx = (ball.vx - 2*vDot*nx)*RESTITUTION;
         ball.vy = (ball.vy - 2*vDot*ny)*RESTITUTION;
-        if(now - lastPegTs > 55){ lastPegTs=now; pegKnock(); }
-        if(Math.hypot(ball.vx, ball.vy) < 0.22){ ball.vx += (Math.random()-.5)*0.65; ball.vy += 0.45; }
+        if(now - lastPegTick > 55){ lastPegTick=now; pegSound(); }
       }
     }
 
+    // Landing
     const slowEnough = Math.abs(ball.vy) < 0.22;
-    if (framesDrawnThisRound>=8 && ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
-      resolveByIndex(boundarySlotIndex(ball.x), ball.round);
+    if (ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
+      resolveByIndex(boundarySlotIndex(ball.x));
     }
+    if (ball.y > H + 200){ resolveByIndex(boundarySlotIndex(ball.x)); }
   }
 
   function boundarySlotIndex(x){
@@ -536,40 +924,52 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-  function resolveByIndex(idx, myRound){
-    if (myRound !== roundSeq) return;        // ignore stale resolves
-    if (!ball){ resetRoundState(); return; }
-
-    ball.alive=false; ball=null;
-    if (safetyTimer){ clearTimeout(safetyTimer); safetyTimer=null; }
+  function resolveByIndex(idx){
+    if(!ball){ clearRoundState(); return; }
+    ball.alive=false;               // mark dead first so guard won't resurrect
+    const deadId = ball.id;         // remember for guard
+    ball=null;
+    clearTimeout(safetyTimer); safetyTimer=null;
 
     dropping=false; dropBtn.disabled=false;
 
     const rule = PAY_MAP[idx] ?? 'L';
-    cele?.classList.remove('show');
+    celeEl?.classList.remove('show');
 
     if (rule === 'L'){
       lastTxt='Scratch';
       resText.textContent='Scratch (lose)';
-      stateText && (stateText.textContent='Resolved');
-      try{ __bagAudio?.nudge?.(); }catch{}
+      stateText.textContent='Resolved';
+      pegSound();
     } else {
       const mult = Number(rule);
       const payout = Math.floor(stake * mult * 100)/100;
       balance += payout; hud();
       if (mult === 2){
         lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-        if (cele){ cele.style.color='#ffd700'; cele.textContent=resText.textContent; cele.classList.add('show'); setTimeout(()=>cele.classList.remove('show'),1200); }
+        winFlash(resText.textContent, '#ffd700');
       } else {
         lastTxt='Win 1.2×'; resText.textContent='Win 1.2×';
-        if (cele){ cele.style.color='#baf2cd'; cele.textContent=resText.textContent; cele.classList.add('show'); setTimeout(()=>cele.classList.remove('show'),1200); }
+        winFlash(resText.textContent, '#baf2cd');
       }
-      stateText && (stateText.textContent='Resolved');
+      stateText.textContent='Resolved';
       try{ window.__bagSession?.credit?.(payout); }catch{}
+      pegSound();
     }
     hud();
   }
 
+  // Dice-like “pop” celebration
+  function winFlash(text, color){
+    if (!celeEl) return;
+    celeEl.textContent = text;
+    celeEl.style.color = color || '#ffd700';
+    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
+    celeEl.classList.add('show');
+    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, 1100);
+  }
+
+  // Draw board & ball
   function drawBoard(){
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
@@ -599,33 +999,38 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 
   function drawBall(x,y){
     const r=BALL_R;
-    const g=ctx.createRadialGradient(x-4,y-4,2,x,y,r);
-    g.addColorStop(0,'#ffd36d'); g.addColorStop(.6,'#c8911e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
+    g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  window.__BAG_PLINKO = {
-    destroy(){
-      try{ dropBtn && dropBtn.removeEventListener('click', onDropClick); }catch{}
-      try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
-      // RAF loop persists for page lifetime
+  // ------------ GLOBAL GUARD (restores ball if some other code nulls it) ------------
+  window.__BAG_PLINKO_GLOBAL.activeBallGuard = setInterval(()=>{
+    const ref = window.__BAG_PLINKO_GLOBAL.currentBall;
+    // Only restore if there is a live current ball and our local reference got nulled or replaced
+    if (ref && ref.alive && (!ball || ball.id!==ref.id)){
+      ball = ref;
+      // console.log('[bag-plinko] restored active ball', ref.id);
     }
-  };
+  }, 250);
+  // ----------------------------------------------------------------------------------
 
+  // Init UI
   hud();
 })();
 </script>
 
-
-
-<!-- Service worker guard + footer (unchanged) -->
+<!-- Service worker (optional) -->
 <script>
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+}
 window.addEventListener('gesturestart', e=>e.preventDefault(), {passive:false});
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
