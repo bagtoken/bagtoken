@@ -325,13 +325,13 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 });
 </script>
 
-<!-- PLINKO GAME LOGIC — keep visuals/physics; fix disappearing coin on 2nd play -->
+<!-- PLINKO GAME LOGIC — keep visuals/physics; fix “coin disappears after first play” race -->
 <script>
 (function(){
-  // Cancel any prior instance so old timers/loops can't interfere
+  // Kill any older instance (hot-reloads / double-includes)
   if (window.__BAG_PLINKO && window.__BAG_PLINKO.destroy) window.__BAG_PLINKO.destroy();
 
-  // ===== Your original payout/physics/board numbers (unchanged) =====
+  // ===== Your original config (unchanged) =====
   const PAY_MAP = ['L', 1.2, 'L', 2, 'L', 1.2, 'L'];
   const SLOTS = PAY_MAP.length;
 
@@ -363,21 +363,20 @@ window.addEventListener('bag:pricesUpdated', ()=>{
   const slotWidth=(rightWall-leftWall)/SLOTS;
   const slotX=i=>leftWall+i*slotWidth;
 
-  // ===== UI hooks (unchanged) =====
+  // ===== UI (unchanged) =====
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
   const resText=$('resText'), dropBtn=$('dropBtn'), cele=$('cele'), stateText=$('stateText');
   const curToggle=$('curToggle'); const unitSpan=document.querySelector('#bagPlinko .unit');
   const betInput=$('demoBet'), usdInput=$('usdBet'), ccyLbl=$('ccyLbl');
 
-  // ===== State =====
   let balance=100, stake=1, currency='XRP', lastTxt='—';
   let dropping=false, ball=null, dropStartedAt=0, lastPegTs=0;
   let framesDrawnThisRound=0, roundSeq=0, safetyTimer=null;
 
   function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=String(stake); lastLbl.textContent=lastTxt; ccyLbl.textContent=currency; }
 
-  // sanitize bet (unchanged)
+  // bet sanitize
   function sanitizeBet(){
     const raw = (betInput.value||'').replace(/[^\d]/g,'');
     betInput.value = raw || '1';
@@ -403,10 +402,17 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     else if (currentCurrency()==='BAG' && P.bagUsd>0){ betInput.value = Math.max(1, Math.floor(u / P.bagUsd)).toString(); }
     sanitizeBet();
   });
+
   window.addEventListener('bag:pricesUpdated', ()=>{
     const usd = stakeUsdEquivalent();
     if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    const st = document.getElementById('stateText');
+    if (st && window.__PRICES__) {
+      st.textContent = (window.__PRICES__.source === 'live-amm') ? 'Live pricing ready'
+                     : (window.__PRICES__.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+    }
   });
+
   curToggle.addEventListener('change', ()=>{
     currency = currentCurrency(); ccyLbl.textContent = currency; unitSpan.textContent = currency;
     const usd = stakeUsdEquivalent(); if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
@@ -414,7 +420,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 
   function pegKnock(){ try{ window.__bagAudio?.nudge?.(); }catch{} }
 
-  // Loss-weighted fallback (used only if physics hangs)
+  // House-weighted fallback (only if physics hangs)
   function weightedSlotIndex(){
     const weights = [28,10,28,2,28,10,28];
     let t=weights.reduce((a,b)=>a+b,0), r=Math.random()*t;
@@ -432,15 +438,14 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     // wake audio
     try { await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.nudge?.(); } catch {}
 
-    // clear any stale state from previous round (prevents invisible coin)
-    resetRoundState();
+    // IMPORTANT: don’t nuke a live ball; just clear stale timers/flags
+    if (!ball) resetRoundState();
 
     // $1 min (allow demo if prices missing)
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    // start new round
     roundSeq += 1; const myRound = roundSeq;
     dropping=true; dropBtn.disabled=true;
     balance = Math.max(0, balance - stake);
@@ -451,7 +456,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     dropStartedAt = performance.now();
     framesDrawnThisRound = 0;
 
-    // emergency resolve — ONLY after the ball has been visibly drawn for a few frames
+    // emergency resolve – only after visible frames
     safetyTimer = setTimeout(()=>{
       if(dropping && myRound===roundSeq && framesDrawnThisRound>=8){
         resolveByIndex(weightedSlotIndex(), myRound);
@@ -461,7 +466,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
 
   dropBtn.addEventListener('click', onDropClick);
 
-  // Single, continuous RAF loop from page load — never stops between rounds.
+  // Single continuous RAF loop
   let running = true;
   function loop(ts){
     if (!running) return;
@@ -480,13 +485,17 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       }
     }
 
-    if (!ball && dropping){ dropping=false; dropBtn.disabled=false; }
+    // (Removed the old “clear if !ball” watchdog — that was the race)
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 
-  // extra guard against stuck flags
-  setInterval(()=>{ if(dropping && (!ball || !ball.alive)){ resetRoundState(); } }, 900);
+  // New gentle guard: only if >2s after click and still no ball (true-stuck case)
+  setInterval(()=>{
+    if (dropping && !ball && (performance.now() - dropStartedAt > 2000)){
+      resetRoundState();
+    }
+  }, 600);
 
   function stepBall(){
     if (!ball) return;
@@ -494,12 +503,10 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     ball.x  += ball.vx; ball.y += ball.vy;
     ball.vx *= FRICTION; ball.vy *= FRICTION;
 
-    // walls
     if(ball.x - BALL_R < leftWall){ ball.x = leftWall + BALL_R; ball.vx =  Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
     if(ball.x + BALL_R > rightWall){ ball.x = rightWall - BALL_R; ball.vx = -Math.abs(ball.vx)*RESTITUTION; pegKnock(); }
     if(ball.y - BALL_R < 0){ ball.y = BALL_R; ball.vy = 0; }
 
-    // pegs
     const now=performance.now();
     for(const p of pegs){
       const dx=ball.x-p.x, dy=ball.y-p.y;
@@ -517,7 +524,6 @@ window.addEventListener('bag:pricesUpdated', ()=>{
       }
     }
 
-    // Normal landing (only after visible frames)
     const slowEnough = Math.abs(ball.vy) < 0.22;
     if (framesDrawnThisRound>=8 && ball.y >= bottomBoard + 56 && (slowEnough || ball.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(ball.x), ball.round);
@@ -599,19 +605,18 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     ctx.lineWidth=1.2; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
-  // expose a destroy hook in case of hot-reload
   window.__BAG_PLINKO = {
     destroy(){
       try{ dropBtn && dropBtn.removeEventListener('click', onDropClick); }catch{}
       try{ if (safetyTimer) clearTimeout(safetyTimer); }catch{}
-      // RAF loop intentionally left running for lifetime of page
+      // RAF loop persists for page lifetime
     }
   };
 
-  // boot UI
   hud();
 })();
 </script>
+
 
 
 <!-- Service worker guard + footer (unchanged) -->
