@@ -362,8 +362,7 @@
   const BAG_CODE='BAG';
 
   // Track which field the user edited last
-  let lastEdited = 'usd'; // 'usd' | 'qty'
-  let internalWrite = false;
+  let lastEdited = 'qty'; // *** default to quantity so 1 XRP drives the initial USD ***
 
   // ---------- Utils ----------
   function fmt(n){ if(!Number.isFinite(n)) return '—';
@@ -422,22 +421,18 @@
   // ---------- Sync logic ----------
   function setQtyFromUsd(){
     const u = clampUsd(parseFloat(usdBet.value)||0);
-    if(!u){ internalWrite=true; betQty.value=''; internalWrite=false; return; }
+    if(!u){ usdBet.value=''; betQty.value=''; return; }
     const cur = currentCurrency();
     const q = (cur==='XRP' ? usdToXrp(u) : usdToBag(u));
-    internalWrite=true;
     usdBet.value = u.toFixed(2);
     betQty.value = q ? String(q) : '';
-    internalWrite=false;
   }
   function setUsdFromQty(){
     const q = parseFloat(betQty.value)||0;
-    if(!q){ internalWrite=true; usdBet.value=''; internalWrite=false; return; }
+    if(!q){ usdBet.value=''; return; }
     const cur = currentCurrency();
     const u = clampUsd(cur==='XRP' ? xrpToUsd(q) : bagToUsd(q));
-    internalWrite=true;
     usdBet.value = u ? u.toFixed(2) : '';
-    internalWrite=false;
   }
 
   function updatePayoutPreview(){
@@ -460,13 +455,11 @@
   }
 
   usdBet.addEventListener('input', ()=>{
-    if(internalWrite) return;
     lastEdited='usd';
     setQtyFromUsd();
     updatePayoutPreview();
   });
   betQty.addEventListener('input', ()=>{
-    if(internalWrite) return;
     lastEdited='qty';
     setUsdFromQty();
     updatePayoutPreview();
@@ -522,6 +515,7 @@
     if(!ok) PRICES.source='last-live';
     updateLiveRow();
 
+    // On the very first load, drive USD from the default 1 XRP
     if(lastEdited==='usd') setQtyFromUsd(); else setUsdFromQty();
     updatePayoutPreview();
 
@@ -530,6 +524,7 @@
 
   (async function init(){
     if(unitSpan) unitSpan.textContent = currentCurrency();
+    // betQty already defaults to "1" XRP in the markup
     await refreshPricesOnce();
     setInterval(refreshPricesOnce, 15000);
   })();
