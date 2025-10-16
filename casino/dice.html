@@ -481,6 +481,133 @@
 })();
 </script>
 
+  <!-- Prices & stake sync (same behavior as Slots) -->
+<script>
+(function(){
+  /* ---------- DOM ---------- */
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote= document.getElementById('liveNote');
+  const liveConv= document.getElementById('liveConv');
+  const limits  = document.getElementById('betLimits');
+  const betQty  = document.getElementById('betQty');
+  const usdBet  = document.getElementById('usdBet');
+  const curToggle = document.getElementById('curToggle');
+
+  /* ---------- Prices ---------- */
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
+  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE='BAG';
+
+  function fmt(n){
+    if(!Number.isFinite(n)) return '—';
+    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
+    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
+    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
+    return n.toLocaleString(undefined,{maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  const currentCurrency = ()=> (curToggle.querySelector('input[name="betCur"]:checked')?.value || 'XRP');
+
+  function updateLimits(){
+    if(!(PRICES.bagUsd>0 && PRICES.xrpUsd>0)){ limits.textContent='Min $1 · Max $2,000'; return; }
+    const maxX = 2000/PRICES.xrpUsd, maxB = 2000/PRICES.bagUsd;
+    const minX = 1/PRICES.xrpUsd,  minB = 1/PRICES.bagUsd;
+    limits.textContent = `Min $1 · Max $2,000 · Min ≈ ${fmt(minX)} XRP / ${fmt(minB)} BAG · Max ≈ ${fmt(maxX)} XRP / ${fmt(maxB)} BAG`;
+  }
+  function conversions(){
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerX = PRICES.xrpUsd/PRICES.bagUsd;
+      liveConv.textContent = `1 BAG ≈ ${fmt(xPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerX)} BAG`;
+    } else liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+  }
+  function updateLive(){
+    liveBAG.textContent = fmt(PRICES.bagUsd);
+    liveXRP.textContent = fmt(PRICES.xrpUsd);
+    liveDot.className = PRICES.source==='live-amm' ? 'ok' : (PRICES.source==='last-live' ? 'warn' : 'err');
+    liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
+    conversions(); updateLimits(); updatePayoutPreview(); syncUsdFromBet();
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
+  async function fetchXrpUsd(){
+    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+         const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
+    return false;
+  }
+  function parseXrp(a){ if(typeof a==='string') return Number(a)/1_000_000; if(a&&a.currency==='XRP') return Number(a.value); return null; }
+  function parseIou(a){ if(a&&typeof a==='object') return Number(a.value); return null; }
+  async function fetchBagUsdViaAMM(){
+    return new Promise(resolve=>{
+      const ws=new WebSocket('wss://s1.ripple.com');
+      const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+      const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
+      ws.onopen=()=>ws.send(JSON.stringify(req));
+      ws.onmessage=ev=>{ try{
+        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
+        const bag=parseIou(j.result.amm.amount), xrp=parseXrp(j.result.amm.amount2);
+        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
+      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
+      ws.onerror=()=>{ clearTimeout(to); resolve(false); };
+    });
+  }
+  (async function refresh(){
+    await fetchXrpUsd();
+    const ok = await fetchBagUsdViaAMM();
+    if(!ok) PRICES.source='last-live';
+    updateLive();
+    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
+  })();
+
+  /* ---------- Stake & payout preview ---------- */
+  const payWinComeOut = document.getElementById('payWinComeOut');
+  const payWinPoint   = document.getElementById('payWinPoint');
+
+  function stakeUsd(){
+    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
+    return currentCurrency()==='BAG' ? (PRICES.bagUsd>0?q*PRICES.bagUsd:0) : (PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
+  }
+  function stakeBag(){
+    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
+    if(currentCurrency()==='BAG') return q;
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerX = PRICES.xrpUsd/PRICES.bagUsd; return q*bagPerX; }
+    return 0;
+  }
+  function updatePayoutPreview(){
+    const s=stakeBag(), u=stakeUsd();
+    if(!(s>0)){ payWinComeOut.textContent='—'; payWinPoint.textContent='—'; return; }
+    payWinComeOut.textContent = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
+    payWinPoint.textContent   = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
+  }
+
+  function syncUsdFromBet(){
+    const u=stakeUsd();
+    usdBet.value = u>0 ? u.toFixed(2) : '';
+  }
+  function syncBetFromUsd(){
+    const raw=parseFloat(usdBet.value); if(!(raw>0)) return;
+    if(currentCurrency()==='XRP' && PRICES.xrpUsd>0) betQty.value = (raw/PRICES.xrpUsd).toString();
+    else if(currentCurrency()==='BAG' && PRICES.bagUsd>0) betQty.value = (raw/PRICES.bagUsd).toString();
+    updatePayoutPreview();
+  }
+
+  /* ---------- Wire up events ---------- */
+  betQty.addEventListener('input', ()=>{ syncUsdFromBet(); updatePayoutPreview(); });
+  usdBet.addEventListener('input', ()=>{ syncBetFromUsd(); });
+  curToggle.addEventListener('change', ()=>{
+    document.querySelector('#bagDiceDemo .unit').textContent = currentCurrency();
+    syncUsdFromBet(); updatePayoutPreview();
+  });
+
+  // Initial UI defaults
+  document.querySelector('#bagDiceDemo .unit').textContent = 'XRP';
+  syncUsdFromBet();        // will fill USD once prices arrive
+  updatePayoutPreview();   // will fill payout once prices arrive
+})();
+</script>
+
 
 <!-- 🎲 BAG Dice — Game logic -->
 <script>
@@ -665,132 +792,6 @@
 })();
 </script>
 
-<!-- Prices & stake sync (same behavior as Slots) -->
-<script>
-(function(){
-  /* ---------- DOM ---------- */
-  const liveDot = document.getElementById('liveDot');
-  const liveBAG = document.getElementById('liveBAG');
-  const liveXRP = document.getElementById('liveXRP');
-  const liveNote= document.getElementById('liveNote');
-  const liveConv= document.getElementById('liveConv');
-  const limits  = document.getElementById('betLimits');
-  const betQty  = document.getElementById('betQty');
-  const usdBet  = document.getElementById('usdBet');
-  const curToggle = document.getElementById('curToggle');
-
-  /* ---------- Prices ---------- */
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
-  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
-  const BAG_CODE='BAG';
-
-  function fmt(n){
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  const currentCurrency = ()=> (curToggle.querySelector('input[name="betCur"]:checked')?.value || 'XRP');
-
-  function updateLimits(){
-    if(!(PRICES.bagUsd>0 && PRICES.xrpUsd>0)){ limits.textContent='Min $1 · Max $2,000'; return; }
-    const maxX = 2000/PRICES.xrpUsd, maxB = 2000/PRICES.bagUsd;
-    const minX = 1/PRICES.xrpUsd,  minB = 1/PRICES.bagUsd;
-    limits.textContent = `Min $1 · Max $2,000 · Min ≈ ${fmt(minX)} XRP / ${fmt(minB)} BAG · Max ≈ ${fmt(maxX)} XRP / ${fmt(maxB)} BAG`;
-  }
-  function conversions(){
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const xPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerX = PRICES.xrpUsd/PRICES.bagUsd;
-      liveConv.textContent = `1 BAG ≈ ${fmt(xPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerX)} BAG`;
-    } else liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
-  }
-  function updateLive(){
-    liveBAG.textContent = fmt(PRICES.bagUsd);
-    liveXRP.textContent = fmt(PRICES.xrpUsd);
-    liveDot.className = PRICES.source==='live-amm' ? 'ok' : (PRICES.source==='last-live' ? 'warn' : 'err');
-    liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
-    conversions(); updateLimits(); updatePayoutPreview(); syncUsdFromBet();
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-  }
-
-  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
-  async function fetchXrpUsd(){
-    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-         const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
-    return false;
-  }
-  function parseXrp(a){ if(typeof a==='string') return Number(a)/1_000_000; if(a&&a.currency==='XRP') return Number(a.value); return null; }
-  function parseIou(a){ if(a&&typeof a==='object') return Number(a.value); return null; }
-  async function fetchBagUsdViaAMM(){
-    return new Promise(resolve=>{
-      const ws=new WebSocket('wss://s1.ripple.com');
-      const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
-      const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
-      ws.onopen=()=>ws.send(JSON.stringify(req));
-      ws.onmessage=ev=>{ try{
-        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
-        const bag=parseIou(j.result.amm.amount), xrp=parseXrp(j.result.amm.amount2);
-        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
-      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
-      ws.onerror=()=>{ clearTimeout(to); resolve(false); };
-    });
-  }
-  (async function refresh(){
-    await fetchXrpUsd();
-    const ok = await fetchBagUsdViaAMM();
-    if(!ok) PRICES.source='last-live';
-    updateLive();
-    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
-  })();
-
-  /* ---------- Stake & payout preview ---------- */
-  const payWinComeOut = document.getElementById('payWinComeOut');
-  const payWinPoint   = document.getElementById('payWinPoint');
-
-  function stakeUsd(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
-    return currentCurrency()==='BAG' ? (PRICES.bagUsd>0?q*PRICES.bagUsd:0) : (PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
-  }
-  function stakeBag(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
-    if(currentCurrency()==='BAG') return q;
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerX = PRICES.xrpUsd/PRICES.bagUsd; return q*bagPerX; }
-    return 0;
-  }
-  function updatePayoutPreview(){
-    const s=stakeBag(), u=stakeUsd();
-    if(!(s>0)){ payWinComeOut.textContent='—'; payWinPoint.textContent='—'; return; }
-    payWinComeOut.textContent = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
-    payWinPoint.textContent   = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
-  }
-
-  function syncUsdFromBet(){
-    const u=stakeUsd();
-    usdBet.value = u>0 ? u.toFixed(2) : '';
-  }
-  function syncBetFromUsd(){
-    const raw=parseFloat(usdBet.value); if(!(raw>0)) return;
-    if(currentCurrency()==='XRP' && PRICES.xrpUsd>0) betQty.value = (raw/PRICES.xrpUsd).toString();
-    else if(currentCurrency()==='BAG' && PRICES.bagUsd>0) betQty.value = (raw/PRICES.bagUsd).toString();
-    updatePayoutPreview();
-  }
-
-  /* ---------- Wire up events ---------- */
-  betQty.addEventListener('input', ()=>{ syncUsdFromBet(); updatePayoutPreview(); });
-  usdBet.addEventListener('input', ()=>{ syncBetFromUsd(); });
-  curToggle.addEventListener('change', ()=>{
-    document.querySelector('#bagDiceDemo .unit').textContent = currentCurrency();
-    syncUsdFromBet(); updatePayoutPreview();
-  });
-
-  // Initial UI defaults
-  document.querySelector('#bagDiceDemo .unit').textContent = 'XRP';
-  syncUsdFromBet();        // will fill USD once prices arrive
-  updatePayoutPreview();   // will fill payout once prices arrive
-})();
-</script>
   
 <!-- Practice Mode Wrapper -->
 <script>
