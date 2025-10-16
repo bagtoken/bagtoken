@@ -701,18 +701,109 @@
 })();
 </script>
 
-<!-- === Reflect pricing readiness in UI (your snippet) === -->
+<!-- === PRICES/STAKE SYNC (Dice-style USD ↔ stake, currency toggle aware) === -->
 <script>
-window.addEventListener('bag:pricesUpdated', ()=>{
-  const usd = (typeof stakeUsdEquivalent==='function') ? stakeUsdEquivalent() : 0;
-  const usdInput = document.getElementById('usdBet');
-  if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
-  const stateText = document.getElementById('stateText');
-  if (stateText && window.__PRICES__) {
-    stateText.textContent = (window.__PRICES__.source === 'live-amm') ? 'Live pricing ready' :
-                            (window.__PRICES__.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+(function(){
+  const MIN_USD = 1;
+  const MAX_USD = 2000;
+
+  const $ = (s)=>document.querySelector(s);
+  const usdInput   = $('#usdBet');
+  const betInput   = $('#demoBet');
+  const unitSpan   = document.querySelector('.unit');
+  const curWrap    = $('#curToggle');
+  const ccyLbl     = $('#ccyLbl');   // HUD currency label beside balance
+  const betLbl     = $('#betLbl');   // HUD bet number
+  const stateText  = $('#stateText');
+
+  let syncing = false; // prevents feedback loops
+
+  function selectedCur(){
+    return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
   }
-});
+  function priceFor(cur){
+    const P = window.__PRICES__ || {};
+    return cur==='BAG' ? (P.bagUsd||0) : (P.xrpUsd||0);
+  }
+  function clampUsd(v){
+    if (!Number.isFinite(v)) return 0;
+    return Math.min(MAX_USD, Math.max(0, v));
+  }
+  function toFixedSafe(n, dp){
+    if (!Number.isFinite(n) || n<=0) return '';
+    return n.toFixed(dp);
+  }
+  function refreshHud(){
+    if (betLbl) betLbl.textContent = (parseInt(betInput?.value||'0',10)||0);
+    if (ccyLbl) ccyLbl.textContent = selectedCur();
+  }
+  function refreshUnit(){
+    if (unitSpan) unitSpan.textContent = selectedCur();
+    refreshHud();
+  }
+  function updateUsdFromBet(){
+    if (!usdInput || !betInput) return;
+    if (syncing) return;
+    const cur = selectedCur();
+    const px  = priceFor(cur);
+    const qty = Math.max(0, parseFloat(betInput.value||'0'));
+    const usd = px>0 ? qty*px : 0;
+    syncing = true;
+    usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    syncing = false;
+  }
+  function updateBetFromUsd(){
+    if (!usdInput || !betInput) return;
+    if (syncing) return;
+    const cur = selectedCur();
+    const px  = priceFor(cur);
+    let usd   = clampUsd(parseFloat(usdInput.value||'0'));
+    if (!Number.isFinite(usd) || usd<=0 || px<=0){
+      syncing = true; betInput.value = betInput.value; syncing = false; // leave stake unchanged
+      return;
+    }
+    const units = Math.floor((usd/px) * 1) ; // integer stake units (Plinko bet field uses integers)
+    syncing = true;
+    betInput.value = String(Math.max(0, units));
+    syncing = false;
+    refreshHud();
+  }
+
+  // Public helper kept for existing code paths (min $ check etc.)
+  function stakeUsdEquivalent(){
+    const qty = Math.max(0, parseFloat(betInput?.value||0));
+    const cur = selectedCur();
+    const px  = priceFor(cur);
+    return px>0 ? qty*px : 0;
+  }
+  window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
+
+  // Listeners
+  usdInput?.addEventListener('input', updateBetFromUsd);
+  betInput?.addEventListener('input', updateUsdFromBet);
+  curWrap?.addEventListener('change', ()=>{
+    refreshUnit();
+    // keep the numeric stake the same; just recompute USD against the new currency
+    updateUsdFromBet();
+  });
+
+  // React to price availability/changes
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    const P = window.__PRICES__;
+    // Reflect readiness message
+    if (stateText && P) {
+      stateText.textContent = (P.source === 'live-amm') ? 'Live pricing ready' :
+                              (P.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+    }
+    // Recompute USD from current stake with latest prices
+    updateUsdFromBet();
+    refreshUnit();
+  });
+
+  // Initial paint
+  refreshUnit();
+  updateUsdFromBet();
+})();
 </script>
 
 <!-- === PLINKO GAME LOGIC (global ball; board visible; sound & celebration) === -->
@@ -1007,7 +1098,7 @@ window.addEventListener('bag:pricesUpdated', ()=>{
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
       statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
