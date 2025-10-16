@@ -333,24 +333,39 @@
 })();
 </script>
 
-<!-- GAME -->
+<!-- ===================== Prices + Stake Sync (Dice-style) ===================== -->
 <script>
 (function(){
-  /* ---------- Prices ---------- */
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
+  // ---------- DOM ----------
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote= document.getElementById('liveNote');
   const liveConv= document.getElementById('liveConv');
-  const limits = document.getElementById('betLimits');
-  const betQty = document.getElementById('betQty');
-  const usdBet = document.getElementById('usdBet');
-  const curToggle = document.getElementById('curToggle');
+  const limits  = document.getElementById('betLimits');
 
+  const usdBet  = document.getElementById('usdBet');
+  const betQty  = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan = document.querySelector('#bagSlotsDemo .unit');
+
+  // Payout preview
+  const payScratch     = document.getElementById('payScratch');
+  const payNormal      = document.getElementById('payNormal');
+  const payNormalGain  = document.getElementById('payNormalGain');
+  const payJackpot     = document.getElementById('payJackpot');
+  const payJackpotGain = document.getElementById('payJackpotGain');
+
+  // ---------- State ----------
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE='BAG';
 
+  // Track which field the user edited last
+  let lastEdited = 'usd'; // 'usd' | 'qty'
+  let internalWrite = false;
+
+  // ---------- Utils ----------
   function fmt(n){ if(!Number.isFinite(n)) return '—';
     if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
     if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
@@ -358,93 +373,178 @@
     return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  function currentCurrency(){ const el = curToggle.querySelector('input[name="betCur"]:checked'); return el ? el.value : 'XRP'; }
+  function currentCurrency(){
+    const el = curToggle.querySelector('input[name="betCur"]:checked');
+    return el ? el.value : 'XRP';
+  }
+  function clampUsd(u){
+    if(!Number.isFinite(u)) return 0;
+    return Math.max(1, Math.min(2000, u));
+  }
+
+  // ---------- Conversions ----------
+  function xrpToUsd(x){ return PRICES.xrpUsd>0 ? x*PRICES.xrpUsd : 0; }
+  function bagToUsd(b){ return PRICES.bagUsd>0 ? b*PRICES.bagUsd : 0; }
+  function usdToXrp(u){ return PRICES.xrpUsd>0 ? u/PRICES.xrpUsd : 0; }
+  function usdToBag(u){ return PRICES.bagUsd>0 ? u/PRICES.bagUsd : 0; }
+
+  function stakeBagFromInputs(){
+    const q = parseFloat(betQty.value)||0; if(!q) return 0;
+    return currentCurrency()==='BAG' ? q
+         : (PRICES.bagUsd>0 && PRICES.xrpUsd>0 ? q*(PRICES.xrpUsd/PRICES.bagUsd) : 0);
+  }
+
+  // ---------- Live UI bits ----------
   function updateLimits(){
-    if(!(PRICES.bagUsd>0 && PRICES.xrpUsd>0)){ limits.textContent='Min $1 · Max $2,000'; return; }
+    if(!(PRICES.bagUsd>0 && PRICES.xrpUsd>0)){
+      limits.textContent = 'Min $1 · Max $2,000';
+      return;
+    }
     const maxX = 2000/PRICES.xrpUsd, maxB = 2000/PRICES.bagUsd;
     const minX = 1/PRICES.xrpUsd,  minB = 1/PRICES.bagUsd;
     limits.textContent = `Min $1 · Max $2,000 · Min ≈ ${fmt(minX)} XRP / ${fmt(minB)} BAG · Max ≈ ${fmt(maxX)} XRP / ${fmt(maxB)} BAG`;
   }
-  function conversions(){
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-      const xPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerX = PRICES.xrpUsd/PRICES.bagUsd;
-      liveConv.textContent = `1 BAG ≈ ${fmt(xPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerX)} BAG`;
-    } else liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
-  }
-  function updateLive(){
+
+  function updateLiveRow(){
     liveBAG.textContent = fmt(PRICES.bagUsd);
     liveXRP.textContent = fmt(PRICES.xrpUsd);
     liveDot.className = PRICES.source==='live-amm' ? 'ok' : (PRICES.source==='last-live' ? 'warn' : 'err');
     liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : (PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
-    conversions(); updateLimits(); updatePayoutPreview();
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerX = PRICES.xrpUsd/PRICES.bagUsd;
+      liveConv.textContent = `1 BAG ≈ ${fmt(xPerBag)} XRP · 1 XRP ≈ ${fmt(bagPerX)} BAG`;
+    } else {
+      liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+    }
+    updateLimits();
   }
-  function timed(url,ms=8000){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms); return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t)); }
+
+  // ---------- Sync logic ----------
+  function setQtyFromUsd(){
+    const u = clampUsd(parseFloat(usdBet.value)||0);
+    if(!u){ internalWrite=true; betQty.value=''; internalWrite=false; return; }
+    const cur = currentCurrency();
+    const q = (cur==='XRP' ? usdToXrp(u) : usdToBag(u));
+    internalWrite=true;
+    usdBet.value = u.toFixed(2);
+    betQty.value = q ? String(q) : '';
+    internalWrite=false;
+  }
+  function setUsdFromQty(){
+    const q = parseFloat(betQty.value)||0;
+    if(!q){ internalWrite=true; usdBet.value=''; internalWrite=false; return; }
+    const cur = currentCurrency();
+    const u = clampUsd(cur==='XRP' ? xrpToUsd(q) : bagToUsd(q));
+    internalWrite=true;
+    usdBet.value = u ? u.toFixed(2) : '';
+    internalWrite=false;
+  }
+
+  function updatePayoutPreview(){
+    const sUsd = parseFloat(usdBet.value)||0;
+    const sBag = stakeBagFromInputs();
+    if(!(sBag>0) || !(sUsd>0)){
+      payScratch.textContent = '—';
+      payNormal.textContent  = '—'; payNormalGain.textContent = '';
+      payJackpot.textContent = '—'; payJackpotGain.textContent = '';
+      return;
+    }
+    // Scratch 1.00×
+    payScratch.textContent   = `${fmt(sBag*1.00)} BAG (${fmtUsd(sUsd*1.00)})`;
+    // Win 1.25×
+    payNormal.textContent    = `${fmt(sBag*1.25)} BAG (${fmtUsd(sUsd*1.25)})`;
+    payNormalGain.textContent= `(gain +${fmt(sBag*0.25)} BAG)`;
+    // Jackpot 2.00×
+    payJackpot.textContent   = `${fmt(sBag*2.00)} BAG (${fmtUsd(sUsd*2.00)})`;
+    payJackpotGain.textContent=`(gain +${fmt(sBag*1.00)} BAG)`;
+  }
+
+  usdBet.addEventListener('input', ()=>{
+    if(internalWrite) return;
+    lastEdited='usd';
+    setQtyFromUsd();
+    updatePayoutPreview();
+  });
+  betQty.addEventListener('input', ()=>{
+    if(internalWrite) return;
+    lastEdited='qty';
+    setUsdFromQty();
+    updatePayoutPreview();
+  });
+  curToggle.addEventListener('change', ()=>{
+    if(unitSpan) unitSpan.textContent = currentCurrency();
+    if(lastEdited==='usd') setQtyFromUsd(); else setUsdFromQty();
+    updatePayoutPreview();
+  });
+
+  // ---------- Prices fetch ----------
+  function timed(url,ms=8000){
+    const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms);
+    return fetch(url,{signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(t));
+  }
   async function fetchXrpUsd(){
-    try{ const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); const v=(await r.json())?.ripple?.usd; if(v>0){ PRICES.xrpUsd=v; return true; } }catch{}
+    try{
+      const r=await timed('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const v=(await r.json())?.ripple?.usd;
+      if(v>0){ PRICES.xrpUsd=v; return true; }
+    }catch{}
     return false;
   }
   function parseXrp(a){ if(typeof a==='string') return Number(a)/1_000_000; if(a&&a.currency==='XRP') return Number(a.value); return null; }
   function parseIou(a){ if(a&&typeof a==='object') return Number(a.value); return null; }
   async function fetchBagUsdViaAMM(){
     return new Promise(resolve=>{
-      const ws=new WebSocket('wss://s1.ripple.com'); const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+      const ws=new WebSocket('wss://s1.ripple.com');
+      const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
       const to=setTimeout(()=>{ try{ws.close();}catch{}; resolve(false); },8000);
       ws.onopen=()=>ws.send(JSON.stringify(req));
-      ws.onmessage=ev=>{ try{
-        const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
-        const bag=parseIou(j.result.amm.amount), xrp=parseXrp(j.result.amm.amount2);
-        if(bag>0 && xrp>0){ const xrpPerBag=xrp/bag; if(xrpPerBag>0){ if(PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; } resolve(true); } }
-      }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} } };
+      ws.onmessage=ev=>{
+        try{
+          const j=JSON.parse(ev.data); if(j.id!==1||!j.result?.amm) return;
+          const bag=parseIou(j.result.amm.amount), xrp=parseXrp(j.result.amm.amount2);
+          if(bag>0 && xrp>0){
+            const xrpPerBag=xrp/bag;
+            if(xrpPerBag>0 && PRICES.xrpUsd>0){
+              PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+              PRICES.source='live-amm';
+            }
+            resolve(true);
+          }
+        }catch{} finally{ clearTimeout(to); try{ws.close();}catch{} }
+      };
       ws.onerror=()=>{ clearTimeout(to); resolve(false); };
     });
   }
-  (async function refresh(){
+
+  async function refreshPricesOnce(){
     await fetchXrpUsd();
     const ok = await fetchBagUsdViaAMM();
     if(!ok) PRICES.source='last-live';
-    updateLive();
-    setInterval(async()=>{ await fetchXrpUsd(); await fetchBagUsdViaAMM(); updateLive(); }, 15000);
+    updateLiveRow();
+
+    if(lastEdited==='usd') setQtyFromUsd(); else setUsdFromQty();
+    updatePayoutPreview();
+
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  (async function init(){
+    if(unitSpan) unitSpan.textContent = currentCurrency();
+    await refreshPricesOnce();
+    setInterval(refreshPricesOnce, 15000);
   })();
 
-  /* ---------- Payout preview ---------- */
-  const payScratch=document.getElementById('payScratch');
-  const payNormal =document.getElementById('payNormal');
-  const payNormalGain=document.getElementById('payNormalGain');
-  const payJackpot=document.getElementById('payJackpot');
-  const payJackpotGain=document.getElementById('payJackpotGain');
+  // Expose to spin code
+  window.__bagStake = {
+    usd: ()=> Math.max(0, parseFloat(usdBet.value)||0),
+    bag: ()=> stakeBagFromInputs()
+  };
+})();
+</script>
 
-  function stakeUsd(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
-    return currentCurrency()==='BAG' ? (PRICES.bagUsd>0?q*PRICES.bagUsd:0) : (PRICES.xrpUsd>0?q*PRICES.xrpUsd:0);
-  }
-  function stakeBag(){
-    const q=parseFloat(betQty.value||0)||0; if(!q) return 0;
-    if(currentCurrency()==='BAG') return q;
-    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){ const bagPerX = PRICES.xrpUsd/PRICES.bagUsd; return q*bagPerX; }
-    return 0;
-  }
-  function updatePayoutPreview(){
-    const s=stakeBag(), u=stakeUsd();
-    if(!(s>0)){ payScratch.textContent=payNormal.textContent=payJackpot.textContent='—'; payNormalGain.textContent=payJackpotGain.textContent=''; return; }
-    payScratch.textContent = `${fmt(s*1.00)} BAG (${fmtUsd(u*1.00)})`;
-    payNormal.textContent  = `${fmt(s*1.25)} BAG (${fmtUsd(u*1.25)})`;
-    payNormalGain.textContent = `(gain +${fmt(s*0.25)} BAG)`;
-    payJackpot.textContent = `${fmt(s*2.00)} BAG (${fmtUsd(u*2.00)})`;
-    payJackpotGain.textContent = `(gain +${fmt(s*1.00)} BAG)`;
-  }
-  betQty.addEventListener('input', ()=>{ syncUsdFromBet(); updatePayoutPreview(); });
-  usdBet.addEventListener('input', ()=>{ syncBetFromUsd(); updatePayoutPreview(); });
-  curToggle.addEventListener('change', ()=>{ document.querySelector('#bagSlotsDemo .unit').textContent=currentCurrency(); syncUsdFromBet(); updatePayoutPreview(); });
-
-  function syncUsdFromBet(){ const u=stakeUsd(); usdBet.value = u>0 ? u.toFixed(2) : ''; }
-  function syncBetFromUsd(){
-    const raw=parseFloat(usdBet.value); if(!(raw>0)) return;
-    if(currentCurrency()==='XRP' && PRICES.xrpUsd>0) betQty.value = (raw/PRICES.xrpUsd).toString();
-    else if(currentCurrency()==='BAG' && PRICES.bagUsd>0) betQty.value = (raw/PRICES.bagUsd).toString();
-  }
-
-  /* ---------- Reels & Odds ---------- */
+<!-- ===================== Reels & Odds + Spin ===================== -->
+<script>
+(function(){
   const strips=[...document.querySelectorAll('.strip')];
   const spinBtn=document.getElementById('spinBtn');
   const spinText=document.getElementById('spinText');
@@ -458,7 +558,7 @@
   ];
   const NON_SEVEN_POOL = [SYMS[1],SYMS[2],SYMS[3],SYMS[4]];
 
-  // ---- House odds (tight preset → RTP ≈ 59.5%)
+  // ---- House odds (tight preset → RTP ≈ 59.5% with row-only pays + diagonal scratch)
   const ODDS = { jackpot: 0.02, win: 0.38, scratch: 0.08 }; // lose implied
 
   const ROWS=3, CELL_H=88;
@@ -486,7 +586,6 @@
   }
   function anyRowPay(g){ for(let r=0;r<3;r++){ const p=rowPay(g,r); if(p) return p; } return null; }
 
-  // Try to avoid creating unintended pays while filling
   function fillRandomNonPayingElsewhere(g){
     for(let r=0;r<3;r++){
       for(let c=0;c<3;c++){
@@ -496,16 +595,14 @@
           const cand=randomSym();
           g[r][c]=cand;
           const rp=rowPay(g,r), ap=anyRowPay(g), dp=diagPay(g);
-          // accept only if no row/diag pay formed by this placement
           if(!rp && !dp && !ap){ placed=true; } else { g[r][c]=null; }
         }
-        if(!placed) g[r][c]=randomSym(); // fallback
+        if(!placed) g[r][c]=randomSym();
       }
     }
     return g;
   }
 
-  // Grid builder honoring target type; final evaluation still rules (jackpot trumps)
   function buildSpin(stakeBag){
     const p=Math.random();
     let target='lose';
@@ -528,7 +625,6 @@
       const s=randFrom(SYMS);
       if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
       else{ g[0][2]=s; g[1][1]=s; g[2][0]=s; }
-      // ensure no row pays were accidentally created
       g=fillRandomNonPayingElsewhere(g);
     } else {
       g=fillRandomNonPayingElsewhere(g);
@@ -536,19 +632,13 @@
     return { grid:g, stake: stakeBag };
   }
 
-  // Evaluate the actually shown grid (truth source, with priority)
   function evaluateGrid(rows){
-    // 1) Any row jackpot?
     for(let r=0;r<3;r++){ if(rowPay(rows,r)==='jackpot') return { outcome:'jackpot', mult:2.00 }; }
-    // 2) Any row win?
-    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='win') return { outcome:'win', mult:1.25 }; }
-    // 3) Any diagonal scratch?
+    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='win')     return { outcome:'win',     mult:1.25 }; }
     if(diagPay(rows)==='scratch') return { outcome:'scratch', mult:1.00 };
-    // 4) Lose
     return { outcome:'lose', mult:0.00 };
   }
 
-  // Fast spin loop (4s) then abrupt stop on finalRows
   function startFastSpin(durationMs, finalRows){
     const loopers = strips.map((strip, idx) => {
       const base = Array.from({length:6},()=>randomSym());
@@ -591,7 +681,9 @@
 
   // Spin
   spinBtn.addEventListener('click', async ()=>{
-    const sBag = stakeBag(); const sUsd = stakeUsd();
+    const sBag = (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+    const sUsd = (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
     if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
     if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
     if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
@@ -600,13 +692,11 @@
     try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
     playSpin();
 
-    // decide + render
     const plan = buildSpin(sBag);
     const finalRows = plan.grid;
     await startFastSpin(4000, finalRows);
     stopSpin();
 
-    // Evaluate what actually landed (jackpot > win > scratch > lose)
     const verdict = evaluateGrid(finalRows);
     const mult = verdict.mult;
 
@@ -620,12 +710,12 @@
         sWin();
         credit(sBag*1.25);
         spinText.className='t win'; spinText.textContent='WIN — 1.25×';
-        showWin({ message:'WIN', subtext:`+${fmt(sBag*0.25)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*1.25)}`, duration:5200 });
+        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:5200 });
       } else {
         sWin();
         credit(sBag*2.00);
         spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
-        showWin({ message:'JACKPOT', subtext:`+${fmt(sBag*1.00)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*2.00)}`, duration:7200 });
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:7200 });
       }
     } else {
       sLose();
@@ -639,8 +729,6 @@
     spinBtn.disabled=false;
   });
 
-  document.querySelector('#bagSlotsDemo .unit').textContent='XRP';
-  updatePayoutPreview();
 })();
 </script>
 
