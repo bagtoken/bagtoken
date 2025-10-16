@@ -1,1 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>$BAG Roulette — Demo</title>
+
+<style>
+  :root{
+    --bg:#020703; --felt:#0c2319; --felt2:#0f2a1f; --gold:#ffd700; --fg:#f5f7f4; --muted:#aeb7af;
+    --red:#cf2b2b; --black:#141414; --green:#1b7b3a; --ring:#7c4f2a; --wood:#5a371d; --shadow:rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+
+  .wrap{max-width:1100px;margin:24px auto;padding:16px}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between;margin-bottom:16px}
+  .brand{font-weight:700;letter-spacing:.5px}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--felt),var(--felt2));border:1px solid #1e3a2b;border-radius:10px;padding:8px 12px}
+  .pill select,.pill input{background:transparent;color:var(--fg);border:none;outline:none}
+  .pill input{width:110px}
+  .row{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+  @media (max-width:980px){.row{grid-template-columns:1fr}}
+
+  /* Wheel card */
+  .card{background:linear-gradient(180deg,var(--felt),var(--felt2));border:1px solid #1e3a2b;border-radius:16px;box-shadow:0 20px 50px var(--shadow);padding:16px}
+  .wheelBox{position:relative;aspect-ratio:1;border-radius:14px;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.05),transparent 55%)}
+  .wood{position:absolute;inset:6% 6% 6% 6%;border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), rgba(0,0,0,.3) 70%),
+      conic-gradient(from 0deg, #744923, #5e3a1b 25%, #744923 50%, #5e3a1b 75%, #744923 100%);
+    box-shadow:inset 0 0 0 12px #b8844f, inset 0 0 0 20px #8d5b2e;
+  }
+  .pocketRing{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;}
+  .pockets{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;transform:rotate(0deg);transition:transform 4.2s cubic-bezier(.15,.9,.15,1);}
+  .pocket{position:absolute;left:50%;top:50%;transform-origin:0% 0%;
+          width:46%;height:26px;margin-top:-13px;border-radius:4px 999px 999px 4px;
+          display:flex;align-items:center;justify-content:flex-end;
+          padding-right:10px;font-weight:700;font-size:14px;color:#fff;
+          border:1px solid #0007; text-shadow:0 1px 2px #000c;}
+  .pocket.green{background:var(--green)}
+  .pocket.red{background:var(--red)}
+  .pocket.black{background:var(--black)}
+  .spindle{position:absolute;inset:27% 27% 27% 27%;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 70%);box-shadow:0 8px 16px var(--shadow);}
+  .ball{position:absolute;width:18px;height:18px;background:#eee;border-radius:50%;box-shadow:0 1px 4px #000a;
+        left:50%;top:50%;margin:-9px;transform-origin:0 0;transform:rotate(0deg) translate(170px);}
+  .marker{position:absolute;left:50%;top:50%;width:3px;height:22px;background:#d2a253;transform-origin:50% 210px;border-radius:2px}
+
+  /* Controls and log */
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+  button{cursor:pointer;border:1px solid #30523f;background:linear-gradient(180deg,#214034,#10251c);
+         color:var(--fg);padding:10px 14px;border-radius:10px;font-weight:600;letter-spacing:.3px}
+  button.primary{background:linear-gradient(180deg,#3c7d52,#1f4d33);border-color:#4aa368;box-shadow:0 10px 28px rgba(0,0,0,.25)}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .ledger{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:var(--muted);word-break:break-all}
+  .stat{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;color:var(--muted)}
+  .bets{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:10px}
+  .bets .panel{background:#0b1f16;border:1px solid #1b3b2c;border-radius:10px;padding:10px}
+  .bets label{display:flex;align-items:center;justify-content:space-between;margin:6px 0;color:#e7efe9}
+  .bets select,.bets input{width:120px;background:#092016;color:#e7efe9;border:1px solid #274a39;border-radius:8px;padding:6px}
+  .win{color:#2fbf6b;font-weight:700}
+  .lose{color:#e25b5b;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">🎰 <strong>$BAG Roulette</strong> — demo</div>
+    <div class="pill">
+      <span>Play in</span>
+      <select id="token">
+        <option value="BAG">$BAG</option>
+        <option value="XRP">XRP</option>
+      </select>
+      <span>Stake</span>
+      <input id="stake" type="number" min="1" step="1" value="10" />
+    </div>
+  </header>
+
+  <div class="row">
+    <!-- Wheel -->
+    <section class="card">
+      <div id="wheel" class="wheelBox">
+        <div class="wood"></div>
+        <div id="ring" class="pockets"></div>
+        <div class="spindle"></div>
+        <div id="ball" class="ball"></div>
+        <div class="marker"></div>
+      </div>
+      <div class="controls">
+        <button id="spin" class="primary">SPIN</button>
+        <button id="clear">CLEAR BETS</button>
+        <div id="result"></div>
+      </div>
+      <div class="stat">
+        <div>Round <span id="round">0</span></div>
+        <div>Last <span id="last">—</span></div>
+        <div>Seed <span id="seed">—</span></div>
+      </div>
+    </section>
+
+    <!-- Bets -->
+    <aside class="card">
+      <h3 style="margin:4px 0 10px">Place bets</h3>
+      <div class="bets">
+        <div class="panel">
+          <label>Straight (35:1)
+            <input id="straight" placeholder="e.g. 17 or 00" />
+          </label>
+          <label>Red / Black (1:1)
+            <select id="rb">
+              <option value="">none</option>
+              <option value="RED">RED</option>
+              <option value="BLACK">BLACK</option>
+            </select>
+          </label>
+          <label>Even / Odd (1:1)
+            <select id="eo">
+              <option value="">none</option>
+              <option value="EVEN">EVEN</option>
+              <option value="ODD">ODD</option>
+            </select>
+          </label>
+          <label>High / Low (1:1)
+            <select id="hl">
+              <option value="">none</option>
+              <option value="LOW">1–18</option>
+              <option value="HIGH">19–36</option>
+            </select>
+          </label>
+        </div>
+        <div class="panel">
+          <label>Dozen (2:1)
+            <select id="dozen">
+              <option value="">none</option>
+              <option value="D1">1–12</option>
+              <option value="D2">13–24</option>
+              <option value="D3">25–36</option>
+            </select>
+          </label>
+          <label>Column (2:1)
+            <select id="col">
+              <option value="">none</option>
+              <option value="C1">Column 1</option>
+              <option value="C2">Column 2</option>
+              <option value="C3">Column 3</option>
+            </select>
+          </label>
+          <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+            Multiple bet types allowed per spin. Stake applies per selection.
+          </div>
+        </div>
+      </div>
+      <div class="ledger" style="margin-top:12px" id="log"></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ---------- CONFIG ---------- */
+// Accurate American double-zero sequence, clockwise starting at 00
+const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,
+               28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
+
+// Pocket colors
+const COLOR = {};
+["00",0].forEach(n=>COLOR[n]="green");
+[1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
+[2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
+
+// Column lookup (1..36 only)
+const COLUMN = {};
+[1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
+[2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
+[3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
+
+/* ---------- BUILD WHEEL UI ---------- */
+const ring = document.getElementById('ring');
+const DEG = 360 / WHEEL.length;
+WHEEL.forEach((val, i)=>{
+  const el = document.createElement('div');
+  el.className = `pocket ${COLOR[val]||'black'}`;
+  el.style.transform = `rotate(${i*DEG}deg) translate(-2%, -50%)`;
+  el.textContent = String(val);
+  ring.appendChild(el);
+});
+
+/* ---------- STATE ---------- */
+let spinning = false, round = 0;
+
+/* ---------- HELPERS ---------- */
+const $ = id => document.getElementById(id);
+function randUint32(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
+function pickIndex(seed){
+  // Derive a fair index from the seed using mulhi trick
+  const n = WHEEL.length;
+  return Math.floor((seed / 0x100000000) * n);
+}
+function indexOfValue(v){ return WHEEL.findIndex(x=>String(x)===String(v)); }
+function formatTok(){ return $('token').value; }
+
+function computePayout(hit, stake){
+  let win = 0, notes = [];
+
+  // Straight
+  const sVal = $('straight').value.trim().toUpperCase();
+  if(sVal){
+    const valid = (sVal==="00") || (!isNaN(+sVal) && +sVal>=0 && +sVal<=36);
+    if(valid && String(hit)===sVal){ win += 35*stake; notes.push(`Straight +${35}x`); }
+  }
+
+  // Red/Black
+  const rb = $('rb').value;
+  if(rb && COLOR[hit] && COLOR[hit].toUpperCase()===rb){ win += 1*stake; notes.push(`RB +1x`); }
+
+  // Even/Odd
+  const eo = $('eo').value;
+  if(eo && typeof hit==="number" && hit!==0){
+    if((eo==="EVEN" && hit%2===0) || (eo==="ODD" && hit%2===1)){ win += 1*stake; notes.push(`EO +1x`); }
+  }
+
+  // High/Low
+  const hl = $('hl').value;
+  if(hl && typeof hit==="number" && hit!==0){
+    if((hl==="LOW" && hit>=1 && hit<=18) || (hl==="HIGH" && hit>=19 && hit<=36)){ win += 1*stake; notes.push(`HL +1x`); }
+  }
+
+  // Dozen
+  const dz = $('dozen').value;
+  if(dz && typeof hit==="number" && hit!==0){
+    if((dz==="D1" && hit>=1 && hit<=12) || (dz==="D2" && hit>=13 && hit<=24) || (dz==="D3" && hit>=25 && hit<=36)){ win += 2*stake; notes.push(`Dozen +2x`); }
+  }
+
+  // Column
+  const col = $('col').value;
+  if(col && COLUMN[hit]===col){ win += 2*stake; notes.push(`Column +2x`); }
+
+  return {win, notes};
+}
+
+/* ---------- SPIN ---------- */
+$('spin').onclick = ()=>{
+  if(spinning) return;
+  const stake = Math.max(1, +$('stake').value||1);
+  const token = formatTok();
+
+  // seed and index
+  const seed = randUint32();
+  const idx = pickIndex(seed);
+  const hit = WHEEL[idx];
+
+  // animate
+  spinning = true; round++;
+  $('round').textContent = String(round);
+  $('seed').textContent = seed.toString(16).padStart(8,'0');
+
+  const revs = 6; // base revolutions
+  const targetDeg = 360*(revs) + (360 - idx*DEG); // align pocket at marker
+  ring.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
+  ring.style.transform = `rotate(${targetDeg}deg)`;
+
+  // ball counter-rotate
+  const ball = $('ball');
+  ball.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
+  ball.style.transform = `rotate(${-(targetDeg + 720)}deg) translate(170px)`; // extra 2 revs
+
+  setTimeout(()=>{
+    // outcome
+    $('last').textContent = String(hit);
+    const {win, notes} = computePayout(hit, stake);
+    const gain = win - stake * selectedBetsCount();
+
+    const resEl = $('result');
+    if(gain >= 0){
+      resEl.innerHTML = `<span class="win">WIN +${gain} ${token}</span> on ${String(hit)} ${notes.length?'· '+notes.join(' · '):''}`;
+    }else{
+      resEl.innerHTML = `<span class="lose">LOSS ${gain} ${token}</span> on ${String(hit)}`;
+    }
+
+    log(`Spin #${round} · Hit ${String(hit)} · Seed 0x${$('seed').textContent} · Net ${gain} ${token}`);
+    spinning = false;
+  }, 4300);
+};
+
+$('clear').onclick = ()=>{
+  ['straight','rb','eo','hl','dozen','col'].forEach(id=>$(id).value = '');
+  $('result').textContent = '';
+};
+
+function selectedBetsCount(){
+  let c = 0;
+  if($('straight').value.trim()) c++;
+  if($('rb').value) c++;
+  if($('eo').value) c++;
+  if($('hl').value) c++;
+  if($('dozen').value) c++;
+  if($('col').value) c++;
+  return c;
+}
+
+function log(s){
+  const el = $('log');
+  el.textContent = s + "\n" + el.textContent;
+}
+
+// Quick init log
+log(`Wheel loaded with American double-zero sequence: ${WHEEL.join(', ')}`);
+</script>
+</body>
+</html>
 
