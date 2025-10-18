@@ -667,108 +667,136 @@
 })();
 </script>
 
-<!-- ✅ USD auto-fill to match default bet (1 XRP or 1 BAG) + payout preview -->
+<!-- ✅ Dice — Stake sync (USD ↔ units), limits, payout preview, helpers -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
   const betQtyEl = document.getElementById('betQty');
   const curToggle = document.getElementById('curToggle');
   const unitSpan  = document.querySelector('.unit');
+  const limitsEl  = document.getElementById('betLimits');
 
   const payWinCO = document.getElementById('payWinComeOut');
   const payWinPt = document.getElementById('payWinPoint');
   const payJack  = document.getElementById('payJackpot');
 
-  const MIN_USD = 0; // (no button gating here)
+  const rollBtn  = document.getElementById('rollBtn');
+
+  const MIN_USD = 1;
+  const MAX_USD = 2000;
+
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const selectedCur = () => (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+  const priceFor = (cur) => (cur==='BAG'? PR().bagUsd : PR().xrpUsd) || 0;
 
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:1; }
-
-  function derivedUsd(){
-    const {bagUsd,xrpUsd}=PR();
-    const q=qty();
-    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Auto-fill policy: keep updating unless user typed into USD box
-  function autoFillUsd(){
-    if (!usdBetEl) return;
-    if (usdBetEl.dataset.userTyped==='1') return;
-    const v = derivedUsd();
-    if (v>0){
-      usdBetEl.value = (Math.round(v*100)/100).toFixed(2);
-      usdBetEl.dataset.autofill='1';
-    }
+  // Current numeric stake (units in selected currency)
+  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+
+  // Stake in USD: prefer direct USD box if user typed; else compute from qty
+  function stakeUsd(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
+    const px = priceFor(selectedCur());
+    return (px>0 && qty()>0) ? qty()*px : 0;
   }
 
-  // Update payout preview
-  function updatePayouts(){
-    const {bagUsd}=PR();
-    const q=qty();
-    const isBAG = currentCurrency()==='BAG';
-    const bagStake = isBAG ? q : (bagUsd>0 ? q*(PR().xrpUsd/bagUsd) : 0);
-    const usdStake = derivedUsd();
+  // Stake in BAG (regardless of staking currency)
+  function stakeBag(){
+    const q = qty();
+    const {bagUsd,xrpUsd} = PR();
+    if (selectedCur()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
 
+  // ----- Two-way sync (USD ↔ units) -----
+  let syncing = false;
+
+  function updateUsdFromBet(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    const usdVal = (px>0 ? qty()*px : 0);
+    syncing = true;
+    usdBetEl.value = usdVal>0 ? usdVal.toFixed(2) : '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  function updateBetFromUsd(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    let usdVal = parseFloat(usdBetEl.value||'');
+    if (!Number.isFinite(usdVal) || usdVal<=0 || px<=0) { renderLimits(); renderPayouts(); return; }
+    usdVal = Math.min(MAX_USD, Math.max(0, usdVal));
+    // keep precision (supports fractional BAG)
+    const units = Math.floor((usdVal/px) * 1e6)/1e6;
+    syncing = true;
+    betQtyEl.value = units || '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  // ----- UI rendering: limits + payouts -----
+  function renderLimits(){
+    const sUsd = stakeUsd()||0;
+    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
+    // Only gate the button in live mode
+    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd < MIN_USD);
+  }
+
+  function renderPayouts(){
+    const sUsd = stakeUsd()||0;
+    const sBag = stakeBag()||0;
     const mCO=1.25, mPt=1.00, mJ=2.00;
 
-    if (payWinCO) payWinCO.textContent = `${fmt(bagStake*mCO)} BAG (${usd(usdStake*mCO)})`;
-    if (payWinPt) payWinPt.textContent = `${fmt(bagStake*mPt)} BAG (${usd(usdStake*mPt)})`;
-    if (payJack)  payJack.textContent  = `${fmt(bagStake*mJ)} BAG (${usd(usdStake*mJ)})`;
+    if (payWinCO) payWinCO.textContent = `${fmt(sBag*mCO)} BAG (${usd(sUsd*mCO)})`;
+    if (payWinPt) payWinPt.textContent = `${fmt(sBag*mPt)} BAG (${usd(sUsd*mPt)})`;
+    if (payJack)  payJack.textContent  = `${fmt(sBag*mJ)} BAG (${usd(sUsd*mJ)})`;
   }
 
-  // Hooks
-  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); });
-  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); });
-  curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); });
-  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); });
+  // ----- Wire up events -----
+  usdBetEl?.addEventListener('input', updateBetFromUsd);
+  betQtyEl?.addEventListener('input', updateUsdFromBet);
+  curToggle?.addEventListener('change', ()=>{
+    if (unitSpan) unitSpan.textContent = selectedCur();
+    // Keep units numeric; recompute USD against the new currency
+    updateUsdFromBet();
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    // Recompute both sides when prices land/refresh
+    if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
+  });
 
-  // Init
-  if(unitSpan) unitSpan.textContent=currentCurrency();
-  autoFillUsd();
-  updatePayouts();
+  // ----- Init -----
+  if (unitSpan) unitSpan.textContent = selectedCur();
+  updateUsdFromBet();
+  renderLimits();
+  renderPayouts();
+
+  // Expose for game logic
+  window.__bagStake = { usd: stakeUsd, bag: stakeBag, minUsd: MIN_USD, maxUsd: MAX_USD };
 })();
 </script>
 
-<!-- 🎲 BAG Dice — Game logic (Pass Line rules intact, odds injected) -->
+
+<!-- 🎲 BAG Dice — Game logic (Pass Line rules intact, min-$ gate, odds injected) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  /* ----- Stake helpers (unchanged) ----- */
+  /* ----- Stake helpers (now use shared __bagStake) ----- */
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const betQtyEl = document.getElementById('betQty');
-  const usdBetEl = document.getElementById('usdBet');
-  const curToggle = document.getElementById('curToggle');
+  function stakeBag(){ return (window.__bagStake && __bagStake.bag()) || 0; }
+  function stakeUsd(){ return (window.__bagStake && __bagStake.usd()) || 0; }
+  function minUsd(){  return (window.__bagStake && __bagStake.minUsd) || 1; }
 
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-  function stakeBag(){
-    const q = parseFloat(betQtyEl?.value||0) || 0;
-    if (!q) return 0;
-    const {bagUsd,xrpUsd} = PR();
-    if (currentCurrency()==='BAG') return q;
-    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
-    return 0;
-  }
-  function stakeUsd(){
-    const direct = parseFloat(usdBetEl?.value||'');
-    if (Number.isFinite(direct) && direct>0) return direct;
-    const q = parseFloat(betQtyEl?.value||0) || 0;
-    const {bagUsd,xrpUsd} = PR();
-    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
   function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
@@ -857,34 +885,27 @@
 
   // Helpers to pick dice faces matching a requested sum
   function facesForSum(sum){
-    // Random split into two valid die faces (1..6) summing to "sum"
-    const opts=[];
-    for(let a=1;a<=6;a++){
-      const b=sum-a;
-      if (b>=1 && b<=6) opts.push([a,b]);
-    }
+    const opts=[]; for(let a=1;a<=6;a++){ const b=sum-a; if (b>=1 && b<=6) opts.push([a,b]); }
     return opts[(Math.random()*opts.length)|0];
   }
   function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
 
-  // Outcome pickers per phase (respect rules; odds override frequency only)
+  // Outcome pickers per phase
   function outcomeComeOut(){
     const p = PROB().CO;
     const r = Math.random();
-    const pPoint = 1 - (p.P_JP + p.P_WIN + p.P_CRAPS);
     if (r < p.P_JP)  return { kind:'jackpot-co' };
     if (r < p.P_JP + p.P_WIN) return { kind:'win-co' };
     if (r < p.P_JP + p.P_WIN + p.P_CRAPS) return { kind:'craps' };
-    return { kind:'point' }; // default remainder
+    return { kind:'point' };
   }
   function outcomePoint(){
     const p = PROB().PT;
     const r = Math.random();
-    const pHold = 1 - (p.P_JP + p.P_WIN + p.P_SEVEN);
     if (r < p.P_JP)  return { kind:'jackpot-pt' };
     if (r < p.P_JP + p.P_WIN) return { kind:'win-pt' };
     if (r < p.P_JP + p.P_WIN + p.P_SEVEN) return { kind:'sevenout' };
-    return { kind:'hold' }; // neutral roll
+    return { kind:'hold' };
   }
 
   // Choose a valid dice total for each outcome
@@ -896,32 +917,37 @@
     if (kind==='sevenout')     return 7;
     if (kind==='win-pt')       return point;
     if (kind==='jackpot-pt')   return point;
-    // hold (neutral): anything except 7 or the point
     const neutrals=[2,3,4,5,6,8,9,10,11,12].filter(s=>s!==7 && s!==point);
     return pick(neutrals);
   }
 
-  /* ======= Round state (rules preserved) ======= */
+  /* ======= Round state ======= */
   const ROUND={active:false,point:null};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    const sBag = stakeBag();
     const sUsd = stakeUsd();
+    const sBag = stakeBag();
 
-    // Live session gating (demo bypasses)
-    if (!window.__BAG_FORCE_DEMO) {
-      if (!window.__bagSession || !__bagSession.active()) {
+    // Enforce min in live (demo bypasses — button also gated by the sync block)
+    if (!window.__BAG_FORCE_DEMO && (!(sUsd >= minUsd()))) {
+      alert(`Min stake is $${minUsd().toFixed(2)}`);
+      rollBtn.disabled=false; return;
+    }
+
+    // Live session spend (demo bypass)
+    if (!window.__BAG_FORCE_DEMO){
+      if (!window.__bagSession || !__bagSession.active()){
         alert('Start a session at The Cage');
         rollBtn.disabled=false; return;
       }
-      if (!(sBag > 0)) {
+      if (!(sBag > 0)){
         alert('Enter a stake first');
         rollBtn.disabled=false; return;
       }
-      if (!__bagSession.spend(sBag)) {
+      if (!__bagSession.spend(sBag)){
         alert('Insufficient balance');
         rollBtn.disabled=false; return;
       }
@@ -945,7 +971,7 @@
         const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
         const gainBag = sBag*(mult-1);
-        showWin({
+        window.showWin && showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
           subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
@@ -980,7 +1006,7 @@
         const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
         const gainBag = sBag*(mult-1);
-        showWin({
+        window.showWin && showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
           subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
@@ -1005,7 +1031,8 @@
 </script>
 
 
-<!-- Practice Mode Wrapper -->
+
+<!-- Practice Mode Wrapper (decimal-safe demo balance) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1022,7 +1049,7 @@
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
   function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} } /* preserve decimals */
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
   function fmt(n){
@@ -1102,6 +1129,7 @@
   window.addEventListener('bag:walletDisconnected', enableDemo);
 })();
 </script>
+
 
 <script>
 if ('serviceWorker' in navigator) {
