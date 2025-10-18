@@ -285,7 +285,9 @@
 
       <h4 style="margin:12px 0 6px;">Payouts:</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>Win</b> — 1.25× total</li>
+        <li><b>Win</b> — 1.25×
+
+ total</li>
         <li><b>Jackpot</b> — 2.00× total</li>
         <li><b>Scratch</b> — 1.00× (push)</li>
       </ul>
@@ -348,7 +350,7 @@
 })();
 </script>
 
-<!-- WIN overlay (a11y-enhanced) -->
+<!-- WIN overlay -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -357,34 +359,17 @@
   const closeBtn=document.getElementById('win-close');
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
-  let rafId=null, particles=[], start=0, dur=2000, lastFocused=null;
-
+  let rafId=null, particles=[], start=0, dur=2000;
   function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
-
-  function fire(n){
-    particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++){
-      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
-    }
-  }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
+  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
+    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ lastFocused=document.activeElement; overlay.style.display='grid'; closeBtn?.focus(); }
-  function hide(){ overlay.style.display='none'; stop(); if(lastFocused) try{ lastFocused.focus(); }catch{} }
-  addEventListener('keydown', e=>{ if(overlay.style.display!=='none' && e.key==='Escape') hide(); });
-
-  closeBtn.addEventListener('click', hide);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  function show(){ overlay.style.display='grid'; }
+  function hide(){ overlay.style.display='none'; stop(); }
+  closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
   window.showWin=function(opts={}){ const { message='WIN', subtext='Nice spin', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
@@ -395,12 +380,178 @@
 })();
 </script>
 
-<!-- === PRICES (unchanged) === -->
+<!-- === PRICES (live-first; fallback to last-live; then view cache; cross-tab sync) === -->
 <script>
-/* ... (same PRICES block you already have; unchanged for brevity in this snippet) ... */
+(function(){
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;  // last-live pricing bundle TTL
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;   // view cache TTL
+
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  // Shared keys used across all games (keep these identical everywhere)
+  const VIEW_CACHE_KEY = 'bag_prices_v8';     // { bagUsd, xrpUsd }
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';  // { bagUsd, xrpUsd }
+  const XRP_KEY        = 'xrp_usd';           // number
+
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+
+  // DOM (optional; script tolerates missing elements)
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+  const diagSpan = document.getElementById('bagDiag');
+
+  // ---------- Utils ----------
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k, ttlMs){
+    try{
+      const o=JSON.parse(localStorage.getItem(k)||'null');
+      if(!o) return null;
+      const age = Date.now() - (o.t||0);
+      return age<=ttlMs ? o.v : null;
+    }catch{ return null; }
+  }
+  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl = new AbortController();
+    const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{
+      const u = new URL(url, location.origin);
+      u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(), {
+        ...opts,
+        headers: { Accept:'application/json', ...(opts.headers||{}) },
+        mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+        signal: ctrl.signal
+      });
+    } finally { setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  function updateLiveLine(){
+    if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
+    if (liveXRP)  liveXRP.textContent  = fmt(PRICES.xrpUsd);
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
+    if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+    // Let other modules (stake sync, HUDs) react
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  // ---------- Live fetchers ----------
+  async function fetchXrpUsdLive(){
+    try{
+      const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if(Number(v)>0){
+        PRICES.xrpUsd = Number(v);
+        cacheSet(XRP_KEY, PRICES.xrpUsd); // share across tabs/games
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
+  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+  async function fetchBagViaAMMLive(){
+    // Returns true if PRICES.bagUsd set (requires PRICES.xrpUsd already)
+    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+    const xrpPerBag = await new Promise((resolve)=>{
+      const ws = new WebSocket(XRPL_WSS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
+          const bagBal = parseIouAmount(amm.amount);
+          const xrpBal = parseXrpAmount(amm.amount2);
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price = xrpBal / bagBal;
+          if (!(price>0) || !isFinite(price)) return resolve(null);
+          resolve(price);
+        }catch{ resolve(null); }
+      };
+    });
+    if (!(xrpPerBag>0)) return false;
+    if (!(PRICES.xrpUsd>0)) return false; // need XRP/USD to compute BAG/USD
+    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+    PRICES.source = 'live-amm';
+    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    return true;
+  }
+
+  // ---------- Fallback loaders ----------
+  function loadLastLiveBundle(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      PRICES.source = 'last-live';
+      return true;
+    }
+    return false;
+  }
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    let ok = false;
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      ok = true;
+    }
+    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok = true; }
+    if (ok && PRICES.source==='—') PRICES.source = 'last-live';
+    return ok;
+  }
+
+  // ---------- Orchestration (LIVE-FIRST) ----------
+  async function refreshPrices(){
+    let liveOk = false;
+
+    const gotX = await fetchXrpUsdLive();
+    const gotBag = await fetchBagViaAMMLive();
+
+    liveOk = gotX && gotBag;
+
+    if (!liveOk){
+      if (!loadLastLiveBundle()) loadViewCache();
+    }
+
+    updateLiveLine();
+  }
+
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+
+  window.addEventListener('storage', (e)=>{
+    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      if (!loadLastLiveBundle()) loadViewCache();
+      updateLiveLine();
+    }
+  });
+})();
 </script>
 
-<!-- ✅ Stake helpers + USD auto-fill to mirror default bet -->
+<!-- ✅ USD auto-fill + payout preview + expose stake helpers -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -448,7 +599,7 @@
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Auto-fill unless user typed
+  // Auto-fill unless user typed into USD box
   function autoFillUsd(){
     if (!usdBetEl) return;
     if (usdBetEl.dataset.userTyped==='1') return;
@@ -459,13 +610,13 @@
     }
   }
 
-  // Limits and payouts
+  // Limits + payout preview
   function renderLimits(){
     const sUsd = stakeUsd()||0;
     const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
                  (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
     if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
-    enforceMinButton();
+    if (spinBtn) spinBtn.disabled = (sUsd>0 && sUsd < MIN_USD && !window.__BAG_FORCE_DEMO);
   }
   function renderPayouts(){
     const sUsd = stakeUsd()||0;
@@ -482,23 +633,18 @@
       if (payJackpotGain) payJackpotGain.textContent = ` (+${fmt(sBag*(mJack-1))} BAG)`;
     }
   }
-  function enforceMinButton(){
-    const sUsd = stakeUsd()||0;
-    if (spinBtn) spinBtn.disabled = (sUsd>0 && sUsd < MIN_USD);
-  }
 
   // Events
-  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; renderLimits(); renderPayouts(); enforceMinButton(); });
+  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; renderLimits(); renderPayouts(); });
   betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); renderLimits(); renderPayouts(); });
   curToggle?.addEventListener('change', ()=>{ const u=document.querySelector('.unit'); if(u) u.textContent=currentCurrency(); autoFillUsd(); renderLimits(); renderPayouts(); });
-  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); renderLimits(); renderPayouts(); enforceMinButton(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); renderLimits(); renderPayouts(); });
 
   // Init
   const u=document.querySelector('.unit'); if(u) u.textContent=currentCurrency();
   autoFillUsd();
   renderLimits();
   renderPayouts();
-  enforceMinButton();
 
   // Expose stake helpers for spin loop
   window.__bagStake = {
@@ -510,22 +656,556 @@
 
 <!-- ===================== Reels & Odds + Spin ===================== -->
 <script>
-/* ... your existing Reels/Spin code from the previous message remains unchanged ... */
+(function(){
+  const strips=[...document.querySelectorAll('.strip')];
+  const spinBtn=document.getElementById('spinBtn');
+  const spinText=document.getElementById('spinText');
+
+  // FINAL $BAG SYMBOL SET
+  const SYMS = [
+    {k:'BAG',     html:'<span class="tile tile--bar">BAG</span>'},  // Jackpot symbol (pill)
+    {k:'MONEY',   emoji:'💰'},
+    {k:'DIAMOND', emoji:'💎'},
+    {k:'COIN',    emoji:'🪙'},
+    {k:'CHERRY',  emoji:'🍒'},
+    {k:'SEVEN',   emoji:'7️⃣'},
+    {k:'LOCK',    emoji:'🔒'}
+  ];
+  const NON_BAG_POOL = SYMS.filter(s => s.k !== 'BAG');
+
+  // House odds: live vs demo
+  const ODDS = (window.__BAG_FORCE_DEMO === true)
+    ? { jackpot: 0.02, win: 0.42, scratch: 0.11 }   // DEMO
+    : { jackpot: 0.02, win: 0.36, scratch: 0.10 };  // LIVE
+
+  const ROWS=3, CELL_H=88;
+  function cell(sym){
+    const d=document.createElement('div');
+    d.className='cell';
+    if (sym.html) d.innerHTML = sym.html; else d.textContent = sym.emoji;
+    return d;
+  }
+  function fillStrip(el, arr){ el.innerHTML=''; arr.forEach(s=>el.appendChild(cell(s))); }
+  function randomSym(){ return SYMS[(Math.random()*SYMS.length)|0]; }
+  function randFrom(a){ return a[(Math.random()*a.length)|0]; }
+
+  // init strips
+  strips.forEach(s=>{
+    fillStrip(s, [randomSym(),randomSym(),randomSym()]);
+    s.style.transform='translateY(0)';
+  });
+
+  function blankGrid(){ return [[null,null,null],[null,null,null],[null,null,null]]; }
+  function rowPay(g,r){
+    const a=g[r][0]?.k,b=g[r][1]?.k,c=g[r][2]?.k;
+    if(!a||!b||!c) return null;
+    if(a===b && b===c) return a==='BAG'?'jackpot':'win';
+    return null;
+  }
+  function diagPay(g){
+    const a=g[0][0]?.k,b=g[1][1]?.k,c=g[2][2]?.k;
+    const d=g[0][2]?.k,e=g[1][1]?.k,f=g[2][0]?.k;
+    const d1=a&&b&&c && a===b && b===c;
+    const d2=d&&e&&f && d===e && e===f;
+    return (d1||d2)?'scratch':null;
+  }
+  function anyRowPay(g){ for(let r=0;r<3;r++){ const p=rowPay(g,r); if(p) return p; } return null; }
+
+  // helper: any row pay outside allowed indices
+  function anyRowPayExcept(g, allowedRows){
+    for(let r=0;r<3;r++){
+      if(allowedRows && allowedRows.includes(r)) continue;
+      if(rowPay(g,r)) return true;
+    }
+    return false;
+  }
+
+  // Fills remaining cells ensuring we don't accidentally create extra winning lines beyond what's allowed
+  function fillRandomConstrained(g, opts){
+    const allowedRows = opts?.allowedRowPays || [];       // rows that are intentionally a win/jackpot
+    const allowDiag   = !!opts?.allowDiagPay;             // if true, diagonal scratch is allowed
+
+    for(let r=0;r<3;r++){
+      for(let c=0;c<3;c++){
+        if(g[r][c]) continue;
+        let placed=false, tries=0;
+        while(!placed && tries++<16){
+          const cand=randomSym();
+          g[r][c]=cand;
+
+          const rp = rowPay(g,r);
+          const rpOk = !rp || (allowedRows.includes(r) && rp); // only okay if this is an allowed paying row
+
+          const anyOtherRowPay = anyRowPayExcept(g, allowedRows); // no other rows should pay
+          const dp = diagPay(g);
+          const dpOk = !dp || (allowDiag && dp==='scratch');
+
+          if(rpOk && !anyOtherRowPay && dpOk){
+            placed=true;
+          } else {
+            g[r][c]=null;
+          }
+        }
+        if(!placed){
+          // As a last resort, drop a random and move on (prevents infinite loops)
+          g[r][c]=randomSym();
+        }
+      }
+    }
+    return g;
+  }
+
+  function buildSpin(stakeBag){
+    const p=Math.random();
+    let target='lose';
+    if(p < ODDS.jackpot) target='jackpot';
+    else if(p < ODDS.jackpot+ODDS.win) target='win';
+    else if(p < ODDS.jackpot+ODDS.win+ODDS.scratch) target='scratch';
+
+    let g=blankGrid();
+
+    if(target==='jackpot'){
+      const line=(Math.random()*3)|0;
+      g[line]=[SYMS[0],SYMS[0],SYMS[0]]; // BAG BAG BAG
+      g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
+    } else if(target==='win'){
+      const line=(Math.random()*3)|0;
+      const s=randFrom(NON_BAG_POOL);
+      g[line]=[s,s,s];
+      g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
+    } else if(target==='scratch'){
+      const s=randFrom(SYMS);
+      if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
+      else{ g[0][2]=s; g[1][1]=s; g[2][0]=s; }
+      g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:true });
+    } else {
+      g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:false });
+    }
+    return { grid:g, stake: stakeBag };
+  }
+
+  function evaluateGrid(rows){
+    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='jackpot') return { outcome:'jackpot', mult:2.00 }; }
+    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='win')     return { outcome:'win',     mult:1.25 }; }
+    if(diagPay(rows)==='scratch') return { outcome:'scratch', mult:1.00 };
+    return { outcome:'lose', mult:0.00 };
+  }
+
+  function startFastSpin(durationMs, finalRows){
+    const loopers = strips.map((strip, idx) => {
+      fillStrip(strip, Array.from({length:3},()=>randomSym()));
+      strip.style.transition = 'transform 80ms linear';
+      let spinning = true, tickTimer = null;
+
+      function tick(){ if(!spinning) return; strip.style.transform = `translateY(-${CELL_H}px)`; strip.addEventListener('transitionend', onEnd, {once:true}); }
+      function onEnd(){
+        const children = [...strip.children];
+        if(children.length){ strip.removeChild(children[0]); strip.appendChild(cell(randomSym())); }
+        strip.style.transition='none'; strip.style.transform='translateY(0)'; strip.getBoundingClientRect();
+        strip.style.transition='transform 80ms linear';
+        if(spinning) tickTimer=setTimeout(tick,60);
+      }
+      tick();
+
+      return { stopAbrupt(){
+        spinning=false; if(tickTimer) clearTimeout(tickTimer);
+        strip.style.transition='none';
+        const col=[ finalRows[0][idx], finalRows[1][idx], finalRows[2][idx] ];
+        fillStrip(strip,col); strip.style.transform='translateY(0)';
+      }};
+    });
+
+    return new Promise(resolve=>{ setTimeout(()=>{ loopers.forEach(l=>l.stopAbrupt()); resolve(); }, durationMs); });
+  }
+
+  function playSpin(){ try{ if(window.__bagAudio){ __bagAudio.resume && __bagAudio.resume(); window.__spinHandle=__bagAudio.spinLoop(); } }catch{} }
+  function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
+  function sWin(){ try{ window.__bagAudio && __bagAudio.chime(); }catch{} }
+  function sScratch(){ try{ window.__bagAudio && __bagAudio.scratch(); }catch{} }
+  function sLose(){ try{ window.__bagAudio && __bagAudio.thud(); }catch{} }
+
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  spinBtn.addEventListener('click', async ()=>{
+    const sBag = (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+    const sUsd = (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
+    if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
+    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
+
+    spinBtn.disabled=true; spinText.className='t'; spinText.textContent='Spinning…';
+    try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
+    playSpin();
+
+    const plan = buildSpin(sBag);
+    const finalRows = plan.grid;
+    await startFastSpin(4000, finalRows);
+    stopSpin();
+
+    const verdict = evaluateGrid(finalRows);
+    const mult = verdict.mult;
+
+    if(mult>0){
+      if(mult===1.00){
+        sScratch();
+        credit(sBag*1.00);
+        spinText.className='t scratch'; spinText.textContent='SCRATCH — 1.00×';
+        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:3200, sound:false });
+      } else if(mult===1.25){
+        sWin();
+        credit(sBag*1.25);
+        spinText.className='t win'; spinText.textContent='WIN — 1.25×';
+        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:5200 });
+      } else {
+        sWin();
+        credit(sBag*2.00);
+        spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:7200 });
+      }
+    } else {
+      sLose();
+      spinText.className='t lose'; spinText.textContent='Lose — try again';
+    }
+
+    window.dispatchEvent(new CustomEvent('bag:slotsResult', {
+      detail: { mult, scratch: mult===1.00, jackpot: mult===2.00, stakeBag: sBag }
+    }));
+
+    spinBtn.disabled=false;
+  });
+
+})();
 </script>
 
 <!-- Xaman wallet connect -->
 <script>
-/* ... unchanged ... */
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+
+  function safeShort(a){ try{ const s = a == null ? '' : String(a); if (!s) return ''; return s.slice(0,6) + '…' + s.slice(-4); }catch{ return ''; } }
+
+  let connectedNow = false;
+  let currentAddr = '';
+
+  function render(){
+    try{
+      if (connectedNow && currentAddr){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(currentAddr)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      statusEl.textContent = 'Wallet: error'; btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
+    if (ready) return true;
+    if (typeof window.Xumm === 'function'){
+      xumm = new Xumm(API_KEY);
+      ready = true;
+      xumm.on('success', () => {
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            connectedNow = true; currentAddr = String(acct);
+            write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+            render();
+          }
+        }catch(e){}
+      });
+      xumm.on('ready', () => { render(); });
+      return true;
+    }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
+    return false;
+  }
+
+  async function connectXaman(){
+    if (!ready && !initIfSdk()){ alert('Loading Xaman… try again in a moment.'); return; }
+    btn.disabled = true;
+    try {
+      const auth = await xumm.authorize();
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      connectedNow = true; currentAddr = String(acct);
+      write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+      render();
+    } catch (e) {
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    if (connectedNow){
+      connectedNow = false; currentAddr = '';
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+  initIfSdk();
+})();
 </script>
 
-<!-- TAB SESSION -->
+<!-- TAB SESSION (unchanged core) -->
 <script>
-/* ... unchanged (with previous minor color fix & demo decimals fix already applied) ... */
+(function(){
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 1;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+
+      startBtn.style.display = 'none';
+      if (topUpBtn) topUpBtn.style.display = 'inline-block';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      topUpBtn.style.display = 'none';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const PRICES = window.__PRICES__ || {bagUsd:0,xrpUsd:0};
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
+    const depositUsd = Math.max(1, suggestDepositUsd());
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    try{
+      const { created, resolved } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('SLOTS_SESSION')}}] },
+        options: { submit:true, expire:300 }
+      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      const res = await resolved;
+      if (!res?.signed) throw new Error('User declined in Xaman');
+      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      if (!txid) throw new Error('No account returned');
+      const validated = await waitForTx(txid, 60000);
+      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      alert('Session started — you’re good to play!');
+    } catch (err){
+      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  async function topUpSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+    const s = read();
+    if (!(s && s.addr)){ alert('Start a session first.'); return; }
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('SLOTS_TOPUP')}}] },
+        options: { submit:true, expire:300 }
+      }, ()=>{});
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+      const addBag = (depositUsd / PRICES.bagUsd);
+      const cur = read() || { addr: s.addr, bag: 0 };
+      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
+      write(cur); render();
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
+    } catch(e){
+      alert('Top-up cancelled or failed.');
+    } finally {
+      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
+    }
+  }
+
+  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
+
+  startBtn?.addEventListener('click', startSession);
+  topUpBtn?.addEventListener('click', topUpSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
 </script>
 
 <!-- Practice Mode wrapper -->
 <script>
-/* ... unchanged (decimals preserved) ... */
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const pathDemo = location.pathname.toLowerCase().includes('/demo');
+  const liveSession = window.__bagSession;
+
+  const $ = (s)=>document.querySelector(s);
+  const statusEl  = $('#sessionStatus');
+  const startBtn  = $('#startSessionBtn');
+  const topUpBtn  = $('#topUpBtn');
+  const endBtn    = $('#endSessionBtn');
+  const connectEl = $('#connectBtn');
+
+  const DEMO_KEY = '__bag_demo_bag_v1';
+  const START_BAG = 1000;
+  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function renderDemoSession(){
+    const bag = getBal();
+    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
+    if (statusEl){
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
+    }
+    if (startBtn) startBtn.style.display = 'inline-block';
+    if (topUpBtn)  topUpBtn.style.display  = 'none';
+    if (endBtn)    endBtn.style.display     = 'none';
+  }
+
+  function toast(msg){
+    try{ if (window.__bagAudio) __bagAudio.scratch(); }catch(e){}
+    try{
+      let t = document.getElementById('bag-demo-toast');
+      if (!t){
+        t = document.createElement('div');
+        t.id = 'bag-demo-toast';
+        t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:#0b2217;color:#eaf3ed;border:1px solid #1b4a2f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 13px system-ui;z-index:2147483647';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(window.__bagDemoToastTimer);
+      window.__bagDemoToastTimer = setTimeout(()=>{ t.style.display='none'; }, 2200);
+    }catch{}
+  }
+
+  const demoSession = {
+    active: () => true,
+    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
+    set: () => {},
+    spend(bag){ const b=getBal(); if(!(bag>0) || b<bag) return false; setBal(b-bag); renderDemoSession(); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemoSession(); return true; }
+  };
+
+  function enableDemo(){ window.__BAG_FORCE_DEMO = true; window.__bagSession = demoSession; renderDemoSession(); if (connectEl) connectEl.style.opacity='0.9'; }
+  function enableLive(){ window.__BAG_FORCE_DEMO = false; if (liveSession) window.__bagSession = liveSession; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); toast('Wallet connected — Live mode enabled'); }
+
+  const demoWanted = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
+  if (demoWanted) enableDemo();
+
+  window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
+
+  window.addEventListener('bag:slotsResult', (ev)=>{
+    if (!window.__BAG_FORCE_DEMO) return;
+    const d = ev?.detail || {};
+    if (d.mult === 2.00)      toast('Jackpot pays 2× on-ledger. Connect when ready to play live');
+    else if (d.mult === 1.25) toast('Win pays 1.25× on-ledger. Connect when ready to play live');
+    else if (d.mult === 1.00) toast('Scratch returns 1.00×. Connect when ready to play live');
+  });
+
+  window.addEventListener('bag:walletConnected', enableLive);
+  window.addEventListener('bag:walletDisconnected', enableDemo);
+})();
 </script>
 
 <script>
