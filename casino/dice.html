@@ -723,14 +723,30 @@
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
+    // --- STAKE + SESSION CHECKS (live only) ---
+    const sBag = stakeBag();
+    const sUsd = stakeUsd();
+
+    if (!window.__BAG_FORCE_DEMO) {
+      if (!window.__bagSession || !__bagSession.active()) {
+        alert('Start a session at The Cage');
+        rollBtn.disabled=false; return;
+      }
+      if (!(sBag > 0)) {
+        alert('Enter a stake first');
+        rollBtn.disabled=false; return;
+      }
+      if (!__bagSession.spend(sBag)) {
+        alert('Insufficient balance');
+        rollBtn.disabled=false; return;
+      }
+    }
+
     const a=1+(Math.random()*6|0);
     const b=1+(Math.random()*6|0);
     const sum=a+b;
 
     await rollCssDice(a,b);
-
-    const sBag = stakeBag();
-    const sUsd = stakeUsd();
 
     function showPayout(mult,labelText){
       const gainBag = sBag*(mult-1);
@@ -752,18 +768,21 @@
         const jp = Math.random() < JACKPOT_CHANCE;
         const mult = jp ? 2.00 : base;
         showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'WIN (1.25×)'}`);
+        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome: jp?'jackpot-comeout':'win-comeout'}}));
       } else if(sum===2||sum===3||sum===12){
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t scratch';
         rollText.textContent=`Rolled ${sum} — Need ${sum} before 7`;
+        // stake is held (already spent); resolve later
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
       }
     } else {
@@ -772,17 +791,20 @@
         const jp = Math.random() < JACKPOT_CHANCE;
         const mult = jp ? 2.00 : base;
         showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'POINT MADE (1.00×)'}`);
+        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome: jp?'jackpot-point':'win-point'}}));
       } else if(sum===7){
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
       } else {
         rollText.className='t scratch';
         rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
+        // neutral roll: stake remains held
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
       }
     }
@@ -826,7 +848,7 @@
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
       statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
