@@ -161,7 +161,7 @@
   <div class="game-wrap">
 
     <div class="panel mock" id="bagSlotsDemo">
-      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
         <button id="connectBtn"
           style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
@@ -348,7 +348,7 @@
 })();
 </script>
 
-<!-- WIN overlay -->
+<!-- WIN overlay (a11y-enhanced) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -357,17 +357,34 @@
   const closeBtn=document.getElementById('win-close');
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
-  let rafId=null, particles=[], start=0, dur=2000;
+  let rafId=null, particles=[], start=0, dur=2000, lastFocused=null;
+
   function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
+
+  function fire(n){
+    particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++){
+      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
+    }
+  }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ overlay.style.display='grid'; }
-  function hide(){ overlay.style.display='none'; stop(); }
-  closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  function show(){ lastFocused=document.activeElement; overlay.style.display='grid'; closeBtn?.focus(); }
+  function hide(){ overlay.style.display='none'; stop(); if(lastFocused) try{ lastFocused.focus(); }catch{} }
+  addEventListener('keydown', e=>{ if(overlay.style.display!=='none' && e.key==='Escape') hide(); });
+
+  closeBtn.addEventListener('click', hide);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
   window.showWin=function(opts={}){ const { message='WIN', subtext='Nice spin', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
@@ -558,12 +575,110 @@
 })();
 </script>
 
+<!-- ===== Stake helpers + limits + payout preview ===== -->
+<script>
+(function(){
+  const usdBetEl = document.getElementById('usdBet');
+  const betQtyEl = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan  = document.querySelector('.unit');
+  const limitsEl  = document.getElementById('betLimits');
+  const payScratch = document.getElementById('payScratch');
+  const payNormal  = document.getElementById('payNormal');
+  const payNormalGain = document.getElementById('payNormalGain');
+  const payJackpot = document.getElementById('payJackpot');
+  const payJackpotGain = document.getElementById('payJackpotGain');
+  const spinBtn = document.getElementById('spinBtn');
+
+  const MIN_USD = 1;
+  const MAX_USD = 2000;
+
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+
+  function stakeBag(){
+    const q = parseFloat(betQtyEl?.value||0) || 0;
+    if (!q) return 0;
+    const {bagUsd,xrpUsd} = PR();
+    if (currentCurrency()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+  function stakeUsd(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return direct;
+    const q = parseFloat(betQtyEl?.value||0) || 0;
+    const {bagUsd,xrpUsd} = PR();
+    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+    return xrpUsd>0 ? q*xrpUsd : 0;
+  }
+  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  // Expose in a tiny compat shim (so play loop can read it)
+  window.__bagStake = {
+    usd: stakeUsd,
+    bag: stakeBag
+  };
+
+  function renderUnit(){ if (unitSpan) unitSpan.textContent = currentCurrency(); }
+  function renderLimits(){
+    const sUsd = stakeUsd()||0;
+    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
+    enforceMinButton();
+  }
+
+  function renderPayouts(){
+    const sUsd = stakeUsd()||0;
+    const sBag = stakeBag()||0;
+    const mScratch = 1.00, mWin = 1.25, mJack = 2.00;
+
+    if (payScratch)      payScratch.textContent = `${fmt(sBag*mScratch)} BAG (${usd(sUsd*mScratch)})`;
+    if (payNormal){
+      payNormal.childNodes[0].nodeValue = `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
+      if (payNormalGain) payNormalGain.textContent = ` (+${fmt(sBag*(mWin-1))} BAG)`;
+    }
+    if (payJackpot){
+      payJackpot.childNodes[0].nodeValue = `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
+      if (payJackpotGain) payJackpotGain.textContent = ` (+${fmt(sBag*(mJack-1))} BAG)`;
+    }
+  }
+
+  function enforceMinButton(){
+    const sUsd = stakeUsd()||0;
+    if (spinBtn) spinBtn.disabled = (sUsd>0 && sUsd < MIN_USD);
+  }
+
+  ['input','change'].forEach(ev=>{
+    usdBetEl?.addEventListener(ev, ()=>{ renderLimits(); renderPayouts(); });
+    betQtyEl?.addEventListener(ev, ()=>{ renderLimits(); renderPayouts(); });
+    curToggle?.addEventListener(ev, ()=>{ renderUnit(); renderLimits(); renderPayouts(); });
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{ renderLimits(); renderPayouts(); enforceMinButton(); });
+
+  renderUnit();
+  renderLimits();
+  renderPayouts();
+  enforceMinButton();
+})();
+</script>
+
     <!-- ===================== Reels & Odds + Spin ===================== -->
 <script>
 (function(){
   const strips=[...document.querySelectorAll('.strip')];
   const spinBtn=document.getElementById('spinBtn');
   const spinText=document.getElementById('spinText');
+
+  // RNG hook for QA / provable fairness
+  let __rng = ()=>Math.random();
+  window.setSlotsRng = fn => { if (typeof fn==='function') __rng = fn; };
 
   // FINAL $BAG SYMBOL SET
   const SYMS = [
@@ -590,8 +705,8 @@
     return d;
   }
   function fillStrip(el, arr){ el.innerHTML=''; arr.forEach(s=>el.appendChild(cell(s))); }
-  function randomSym(){ return SYMS[(Math.random()*SYMS.length)|0]; }
-  function randFrom(a){ return a[(Math.random()*a.length)|0]; }
+  function randomSym(){ return SYMS[(__rng()*SYMS.length)|0]; }
+  function randFrom(a){ return a[(__rng()*a.length)|0]; }
 
   // init strips
   strips.forEach(s=>{
@@ -613,9 +728,6 @@
     const d2=d&&e&&f && d===e && e===f;
     return (d1||d2)?'scratch':null;
   }
-  function anyRowPay(g){ for(let r=0;r<3;r++){ const p=rowPay(g,r); if(p) return p; } return null; }
-
-  // helper: any row pay outside allowed indices
   function anyRowPayExcept(g, allowedRows){
     for(let r=0;r<3;r++){
       if(allowedRows && allowedRows.includes(r)) continue;
@@ -624,10 +736,9 @@
     return false;
   }
 
-  // Fills remaining cells ensuring we don't accidentally create extra winning lines beyond what's allowed
   function fillRandomConstrained(g, opts){
-    const allowedRows = opts?.allowedRowPays || [];       // rows that are intentionally a win/jackpot
-    const allowDiag   = !!opts?.allowDiagPay;             // if true, diagonal scratch is allowed
+    const allowedRows = opts?.allowedRowPays || [];
+    const allowDiag   = !!opts?.allowDiagPay;
 
     for(let r=0;r<3;r++){
       for(let c=0;c<3;c++){
@@ -638,9 +749,8 @@
           g[r][c]=cand;
 
           const rp = rowPay(g,r);
-          const rpOk = !rp || (allowedRows.includes(r) && rp); // only okay if this is an allowed paying row
-
-          const anyOtherRowPay = anyRowPayExcept(g, allowedRows); // no other rows should pay
+          const rpOk = !rp || (allowedRows.includes(r) && rp);
+          const anyOtherRowPay = anyRowPayExcept(g, allowedRows);
           const dp = diagPay(g);
           const dpOk = !dp || (allowDiag && dp==='scratch');
 
@@ -650,17 +760,14 @@
             g[r][c]=null;
           }
         }
-        if(!placed){
-          // As a last resort, drop a random and move on (prevents infinite loops)
-          g[r][c]=randomSym();
-        }
+        if(!placed){ g[r][c]=randomSym(); }
       }
     }
     return g;
   }
 
   function buildSpin(stakeBag){
-    const p=Math.random();
+    const p=__rng();
     let target='lose';
     if(p < ODDS.jackpot) target='jackpot';
     else if(p < ODDS.jackpot+ODDS.win) target='win';
@@ -669,17 +776,17 @@
     let g=blankGrid();
 
     if(target==='jackpot'){
-      const line=(Math.random()*3)|0;
+      const line=(__rng()*3)|0;
       g[line]=[SYMS[0],SYMS[0],SYMS[0]]; // BAG BAG BAG
       g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
     } else if(target==='win'){
-      const line=(Math.random()*3)|0;
+      const line=(__rng()*3)|0;
       const s=randFrom(NON_BAG_POOL);
       g[line]=[s,s,s];
       g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
     } else if(target==='scratch'){
       const s=randFrom(SYMS);
-      if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
+      if(__rng()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
       else{ g[0][2]=s; g[1][1]=s; g[2][0]=s; }
       g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:true });
     } else {
@@ -731,6 +838,13 @@
   function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
   function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
   function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  function enforceMinButton(){ try{
+    const sUsd = (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+    spinBtn.disabled = (sUsd>0 && sUsd<1);
+  }catch{} }
+  window.addEventListener('bag:pricesUpdated', enforceMinButton);
+  enforceMinButton();
 
   spinBtn.addEventListener('click', async ()=>{
     const sBag = (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
@@ -876,7 +990,7 @@
 })();
 </script>
 
-<!-- TAB SESSION (unchanged core) -->
+<!-- TAB SESSION (unchanged core, minor bugfix) -->
 <script>
 (function(){
   const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
@@ -904,7 +1018,8 @@
     if (s && s.addr){
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
-      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      // fixed stray parenthesis in color
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
@@ -1030,7 +1145,7 @@
 })();
 </script>
 
-<!-- Practice Mode wrapper -->
+<!-- Practice Mode wrapper (decimals preserved) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1047,7 +1162,8 @@
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
   function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  // FIX: keep decimals (no floor)
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
   function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
