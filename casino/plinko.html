@@ -164,9 +164,10 @@
             <div class="micro">Bet amount</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div>
-                <input id="demoBet" class="mono" type="tel" inputmode="numeric" pattern="[0-9]*" min="0" step="1" value="1" aria-label="Stake units"
-                  style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-                <span class="unit">XRP</span>
+<input id="demoBet" class="mono" type="tel" inputmode="decimal" pattern="[0-9.]*"
+  min="0" step="any" value="1" aria-label="Stake units"
+  style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+<span class="unit">XRP</span>
               </div>
             </div>
           </div>
@@ -186,10 +187,25 @@
           <div class="micro">Game state</div>
           <div class="muted" id="stateText">Ready — tap Drop to start</div>
 
-          <div class="callout mono" id="payoutBox">
-            <div><strong>Payouts:</strong> Scratch (lose) · 1.25× (win) · 2.0× (jackpot)</div>
-            <div class="micro" style="margin-top:6px;opacity:.85;">Min $1 · Max $2,000 (converted to $BAG on payout)</div>
-          </div>
+<div class="callout mono" id="payoutBox">
+  <div style="font-weight:700;margin-bottom:6px">Payouts</div>
+  <div class="payout-grid" style="display:grid;gap:4px">
+    <div class="row" style="display:flex;justify-content:space-between">
+      <div class="lab"><strong>Scratch</strong> (0.00×):</div>
+      <div class="val" id="payScratch">—</div>
+    </div>
+    <div class="row" style="display:flex;justify-content:space-between">
+      <div class="lab"><strong>Win</strong> (1.25×):</div>
+      <div class="val" id="payWin">— <span class="micro" id="payWinGain" style="opacity:.9"></span></div>
+    </div>
+    <div class="row" style="display:flex;justify-content:space-between">
+      <div class="lab"><strong>Jackpot</strong> (2.00×):</div>
+      <div class="val" id="payJackpot">— <span class="micro" id="payJackpotGain" style="opacity:.9"></span></div>
+    </div>
+  </div>
+  <div class="micro" style="margin-top:6px;opacity:.85;">Min $1 · Max $2,000. Bets shown in selected currency; $BAG amount and USD shown per live price.</div>
+</div>
+
 
 <!-- HUD bar (moved off the board) -->
 <div class="hudbar">
@@ -886,6 +902,69 @@
 })();
 </script>
 
+<script>
+(function(){
+  const payScratch = document.getElementById('payScratch');
+  const payWin = document.getElementById('payWin');
+  const payWinGain = document.getElementById('payWinGain');
+  const payJackpot = document.getElementById('payJackpot');
+  const payJackpotGain = document.getElementById('payJackpotGain');
+
+  function selectedCur(){
+    const r = document.querySelector('#curToggle input[name="betCur"]:checked');
+    return r ? r.value.toUpperCase() : 'XRP';
+  }
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function stakeUnits(){
+    const v = parseFloat(document.getElementById('demoBet')?.value||'');
+    return Number.isFinite(v)&&v>0 ? v : 0;
+  }
+  function stakeBag(){
+    const {bagUsd,xrpUsd} = PR();
+    const q = stakeUnits();
+    return (selectedCur()==='BAG') ? q : (bagUsd>0 && xrpUsd>0 ? q * (xrpUsd/bagUsd) : 0);
+  }
+  function stakeUsd(){
+    const {bagUsd,xrpUsd} = PR();
+    const q = stakeUnits();
+    const px = (selectedCur()==='BAG') ? bagUsd : xrpUsd;
+    return (px>0 ? q*px : 0);
+  }
+
+  function render(){
+    const sBag = stakeBag()||0;
+    const sUsd = stakeUsd()||0;
+    const mWin = 1.25, mJack = 2.00;
+
+    if (payScratch)      payScratch.textContent = `${fmt(0)} BAG (${usd(0)})`;
+    if (payWin){
+      const base = `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
+      if (payWin.firstChild) payWin.firstChild.nodeValue = base;
+      else payWin.textContent = base;
+      if (payWinGain) payWinGain.textContent = ` (+${fmt(sBag*(mWin-1))} BAG)`;
+    }
+    if (payJackpot){
+      const base = `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
+      if (payJackpot.firstChild) payJackpot.firstChild.nodeValue = base;
+      else payJackpot.textContent = base;
+      if (payJackpotGain) payJackpotGain.textContent = ` (+${fmt(sBag*(mJack-1))} BAG)`;
+    }
+  }
+
+  // React to stake, currency, and price changes
+  document.getElementById('demoBet')?.addEventListener('input', render);
+  document.getElementById('curToggle')?.addEventListener('change', render);
+  window.addEventListener('bag:pricesUpdated', render);
+
+  // Initial paint
+  render();
+})();
+</script>
+       
+
 <!-- === PLINKO GAME LOGIC (global ball; board visible; sound & celebration) === -->
 <script>
 (function(){
@@ -899,11 +978,10 @@
   const SLOTS = PAY_MAP.length;
 
   // === Unified odds profiles (LIVE vs DEMO) ===
-  // Target: LIVE → 2% JP, 42% 1.25×; DEMO → 3% JP, 46% 1.25× (slightly player-favored).
+  // LIVE → 2% JP, 42% at 1.25×. DEMO → 3% JP, 46% at 1.25× (slightly player-favored).
   // Weights correspond to slot indices 0..6 and sum ≈ 100.
-  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14]; // win at 1 and 5 (21+21=42), jp at 3 (2)
-  const WEIGHTS_DEMO = [12, 24, 12,  3, 12, 24, 13]; // win (24+24=48? actually 48; slight extra favor incl. small lose slack)
-  // If you want exactly 46% win, use [13,23,13,3,13,23,12]. The chosen vector keeps symmetry tight.
+  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14];   // win at 1 & 5 (21+21=42), jp at 3 (2)
+  const WEIGHTS_DEMO = [13, 23, 13,  3, 13, 23, 12];   // 46% win, 3% jackpot
 
   function currentWeights(){
     return (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE;
@@ -913,6 +991,7 @@
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
   const canvas = document.getElementById('game');
+  if (!canvas) return; // graceful no-op if the board is not on this page
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
@@ -934,7 +1013,7 @@
   let lastAimX = dropX;
   let aimVX = 0;
 
-  // ---------- Peg grid (UNCHANGED positions) ----------
+  // ---------- Peg grid ----------
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -961,22 +1040,35 @@
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
 
-  function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; }
-  betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
+  function hud(){
+    if(balLbl) balLbl.textContent=balance.toFixed(2);
+    if(betLbl) betLbl.textContent=stake;
+    if(lastLbl) lastLbl.textContent=lastTxt;
+  }
+  betInput?.addEventListener('input', ()=>{
+    const raw=(betInput.value||'').replace(/[^\d]/g,'');
+    betInput.value = raw || '1';
+    stake = Math.max(1, parseInt(betInput.value,10)||1);
+    hud();
+  });
 
+  // Stake helpers (USD/BAG)
+  function selectedCur(){
+    return document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+  }
   function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput?.value||0));
     const P=window.__PRICES__||{};
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    const cur = selectedCur();
     if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
-  // Convert stake units -> BAG for live session
+  // Convert stake units -> BAG for live session credit/debit
   function stakeBag(){
     const P = window.__PRICES__ || {};
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    const cur = selectedCur();
     if (cur === 'BAG') return Number(stake) || 0;
     if (P.bagUsd>0 && P.xrpUsd>0){
       const bagPerXrp = P.xrpUsd / P.bagUsd;
@@ -1000,7 +1092,8 @@
 
   function clearRoundState(){
     clearTimeout(safetyTimer); safetyTimer=null;
-    dropping=false; dropBtn.disabled=false; lastPegTick=0;
+    dropping=false; dropBtn && (dropBtn.disabled=false);
+    lastPegTick=0;
   }
 
   // ---------- Aiming helpers & controls ----------
@@ -1044,18 +1137,18 @@
       lastAimX = dropX;
     } else if (e.code === 'Space'){
       e.preventDefault();
-      if (!dropping) dropBtn.click();
+      if (!dropping) dropBtn?.click();
     }
   });
 
   // ---------- Drop flow ----------
-  dropBtn.addEventListener('click', async ()=>{
+  dropBtn?.addEventListener('click', async ()=>{
     try{ await window.__bagAudio?.ensureInteractive?.(); }catch{}
     clearRoundState();
 
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-    if (!passesMin){ resText.textContent = 'Min $1'; return; }
+    if (!passesMin){ if(resText) resText.textContent = 'Min $1'; return; }
 
     // Live session spend before starting the round
     const isDemo = window.__BAG_FORCE_DEMO === true;
@@ -1076,8 +1169,8 @@
 
     // Demo HUD balance animation stays for visual consistency
     balance = Math.max(0, balance - stake);
-    lastTxt='—'; resText.textContent='—';
-    stateText.textContent='Dropping…';
+    lastTxt='—'; if(resText) resText.textContent='—';
+    if(stateText) stateText.textContent='Dropping…';
     celeEl?.classList.remove('show');
     hud();
 
@@ -1086,7 +1179,7 @@
   });
 
   function startDrop(){
-    dropping=true; dropBtn.disabled=true;
+    dropping=true; if (dropBtn) dropBtn.disabled=true;
 
     // spawn at aimed X with a tiny sideways nudge from last aim motion
     const startX = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
@@ -1131,7 +1224,7 @@
       if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
       if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
 
-      // pegs (unchanged)
+      // pegs
       const now = performance.now();
       for (const p of pegs){
         const dx = b.x - p.x, dy = b.y - p.y;
@@ -1211,12 +1304,13 @@
     b.alive=false;
     clearTimeout(safetyTimer); safetyTimer=null;
 
-    dropping=false; dropBtn.disabled=false;
+    dropping=false; if (dropBtn) dropBtn.disabled=false;
 
     const rule = PAY_MAP[idx] ?? 'L';
 
     if (rule === 'L'){
-      lastTxt='Scratch'; resText.textContent='Scratch (lose)'; stateText.textContent='Resolved';
+      lastTxt='Scratch'; if(resText) resText.textContent='Scratch (lose)';
+      if(stateText) stateText.textContent='Resolved';
       loseSound();
     } else {
       const mult = Number(rule);
@@ -1233,13 +1327,13 @@
       }
 
       if (mult === 2){
-        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-        winFlash(resText.textContent, '#ffd700', true); winSound(true);
+        lastTxt='Jackpot 2×'; if(resText) resText.textContent='🎉 Jackpot 2×';
+        winFlash(resText ? resText.textContent : 'Jackpot 2×', '#ffd700', true); winSound(true);
       } else {
-        lastTxt='Win 1.25×'; resText.textContent='Win 1.25×';
-        winFlash(resText.textContent, '#baf2cd', false); winSound(false);
+        lastTxt='Win 1.25×'; if(resText) resText.textContent='Win 1.25×';
+        winFlash(resText ? resText.textContent : 'Win 1.25×', '#baf2cd', false); winSound(false);
       }
-      stateText.textContent='Resolved';
+      if(stateText) stateText.textContent='Resolved';
     }
     hud();
   }
@@ -1253,7 +1347,7 @@
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
     ctx.strokeRect(wallLeft-8, topBoard-40, (wallRight-wallLeft)+16, bottomBoard-topBoard+60);
 
-    // pegs (unchanged)
+    // pegs
     ctx.fillStyle='#704d1d';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
@@ -1317,6 +1411,7 @@
   hud();
 })();
 </script>
+
 
 
 
