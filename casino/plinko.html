@@ -488,7 +488,7 @@
 
   function suggestDepositUsd(){
     const betEl = document.getElementById('usdBet');
-    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    const u = betEl and parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
     let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
     if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
     return usd;
@@ -903,6 +903,18 @@
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
+  // --- ADDED: convert current stake units -> BAG for live session
+  function stakeBag(){
+    const P = window.__PRICES__ || {};
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    if (cur === 'BAG') return Number(stake) || 0;
+    if (P.bagUsd>0 && P.xrpUsd>0){
+      const bagPerXrp = P.xrpUsd / P.bagUsd;
+      return (Number(stake) || 0) * bagPerXrp;
+    }
+    return 0;
+  }
+
   async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.peg?.(); }catch{} }
   async function wallSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.wall?.(); }catch{} }
   async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.lose?.(); }catch{} }
@@ -972,6 +984,24 @@
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
+    // --- ADDED: live session spend before starting the round
+    const isDemo = window.__BAG_FORCE_DEMO === true;
+    window.__PLINKO_LAST_STAKE_BAG__ = 0;
+    if (!isDemo){
+      const bagToSpend = stakeBag();
+      if (!window.__bagSession || !window.__bagSession.active()){
+        alert('Start a session first'); return;
+      }
+      if (!(bagToSpend > 0)){
+        alert('Enter a stake first'); return;
+      }
+      if (!window.__bagSession.spend(bagToSpend)){
+        alert('Insufficient session balance'); return;
+      }
+      window.__PLINKO_LAST_STAKE_BAG__ = bagToSpend;
+    }
+
+    // Demo HUD balance animation stays for visual consistency
     balance = Math.max(0, balance - stake);
     lastTxt='—'; resText.textContent='—';
     stateText.textContent='Dropping…';
@@ -1117,8 +1147,18 @@
       loseSound();
     } else {
       const mult = Number(rule);
-      const payout = Math.floor(stake * mult * 100)/100;
-      balance += payout; hud();
+
+      // Demo HUD payout in displayed currency units
+      const payoutUnits = Math.floor(stake * mult * 100)/100;
+      balance += payoutUnits; hud();
+
+      // Credit live session in BAG
+      if (window.__BAG_FORCE_DEMO !== true){
+        const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
+        const bagPayout = bagStake * mult;
+        try{ window.__bagSession?.credit?.(bagPayout); }catch{}
+      }
+
       if (mult === 2){
         lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
         winFlash(resText.textContent, '#ffd700', true); winSound(true);
@@ -1127,7 +1167,6 @@
         winFlash(resText.textContent, '#baf2cd', false); winSound(false);
       }
       stateText.textContent='Resolved';
-      try{ window.__bagSession?.credit?.(payout); }catch{}
     }
     hud();
   }
@@ -1232,7 +1271,7 @@
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
       statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
