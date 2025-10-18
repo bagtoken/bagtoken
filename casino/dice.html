@@ -138,9 +138,6 @@
     100%{ transform:translateY(0) rotateZ(0) }
   }
 
-  /* Small pill for "Point X" */
-  .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:2px 8px;font-size:12px;color:#cfe6d8}
-
   /* WIN overlay visuals (same as Slots) */
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
@@ -161,7 +158,6 @@
   #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  @keyframes shine{ 0%{ background-position:0% 50% } 100%{ background-position:200% 50% } }
   @media (prefers-reduced-motion: reduce){
     #win-card{ animation:none; transform:none; opacity:1; }
     #win-text{ animation:none; }
@@ -173,7 +169,7 @@
 </head>
 <body>
 
-<a href="/casino/" class="back-casino" referrerpolicy="no-referrer">⬅️ Back to Casino</a>
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
   <img src="/assets/bag-dice.jpeg" alt="BAG Dice" class="hero-img" loading="lazy" decoding="async">
@@ -364,11 +360,8 @@
   }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-
-  let lastFocused=null;
-  function show(){ lastFocused=document.activeElement; overlay.style.display='grid'; document.getElementById('win-close')?.focus(); }
-  function hide(){ overlay.style.display='none'; stop(); if(lastFocused) try{ lastFocused.focus(); }catch{} }
-  addEventListener('keydown', (e)=>{ if(overlay.style.display!=='none' && e.key==='Escape'){ hide(); }});
+  function show(){ overlay.style.display='grid'; }
+  function hide(){ overlay.style.display='none'; stop(); }
 
   closeBtn.addEventListener('click', hide);
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
@@ -644,24 +637,102 @@
   async function refreshPrices(){
     let liveOk = false;
 
+    // 1) LIVE XRP first
     const gotX = await fetchXrpUsdLive();
+
+    // 2) LIVE AMM for BAG using that XRP
     const gotBag = await fetchBagViaAMMLive();
+
     liveOk = gotX && gotBag;
 
+    // 3) If live failed, fall back to last-live bundle; if still nothing, use view cache
     if (!liveOk){
       if (!loadLastLiveBundle()) loadViewCache();
     }
+
     updateLiveLine();
   }
 
+  // Initial pass: try LIVE immediately; on failure, UI will show last-live/view
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
 
+  // Cross-tab sync: if any tab writes shared caches, update instantly
   window.addEventListener('storage', (e)=>{
     if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      // Prefer last-live bundle, else view cache
       if (!loadLastLiveBundle()) loadViewCache();
       updateLiveLine();
     }
   });
+})();
+</script>
+
+<!-- ✅ USD auto-fill to match default bet (1 XRP or 1 BAG) + payout preview -->
+<script>
+(function(){
+  const usdBetEl = document.getElementById('usdBet');
+  const betQtyEl = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan  = document.querySelector('.unit');
+
+  const payWinCO = document.getElementById('payWinComeOut');
+  const payWinPt = document.getElementById('payWinPoint');
+  const payJack  = document.getElementById('payJackpot');
+
+  const MIN_USD = 0; // (no button gating here)
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:1; }
+
+  function derivedUsd(){
+    const {bagUsd,xrpUsd}=PR();
+    const q=qty();
+    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+    return xrpUsd>0 ? q*xrpUsd : 0;
+  }
+  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  // Auto-fill policy: keep updating unless user typed into USD box
+  function autoFillUsd(){
+    if (!usdBetEl) return;
+    if (usdBetEl.dataset.userTyped==='1') return;
+    const v = derivedUsd();
+    if (v>0){
+      usdBetEl.value = (Math.round(v*100)/100).toFixed(2);
+      usdBetEl.dataset.autofill='1';
+    }
+  }
+
+  // Update payout preview
+  function updatePayouts(){
+    const {bagUsd}=PR();
+    const q=qty();
+    const isBAG = currentCurrency()==='BAG';
+    const bagStake = isBAG ? q : (bagUsd>0 ? q*(PR().xrpUsd/bagUsd) : 0);
+    const usdStake = derivedUsd();
+
+    const mCO=1.25, mPt=1.00, mJ=2.00;
+
+    if (payWinCO) payWinCO.textContent = `${fmt(bagStake*mCO)} BAG (${usd(usdStake*mCO)})`;
+    if (payWinPt) payWinPt.textContent = `${fmt(bagStake*mPt)} BAG (${usd(usdStake*mPt)})`;
+    if (payJack)  payJack.textContent  = `${fmt(bagStake*mJ)} BAG (${usd(usdStake*mJ)})`;
+  }
+
+  // Hooks
+  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); });
+  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); });
+  curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); });
+
+  // Init
+  if(unitSpan) unitSpan.textContent=currentCurrency();
+  autoFillUsd();
+  updatePayouts();
 })();
 </script>
 
@@ -698,16 +769,8 @@
     if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
     return xrpUsd>0 ? q*xrpUsd : 0;
   }
-  // Expose for other modules
-  window.__bagDiceStakeUsd = stakeUsd;
-  window.__bagDiceStakeBag = stakeBag;
-
   function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  // RNG hook for QA / provable fairness
-  let __rng = ()=>Math.random();
-  window.setBagDiceRng = fn => { if (typeof fn==='function') __rng = fn; };
 
   // Build CSS dice
   container.innerHTML = `
@@ -780,38 +843,15 @@
   const ROUND={active:false,point:null};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
-  // Jackpot config
+  // Jackpot config (matches Slots feel)
   const JACKPOT_CHANCE = 0.02; // 2% per winning resolution
-
-  // Live button disabled when under min
-  function enforceMinButton(){
-    try{
-      const usd = stakeUsd();
-      const btn = document.getElementById('rollBtn');
-      btn.disabled = (usd>0 && usd < 1);
-    }catch{}
-  }
-  window.addEventListener('bag:pricesUpdated', enforceMinButton);
-  ['input','change'].forEach(ev=>{
-    usdBetEl?.addEventListener(ev, enforceMinButton);
-    betQtyEl?.addEventListener(ev, enforceMinButton);
-    curToggle?.addEventListener(ev, enforceMinButton);
-  });
-  enforceMinButton();
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    // --- STAKE + MIN CHECK ---
+    // --- STAKE + SESSION CHECKS (live only) ---
     const sBag = stakeBag();
     const sUsd = stakeUsd();
-
-    if (!(sUsd >= 1)) {
-      rollText.className='t scratch';
-      rollText.textContent = 'Min stake is $1.00';
-      rollBtn.disabled=false;
-      return;
-    }
 
     if (!window.__BAG_FORCE_DEMO) {
       if (!window.__bagSession || !__bagSession.active()) {
@@ -828,8 +868,8 @@
       }
     }
 
-    const a=1+(__rng()*6|0);
-    const b=1+(__rng()*6|0);
+    const a=1+(Math.random()*6|0);
+    const b=1+(Math.random()*6|0);
     const sum=a+b;
 
     await rollCssDice(a,b);
@@ -851,7 +891,7 @@
     if(isComeOut()){
       if(sum===7||sum===11){
         const base=1.25;
-        const jp = __rng() < JACKPOT_CHANCE;
+        const jp = Math.random() < JACKPOT_CHANCE;
         const mult = jp ? 2.00 : base;
         showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'WIN (1.25×)'}`);
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
@@ -861,18 +901,20 @@
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t scratch';
-        rollText.innerHTML=`Rolled ${sum} — Need <span class="pill">Point ${sum}</span> before 7`;
+        rollText.textContent=`Rolled ${sum} — Need ${sum} before 7`;
+        // stake is held (already spent); resolve later
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
       }
     } else {
       if(sum===ROUND.point){
         const base=1.00;
-        const jp = __rng() < JACKPOT_CHANCE;
+        const jp = Math.random() < JACKPOT_CHANCE;
         const mult = jp ? 2.00 : base;
         showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'POINT MADE (1.00×)'}`);
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
@@ -882,87 +924,19 @@
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
       } else {
         rollText.className='t scratch';
-        rollText.innerHTML=`Rolled ${sum} — Need <span class="pill">Point ${ROUND.point}</span> before 7`;
+        rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
+        // neutral roll: stake remains held
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
       }
     }
 
     rollBtn.disabled=false;
   });
-})();
-</script>
-
-<!-- Bet limits + payout preview renderers -->
-<script>
-(function(){
-  const usdBetEl = document.getElementById('usdBet');
-  const betQtyEl = document.getElementById('betQty');
-  const curToggle = document.getElementById('curToggle');
-  const limitsEl = document.getElementById('betLimits');
-
-  const MIN_USD = 1;
-  const MAX_USD = 2000;
-
-  const stakeUsd = ()=> (typeof window.__bagDiceStakeUsd==='function') ? window.__bagDiceStakeUsd() : 0;
-
-  function renderLimits(){
-    const usd = stakeUsd();
-    const warn = (usd>0 && usd < MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
-                 (usd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
-    if (limitsEl){
-      limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${(usd||0).toFixed(2)}${warn}`;
-    }
-    window.dispatchEvent(new CustomEvent('bag:diceStakeUpdated', { detail:{ usd } }));
-  }
-
-  ['input','change'].forEach(ev=>{
-    usdBetEl?.addEventListener(ev, renderLimits);
-    betQtyEl?.addEventListener(ev, renderLimits);
-    curToggle?.addEventListener(ev, renderLimits);
-  });
-  window.addEventListener('bag:pricesUpdated', renderLimits);
-  renderLimits();
-})();
-</script>
-
-<script>
-(function(){
-  const payCO = document.getElementById('payWinComeOut');
-  const payPT = document.getElementById('payWinPoint');
-  const payJP = document.getElementById('payJackpot');
-  const payLose = document.getElementById('payLose');
-
-  function fmt(n){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:6}) : '—'; }
-  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  const stakeUsd = ()=> (typeof window.__bagDiceStakeUsd==='function') ? window.__bagDiceStakeUsd() : 0;
-  const stakeBag = ()=> (typeof window.__bagDiceStakeBag==='function') ? window.__bagDiceStakeBag() : 0;
-
-  function render(){
-    const sUsd = stakeUsd();
-    const sBag = stakeBag();
-    const coMult = 1.25;
-    const ptMult = 1.00;
-    const jpMult = 2.00;
-
-    if (payCO)  payCO.textContent  = `${fmt(sBag*coMult)} BAG (${usd(sUsd*coMult)})`;
-    if (payPT)  payPT.textContent  = `${fmt(sBag*ptMult)} BAG (${usd(sUsd*ptMult)})`;
-    if (payJP)  payJP.textContent  = `${fmt(sBag*jpMult)} BAG (${usd(sUsd*jpMult)})`;
-    if (payLose)payLose.textContent= `0 BAG (${usd(0)})`;
-  }
-
-  window.addEventListener('bag:diceStakeUpdated', render);
-  window.addEventListener('bag:pricesUpdated', render);
-  ['input','change'].forEach(ev=>{
-    document.getElementById('usdBet')?.addEventListener(ev, render);
-    document.getElementById('betQty')?.addEventListener(ev, render);
-    document.getElementById('curToggle')?.addEventListener(ev, render);
-  });
-  render();
 })();
 </script>
 
@@ -983,8 +957,7 @@
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
   function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  /* FIXED: preserve decimals (no Math.floor) */
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
   function fmt(n){
