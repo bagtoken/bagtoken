@@ -549,7 +549,7 @@
 })();
 </script>
 
-<!-- ✅ USD auto-fill + payout preview + expose stake helpers -->
+<!-- ✅ Slots — Stake sync (USD ↔ units), limits, payout preview, helpers -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -557,100 +557,127 @@
   const curToggle = document.getElementById('curToggle');
   const unitSpan  = document.querySelector('.unit');
   const limitsEl  = document.getElementById('betLimits');
+
   const payScratch = document.getElementById('payScratch');
   const payNormal  = document.getElementById('payNormal');
   const payNormalGain = document.getElementById('payNormalGain');
   const payJackpot = document.getElementById('payJackpot');
   const payJackpotGain = document.getElementById('payJackpotGain');
+
   const spinBtn = document.getElementById('spinBtn');
 
   const MIN_USD = 1;
   const MAX_USD = 2000;
 
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const selectedCur = () => (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+  const priceFor = (cur) => (cur==='BAG'? PR().bagUsd : PR().xrpUsd) || 0;
 
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:1; }
-
-  function derivedUsd(){
-    const {bagUsd,xrpUsd}=PR();
-    const q=qty();
-    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
-
-  function stakeBag(){
-    const q = qty();
-    const {bagUsd,xrpUsd} = PR();
-    if (currentCurrency()==='BAG') return q;
-    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
-    return 0;
-  }
-  function stakeUsd(){
-    const direct = parseFloat(usdBetEl?.value||'');
-    if (Number.isFinite(direct) && direct>0) return direct;
-    return derivedUsd();
-  }
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Auto-fill unless user typed into USD box
-  function autoFillUsd(){
-    if (!usdBetEl) return;
-    if (usdBetEl.dataset.userTyped==='1') return;
-    const v=derivedUsd();
-    if (v>0){
-      usdBetEl.value=(Math.round(v*100)/100).toFixed(2);
-      usdBetEl.dataset.autofill='1';
-    }
+  // Units in the currently selected currency
+  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+
+  // Stake in USD: prefer direct user USD if present; else derive from units
+  function stakeUsd(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
+    const px = priceFor(selectedCur());
+    return (px>0 && qty()>0) ? qty()*px : 0;
   }
 
-  // Limits + payout preview
+  // Stake in BAG regardless of chosen currency (for payouts & session spend)
+  function stakeBag(){
+    const q = qty();
+    const {bagUsd,xrpUsd} = PR();
+    if (selectedCur()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+
+  // ---------- Two-way sync ----------
+  let syncing=false;
+
+  function updateUsdFromBet(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    const usdVal = (px>0 ? qty()*px : 0);
+    syncing = true;
+    usdBetEl.value = usdVal>0 ? usdVal.toFixed(2) : '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  function updateBetFromUsd(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    let u = parseFloat(usdBetEl.value||'');
+    if (!Number.isFinite(u) || u<=0 || px<=0){ renderLimits(); renderPayouts(); return; }
+    u = Math.min(MAX_USD, Math.max(0, u));
+    // keep precision (supports fractional BAG)
+    const units = Math.floor((u/px) * 1e6)/1e6;
+    syncing = true;
+    betQtyEl.value = units || '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  // ---------- UI: limits + payouts ----------
   function renderLimits(){
     const sUsd = stakeUsd()||0;
     const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
                  (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
     if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
-    if (spinBtn) spinBtn.disabled = (sUsd>0 && sUsd < MIN_USD && !window.__BAG_FORCE_DEMO);
+    if (spinBtn) spinBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd<MIN_USD);
   }
+
   function renderPayouts(){
     const sUsd = stakeUsd()||0;
     const sBag = stakeBag()||0;
-    const mScratch = 1.00, mWin = 1.25, mJack = 2.00;
+    const mScratch=1.00, mWin=1.25, mJack=2.00;
 
     if (payScratch)      payScratch.textContent = `${fmt(sBag*mScratch)} BAG (${usd(sUsd*mScratch)})`;
+
     if (payNormal){
-      payNormal.childNodes[0].nodeValue = `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
+      // Update the main text node safely (keeps the micro span intact)
+      const base = `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
+      if (payNormal.firstChild) payNormal.firstChild.nodeValue = base;
+      else payNormal.textContent = base;
       if (payNormalGain) payNormalGain.textContent = ` (+${fmt(sBag*(mWin-1))} BAG)`;
     }
+
     if (payJackpot){
-      payJackpot.childNodes[0].nodeValue = `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
+      const base = `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
+      if (payJackpot.firstChild) payJackpot.firstChild.nodeValue = base;
+      else payJackpot.textContent = base;
       if (payJackpotGain) payJackpotGain.textContent = ` (+${fmt(sBag*(mJack-1))} BAG)`;
     }
   }
 
-  // Events
-  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; renderLimits(); renderPayouts(); });
-  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); renderLimits(); renderPayouts(); });
-  curToggle?.addEventListener('change', ()=>{ const u=document.querySelector('.unit'); if(u) u.textContent=currentCurrency(); autoFillUsd(); renderLimits(); renderPayouts(); });
-  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); renderLimits(); renderPayouts(); });
+  // ---------- Events ----------
+  usdBetEl?.addEventListener('input', updateBetFromUsd);
+  betQtyEl?.addEventListener('input', updateUsdFromBet);
+  curToggle?.addEventListener('change', ()=>{
+    if (unitSpan) unitSpan.textContent = selectedCur();
+    updateUsdFromBet(); // recompute USD when currency changes
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    // If user has typed USD, keep that as the source of truth; otherwise derive
+    if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
+  });
 
-  // Init
-  const u=document.querySelector('.unit'); if(u) u.textContent=currentCurrency();
-  autoFillUsd();
+  // ---------- Init ----------
+  if (unitSpan) unitSpan.textContent = selectedCur();
+  updateUsdFromBet();
   renderLimits();
   renderPayouts();
 
-  // Expose stake helpers for spin loop
-  window.__bagStake = {
-    usd: stakeUsd,
-    bag: stakeBag
-  };
+  // Expose for spin loop
+  window.__bagStake = { usd: stakeUsd, bag: stakeBag, minUsd: MIN_USD, maxUsd: MAX_USD };
 })();
 </script>
+
 
 <!-- ===================== Reels & Odds + Spin ===================== -->
 <script>
@@ -1010,7 +1037,9 @@
     if (s && s.addr){
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
-      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      statusEl.innerHTML =
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
@@ -1136,7 +1165,7 @@
 })();
 </script>
 
-<!-- Practice Mode wrapper -->
+<!-- Practice Mode wrapper (decimal-safe demo balance) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1153,10 +1182,16 @@
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
   function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} } /* preserve decimals */
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
-  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmt(n){
+    if (!Number.isFinite(n)) return '—';
+    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
+    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
+    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
+    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+  }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   function renderDemoSession(){
@@ -1216,6 +1251,7 @@
   window.addEventListener('bag:walletDisconnected', enableDemo);
 })();
 </script>
+
 
 <script>
 if ('serviceWorker' in navigator) {
