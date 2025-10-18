@@ -56,7 +56,7 @@
   .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
-  .micro{font-size:.85rem;color:#a8b5ab}
+  .micro{font-size:.85rem;color:#aeb7af}
   .muted{color:#cfd6cf}
   .divider{height:1px;background:#123221;margin:10px 0}
 
@@ -285,9 +285,7 @@
 
       <h4 style="margin:12px 0 6px;">Payouts:</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>Win</b> — 1.25×
-
- total</li>
+        <li><b>Win</b> — 1.25× total</li>
         <li><b>Jackpot</b> — 2.00× total</li>
         <li><b>Scratch</b> — 1.00× (push)</li>
       </ul>
@@ -673,10 +671,17 @@
   ];
   const NON_BAG_POOL = SYMS.filter(s => s.k !== 'BAG');
 
-  // House odds: live vs demo
-  const ODDS = (window.__BAG_FORCE_DEMO === true)
-    ? { jackpot: 0.02, win: 0.42, scratch: 0.11 }   // DEMO
-    : { jackpot: 0.02, win: 0.36, scratch: 0.10 };  // LIVE
+  // === SAME ODDS AS DICE (multipliers + probabilities) ===
+  const MULT_WIN = 1.25;
+  const MULT_JP  = 2.00;
+
+  const LIVE = { P_JP: 0.02, P_WIN: 0.42 };   // lose = 0.56
+  const DEMO = { P_JP: 0.03, P_WIN: 0.46 };   // lose = 0.51
+
+  const P = (window.__BAG_FORCE_DEMO === true) ? DEMO : LIVE;
+
+  // Optional: show some SCRATCH outcomes inside the lose bucket (doesn't affect JP/WIN odds)
+  const SCRATCH_IN_LOSE = (window.__BAG_FORCE_DEMO === true) ? 0.11 : 0.10;
 
   const ROWS=3, CELL_H=88;
   function cell(sym){
@@ -756,30 +761,35 @@
   }
 
   function buildSpin(stakeBag){
-    const p=Math.random();
-    let target='lose';
-    if(p < ODDS.jackpot) target='jackpot';
-    else if(p < ODDS.jackpot+ODDS.win) target='win';
-    else if(p < ODDS.jackpot+ODDS.win+ODDS.scratch) target='scratch';
+    // Decide bucket using SAME odds as Dice
+    const r = Math.random();
+    let bucket = 'lose';
+    if (r < P.P_JP) bucket = 'jackpot';
+    else if (r < P.P_JP + P.P_WIN) bucket = 'win';
 
     let g=blankGrid();
 
-    if(target==='jackpot'){
+    if(bucket==='jackpot'){
       const line=(Math.random()*3)|0;
       g[line]=[SYMS[0],SYMS[0],SYMS[0]]; // BAG BAG BAG
       g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
-    } else if(target==='win'){
+
+    } else if(bucket==='win'){
       const line=(Math.random()*3)|0;
       const s=randFrom(NON_BAG_POOL);
       g[line]=[s,s,s];
       g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
-    } else if(target==='scratch'){
-      const s=randFrom(SYMS);
-      if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
-      else{ g[0][2]=s; g[1][1]=s; g[2][0]=s; }
-      g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:true });
+
     } else {
-      g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:false });
+      // Lose bucket: optionally present a diagonal 3-of-a-kind as Scratch (push)
+      if(Math.random() < SCRATCH_IN_LOSE){
+        const s=randFrom(SYMS);
+        if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
+        else                 { g[0][2]=s; g[1][1]=s; g[2][0]=s; }
+        g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:true });
+      } else {
+        g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:false });
+      }
     }
     return { grid:g, stake: stakeBag };
   }
@@ -1001,7 +1011,6 @@
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
       statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
-
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
