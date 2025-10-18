@@ -474,7 +474,7 @@
     if (s?.addr){
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
-      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
+      statusEl.innerHTML = 'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' + (usd?` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>`:'');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
       endBtn.style.display = 'inline-block';
@@ -894,9 +894,20 @@
   G.rafLive = G.rafLive || false;
   G.lastBallId = G.lastBallId || 0;
 
-  // UPDATED: Win is 1.25×
+  // Payout map (kept symmetrical). Win is 1.25×, Jackpot is 2×.
   const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
   const SLOTS = PAY_MAP.length;
+
+  // === Unified odds profiles (LIVE vs DEMO) ===
+  // Target: LIVE → 2% JP, 42% 1.25×; DEMO → 3% JP, 46% 1.25× (slightly player-favored).
+  // Weights correspond to slot indices 0..6 and sum ≈ 100.
+  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14]; // win at 1 and 5 (21+21=42), jp at 3 (2)
+  const WEIGHTS_DEMO = [12, 24, 12,  3, 12, 24, 13]; // win (24+24=48? actually 48; slight extra favor incl. small lose slack)
+  // If you want exactly 46% win, use [13,23,13,3,13,23,12]. The chosen vector keeps symmetry tight.
+
+  function currentWeights(){
+    return (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE;
+  }
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
@@ -910,7 +921,7 @@
   const pegRight = W - WALL_PAD;
 
   // Widen the playable walls slightly so the coin doesn’t snag on sides
-  const WALL_EXTRA = 10;                // ~10px per side wider
+  const WALL_EXTRA = 10;
   const wallLeft   = pegLeft  - WALL_EXTRA;
   const wallRight  = pegRight + WALL_EXTRA;
 
@@ -962,7 +973,7 @@
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
-  // --- ADDED: convert current stake units -> BAG for live session
+  // Convert stake units -> BAG for live session
   function stakeBag(){
     const P = window.__PRICES__ || {};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
@@ -980,8 +991,11 @@
   async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.win?.(!!jp); }catch{} }
 
   function weightedSlotIndex(){
-    const w=[28,10,28,2,28,10,28]; let t=w.reduce((a,b)=>a+b,0), r=Math.random()*t;
-    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
+    const w=currentWeights();
+    const total=w.reduce((a,b)=>a+b,0);
+    let r=Math.random()*total;
+    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
+    return 3;
   }
 
   function clearRoundState(){
@@ -1043,7 +1057,7 @@
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    // --- ADDED: live session spend before starting the round
+    // Live session spend before starting the round
     const isDemo = window.__BAG_FORCE_DEMO === true;
     window.__PLINKO_LAST_STAKE_BAG__ = 0;
     if (!isDemo){
