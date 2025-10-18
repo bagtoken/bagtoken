@@ -69,7 +69,7 @@
   .result{margin-top:12px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .result .n{font-weight:900;font-size:1.05rem}
 
-  /* ===== Plinko visuals (unchanged design) ===== */
+  /* ===== Plinko visuals ===== */
   .stage{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:10px}
   .canvas-wrap{
     position:relative;width:100%;max-width:720px;
@@ -79,8 +79,18 @@
     background: radial-gradient(120% 120% at 50% 0%, #0b2016 0%, #07120d 60%, #060a08 100%);
   }
   canvas{position:absolute;inset:0;width:100%;height:100%}
-  .hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;pointer-events:none}
+
+  /* OLD on-board HUD is hidden; we’ll show a bar above the board instead */
+  .hud{ display:none }
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+
+  /* New off-board HUD bar + tip */
+  .hudbar{
+    display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+    margin:6px 0 10px; pointer-events:auto;
+  }
+  .aim-tip{ margin:-2px 0 8px; opacity:.9 }
+
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
@@ -178,10 +188,21 @@
             <div class="micro" style="margin-top:6px;opacity:.85;">Min $1 · Max $2,000 (converted to $BAG on payout)</div>
           </div>
 
+<!-- HUD bar (moved off the board) -->
+<div class="hudbar">
+  <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+  <span class="pill">Balance: <b id="balLbl">100.00</b> <span id="ccyLbl">XRP</span></span>
+  <span class="pill">Bet: <b id="betLbl">1</b></span>
+  <span class="pill">Last: <b id="lastLbl">—</b></span>
+</div>
+
+<p class="micro aim-tip">👆 Tap anywhere on the board to choose where the coin drops. Use ←/→ to adjust; press Space or tap <b>Drop</b> to release.</p>
+
 <!-- Board -->
 <div class="stage">
   <div class="canvas-wrap">
     <canvas id="game"></canvas>
+    <!-- Old on-canvas HUD is kept (but hidden by CSS) for ID compatibility -->
     <div class="hud">
       <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
       <span class="pill">Balance: <b id="balLbl">100.00</b> <span id="ccyLbl">XRP</span></span>
@@ -205,9 +226,7 @@
 <div class="micro" style="text-align:center;opacity:.7;margin-top:6px">
   🔊 If you don’t hear sound: tap DROP once, turn off Silent mode, and raise volume.
 </div>
-        </div>
-      </div>
-    </div>
+
 
     <!-- RIGHT: Rules -->
     <div class="panel" style="padding:16px">
@@ -824,33 +843,42 @@
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
+  // Peg band stays the same:
+  const pegLeft  = WALL_PAD;
+  const pegRight = W - WALL_PAD;
+
+  // Widen the playable walls slightly so the coin doesn’t snag on sides
+  const WALL_EXTRA = 10;                // ~10px per side wider
+  const wallLeft   = pegLeft  - WALL_EXTRA;
+  const wallRight  = pegRight + WALL_EXTRA;
+
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // ---------- NEW: Aiming state ----------
-  const SUBSTEPS = 2; // small, but very effective
-  let dropX = (leftWall + rightWall) / 2; // where next coin will spawn
+  // ---------- Aiming state ----------
+  const SUBSTEPS = 2;
+  let dropX = (pegLeft + pegRight) / 2;
   let aiming = false;
   let lastAimX = dropX;
-  let aimVX = 0; // small horizontal nudge based on last drag
+  let aimVX = 0;
 
-  // ---------- Peg grid ----------
+  // ---------- Peg grid (UNCHANGED positions) ----------
   const PEG_ROWS=15, PEG_COLS=13;
-  const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
+  const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
   const pegs=[];
   for(let r=0;r<PEG_ROWS;r++){
     const off=(r%2===0)?0:pegSpacingX/2;
     for(let c=0;c<PEG_COLS;c++){
-      const x=leftWall+20+c*pegSpacingX+off;
-      if(x<=leftWall+PEG_R || x>=rightWall-PEG_R) continue;
+      const x=pegLeft+20+c*pegSpacingX+off;
+      if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
       const y=topBoard+r*pegSpacingY;
       pegs.push({x,y,r:PEG_R});
     }
   }
 
-  const slotWidth=(rightWall-leftWall)/SLOTS;
-  const slotX=i=>leftWall+i*slotWidth;
+  // Slots span the wider walls
+  const slotWidth=(wallRight-wallLeft)/SLOTS;
+  const slotX=i=>wallLeft+i*slotWidth;
 
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
@@ -860,11 +888,11 @@
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
 
-  function hud(){ balLbl.textContent=balance.toFixed(2); betLbl.textContent=stake; lastLbl.textContent=lastTxt; }
-  betInput.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
+  function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; }
+  betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
 
   function stakeUsdEquivalent(){
-    const qty = Math.max(0, parseFloat(betInput.value||0));
+    const qty = Math.max(0, parseFloat(betInput?.value||0));
     const P=window.__PRICES__||{};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
     if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
@@ -887,15 +915,15 @@
     dropping=false; dropBtn.disabled=false; lastPegTick=0;
   }
 
-  // ---------- NEW: Aiming helpers & controls ----------
+  // ---------- Aiming helpers & controls ----------
   function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
     const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, leftWall + BALL_R, rightWall - BALL_R);
+    return clamp(x, wallLeft + BALL_R, wallRight - BALL_R);
   }
 
-  // Pointer aim (mouse/touch)
+  // Pointer aim
   canvas.addEventListener('pointerdown', (e)=>{
     aiming = true;
     const nx = clientToCanvasX(e.clientX);
@@ -918,12 +946,12 @@
     const step = 10;
     if (e.key === 'ArrowLeft'){
       e.preventDefault();
-      dropX = clamp(dropX - step, leftWall + BALL_R, rightWall - BALL_R);
+      dropX = clamp(dropX - step, wallLeft + BALL_R, wallRight - BALL_R);
       aimVX = -step;
       lastAimX = dropX;
     } else if (e.key === 'ArrowRight'){
       e.preventDefault();
-      dropX = clamp(dropX + step, leftWall + BALL_R, rightWall - BALL_R);
+      dropX = clamp(dropX + step, wallLeft + BALL_R, wallRight - BALL_R);
       aimVX = step;
       lastAimX = dropX;
     } else if (e.code === 'Space'){
@@ -955,7 +983,7 @@
     dropping=true; dropBtn.disabled=true;
 
     // spawn at aimed X with a tiny sideways nudge from last aim motion
-    const startX = clamp(dropX, leftWall + BALL_R, rightWall - BALL_R);
+    const startX = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
     const initVx = (aimVX || (Math.random()-0.5)*0.8) * 0.08;
 
     const id = ++G.lastBallId;
@@ -992,12 +1020,12 @@
       // tiny lateral noise so paths don’t “rail”
       b.vx += (Math.random() - 0.5) * 0.01;
 
-      // walls
-      if (b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
-      if (b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      // walls (use widened walls)
+      if (b.x - BALL_R < wallLeft){  b.x = wallLeft + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
       if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
 
-      // pegs
+      // pegs (unchanged)
       const now = performance.now();
       for (const p of pegs){
         const dx = b.x - p.x, dy = b.y - p.y;
@@ -1032,8 +1060,8 @@
   }
 
   function boundarySlotIndex(x){
-    const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
-    const idx = Math.floor((clamped - leftWall) / slotWidth);
+    const clamped = Math.min(wallRight-1, Math.max(wallLeft+1, x));
+    const idx = Math.floor((clamped - wallLeft) / slotWidth);
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
@@ -1046,7 +1074,7 @@
     const cx=c.getContext('2d'); const t0=performance.now();
     const N=80, bits=[];
     for(let i=0;i<N;i++){
-      bits.push({ x:(leftWall+rightWall)/2, y:topBoard+30, vx:(Math.random()-0.5)*6, vy:-(Math.random()*5+3),
+      bits.push({ x:(wallLeft+wallRight)/2, y:topBoard+30, vx:(Math.random()-0.5)*6, vy:-(Math.random()*5+3),
         s:Math.random()*3+2, rot:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.3,
         col: i%3===0?'#ffd700':(i%3===1?'#baf2cd':'#e2b15b') });
     }
@@ -1105,19 +1133,23 @@
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
+    // frame around the wider play area
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
-    ctx.strokeRect(leftWall-8, topBoard-40, rightWall-leftWall+16, bottomBoard-topBoard+60);
+    ctx.strokeRect(wallLeft-8, topBoard-40, (wallRight-wallLeft)+16, bottomBoard-topBoard+60);
 
+    // pegs (unchanged)
     ctx.fillStyle='#704d1d';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
+    // slot floor and dividers across the wider span
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(leftWall, bottomBoard); ctx.lineTo(rightWall, bottomBoard); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wallLeft, bottomBoard); ctx.lineTo(wallRight, bottomBoard); ctx.stroke();
     for(let i=1;i<SLOTS;i++){
       const x = slotX(i);
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
+    // labels centered in wider slots
     const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
@@ -1127,11 +1159,10 @@
       ctx.fillText(txt, centers[i], bottomBoard+72);
     }
 
-    // ---------- NEW: Aim guide when not dropping ----------
+    // Aim guide clamped to wider walls
     if (!dropping){
-      const gx = clamp(dropX, leftWall + BALL_R, rightWall - BALL_R);
+      const gx = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
 
-      // dashed guide line
       ctx.save();
       ctx.setLineDash([6,6]);
       ctx.strokeStyle = '#2a5';
@@ -1142,7 +1173,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // ghost coin preview
       ctx.save();
       ctx.globalAlpha = 0.85;
       drawBall(gx, topBoard - 30);
@@ -1162,6 +1192,7 @@
   hud();
 })();
 </script>
+
 
 
 <!-- === Practice Mode Wrapper (unchanged UI text) === -->
