@@ -827,8 +827,14 @@
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
- const SUBSTEPS = 2; // small, but very effective
+  // ---------- NEW: Aiming state ----------
+  const SUBSTEPS = 2; // small, but very effective
+  let dropX = (leftWall + rightWall) / 2; // where next coin will spawn
+  let aiming = false;
+  let lastAimX = dropX;
+  let aimVX = 0; // small horizontal nudge based on last drag
 
+  // ---------- Peg grid ----------
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -881,6 +887,52 @@
     dropping=false; dropBtn.disabled=false; lastPegTick=0;
   }
 
+  // ---------- NEW: Aiming helpers & controls ----------
+  function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+  function clientToCanvasX(clientX){
+    const r = canvas.getBoundingClientRect();
+    const x = (clientX - r.left) * (canvas.width / r.width);
+    return clamp(x, leftWall + BALL_R, rightWall - BALL_R);
+  }
+
+  // Pointer aim (mouse/touch)
+  canvas.addEventListener('pointerdown', (e)=>{
+    aiming = true;
+    const nx = clientToCanvasX(e.clientX);
+    aimVX = 0;
+    lastAimX = nx;
+    dropX = nx;
+    try{ canvas.setPointerCapture(e.pointerId); }catch{}
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(!aiming) return;
+    const nx = clientToCanvasX(e.clientX);
+    aimVX = nx - lastAimX;
+    lastAimX = nx;
+    dropX = nx;
+  });
+  canvas.addEventListener('pointerup', ()=>{ aiming = false; });
+
+  // Keyboard aim (← →) and Space to drop
+  addEventListener('keydown', (e)=>{
+    const step = 10;
+    if (e.key === 'ArrowLeft'){
+      e.preventDefault();
+      dropX = clamp(dropX - step, leftWall + BALL_R, rightWall - BALL_R);
+      aimVX = -step;
+      lastAimX = dropX;
+    } else if (e.key === 'ArrowRight'){
+      e.preventDefault();
+      dropX = clamp(dropX + step, leftWall + BALL_R, rightWall - BALL_R);
+      aimVX = step;
+      lastAimX = dropX;
+    } else if (e.code === 'Space'){
+      e.preventDefault();
+      if (!dropping) dropBtn.click();
+    }
+  });
+
+  // ---------- Drop flow ----------
   dropBtn.addEventListener('click', async ()=>{
     try{ await window.__bagAudio?.ensureInteractive?.(); }catch{}
     clearRoundState();
@@ -902,12 +954,12 @@
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
-    const spread=(rightWall-leftWall)*0.30;
-    const startOffset=(Math.random()-0.5)*spread;
-    const initVx=(Math.random()-0.5)*1.2;
+    // spawn at aimed X with a tiny sideways nudge from last aim motion
+    const startX = clamp(dropX, leftWall + BALL_R, rightWall - BALL_R);
+    const initVx = (aimVX || (Math.random()-0.5)*0.8) * 0.08;
 
     const id = ++G.lastBallId;
-    G.ball = { id, x:(leftWall+rightWall)/2 + startOffset, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
+    G.ball = { id, x:startX, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
 
     safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
@@ -923,62 +975,61 @@
 
   setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)) clearRoundState(); }, 900);
 
-function stepBall(b){
-  const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
-  const gy = GRAVITY / SUBSTEPS;
+  function stepBall(b){
+    const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
+    const gy = GRAVITY / SUBSTEPS;
 
-  for (let s = 0; s < SUBSTEPS; s++) {
-    // integrate
-    b.vy += gy;
-    b.x  += b.vx / SUBSTEPS;
-    b.y  += b.vy / SUBSTEPS;
+    for (let s = 0; s < SUBSTEPS; s++) {
+      // integrate
+      b.vy += gy;
+      b.x  += b.vx / SUBSTEPS;
+      b.y  += b.vy / SUBSTEPS;
 
-    // damping
-    b.vx *= fx;
-    b.vy *= fx;
+      // damping
+      b.vx *= fx;
+      b.vy *= fx;
 
-    // tiny lateral noise so paths don’t “rail”
-    b.vx += (Math.random() - 0.5) * 0.01;
+      // tiny lateral noise so paths don’t “rail”
+      b.vx += (Math.random() - 0.5) * 0.01;
 
-    // walls
-    if (b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
-    if (b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
-    if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
+      // walls
+      if (b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
 
-    // pegs
-    const now = performance.now();
-    for (const p of pegs){
-      const dx = b.x - p.x, dy = b.y - p.y;
-      const dist = Math.hypot(dx, dy) || 0.0001;
-      const minD = BALL_R + p.r;
-      if (dist < minD){
-        const nx = dx / dist, ny = dy / dist;
+      // pegs
+      const now = performance.now();
+      for (const p of pegs){
+        const dx = b.x - p.x, dy = b.y - p.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const minD = BALL_R + p.r;
+        if (dist < minD){
+          const nx = dx / dist, ny = dy / dist;
 
-        // separate
-        b.x += nx * (minD - dist);
-        b.y += ny * (minD - dist);
+          // separate
+          b.x += nx * (minD - dist);
+          b.y += ny * (minD - dist);
 
-        // reflect
-        const vDot = b.vx*nx + b.vy*ny;
-        b.vx = (b.vx - 2 * vDot * nx) * RESTITUTION;
-        b.vy = (b.vy - 2 * vDot * ny) * RESTITUTION;
+          // reflect
+          const vDot = b.vx*nx + b.vy*ny;
+          b.vx = (b.vx - 2 * vDot * nx) * RESTITUTION;
+          b.vy = (b.vy - 2 * vDot * ny) * RESTITUTION;
 
-        // small lateral “kick” promotes zig-zag and more peg hits
-        b.vx += nx * 0.08;
-        b.vy += ny * 0.02;
+          // small lateral “kick” promotes zig-zag and more peg hits
+          b.vx += nx * 0.08;
+          b.vy += ny * 0.02;
 
-        if (now - lastPegTick > 55){ lastPegTick = now; pegSound(); }
+          if (now - lastPegTick > 55){ lastPegTick = now; pegSound(); }
+        }
       }
     }
-  }
 
-  const slowEnough = Math.abs(b.vy) < 0.22;
-  if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
-    resolveByIndex(boundarySlotIndex(b.x));
+    const slowEnough = Math.abs(b.vy) < 0.22;
+    if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
+      resolveByIndex(boundarySlotIndex(b.x));
+    }
+    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
   }
-  if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
-}
-
 
   function boundarySlotIndex(x){
     const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
@@ -1075,6 +1126,28 @@ function stepBall(b){
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
       ctx.fillText(txt, centers[i], bottomBoard+72);
     }
+
+    // ---------- NEW: Aim guide when not dropping ----------
+    if (!dropping){
+      const gx = clamp(dropX, leftWall + BALL_R, rightWall - BALL_R);
+
+      // dashed guide line
+      ctx.save();
+      ctx.setLineDash([6,6]);
+      ctx.strokeStyle = '#2a5';
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(gx, topBoard - 40);
+      ctx.lineTo(gx, topBoard);
+      ctx.stroke();
+      ctx.restore();
+
+      // ghost coin preview
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      drawBall(gx, topBoard - 30);
+      ctx.restore();
+    }
   }
 
   function drawBall(x,y){
@@ -1089,6 +1162,7 @@ function stepBall(b){
   hud();
 })();
 </script>
+
 
 <!-- === Practice Mode Wrapper (unchanged UI text) === -->
 <script>
