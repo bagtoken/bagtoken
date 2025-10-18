@@ -600,21 +600,24 @@
 })();
 </script>
 
-<!-- === PRICES (unchanged logic) === -->
+<!-- === PRICES (aligned with Dice/Slots; prefer cache, live-sync via storage) === -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
-  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;  // for last-live bundle
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;   // for view cache shown across games
 
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
 
+  // Shared keys (same ones Dice/Slots use)
+  const VIEW_CACHE_KEY = 'bag_prices_v8';     // { bagUsd, xrpUsd }
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';  // { bagUsd, xrpUsd }
+  const XRP_KEY        = 'xrp_usd';           // number
+
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-  const VIEW_CACHE_KEY = 'bag_prices_v8';
-  const LAST_LIVE_KEY = 'bag_last_live_v1';
 
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
@@ -625,26 +628,102 @@
 
   function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k, ttlMs){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; const age = Date.now() - (o.t||0); return age<=ttlMs ? o.v : null; }catch{ return null; } }
+  function cacheGet(k, ttlMs){
+    try{
+      const o=JSON.parse(localStorage.getItem(k)||'null');
+      if(!o) return null;
+      const age = Date.now() - (o.t||0);
+      return age<=ttlMs ? o.v : null;
+    }catch{ return null; }
+  }
+
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    let used = false;
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      used = true;
+    }
+    if (!PRICES.xrpUsd && Number(x)>0){
+      PRICES.xrpUsd = Number(x);
+      used = true;
+    }
+    if (used) PRICES.source = 'last-live';
+    return used;
+  }
+  function loadLastLiveBundle(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      PRICES.source = 'last-live';
+      return true;
+    }
+    return false;
+  }
+
+  function updateLiveLine(){
+    if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
+    if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
+    if (liveDot){
+      const dotClass = PRICES.source==='live-amm' ? 'ok' :
+                       PRICES.source==='last-live' ? 'warn' : 'err';
+      liveDot.className = dotClass;
+    }
+    if (liveNote){
+      liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' :
+                             PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
+    }
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  // Prefer cached XRP first (so it matches Dice/Slots); only fetch fresh if no cache exists
+  function loadXrpFromCacheFirst(){
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    if (Number(x)>0){ PRICES.xrpUsd = Number(x); return true; }
+    return false;
+  }
 
   function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
-    const ctrl = new AbortController(); const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    const ctrl = new AbortController();
+    const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
     try{
-      const u = new URL(url, location.origin); u.searchParams.set('_ts', Date.now().toString());
-      return fetch(u.toString(), { ...opts, headers: { Accept:'application/json', ...(opts.headers||{}) }, mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', signal:ctrl.signal });
+      const u = new URL(url, location.origin);
+      u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(), {
+        ...opts,
+        headers: { Accept:'application/json', ...(opts.headers||{}) },
+        mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+        signal: ctrl.signal
+      });
     } finally { setTimeout(()=>clearTimeout(id),0); }
   }
 
-  async function fetchXrpUsd(){
+  async function fetchXrpUsdFresh(){
     try{
-      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-      if(!r.ok) throw 0; const v=(await r.json())?.ripple?.usd;
-      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet('xrp_usd',PRICES.xrpUsd); return true; }
+      const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if(Number(v)>0){
+        PRICES.xrpUsd = Number(v);
+        cacheSet(XRP_KEY, PRICES.xrpUsd); // write the shared cache so Dice/Slots can read it too
+        return true;
+      }
     }catch(_){}
-    const cached = cacheGet('xrp_usd', 24*60*60*1000);
-    if(Number(cached)>0){ PRICES.xrpUsd=Number(cached); return true; }
     return false;
   }
+
   function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object'){ if (a.currency === 'XRP' && a.value!=null) return Number(a.value); } return null; }
   function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
 
@@ -666,62 +745,69 @@
           if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
           const price = xrpBal / bagBal;
           if (!(price>0) || !isFinite(price)) return resolve(null);
-          if (diagSpan) diagSpan.textContent = `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
+          if (diagSpan) diagSpan.textContent =
+            `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
           resolve(price);
         }catch{ resolve(null); }
       };
     });
     if (!xrpPerBag || !Number.isFinite(xrpPerBag) || xrpPerBag<=0) return false;
-    if (PRICES.xrpUsd>0){ PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag; PRICES.source='live-amm'; cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd }); return true; }
+
+    // Only compute BAG/USD if we have XRP/USD. Since we prefer cache, this keeps all games in sync.
+    if (PRICES.xrpUsd>0){
+      PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+      PRICES.source = 'live-amm';
+      cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+      cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+      return true;
+    }
     return false;
   }
 
-  function loadViewCache(){ const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS); const x = cacheGet('xrp_usd', VIEW_CACHE_TTL_MS);
-    let used=false; if (v && Number(v.bagUsd)>0){ PRICES.bagUsd=v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=v.xrpUsd; used=true; } if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=x; used=true; } return used; }
-  function loadLastLive(){ const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
-    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = v.bagUsd; if (Number(v.xrpUsd)>0) PRICES.xrpUsd = v.xrpUsd; PRICES.source = 'last-live'; return true; } return false; }
-
-  function updateLiveLine(){
-    const liveDot = document.getElementById('liveDot');
-    const liveBAG = document.getElementById('liveBAG');
-    const liveXRP = document.getElementById('liveXRP');
-    const liveNote = document.getElementById('liveNote');
-    const liveConv = document.getElementById('liveConv');
-    if (liveBAG) liveBAG.textContent = fmt(PRICES.bagUsd);
-    if (liveXRP) liveXRP.textContent = fmt(PRICES.xrpUsd);
-    if (liveDot){
-      const dotClass = PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err';
-      liveDot.className = dotClass;
-    }
-    if (liveNote){
-      liveNote.textContent = PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)';
-    }
-    if (liveConv){
-      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
-        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
-        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
-      } else {
-        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
-      }
-    }
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-  }
-
   async function refreshPrices(){
-    const hadX = PRICES.xrpUsd>0;
-    const gotX = hadX || await fetchXrpUsd();
+    // 1) Make sure XRP/USD is set from cache first (keeps display aligned with Dice/Slots)
+    const hadX = PRICES.xrpUsd>0 || loadXrpFromCacheFirst();
+
+    // 2) Try to update BAG via AMM using the current XRP/USD
     let gotLive = false;
     try { gotLive = await fetchBagUsdFromAMM(); } catch {}
-    if (gotLive && gotX){ PRICES.source = 'live-amm'; cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd||0,xrpUsd:PRICES.xrpUsd||0}); }
-    else if (loadLastLive()) {/* keep */} else if (loadViewCache()){ PRICES.source = 'last-live'; } else { PRICES.source = '—'; }
+
+    // 3) If we had no XRP price at all, fetch it fresh now (first-load cold case)
+    if (!hadX){
+      const gotX = await fetchXrpUsdFresh();
+      if (gotX){
+        // Now that XRP is known, try AMM again to compute BAG
+        try { await fetchBagUsdFromAMM(); } catch {}
+      }
+    }
+
+    // 4) If still nothing, fall back to caches
+    if (!PRICES.bagUsd){
+      if (loadLastLiveBundle() || loadViewCache()) {
+        // already set by loaders
+      }
+    }
+
     updateLiveLine();
   }
 
-  if (loadViewCache()){ updateLiveLine(); }
+  // Initial: load caches first to match other games immediately
+  loadViewCache() || loadLastLiveBundle();
+  updateLiveLine();
+
+  // Start background refresh
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+
+  // Cross-tab sync: if Dice/Slots update shared cache, Plinko refreshes immediately
+  window.addEventListener('storage', (e)=>{
+    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      loadViewCache() || loadLastLiveBundle();
+      updateLiveLine();
+    }
+  });
 })();
 </script>
+
 
 <!-- === PRICES/STAKE SYNC (Dice-style USD ↔ stake, currency toggle aware) === -->
 <script>
