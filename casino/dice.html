@@ -736,14 +736,14 @@
 })();
 </script>
 
-<!-- 🎲 BAG Dice — Game logic (with Jackpot) -->
+<!-- 🎲 BAG Dice — Game logic (Pass Line rules intact, odds injected) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  /* ----- Stake helpers ----- */
+  /* ----- Stake helpers (unchanged) ----- */
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
@@ -772,7 +772,7 @@
   function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Build CSS dice
+  /* ----- Cosmetic CSS dice (visual only) ----- */
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
@@ -801,7 +801,6 @@
       </div>
     </div>
   `;
-
   function faceSVG(val){
     const r=0.22,m=0.56,c=0;
     const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
@@ -823,36 +822,96 @@
     6:()=>`rotateY( 3.1416rad)`,
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
-
   async function rollCssDice(a,b){
     try{ window.__bagDiceAudio && __bagDiceAudio.roll(); }catch{}
     try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
-
-    const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
-    dieA.classList.add('tumblingA'); dieB.classList.add('tumblingB');
+    const A=document.getElementById('dieA'), B=document.getElementById('dieB');
+    A.classList.add('tumblingA'); B.classList.add('tumblingB');
     await new Promise(r=>setTimeout(r, 1200));
-    dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
+    A.classList.remove('tumblingA'); B.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    dieA.classList.add('tossing'); dieB.classList.add('tossing');
-    dieA.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
-    dieB.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
+    A.classList.add('tossing'); B.classList.add('tossing');
+    A.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
+    B.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
     await new Promise(r=>setTimeout(r, 700));
-    dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
+    A.classList.remove('tossing'); B.classList.remove('tossing');
   }
 
+  /* ======= ODDS ENGINE (rules intact) ======= */
+  const MULT_CO = 1.25;   // come-out win total multiplier
+  const MULT_PT = 1.00;   // point win total multiplier
+  const MULT_JP = 2.00;   // jackpot upgrade total multiplier
+
+  // Live baseline (house-favored)
+  const LIVE = {
+    CO: { P_JP: 0.02, P_WIN: 0.38, P_CRAPS: 0.10 }, // P_POINT = 1 - sum
+    PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }  // P_HOLD = 1 - sum
+  };
+  // Demo (slightly player-favored)
+  const DEMO = {
+    CO: { P_JP: 0.03, P_WIN: 0.42, P_CRAPS: 0.08 },
+    PT: { P_JP: 0.03, P_WIN: 0.34, P_SEVEN: 0.24 }
+  };
+
+  const PROB = ()=> (window.__BAG_FORCE_DEMO === true ? DEMO : LIVE);
+
+  // Helpers to pick dice faces matching a requested sum
+  function facesForSum(sum){
+    // Random split into two valid die faces (1..6) summing to "sum"
+    const opts=[];
+    for(let a=1;a<=6;a++){
+      const b=sum-a;
+      if (b>=1 && b<=6) opts.push([a,b]);
+    }
+    return opts[(Math.random()*opts.length)|0];
+  }
+  function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
+
+  // Outcome pickers per phase (respect rules; odds override frequency only)
+  function outcomeComeOut(){
+    const p = PROB().CO;
+    const r = Math.random();
+    const pPoint = 1 - (p.P_JP + p.P_WIN + p.P_CRAPS);
+    if (r < p.P_JP)  return { kind:'jackpot-co' };
+    if (r < p.P_JP + p.P_WIN) return { kind:'win-co' };
+    if (r < p.P_JP + p.P_WIN + p.P_CRAPS) return { kind:'craps' };
+    return { kind:'point' }; // default remainder
+  }
+  function outcomePoint(){
+    const p = PROB().PT;
+    const r = Math.random();
+    const pHold = 1 - (p.P_JP + p.P_WIN + p.P_SEVEN);
+    if (r < p.P_JP)  return { kind:'jackpot-pt' };
+    if (r < p.P_JP + p.P_WIN) return { kind:'win-pt' };
+    if (r < p.P_JP + p.P_WIN + p.P_SEVEN) return { kind:'sevenout' };
+    return { kind:'hold' }; // neutral roll
+  }
+
+  // Choose a valid dice total for each outcome
+  function sumForOutcome(kind, point){
+    if (kind==='craps')        return pick([2,3,12]);
+    if (kind==='win-co')       return pick([7,11]);
+    if (kind==='jackpot-co')   return pick([7,11]);
+    if (kind==='point')        return pick([4,5,6,8,9,10]);
+    if (kind==='sevenout')     return 7;
+    if (kind==='win-pt')       return point;
+    if (kind==='jackpot-pt')   return point;
+    // hold (neutral): anything except 7 or the point
+    const neutrals=[2,3,4,5,6,8,9,10,11,12].filter(s=>s!==7 && s!==point);
+    return pick(neutrals);
+  }
+
+  /* ======= Round state (rules preserved) ======= */
   const ROUND={active:false,point:null};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
-
-  // Jackpot config (matches Slots feel)
-  const JACKPOT_CHANCE = 0.02; // 2% per winning resolution
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    // --- STAKE + SESSION CHECKS (live only) ---
     const sBag = stakeBag();
     const sUsd = stakeUsd();
 
+    // Live session gating (demo bypasses)
     if (!window.__BAG_FORCE_DEMO) {
       if (!window.__bagSession || !__bagSession.active()) {
         alert('Start a session at The Cage');
@@ -868,70 +927,75 @@
       }
     }
 
-    const a=1+(Math.random()*6|0);
-    const b=1+(Math.random()*6|0);
-    const sum=a+b;
+    // Decide outcome by phase, then show dice that match that outcome
+    let outcome;
+    if (isComeOut()){
+      outcome = outcomeComeOut();
+      const sum = sumForOutcome(outcome.kind, null);
+      const [a,b] = facesForSum(sum);
+      await rollCssDice(a,b);
 
-    await rollCssDice(a,b);
-
-    function showPayout(mult,labelText){
-      const gainBag = sBag*(mult-1);
-      const before  = sUsd;
-      const after   = sUsd*mult;
-      showWin({
-        message: mult>=2 ? 'JACKPOT' : 'WIN',
-        subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(before)} → ${fmtUsd(after)}`,
-        duration: mult>=2 ? 5600 : 4800,
-        sound: true
-      });
-      rollText.className='t win';
-      rollText.textContent = labelText;
-    }
-
-    if(isComeOut()){
-      if(sum===7||sum===11){
-        const base=1.25;
-        const jp = Math.random() < JACKPOT_CHANCE;
-        const mult = jp ? 2.00 : base;
-        showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'WIN (1.25×)'}`);
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome: jp?'jackpot-comeout':'win-comeout'}}));
-      } else if(sum===2||sum===3||sum===12){
+      if (outcome.kind==='craps'){
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-craps'}}));
-      } else {
-        ROUND.active=true; ROUND.point=sum;
-        rollText.className='t scratch';
-        rollText.textContent=`Rolled ${sum} — Need ${sum} before 7`;
-        // stake is held (already spent); resolve later
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'point-set'}}));
-      }
-    } else {
-      if(sum===ROUND.point){
-        const base=1.00;
-        const jp = Math.random() < JACKPOT_CHANCE;
-        const mult = jp ? 2.00 : base;
-        showPayout(mult, `Rolled ${sum} — ${jp?'JACKPOT 2.00×':'POINT MADE (1.00×)'}`);
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
+      } else if (outcome.kind==='win-co' || outcome.kind==='jackpot-co'){
+        const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
+        const gainBag = sBag*(mult-1);
+        showWin({
+          message: (mult===MULT_JP)?'JACKPOT':'WIN',
+          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
+          duration: (mult===MULT_JP)? 5600 : 4200,
+          sound: true
+        });
+        rollText.className='t win';
+        rollText.textContent = (mult===MULT_JP)
+          ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
+          : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome: jp?'jackpot-point':'win-point'}}));
-      } else if(sum===7){
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
+      } else { // point established
+        ROUND.active=true; ROUND.point=sum;
+        rollText.className='t';
+        rollText.textContent=`Rolled ${sum} — Point is ${sum}`;
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'point-set', point:sum}}));
+      }
+
+    } else {
+      outcome = outcomePoint();
+      const sum = sumForOutcome(outcome.kind, ROUND.point);
+      const [a,b] = facesForSum(sum);
+      await rollCssDice(a,b);
+
+      if (outcome.kind==='sevenout'){
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        // (stake already spent; no credit)
         ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'lose-sevenout'}}));
-      } else {
-        rollText.className='t scratch';
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
+      } else if (outcome.kind==='win-pt' || outcome.kind==='jackpot-pt'){
+        const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
+        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
+        const gainBag = sBag*(mult-1);
+        showWin({
+          message: (mult===MULT_JP)?'JACKPOT':'WIN',
+          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
+          duration: (mult===MULT_JP)? 5600 : 4200,
+          sound: true
+        });
+        rollText.className='t win';
+        rollText.textContent = (mult===MULT_JP)
+          ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
+          : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
+        ROUND.active=false; ROUND.point=null;
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
+      } else { // hold / neutral
+        rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
-        // neutral roll: stake remains held
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{a,b,sum,outcome:'neutral'}}));
+        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
       }
     }
 
@@ -939,6 +1003,7 @@
   });
 })();
 </script>
+
 
 <!-- Practice Mode Wrapper -->
 <script>
