@@ -818,7 +818,7 @@
   const SLOTS = PAY_MAP.length;
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-  const PEG_R = 5, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
+  const PEG_R = 7, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -826,6 +826,8 @@
 
   const leftWall=WALL_PAD, rightWall=W-WALL_PAD;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
+
+ const SUBSTEPS = 2; // small, but very effective
 
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(rightWall-leftWall-40)/(PEG_COLS-1);
@@ -921,38 +923,62 @@
 
   setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)) clearRoundState(); }, 900);
 
-  function stepBall(b){
-    b.vy += GRAVITY;
-    b.x  += b.vx; b.y += b.vy;
-    b.vx *= FRICTION; b.vy *= FRICTION;
-    b.vx += (Math.random()-0.5)*0.02;
+function stepBall(b){
+  const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
+  const gy = GRAVITY / SUBSTEPS;
 
-    if(b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R; b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
-    if(b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
-    if(b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
+  for (let s = 0; s < SUBSTEPS; s++) {
+    // integrate
+    b.vy += gy;
+    b.x  += b.vx / SUBSTEPS;
+    b.y  += b.vy / SUBSTEPS;
 
-    const now=performance.now();
-    for(const p of pegs){
-      const dx=b.x-p.x, dy=b.y-p.y;
-      const dist=Math.hypot(dx,dy) || 0.0001;
-      const minD=BALL_R + p.r;
-      if(dist < minD){
-        const nx=dx/dist, ny=dy/dist;
-        b.x += nx*(minD-dist);
-        b.y += ny*(minD-dist);
-        const vDot=b.vx*nx + b.vy*ny;
-        b.vx = (b.vx - 2*vDot*nx)*RESTITUTION;
-        b.vy = (b.vy - 2*vDot*ny)*RESTITUTION;
-        if(now - lastPegTick > 55){ lastPegTick=now; pegSound(); }
+    // damping
+    b.vx *= fx;
+    b.vy *= fx;
+
+    // tiny lateral noise so paths don’t “rail”
+    b.vx += (Math.random() - 0.5) * 0.01;
+
+    // walls
+    if (b.x - BALL_R < leftWall){ b.x = leftWall + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
+    if (b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
+    if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
+
+    // pegs
+    const now = performance.now();
+    for (const p of pegs){
+      const dx = b.x - p.x, dy = b.y - p.y;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const minD = BALL_R + p.r;
+      if (dist < minD){
+        const nx = dx / dist, ny = dy / dist;
+
+        // separate
+        b.x += nx * (minD - dist);
+        b.y += ny * (minD - dist);
+
+        // reflect
+        const vDot = b.vx*nx + b.vy*ny;
+        b.vx = (b.vx - 2 * vDot * nx) * RESTITUTION;
+        b.vy = (b.vy - 2 * vDot * ny) * RESTITUTION;
+
+        // small lateral “kick” promotes zig-zag and more peg hits
+        b.vx += nx * 0.08;
+        b.vy += ny * 0.02;
+
+        if (now - lastPegTick > 55){ lastPegTick = now; pegSound(); }
       }
     }
-
-    const slowEnough = Math.abs(b.vy) < 0.22;
-    if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
-      resolveByIndex(boundarySlotIndex(b.x));
-    }
-    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
   }
+
+  const slowEnough = Math.abs(b.vy) < 0.22;
+  if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
+    resolveByIndex(boundarySlotIndex(b.x));
+  }
+  if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
+}
+
 
   function boundarySlotIndex(x){
     const clamped = Math.min(rightWall-1, Math.max(leftWall+1, x));
