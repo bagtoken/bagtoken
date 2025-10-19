@@ -351,6 +351,31 @@
 })();
 </script>
 
+<!-- 🔁 Silent token refresh (PKCE refresh_token), does not change layout -->
+<script>
+(async function bagRefreshSpotifyTokenIfNeeded(){
+  try{
+    const issuedAt = Number(localStorage.getItem("bag_spotify_token_time")||0);
+    const ageMs = Date.now() - issuedAt;
+    if (ageMs < 45*60*1000) return; // refresh after ~45 min
+    const refresh = localStorage.getItem("bag_spotify_refresh");
+    if (!refresh) return;
+    const CLIENT_ID = "3cc3b47a65c54b91be924b3875cefea5"; // your Spotify app Client ID
+    const body = new URLSearchParams({ client_id: CLIENT_ID, grant_type: "refresh_token", refresh_token: refresh });
+    const r = await fetch("https://accounts.spotify.com/api/token", {
+      method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.access_token){
+      localStorage.setItem("bag_spotify_token", d.access_token);
+      localStorage.setItem("bag_spotify_token_time", String(Date.now()));
+      if (d.refresh_token) localStorage.setItem("bag_spotify_refresh", d.refresh_token);
+    }
+  }catch(e){ /* no-op */ }
+})();
+</script>
+
 <!-- 🎧 Spotify button — embedded autoplay (Premium) with clean fallback -->
 <script>
 (function(){
