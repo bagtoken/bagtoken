@@ -1246,39 +1246,88 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- === SLOTS: HUD updater (match Dice — works in DEMO & LIVE) === -->
+<!-- === SLOTS: HUDs (Balance/Stake/Last) — non-invasive, works in DEMO & LIVE === -->
 <script>
 (function(){
-  function fmtBag(n){
-    const x = Number(n) || 0;
-    return x.toLocaleString(undefined,{ maximumFractionDigits: 6 });
-  }
-  function els(){ return { balLbl:document.getElementById('balLbl'), ccyLbl:document.getElementById('ccyLbl') }; }
+  function $q(s){ return document.querySelector(s); }
+  const hudbar = $q('.hudbar');
+  if(!hudbar) return; // nothing to do if container missing
 
-  function renderHud(){
+  // Helpers
+  const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
+  const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
+  const nowStakeBag = ()=> (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+  const nowStakeUsd = ()=> (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+  const sessionObj  = ()=> window.__bagSession && window.__bagSession.get && window.__bagSession.get();
+
+  // Upsert tiny HUD pill
+  function pill(id, label){
+    let el = document.getElementById(id);
+    if(!el){ el = document.createElement('span'); el.id=id; el.className='pill'; hudbar.appendChild(el); }
+    el.setAttribute('data-label', label);
+    return el;
+  }
+
+  const balPill   = pill('hudBal',   'Balance');
+  const stakePill = pill('hudStake', 'Stake');
+  const lastPill  = pill('hudLast',  'Last');
+
+  // Renderers
+  function renderBalance(){
     try{
-      const sess = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
-      if(!sess) return;
-      const { balLbl, ccyLbl } = els();
-      if (balLbl) balLbl.textContent = fmtBag(sess.bag);
-      if (ccyLbl) ccyLbl.textContent = 'BAG';
-    }catch(e){}
+      const s = sessionObj();
+      if(!s) return;
+      const amt = fmtBag(s.bag);
+      balPill.innerHTML = `Balance: <b id="balLbl2">${amt}</b> <span id="ccyLbl2">BAG</span>`;
+      // keep original tiny label in the built-in pill aligned too
+      const balLbl = document.getElementById('balLbl');
+      const ccyLbl = document.getElementById('ccyLbl');
+      if(balLbl) balLbl.textContent = amt;
+      if(ccyLbl) ccyLbl.textContent = 'BAG';
+    }catch{}
   }
 
-  // Update on all relevant state changes (mirrors Dice, plus slotsResult)
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated',
-   'bag:walletConnected','bag:walletDisconnected','bag:slotsResult']
-   .forEach(ev=>addEventListener(ev, renderHud));
+  function renderStake(){
+    try{
+      const b = nowStakeBag();
+      const u = nowStakeUsd();
+      if(b>0 && u>0){
+        stakePill.innerHTML = `Stake: <b>${fmtBag(b)}</b> BAG <span class="micro">(${fmtUsd(u)})</span>`;
+      }else{
+        stakePill.innerHTML = `Stake: <b>—</b>`;
+      }
+    }catch{}
+  }
 
-  // Also react to localStorage changes (multi-tab demo + session)
-  addEventListener('storage', (e)=>{
-    if (!e) return;
-    if (e.key === '__bag_demo_bag_v1' || e.key === 'bag_session_v1') renderHud();
+  function renderLast(ev){
+    try{
+      const d = ev && ev.detail ? ev.detail : null;
+      if(!d){ lastPill.innerHTML = `Last: <b>—</b>`; return; }
+      let txt='Lose', extra='';
+      if(d.mult===2.00){ txt='JACKPOT'; extra = ` +${fmtBag(d.stakeBag*1.00)} BAG`; }
+      else if(d.mult===1.25){ txt='WIN'; extra = ` +${fmtBag(d.stakeBag*0.25)} BAG`; }
+      else if(d.mult===1.00){ txt='SCRATCH'; extra = ` +0 BAG`; }
+      lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">${extra}</span>`;
+    }catch{}
+  }
+
+  // Wire events
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:walletConnected','bag:walletDisconnected','bag:pricesUpdated']
+    .forEach(ev=>addEventListener(ev, ()=>{ renderBalance(); renderStake(); }));
+
+  addEventListener('bag:slotsResult', (e)=>{ renderBalance(); renderStake(); renderLast(e); });
+
+  // Also update stake pill on input edits
+  ['input','change'].forEach(t=>{
+    $q('#usdBet')?.addEventListener(t, renderStake);
+    $q('#betQty')?.addEventListener(t, renderStake);
+    $q('#curToggle')?.addEventListener(t, renderStake);
   });
 
-  // First paint + small watchdog for late-mount
-  renderHud();
-  let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+  // Initial paints + short watchdog for late mounts
+  function paint(){ renderBalance(); renderStake(); }
+  paint();
+  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
