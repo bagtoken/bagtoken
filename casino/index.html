@@ -78,15 +78,6 @@
   .btn:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
   .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
-  /* COMING SOON placeholders */
-  .soon-box{display:flex;flex-direction:column;justify-content:center;align-items:center;
-    height:100%;aspect-ratio:16/9;background:radial-gradient(circle at center,#0e2419 0%,#08130d 100%);
-    border:1px dashed #2b6a48;text-align:center;border-radius:16px;
-    box-shadow:inset 0 0 40px rgba(255,215,0,.05)}
-  .soon-title{font-size:1.1rem;font-weight:800;color:#f5f7f4;margin-bottom:6px;letter-spacing:.03em}
-  .soon-sub{font-family:"Cinzel",serif;font-weight:700;font-size:1.25rem;letter-spacing:.08em;
-    color:#ffd700;text-shadow:0 0 8px rgba(255,215,0,.3)}
-
   /* 🔊 Floating sound toggle (upper-right) */
   #soundToggle{
     position:fixed;top:10px;right:12px;z-index:2147483647;
@@ -100,7 +91,7 @@
 
   /* 🎧 Spotify toggle — spaced farther so buttons never touch */
   #spotifyToggle{
-    position:fixed;top:10px;right:92px;z-index:2147483647; /* was 56px */
+    position:fixed;top:10px;right:128px;z-index:2147483647; /* more space */
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
     border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
     color:#ffd700;font-size:1.2rem;cursor:pointer;opacity:.9;
@@ -109,15 +100,20 @@
   #spotifyToggle:hover{opacity:1;transform:scale(1.06)}
   #spotifyToggle:active{transform:scale(.98)}
 
-  /* 🎧 Mini-player drawer (shows briefly on first run to satisfy autoplay) */
+  /* 🎧 Mini-player drawer */
   .spotify-drawer{
-    position:fixed;right:12px;bottom:12px;width:320px;height:0;overflow:hidden;
+    position:fixed;right:12px;bottom:12px;width:360px;height:86px;overflow:hidden;
     border:1px solid #2b6a48;border-radius:12px;background:rgba(0,0,0,.6);
     backdrop-filter:blur(6px);box-shadow:0 8px 24px var(--shadow);
-    transition:height .28s ease, opacity .28s ease;opacity:0;z-index:2147483647;
+    opacity:0;transform:translateY(10px);pointer-events:none;transition:all .22s ease;z-index:2147483647;
   }
-  .spotify-drawer.open{height:80px;opacity:1}
-  .spotify-drawer iframe{display:block;width:100%;height:100%;border:0}
+  .spotify-drawer.open{opacity:1;transform:translateY(0);pointer-events:auto}
+  .spotify-drawer .bar{display:flex;align-items:center;justify-content:space-between;padding:6px 8px}
+  .spotify-drawer .title{font-size:.9rem;color:#e9efe9;font-weight:700}
+  .spotify-drawer .controls{display:flex;gap:8px}
+  .spotify-drawer button{background:rgba(0,0,0,.35);border:1px solid #2b6a48;color:#ffd700;border-radius:10px;padding:6px 8px;font-weight:800;cursor:pointer}
+  .spotify-drawer iframe{display:block;width:100%;height:52px;border:0}
+
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -152,7 +148,21 @@
 
 <!-- 🎧 Headphones (Spotify) -->
 <button id="spotifyToggle" title="Play $BAG Casino Spotify" aria-pressed="false">🎧</button>
-<div id="spotifyDrawer" class="spotify-drawer" aria-hidden="true"></div>
+
+<!-- Drawer with real Spotify controls for one-tap start -->
+<div id="spotifyDrawer" class="spotify-drawer" aria-hidden="true">
+  <div class="bar">
+    <div class="title">$BAG Casino Playlist</div>
+    <div class="controls">
+      <button id="btnMix">Dim Ambience</button>
+      <button id="btnHide">Hide</button>
+    </div>
+  </div>
+  <iframe id="spotifyFrame"
+    src=""
+    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+    loading="lazy"></iframe>
+</div>
 
 <div class="wrap">
   <div class="top">
@@ -354,104 +364,59 @@
 })();
 </script>
 
-<!-- 🎧 Spotify headphone toggle: shows mini-player briefly on first run to ensure playback -->
+<!-- 🎧 Spotify headphone toggle: opens real player for one-tap start, never auto-pauses ambience -->
 <script>
 (function(){
-  const headphoneBtn = document.getElementById('spotifyToggle');
+  const btn = document.getElementById('spotifyToggle');
   const drawer = document.getElementById('spotifyDrawer');
+  const frame = document.getElementById('spotifyFrame');
   const ambience = document.getElementById('casinoAmbience');
+  const btnHide = document.getElementById('btnHide');
+  const btnMix  = document.getElementById('btnMix');
 
-  const KEY    = 'bag_spotify_pref';        // 'on' | 'off'
-  const FIRST  = 'bag_spotify_first_run';   // 'yes' | 'no'
-  const LASTBG = 'bag_spotify_last_bg';     // remember ambience playing state
+  const KEY = 'bag_spotify_open'; // 'on' | 'off'
+  const MIX = 'bag_spotify_mix';  // 'dim' | 'full'
 
-  // Your playlist embed — plays inside the page (no app switch)
-  const EMBED_SRC = "https://open.spotify.com/embed/playlist/0Vt5oZbeLKuqwLq489DJso?utm_source=generator&theme=0&autoplay=1";
+  const EMBED = "https://open.spotify.com/embed/playlist/0Vt5oZbeLKuqwLq489DJso?theme=0";
 
-  let active = false;
-
-  function setIcon(){
-    headphoneBtn.textContent = '🎧';
-    headphoneBtn.setAttribute('aria-pressed', active);
-  }
-
-  function ensureIframe(){
-    if (drawer.querySelector('iframe')) return;
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('data-testid', 'embed-iframe');
-    iframe.src = EMBED_SRC;
-    iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
-    iframe.loading = 'lazy';
-    drawer.appendChild(iframe);
-  }
-
-  function showDrawerTemporarily(){
+  function openDrawer(){
+    if (!frame.src) frame.src = EMBED;  // set on demand so your first tap is followed by a tap INSIDE the player
     drawer.classList.add('open');
-    // Auto-hide after a few seconds; user can still close by toggling 🎧
-    setTimeout(()=>{ drawer.classList.remove('open'); }, 6000);
-  }
-
-  function pauseAmbienceRemember(){
-    try{
-      const wasOn = !ambience.paused;
-      localStorage.setItem(LASTBG, wasOn ? 'on' : 'off');
-      if (wasOn) ambience.pause();
-    }catch{}
-  }
-
-  function maybeResumeAmbience(){
-    try{
-      if (localStorage.getItem(LASTBG) === 'on'){
-        ambience.play().catch(()=>{});
-      }
-      localStorage.removeItem(LASTBG);
-    }catch{}
-  }
-
-  function enableSpotify(){
-    ensureIframe();
-    active = true;
     localStorage.setItem(KEY,'on');
-    setIcon();
-    pauseAmbienceRemember();
+  }
+  function closeDrawer(){
+    drawer.classList.remove('open');
+    localStorage.setItem(KEY,'off');
+  }
 
-    // First-run helper: briefly show the mini player so browsers allow audio to start
-    if (localStorage.getItem(FIRST) !== 'no'){
-      showDrawerTemporarily();
-      localStorage.setItem(FIRST,'no');
+  btn.addEventListener('click', ()=>{
+    if (drawer.classList.contains('open')) closeDrawer();
+    else openDrawer();
+  });
+  btnHide.addEventListener('click', closeDrawer);
+
+  // Ambience mixing control
+  function applyMix(){
+    const mode = localStorage.getItem(MIX);
+    if (mode === 'dim'){
+      ambience.volume = 0.12; // gentle background while Spotify plays
+      btnMix.textContent = 'Full Ambience';
+    } else {
+      ambience.volume = 0.35;
+      btnMix.textContent = 'Dim Ambience';
+      localStorage.setItem(MIX,'full');
     }
   }
-
-  function disableSpotify(){
-    // Keep iframe mounted so if user re-enables, it resumes quick
-    active = false;
-    localStorage.setItem(KEY,'off');
-    setIcon();
-    maybeResumeAmbience();
-    drawer.classList.remove('open');
-  }
-
-  headphoneBtn.addEventListener('click', ()=>{
-    if (active) disableSpotify();
-    else enableSpotify();
+  btnMix.addEventListener('click', ()=>{
+    const mode = localStorage.getItem(MIX) === 'dim' ? 'full' : 'dim';
+    localStorage.setItem(MIX, mode);
+    applyMix();
   });
 
-  // Restore previous state on focus/visibility
-  function tryAutoResume(){
-    if (localStorage.getItem(KEY) === 'on' && !active){
-      enableSpotify();
-    }
-  }
-  window.addEventListener('focus', tryAutoResume);
-  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) tryAutoResume(); });
-
-  // Init
-  active = localStorage.getItem(KEY) === 'on';
-  if (active){
-    ensureIframe();
-    pauseAmbienceRemember();
-  }
-  setIcon();
+  // Initialize
+  if (localStorage.getItem(KEY) === 'on') openDrawer();
+  if (!localStorage.getItem(MIX)) localStorage.setItem(MIX,'dim');
+  applyMix();
 })();
 </script>
 
