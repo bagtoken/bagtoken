@@ -1136,60 +1136,102 @@
 })();
 </script>
 
-<!-- HUD updater (Plinko-style: Mode / Balance / Bet / Last) -->
+<!-- HUD updater (Mode / Balance / Bet / Last) with currency-aware Balance -->
 <script>
 (function(){
-  function fmtBag(n){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  const curToggle = document.getElementById('curToggle');
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){
+    const x = Number(n);
+    if (!Number.isFinite(x)) return '—';
+    return x.toLocaleString(undefined, { maximumFractionDigits: max });
+  }
+
   function els(){ 
     return { 
-      balLbl:document.getElementById('balLbl'), 
-      ccyLbl:document.getElementById('ccyLbl'),
-      betLbl:document.getElementById('betLbl'),
-      modeLbl:document.getElementById('modeLbl'),
-      lastLbl:document.getElementById('lastLbl'),
-      betQtyEl:document.getElementById('betQty')
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betLbl'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
     }; 
   }
 
-  function selectedMode(){ return (window.__BAG_FORCE_DEMO===true) ? 'Demo' : 'Live'; }
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+
+  // Pull balances (prefer session-provided; fall back to conversion)
+  function getBalances(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
+
+    // If session provides XRP explicitly, use it; otherwise convert BAG→XRP using prices.
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
+    }
+    return { bag, xrp };
+  }
+
   function currentBet(){
-    const {betQtyEl} = els();
-    const v = parseFloat(betQtyEl?.value||'0');
-    if (!Number.isFinite(v) || v<0) return 0;
-    // Plinko shows integer units; mirror that for display only
+    const { betQtyEl } = els();
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    // Display integer like Plinko (display-only; underlying may be fractional)
     return Math.max(0, Math.floor(v));
   }
 
   function renderHud(){
     try{
-      const sess = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
       const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-      if (modeLbl) modeLbl.textContent = selectedMode();
+      const mode = selectedMode();
+      const ccy  = currentCurrency();
+      const { bag, xrp } = getBalances();
+
+      if (modeLbl) modeLbl.textContent = mode;
       if (betLbl)  betLbl.textContent  = String(currentBet());
       if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
-      if (sess){
-        if (balLbl) balLbl.textContent = fmtBag(sess.bag);
-        if (ccyLbl) ccyLbl.textContent = 'BAG';
+
+      if (balLbl && ccyLbl){
+        if (ccy === 'XRP'){
+          balLbl.textContent = fmt(xrp, 6);
+          ccyLbl.textContent = 'XRP';
+        } else {
+          balLbl.textContent = fmt(bag, 6);
+          ccyLbl.textContent = 'BAG';
+        }
       }
     }catch(e){}
   }
 
-  // Update on all relevant state changes
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated',
-   'bag:walletConnected','bag:walletDisconnected','bag:diceResult','bag:hudRefresh']
-   .forEach(ev=>addEventListener(ev, renderHud));
+  // Re-render when anything relevant changes
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+    'bag:diceResult','bag:hudRefresh'
+  ].forEach(ev => addEventListener(ev, renderHud));
 
-  // Bet input changes should refresh Bet:
+  // React to bet amount & currency tab changes
   document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
 
-  // Also react to localStorage changes (multi-tab for demo)
+  // Also react to localStorage changes (demo multi-tab)
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
 
   // First paint + small watchdog for late-mount
   renderHud();
-  let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+  let tries = 0; 
+  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
+
 
 <script>
 if ('serviceWorker' in navigator) {
