@@ -87,7 +87,7 @@
   .soon-sub{font-family:"Cinzel",serif;font-weight:700;font-size:1.25rem;letter-spacing:.08em;
     color:#ffd700;text-shadow:0 0 8px rgba(255,215,0,.3)}
 
-  /* Floating sound toggle (upper-right) */
+  /* 🔊 Floating sound toggle (upper-right) */
   #soundToggle{
     position:fixed;top:10px;right:12px;z-index:2147483647;
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
@@ -98,17 +98,26 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
-  /* 🎧 Spotify toggle — slightly spaced next to the sound switch */
+  /* 🎧 Spotify toggle — spaced farther so buttons never touch */
   #spotifyToggle{
-    position:fixed;top:10px;right:56px;z-index:2147483647;
+    position:fixed;top:10px;right:92px;z-index:2147483647; /* was 56px */
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
     border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
-    color:var(--gold);font-size:1.2rem;cursor:pointer;opacity:.9;
+    color:#ffd700;font-size:1.2rem;cursor:pointer;opacity:.9;
     transition:opacity .2s ease, transform .12s ease;
   }
   #spotifyToggle:hover{opacity:1;transform:scale(1.06)}
   #spotifyToggle:active{transform:scale(.98)}
 
+  /* 🎧 Mini-player drawer (shows briefly on first run to satisfy autoplay) */
+  .spotify-drawer{
+    position:fixed;right:12px;bottom:12px;width:320px;height:0;overflow:hidden;
+    border:1px solid #2b6a48;border-radius:12px;background:rgba(0,0,0,.6);
+    backdrop-filter:blur(6px);box-shadow:0 8px 24px var(--shadow);
+    transition:height .28s ease, opacity .28s ease;opacity:0;z-index:2147483647;
+  }
+  .spotify-drawer.open{height:80px;opacity:1}
+  .spotify-drawer iframe{display:block;width:100%;height:100%;border:0}
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -143,7 +152,7 @@
 
 <!-- 🎧 Headphones (Spotify) -->
 <button id="spotifyToggle" title="Play $BAG Casino Spotify" aria-pressed="false">🎧</button>
-<div id="spotifyMount" style="position:fixed;top:-9999px;left:-9999px;width:0;height:0;overflow:hidden" aria-hidden="true"></div>
+<div id="spotifyDrawer" class="spotify-drawer" aria-hidden="true"></div>
 
 <div class="wrap">
   <div class="top">
@@ -345,15 +354,16 @@
 })();
 </script>
 
-<!-- 🎧 Spotify headphone toggle: plays playlist in-page, pauses ambience while active -->
+<!-- 🎧 Spotify headphone toggle: shows mini-player briefly on first run to ensure playback -->
 <script>
 (function(){
   const headphoneBtn = document.getElementById('spotifyToggle');
-  const mount = document.getElementById('spotifyMount');
+  const drawer = document.getElementById('spotifyDrawer');
   const ambience = document.getElementById('casinoAmbience');
 
-  const KEY  = 'bag_spotify_pref';        // 'on' | 'off'
-  const LAST = 'bag_spotify_last_state';  // remembers ambience state while Spotify is on
+  const KEY    = 'bag_spotify_pref';        // 'on' | 'off'
+  const FIRST  = 'bag_spotify_first_run';   // 'yes' | 'no'
+  const LASTBG = 'bag_spotify_last_bg';     // remember ambience playing state
 
   // Your playlist embed — plays inside the page (no app switch)
   const EMBED_SRC = "https://open.spotify.com/embed/playlist/0Vt5oZbeLKuqwLq489DJso?utm_source=generator&theme=0&autoplay=1";
@@ -361,61 +371,64 @@
   let active = false;
 
   function setIcon(){
-    headphoneBtn.textContent = '🎧'; // icon constant, aria-pressed communicates state
+    headphoneBtn.textContent = '🎧';
     headphoneBtn.setAttribute('aria-pressed', active);
   }
 
-  function createEmbed(){
-    if (mount.firstChild) return mount.firstChild;
+  function ensureIframe(){
+    if (drawer.querySelector('iframe')) return;
     const iframe = document.createElement('iframe');
     iframe.setAttribute('data-testid', 'embed-iframe');
-    iframe.style.borderRadius = '12px';
     iframe.src = EMBED_SRC;
-    iframe.width = '100%';
-    iframe.height = '152';
-    iframe.frameBorder = '0';
-    iframe.allowFullscreen = true;
     iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
     iframe.loading = 'lazy';
-    mount.appendChild(iframe);
-    return iframe;
+    drawer.appendChild(iframe);
   }
 
-  function destroyEmbed(){
-    if (mount.firstChild) mount.removeChild(mount.firstChild);
+  function showDrawerTemporarily(){
+    drawer.classList.add('open');
+    // Auto-hide after a few seconds; user can still close by toggling 🎧
+    setTimeout(()=>{ drawer.classList.remove('open'); }, 6000);
   }
 
   function pauseAmbienceRemember(){
     try{
       const wasOn = !ambience.paused;
-      localStorage.setItem(LAST, wasOn ? 'on' : 'off');
+      localStorage.setItem(LASTBG, wasOn ? 'on' : 'off');
       if (wasOn) ambience.pause();
     }catch{}
   }
 
   function maybeResumeAmbience(){
     try{
-      if (localStorage.getItem(LAST) === 'on'){
+      if (localStorage.getItem(LASTBG) === 'on'){
         ambience.play().catch(()=>{});
       }
-      localStorage.removeItem(LAST);
+      localStorage.removeItem(LASTBG);
     }catch{}
   }
 
-  async function enableSpotify(){
-    createEmbed();      // first user tap satisfies autoplay policy
+  function enableSpotify(){
+    ensureIframe();
     active = true;
     localStorage.setItem(KEY,'on');
     setIcon();
     pauseAmbienceRemember();
+
+    // First-run helper: briefly show the mini player so browsers allow audio to start
+    if (localStorage.getItem(FIRST) !== 'no'){
+      showDrawerTemporarily();
+      localStorage.setItem(FIRST,'no');
+    }
   }
 
   function disableSpotify(){
-    destroyEmbed();
+    // Keep iframe mounted so if user re-enables, it resumes quick
     active = false;
     localStorage.setItem(KEY,'off');
     setIcon();
     maybeResumeAmbience();
+    drawer.classList.remove('open');
   }
 
   headphoneBtn.addEventListener('click', ()=>{
@@ -423,17 +436,19 @@
     else enableSpotify();
   });
 
+  // Restore previous state on focus/visibility
   function tryAutoResume(){
     if (localStorage.getItem(KEY) === 'on' && !active){
-      enableSpotify().catch(()=>{});
+      enableSpotify();
     }
   }
   window.addEventListener('focus', tryAutoResume);
   document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) tryAutoResume(); });
 
+  // Init
   active = localStorage.getItem(KEY) === 'on';
   if (active){
-    createEmbed();
+    ensureIframe();
     pauseAmbienceRemember();
   }
   setIcon();
