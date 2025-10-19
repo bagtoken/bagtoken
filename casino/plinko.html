@@ -48,7 +48,7 @@
 
   .stack{display:grid;gap:10px}
   .choice{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800;cursor:pointer}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
   .micro{font-size:.85rem;color:#a8b5ab}
@@ -203,7 +203,7 @@
             <div class="micro">Bet amount</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div>
-                <input id="demoBet" class="mono" type="tel" inputmode="numeric" pattern="[0-9]*" min="0" step="1" value="1" aria-label="Stake units"
+                <input id="demoBet" class="mono" type="tel" inputmode="decimal" pattern="[0-9.]*" min="0" step="any" value="1" aria-label="Stake units"
                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="unit">XRP</span>
               </div>
@@ -680,7 +680,7 @@
 })();
 </script>
 
-<!-- === PRICES (unchanged) === -->
+<!-- === PRICES (unchanged visuals; live updates) === -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -841,7 +841,7 @@
 })();
 </script>
 
-<!-- === PRICES/STAKE SYNC (unchanged) === -->
+<!-- === PRICES/STAKE SYNC (updated to keep XRP decimals & live payouts) === -->
 <script>
 (function(){
   const MIN_USD = 1;
@@ -855,6 +855,7 @@
   const ccyLbl     = $('#ccyLbl');
   const betLbl     = $('#betLbl');
   const stateText  = $('#stateText');
+  const payoutBox  = $('#payoutBox');
 
   let syncing = false;
 
@@ -869,9 +870,16 @@
     if (!Number.isFinite(v)) return 0;
     return Math.min(MAX_USD, Math.max(0, v));
   }
+  function quantizeUnits(ccy, units, px){
+    // BAG stays whole units; XRP to 6 dp (floor to avoid over-spend)
+    if (String(ccy).toUpperCase()==='BAG') return Math.max(0, Math.floor(units));
+    const q = Math.floor((units + 1e-12) * 1e6) / 1e6;
+    return Math.max(0, q);
+  }
   function refreshHudMini(){
-    if (betLbl) betLbl.textContent = (parseInt(betInput?.value||'0',10)||0);
-    if (ccyLbl) ccyLbl.textContent = 'BAG';
+    const ccy = selectedCur();
+    if (betLbl) betLbl.textContent = String(betInput?.value || '0');
+    if (ccyLbl) ccyLbl.textContent = ccy;
   }
   function refreshUnit(){
     if (unitSpan) unitSpan.textContent = selectedCur();
@@ -887,6 +895,8 @@
     syncing = true;
     usdInput.value = usd>0 ? usd.toFixed(2) : '';
     syncing = false;
+    refreshHudMini();
+    updatePayouts();
   }
   function updateBetFromUsd(){
     if (!usdInput || !betInput) return;
@@ -896,13 +906,16 @@
     let usd   = clampUsd(parseFloat(usdInput.value||'0'));
     if (!Number.isFinite(usd) || usd<=0 || px<=0){
       syncing = true; betInput.value = betInput.value; syncing = false;
+      updatePayouts();
       return;
     }
-    const units = Math.floor(usd / px);
+    const rawUnits = usd / px;
+    const units = quantizeUnits(cur, rawUnits, px);
     syncing = true;
-    betInput.value = String(Math.max(0, units));
+    betInput.value = (String(cur).toUpperCase()==='BAG') ? String(units) : units.toFixed(6).replace(/\.?0+$/,'');
     syncing = false;
     refreshHudMini();
+    updatePayouts();
   }
 
   function stakeUsdEquivalent(){
@@ -913,11 +926,66 @@
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
+  // 🔄 Live payouts box (based on current stake & prices)
+  function fmt(n, max=6){
+    const x = Number(n); if(!Number.isFinite(x)) return '—';
+    return x.toLocaleString(undefined,{maximumFractionDigits:max});
+  }
+  function updatePayouts(){
+    try{
+      if (!payoutBox) return;
+      const cur = selectedCur();
+      const qty = Math.max(0, parseFloat(betInput?.value||'0'));
+      const P = window.__PRICES__ || {};
+      const bagUsd = P.bagUsd||0, xrpUsd = P.xrpUsd||0;
+
+      // Convert current stake to BAG-equivalent for payouts:
+      let stakeBag = 0;
+      if (cur === 'BAG'){
+        stakeBag = qty;
+      } else if (bagUsd>0 && xrpUsd>0){
+        const bagPerXrp = xrpUsd / bagUsd;
+        stakeBag = qty * bagPerXrp;
+      }
+
+      const stakeUsd = (bagUsd>0) ? stakeBag * bagUsd : 0;
+      const winBag  = stakeBag * 0.25;
+      const jpBag   = stakeBag * 1.0;
+      const winUsd  = (bagUsd>0) ? winBag * bagUsd : 0;
+      const jpUsd   = (bagUsd>0) ? jpBag  * bagUsd : 0;
+
+      payoutBox.innerHTML =
+        `<div><strong>Payouts:</strong> Scratch (lose) · <b>1.25×</b> (win) · <b>2.0×</b> (jackpot)</div>
+         <div class="micro" style="margin-top:6px;opacity:.92;">
+           Win: +${fmt(winBag)} BAG (${winUsd?('$'+winUsd.toFixed(2)):'—'}) ·
+           Jackpot: +${fmt(jpBag)} BAG (${jpUsd?('$'+jpUsd.toFixed(2)):'—'})
+         </div>
+         <div class="micro" style="margin-top:6px;opacity:.75;">Min $1 · Max $2,000 (converted to $BAG on payout)</div>`;
+    }catch{}
+  }
+
+  // Input listeners
   usdInput?.addEventListener('input', updateBetFromUsd);
   betInput?.addEventListener('input', updateUsdFromBet);
+
+  // Allow decimals for XRP, integers for BAG — without changing layout
+  betInput?.addEventListener('beforeinput', (e)=>{
+    const ccy = selectedCur().toUpperCase();
+    if (ccy === 'BAG'){
+      // Only digits for BAG
+      if (e.data && /[^\d]/.test(e.data)) e.preventDefault();
+    } else {
+      // XRP: digits + one dot
+      if (e.data && /[^\d.]/.test(e.data)) e.preventDefault();
+      if (e.data === '.' && (betInput.value||'').includes('.')) e.preventDefault();
+    }
+  });
+
   curWrap?.addEventListener('change', ()=>{
     refreshUnit();
+    // Re-derive USD from units using live price and quantization rule
     updateUsdFromBet();
+    updatePayouts();
   });
 
   window.addEventListener('bag:pricesUpdated', ()=>{
@@ -926,16 +994,18 @@
       stateText.textContent = (P.source === 'live-amm') ? 'Live pricing ready' :
                               (P.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
     }
+    // Recompute from current stake using the newest prices
     updateUsdFromBet();
-    refreshUnit();
+    updatePayouts();
   });
 
   refreshUnit();
   updateUsdFromBet();
+  updatePayouts();
 })();
 </script>
 
-<!-- === QUICK AMOUNT BUTTONS (currency-aware + MAX) === -->
+<!-- === QUICK AMOUNT BUTTONS (currency-aware + MAX; XRP keeps 6dp) === -->
 <script>
 (function(){
   const MAX_USD = 2000;
@@ -943,17 +1013,13 @@
   // Base presets
   const USD_PRESETS  = [1, 5, 10, 25, 50, 100, 'MAX'];
 
-  // Returns unit presets based on active currency
   function unitPresetsFor(ccy){
     if (String(ccy).toUpperCase() === 'BAG'){
-      // ✅ Updated 75,000,000 → 7,500,000
       return [300000, 1500000, 3000000, 7500000, 15000000, 30000000, 'MAX'];
     }
-    // XRP (keep the familiar ones + MAX)
-    return [1, 5, 10, 25, 50, 100, 'MAX'];
+    return [1, 5, 10, 25, 50, 100, 'MAX']; // XRP
   }
 
-  // Helpers mirrored from your price sync block (kept local to avoid coupling)
   function selectedCur(){
     const wrap = document.getElementById('curToggle');
     return wrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
@@ -967,6 +1033,10 @@
       el.dispatchEvent(new Event('input', { bubbles:true }));
       el.dispatchEvent(new Event('change', { bubbles:true }));
     }catch{}
+  }
+  function quantizeUnits(ccy, units){
+    if (String(ccy).toUpperCase()==='BAG') return Math.max(0, Math.floor(units));
+    return Math.max(0, Math.floor((units + 1e-12) * 1e6) / 1e6);
   }
 
   function makeChipRow(values, onPick, id){
@@ -996,12 +1066,22 @@
       const usdWrap = usd.parentElement && usd.parentElement.parentElement;
       if (usdWrap){
         const row = makeChipRow(USD_PRESETS, (val)=>{
+          const ccy = selectedCur();
+          const px  = priceFor(ccy);
           if (val === 'MAX'){
             usd.value = MAX_USD.toFixed(2);
           } else {
             usd.value = Number(val).toFixed(2);
           }
-          dispatchInput(usd); // triggers existing sync → unit calc
+          dispatchInput(usd); // triggers sync & payout update
+
+          // Also write exact units using live price with proper quantization (avoid rounding surprises)
+          if (px > 0){
+            const rawUnits = parseFloat(usd.value) / px;
+            const qUnits = quantizeUnits(ccy, rawUnits);
+            units.value = (ccy==='BAG') ? String(qUnits) : qUnits.toFixed(6).replace(/\.?0+$/,'');
+            dispatchInput(units);
+          }
         }, 'usdQuickRow');
         usdWrap.insertAdjacentElement('afterend', row);
       }
@@ -1017,15 +1097,15 @@
         if (val === 'MAX'){
           const px = priceFor(ccy);
           if (px > 0){
-            const maxUnits = Math.floor(MAX_USD / px);
-            units.value = String(Math.max(0, maxUnits));
-          } else {
-            units.value = units.value; // leave unchanged if no price yet
+            const maxUnits = MAX_USD / px;
+            const q = quantizeUnits(ccy, maxUnits);
+            units.value = (ccy==='BAG') ? String(q) : q.toFixed(6).replace(/\.?0+$/,'');
           }
         } else {
-          units.value = String(Math.max(0, Math.floor(Number(val) || 0)));
+          const q = quantizeUnits(ccy, Number(val)||0);
+          units.value = (ccy==='BAG') ? String(q) : q.toFixed(6).replace(/\.?0+$/,'');
         }
-        dispatchInput(units); // triggers USD calc + HUD update
+        dispatchInput(units); // triggers USD calc + HUD/payout update
       }, 'unitQuickRow');
       unitWrap.insertAdjacentElement('afterend', row);
     }
@@ -1047,7 +1127,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (hooks to shared Dice/Slots celebration) === -->
+<!-- === PLINKO GAME LOGIC (allow decimal XRP stake; payouts read live) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1113,8 +1193,30 @@
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
 
-  function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; if(modeLbl) modeLbl.textContent=(window.__BAG_FORCE_DEMO===true?'Demo':'Live'); }
-  betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
+  function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=String(stake); if(lastLbl) lastLbl.textContent=lastTxt; if(modeLbl) modeLbl.textContent=(window.__BAG_FORCE_DEMO===true?'Demo':'Live'); }
+  betInput?.addEventListener('input', ()=>{
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    let v = String(betInput.value||'').trim();
+    if (cur === 'BAG'){
+      v = v.replace(/[^\d]/g,''); // integers only for BAG
+      betInput.value = v || '1';
+      stake = Math.max(1, parseInt(betInput.value,10)||1);
+    } else {
+      // XRP: allow decimals, clamp to 6 dp
+      v = v.replace(/[^0-9.]/g,'');
+      const parts = v.split('.');
+      if (parts.length>2){ v = parts.shift() + '.' + parts.join(''); }
+      if (v.includes('.')){
+        const [a,b=''] = v.split('.');
+        v = a + '.' + b.slice(0,6);
+      }
+      if (v === '' || v === '.') v = '0';
+      betInput.value = v;
+      stake = Math.max(0, parseFloat(v)||0);
+    }
+    hud();
+    try{ window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{}
+  });
 
   function stakeUsdEq(){
     const qty = Math.max(0, parseFloat(betInput?.value||0));
@@ -1128,10 +1230,11 @@
   function stakeBag(){
     const P = window.__PRICES__ || {};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
-    if (cur === 'BAG') return Number(stake) || 0;
+    const qty = Math.max(0, parseFloat(betInput?.value||0));
+    if (cur === 'BAG') return Number(qty) || 0;
     if (P.bagUsd>0 && P.xrpUsd>0){
       const bagPerXrp = P.xrpUsd / P.bagUsd;
-      return (Number(stake) || 0) * bagPerXrp;
+      return (Number(qty) || 0) * bagPerXrp;
     }
     return 0;
   }
@@ -1364,7 +1467,6 @@
 
   function drawBoard(){
     const W=canvas.width, H=canvas.height;
-    const ctx=canvas.getContext('2d');
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
@@ -1391,7 +1493,7 @@
     }
 
     if (!dropping){
-      const gx = Math.min(wallRight - 8, Math.max(wallLeft + 8, (window.__BAG_PLINKO?.ball?.x) ?? (wallLeft+wallRight)/2));
+      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, dropX));
 
       ctx.save();
       ctx.setLineDash([6,6]);
@@ -1547,11 +1649,12 @@
   }
 
   function currentBet(){
-    const { betQtyEl } = els();
-    const v = parseFloat(betQtyEl?.value || '0');
+    // Use displayed bet input directly if present
+    const input = document.getElementById('demoBet');
+    const v = input ? parseFloat(input.value||'0') : 0;
     if (!Number.isFinite(v) || v < 0) return 0;
-    // Display integer like Plinko (display-only; underlying may be fractional)
-    return Math.max(0, Math.floor(v));
+    const cur = currentCurrency();
+    return cur==='BAG' ? Math.floor(v) : Math.floor(v*1e6)/1e6;
   }
 
   function renderHud(){
@@ -1577,27 +1680,21 @@
     }catch(e){}
   }
 
-  // Re-render when anything relevant changes
   [
     'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
     'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
     'bag:diceResult','bag:hudRefresh'
   ].forEach(ev => addEventListener(ev, renderHud));
 
-  // React to bet amount & currency tab changes
   document.getElementById('betQty')?.addEventListener('input', renderHud);
   curToggle?.addEventListener('change', renderHud);
-
-  // Also react to localStorage changes (demo multi-tab)
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
 
-  // First paint + small watchdog for late-mount
   renderHud();
   let tries = 0; 
   const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
-
 
 <!-- === Shared celebration overlay (identical to Dice/Slots) === -->
 <canvas id="win-canvas"></canvas>
