@@ -80,17 +80,44 @@
   }
   canvas{position:absolute;inset:0;width:100%;height:100%}
 
-  /* Hide the tiny on-canvas HUD; we’ll use an off-board one */
   .hud{ display:none }
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
 
-  /* HUD bars */
   .hudbar{
     display:flex; gap:6px; flex-wrap:wrap; align-items:center;
     margin:6px 0 10px; pointer-events:auto;
   }
   .hudbar .pill b{font-weight:800}
   .aim-tip{ margin:-2px 0 8px; opacity:.9 }
+
+  /* ✨ Win readout banner (same vibe as Dice/Slots) */
+  .win-readout{
+    position:absolute; inset:auto 0 18%; margin:auto; width:min(82%,520px);
+    display:none; justify-content:center; align-items:center;
+    padding:14px 18px; border-radius:14px;
+    background:linear-gradient(180deg,rgba(255,226,135,.18),rgba(0,0,0,.05));
+    border:1px solid rgba(255,226,135,.35);
+    box-shadow:0 12px 44px rgba(255,226,135,.18), inset 0 1px 0 rgba(255,255,255,.25);
+    color:#fff2bf; font-weight:900; font-size:1.15rem; text-shadow:0 2px 8px rgba(0,0,0,.45);
+    pointer-events:none;
+  }
+  .win-readout.show{ display:flex; animation:pop .55s ease; }
+  .win-amt{ margin-left:8px; color:#ffd700; font-weight:900 }
+  .win-sub{ margin-left:10px; opacity:.85; font-weight:700; font-size:.95rem }
+
+  /* Glow pulse on board rim for wins / jackpot */
+  .canvas-wrap.win-pulse{ animation:winPulse 900ms ease; }
+  .canvas-wrap.jp-pulse{ animation:jackpotPulse 1200ms ease; }
+  @keyframes winPulse{
+    0%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(186,242,205,.0), inset 0 1px 0 rgba(255,255,255,.04)}
+    25%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 32px 8px rgba(186,242,205,.35), inset 0 1px 0 rgba(255,255,255,.08)}
+    100%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(186,242,205,.0), inset 0 1px 0 rgba(255,255,255,.04)}
+  }
+  @keyframes jackpotPulse{
+    0%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
+    20%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 44px 12px rgba(255,215,0,.45), inset 0 1px 0 rgba(255,255,255,.1)}
+    100%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
+  }
 
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
@@ -196,13 +223,19 @@
 
           <!-- Board -->
           <div class="stage">
-            <div class="canvas-wrap">
+            <div class="canvas-wrap" id="boardWrap">
               <canvas id="game" aria-label="Plinko board"></canvas>
               <div class="hud">
                 <span class="pill">Mode: <b>Demo</b></span>
                 <span class="pill">Balance: <b>100.00</b> <span>XRP</span></span>
                 <span class="pill">Bet: <b>1</b></span>
                 <span class="pill">Last: <b>—</b></span>
+              </div>
+              <!-- Readout banner for wins (Dice/Slots style) -->
+              <div id="winReadout" class="win-readout" aria-live="polite">
+                <span id="winTitle">WIN</span>
+                <span class="win-amt" id="winAmt">+0.00 BAG</span>
+                <span class="win-sub" id="winUsd">(+$0.00)</span>
               </div>
               <div id="cele" class="cele" aria-live="polite"></div>
             </div>
@@ -218,7 +251,7 @@
             <button id="dropBtn" class="btn-roll" style="width:min(360px,90%)">Drop Coin</button>
           </div>
 
-          <!-- ✅ Bottom HUD (like other games, placed under the Drop button) -->
+          <!-- HUD under the Drop button -->
           <div class="hudbar" id="bottomHud" style="justify-content:center;">
             <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
             <span class="pill">Balance: <b id="balLbl">100.00</b> <span id="ccyLbl">BAG</span></span>
@@ -254,7 +287,7 @@
     </div>
 </section>
 
-<!-- === AUDIO ENGINE (Plinko-specific) === -->
+<!-- === AUDIO ENGINE (Updated win SFX to match Dice/Slots vibe) === -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -309,15 +342,39 @@
     src.connect(bp).connect(g).connect(MASTER); src.start(now); src.stop(now+0.09);
   }
 
-  function playWin(jackpot=false){
+  /* New: richer win tones (same palette as Dice/Slots) */
+  function coinShimmer(ac, t0, len=0.35){
+    const n=ac.createOscillator(), g=ac.createGain();
+    n.type='triangle'; n.frequency.setValueAtTime(1200, t0);
+    n.frequency.exponentialRampToValueAtTime(2200, t0+len);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.11, t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0+len);
+    n.connect(g).connect(MASTER); n.start(t0); n.stop(t0+len+0.02);
+  }
+  function playWinSmall(){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
-    const now=ac.currentTime, comp=mkComp(ac);
-    const notes = jackpot ? [880, 1175, 1568, 2093] : [660, 880, 1175];
-    notes.forEach((f,i)=>{ const t=now+i*0.06; const o=ac.createOscillator(), g=ac.createGain();
-      o.type='triangle'; o.frequency.setValueAtTime(f,t);
-      g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);
-      o.connect(g).connect(comp); o.start(t); o.stop(t+0.16);
+    const t=ac.currentTime;
+    const seq=[660,880,1175];
+    seq.forEach((f,i)=>{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type='triangle'; o.frequency.setValueAtTime(f, t+i*0.07);
+      g.gain.setValueAtTime(0.0001,t+i*0.07); g.gain.linearRampToValueAtTime(0.12,t+i*0.07+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.07+0.22);
+      o.connect(g).connect(MASTER);
+      o.start(t+i*0.07); o.stop(t+i*0.07+0.25);
     });
+    coinShimmer(ac, t+0.12, 0.32);
+  }
+  function playWinJackpot(){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const t=ac.currentTime;
+    const seq=[880,1175,1568,2093,2637];
+    seq.forEach((f,i)=>{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type='triangle'; o.frequency.setValueAtTime(f, t+i*0.075);
+      g.gain.setValueAtTime(0.0001,t+i*0.075); g.gain.linearRampToValueAtTime(0.13,t+i*0.075+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.075+0.26);
+      o.connect(g).connect(MASTER);
+      o.start(t+i*0.075); o.stop(t+i*0.075+0.28);
+    });
+    coinShimmer(ac, t+0.18, 0.42);
   }
 
   window.__bagAudio = {
@@ -325,7 +382,7 @@
     nudge: playPeg,
     peg: playPeg,
     wall: playWall,
-    win: (jp=false)=>playWin(!!jp),
+    win: (jp=false)=> jp ? playWinJackpot() : playWinSmall(),
     lose: playLose
   };
 
@@ -606,8 +663,8 @@
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const LIVE_CACHE_TTL_MS = 24*60*60*1000;  // last-live pricing bundle TTL
-  const VIEW_CACHE_TTL_MS = 6*60*60*1000;   // view cache TTL
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
 
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
@@ -792,7 +849,7 @@
   }
   function refreshHudMini(){
     if (betLbl) betLbl.textContent = (parseInt(betInput?.value||'0',10)||0);
-    if (ccyLbl) ccyLbl.textContent = 'BAG'; // Balance is settled/shown in BAG
+    if (ccyLbl) ccyLbl.textContent = 'BAG';
   }
   function refreshUnit(){
     if (unitSpan) unitSpan.textContent = selectedCur();
@@ -856,7 +913,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (global ball; board visible; sound & celebration) === -->
+<!-- === PLINKO GAME LOGIC (now with Dice/Slots-style win celebration + readouts) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -913,8 +970,9 @@
 
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), modeLbl=$('modeLbl');
-  const resText=$('resText'), dropBtn=$('dropBtn'), celeEl=$('cele');
+  const resText=$('resText'), dropBtn=$('dropBtn');
   const betInput=$('demoBet'), stateText=$('stateText');
+  const boardWrap=$('boardWrap'), winReadout=$('winReadout'), winTitle=$('winTitle'), winAmt=$('winAmt'), winUsd=$('winUsd');
 
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
@@ -968,34 +1026,25 @@
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
-    aiming = true;
     const nx = clientToCanvasX(e.clientX);
-    aimVX = 0;
-    lastAimX = nx;
-    dropX = nx;
+    aimVX = 0; lastAimX = nx; dropX = nx;
     try{ canvas.setPointerCapture(e.pointerId); }catch{}
   });
   canvas.addEventListener('pointermove', (e)=>{
-    if(!aiming) return;
     const nx = clientToCanvasX(e.clientX);
-    aimVX = nx - lastAimX;
-    lastAimX = nx;
-    dropX = nx;
+    aimVX = nx - lastAimX; lastAimX = nx; dropX = nx;
   });
-  canvas.addEventListener('pointerup', ()=>{ aiming = false; });
 
   addEventListener('keydown', (e)=>{
     const step = 10;
     if (e.key === 'ArrowLeft'){
       e.preventDefault();
       dropX = clamp(dropX - step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = -step;
-      lastAimX = dropX;
+      aimVX = -step; lastAimX = dropX;
     } else if (e.key === 'ArrowRight'){
       e.preventDefault();
       dropX = clamp(dropX + step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = step;
-      lastAimX = dropX;
+      aimVX = step; lastAimX = dropX;
     } else if (e.code === 'Space'){
       e.preventDefault();
       if (!dropping) dropBtn.click();
@@ -1105,6 +1154,47 @@
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
+  // 🔔 Dice/Slots-style win celebration
+  function celebrateWin(mult, stakeUnits, cur){
+    // Compute BAG and USD win amounts
+    const P = window.__PRICES__ || {};
+    const bagPerXrp = (P.bagUsd>0 && P.xrpUsd>0) ? (P.xrpUsd / P.bagUsd) : 0;
+    const stakeBag = (cur==='BAG') ? stakeUnits : stakeUnits * bagPerXrp;
+    const winBag = stakeBag * mult;
+    const winUsd = P.bagUsd>0 ? winBag * P.bagUsd : 0;
+
+    // Show banner + count up
+    try{
+      if (!winReadout) return;
+      winTitle.textContent = (mult>=2 ? 'JACKPOT' : 'WIN');
+      winAmt.textContent = '+0.00 BAG';
+      winUsd.textContent = '(+$0.00)';
+      winReadout.classList.add('show');
+      const pulseClass = (mult>=2 ? 'jp-pulse' : 'win-pulse');
+      boardWrap?.classList.add(pulseClass);
+
+      const t0 = performance.now();
+      const dur = mult>=2 ? 1200 : 900;
+      function tick(t){
+        const k = Math.min(1, (t - t0)/dur);
+        const val = winBag * (0.6*k + 0.4*k*k); // ease-up
+        const usd = winUsd * (0.6*k + 0.4*k*k);
+        winAmt.textContent = `+${val.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+        winUsd.textContent = `(+${usd.toLocaleString(undefined,{style:'currency',currency:'USD',currencyDisplay:'symbol',maximumFractionDigits:2})})`;
+        if (k<1) requestAnimationFrame(tick);
+        else setTimeout(()=>{
+          winReadout.classList.remove('show');
+          boardWrap?.classList.remove(pulseClass);
+        }, 520);
+      }
+      requestAnimationFrame(tick);
+    }catch{}
+
+    // Dispatch cross-game bus events so global overlays (if any) can react
+    const evtName = mult>=2 ? 'bag:jackpot' : 'bag:win';
+    window.dispatchEvent(new CustomEvent(evtName, { detail: { game:'plinko', mult, winBag, winUsd } }));
+  }
+
   function resolveByIndex(idx){
     const b = G.ball;
     if(!b){ clearRoundState(); return; }
@@ -1118,27 +1208,39 @@
     if (rule === 'L'){
       lastTxt='Scratch'; resText.textContent='Scratch (lose)'; stateText.textContent='Resolved';
       loseSound();
-    } else {
-      const mult = Number(rule);
-
-      const payoutUnits = Math.floor(stake * mult * 100)/100;
-      balance += payoutUnits; hud();
-
-      if (window.__BAG_FORCE_DEMO !== true){
-        const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
-        const bagPayout = bagStake * mult;
-        try{ window.__bagSession?.credit?.(bagPayout); }catch{}
-      }
-
-      if (mult === 2){
-        lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-        winSound(true);
-      } else {
-        lastTxt='Win 1.25×'; resText.textContent='Win 1.25×';
-        winSound(false);
-      }
-      stateText.textContent='Resolved';
+      hud();
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+      return;
     }
+
+    // Win path
+    const mult = Number(rule);
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+
+    // Demo HUD balance in visible units
+    const payoutUnits = Math.floor(stake * mult * 100)/100;
+    balance += payoutUnits; hud();
+
+    // Credit live session (BAG)
+    if (window.__BAG_FORCE_DEMO !== true){
+      const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
+      const bagPayout = bagStake * mult;
+      try{ window.__bagSession?.credit?.(bagPayout); }catch{}
+    }
+
+    // Sound + readout (Dice/Slots style)
+    if (mult === 2){
+      lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
+      winSound(true);
+    } else {
+      lastTxt='Win 1.25×'; resText.textContent='Win 1.25×';
+      winSound(false);
+    }
+    stateText.textContent='Resolved';
+
+    // Launch celebration banner & dispatch shared events
+    celebrateWin(mult, stake, cur);
+
     hud();
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
@@ -1198,7 +1300,7 @@
   }
 
   function drawBall(x,y){
-    const r=BALL_R;
+    const r=8;
     const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
     g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
     ctx.fillStyle=g;
@@ -1277,7 +1379,6 @@
 
   window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
 
-  // Keep bottom HUD balance in BAG in sync with demo balance
   window.addEventListener('bag:pricesUpdated', ()=>{
     const el = document.getElementById('balLbl');
     if (el && window.__BAG_FORCE_DEMO){
