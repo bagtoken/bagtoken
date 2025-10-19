@@ -251,31 +251,65 @@
 </footer>
 </div>
 
-<!-- 🔊 Sound toggle with more sensitive first-tap unlock -->
+<!-- 🔊 Sound toggle with Web Audio gain (reliable volume control on iOS/Safari) -->
 <script>
 (function(){
-  const btn = document.getElementById('soundToggle');
+  const btn   = document.getElementById('soundToggle');
   const audio = document.getElementById('casinoAmbience');
-  const KEY = 'bag_sound_pref';
-  let playing = false;
+  const KEY   = 'bag_sound_pref';
+
+  // Set your target loudness here (0 = silent, 1 = original level). You can go above 1 to boost.
+  const TARGET_GAIN = 0.10; // was 0.35
+
+  let playing   = false;
+  let audioCtx  = null;
+  let source    = null;
+  let gainNode  = null;
 
   function setIcon(){
     btn.textContent = playing ? '🔊' : '🔇';
     btn.setAttribute('aria-pressed', playing);
   }
 
-  function playAudio(){
-    audio.volume = 0.5;
-    return audio.play().then(()=>{
+  async function ensureGraph(){
+    // Create audio graph on first user gesture
+    if (!audioCtx){
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+      source   = audioCtx.createMediaElementSource(audio);
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = TARGET_GAIN; // initial level
+      source.connect(gainNode).connect(audioCtx.destination);
+    }
+    if (audioCtx.state !== 'running'){
+      await audioCtx.resume();
+    }
+  }
+
+  function setGain(v){
+    if (!gainNode || !audioCtx) return;
+    // Allow a tiny ramp for click-free changes
+    const clamped = Math.max(0, Math.min(2, v));
+    gainNode.gain.setTargetAtTime(clamped, audioCtx.currentTime, 0.05);
+  }
+
+  async function playAudio(){
+    try{
+      await ensureGraph();
+      setGain(TARGET_GAIN);
+      audio.loop = true;
+      // Keep HTML volume at 1.0; we control loudness via GainNode for reliability
+      audio.volume = 1.0;
+      await audio.play();
       playing = true;
       setIcon();
       localStorage.setItem(KEY,'on');
       removeGestureUnlock();
-    }).catch((e)=>{
+    }catch(e){
       playing = false;
       setIcon();
       return Promise.reject(e);
-    });
+    }
   }
 
   function pauseAudio(){
@@ -288,7 +322,7 @@
 
   btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
 
-  // --- MORE SENSITIVE GESTURE UNLOCK ---
+  // --- MORE SENSITIVE GESTURE UNLOCK (unchanged) ---
   const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
   let armed = false;
 
@@ -309,6 +343,7 @@
     GESTURES.forEach(t => document.removeEventListener(t, gestureHandler, {capture:true}));
   }
 
+  // Auto-resume on focus/visibility (unchanged)
   window.addEventListener('focus', () => {
     const pref = localStorage.getItem(KEY);
     if (pref !== 'off' && !playing) playAudio().catch(()=>{});
@@ -327,8 +362,12 @@
     armGestureUnlock();
   }
   setIcon();
+
+  // Optional: expose a quick way to tweak volume from the console
+  window.__bagSetAmbienceGain = (val)=> setGain(val);
 })();
 </script>
+
 
 </body>
 </html>
