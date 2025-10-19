@@ -56,12 +56,6 @@
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
 
-  /* ✅ Payouts grid (matches other games) */
-  .payout-grid{display:grid;gap:4px}
-  .payout-grid .row{display:flex;justify-content:space-between;align-items:baseline}
-  .payout-grid .lab{color:#cfd6cf}
-  .payout-grid .val{font-variant-numeric:tabular-nums}
-
   .btn-roll{
     width:100%;margin-top:12px;padding:16px 22px;font-size:1.15rem;font-weight:900;text-transform:uppercase;
     letter-spacing:.5px;border:0;border-radius:14px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
@@ -232,17 +226,9 @@
           <div class="micro">Game state</div>
           <div class="muted" id="stateText">Ready — tap Drop to start</div>
 
-          <!-- ✅ Reformatted Payouts box -->
           <div class="callout mono" id="payoutBox">
-            <div class="payout-grid">
-              <div class="row"><div class="lab"><strong>Scratch</strong> (0×):</div><div class="val">—</div></div>
-              <div class="row"><div class="lab"><strong>Win</strong> (1.25×):</div><div class="val">— <span class="micro" id="payWinGain" style="opacity:.9"></span></div></div>
-              <div class="row"><div class="lab"><strong>Jackpot</strong> (2.00×):</div><div class="val">— <span class="micro" id="payJackpotGain" style="opacity:.9"></span></div></div>
-            </div>
-            <div class="micro" style="margin-top:6px;opacity:.85;">
-              Drop lands in a slot: Scratch (lose), Win (1.25×), or Jackpot (2.00×). Payouts settle in BAG.
-            </div>
-            <div class="micro" style="margin-top:6px;opacity:.75;">Min $1 · Max $2,000</div>
+            <div><strong>Payouts:</strong> Scratch (lose) · 1.25× (win) · 2.0× (jackpot)</div>
+            <div class="micro" style="margin-top:6px;opacity:.85;">Min $1 · Max $2,000 (converted to $BAG on payout)</div>
           </div>
 
           <p class="micro aim-tip">👇 Tap anywhere on the board to choose where the coin drops. Use ←/→ to adjust; press Space or tap <b>Drop</b> to release.</p>
@@ -947,9 +933,6 @@
     const x = Number(n); if(!Number.isFinite(x)) return '—';
     return x.toLocaleString(undefined,{maximumFractionDigits:max});
   }
-  function usdFmt(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  /* ✅ Nicely formatted payouts (like other games) */
   function updatePayouts(){
     try{
       if (!payoutBox) return;
@@ -966,32 +949,18 @@
         stakeBag = qty * bagPerXrp;
       }
 
-      const mScratch=0.00, mWin=1.25, mJack=2.00;
-
-      const sUsd = (bagUsd>0) ? stakeBag*bagUsd : 0;
-
-      const scrBag = stakeBag*mScratch, scrUsd = sUsd*mScratch;
-      const winBagT = stakeBag*mWin, winUsdT = sUsd*mWin, winGain = stakeBag*(mWin-1);
-      const jpBagT  = stakeBag*mJack, jpUsdT  = sUsd*mJack,  jpGain  = stakeBag*(mJack-1);
-
-      const dash = !(stakeBag>0 && bagUsd>0);
-      const row = (label, mult, bagT, usdT, gainBag) => {
-        if (dash) return '—';
-        const base = `${fmt(bagT)} BAG (${usdFmt(usdT)})`;
-        const gain = (gainBag!=null && gainBag>=0) ? ` <span class="micro" style="opacity:.9">(+${fmt(gainBag)} BAG)</span>` : '';
-        return base + gain;
-      };
+      const winBag  = stakeBag * 0.25;
+      const jpBag   = stakeBag * 1.0;
+      const winUsd  = (bagUsd>0) ? winBag * bagUsd : 0;
+      const jpUsd   = (bagUsd>0) ? jpBag  * bagUsd : 0;
 
       payoutBox.innerHTML =
-        `<div class="payout-grid">
-           <div class="row"><div class="lab"><strong>Scratch</strong> (0.00×):</div><div class="val">${dash?'—':`${fmt(scrBag)} BAG (${usdFmt(scrUsd)})`}</div></div>
-           <div class="row"><div class="lab"><strong>Win</strong> (1.25×):</div><div class="val">${row('Win', mWin, winBagT, winUsdT, winGain)}</div></div>
-           <div class="row"><div class="lab"><strong>Jackpot</strong> (2.00×):</div><div class="val">${row('Jackpot', mJack, jpBagT, jpUsdT, jpGain)}</div></div>
+        `<div><strong>Payouts:</strong> Scratch (lose) · <b>1.25×</b> (win) · <b>2.0×</b> (jackpot)</div>
+         <div class="micro" style="margin-top:6px;opacity:.92;">
+           Win: +${fmt(winBag)} BAG (${winUsd?('$'+winUsd.toFixed(2)):'—'}) ·
+           Jackpot: +${fmt(jpBag)} BAG (${jpUsd?('$'+jpUsd.toFixed(2)):'—'})
          </div>
-         <div class="micro" style="margin-top:6px;opacity:.85;">
-           Drop lands in a slot: Scratch (lose), Win (1.25×), or Jackpot (2.00×). Payouts settle in BAG.
-         </div>
-         <div class="micro" style="margin-top:6px;opacity:.75;">Min $1 · Max $2,000</div>`;
+         <div class="micro" style="margin-top:6px;opacity:.75;">Min $1 · Max $2,000 (converted to $BAG on payout)</div>`;
     }catch{}
   }
 
@@ -1116,7 +1085,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (unchanged visuals) === -->
+<!-- === PLINKO GAME LOGIC (widened board) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1139,7 +1108,7 @@
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const W=640, H=880; canvas.width=W; canvas.height=H;
+  const W=720, H=880; canvas.width=W; canvas.height=H;  /* ⬅ widened from 640 to 720 */
 
   const pegLeft  = WALL_PAD;
   const pegRight = W - WALL_PAD;
@@ -1248,7 +1217,7 @@
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
     const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, 24 + 8, (640 - 24) - 8);
+    return clamp(x, 24 + 8, (W - 24) - 8);
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
@@ -1265,7 +1234,7 @@
 
   addEventListener('keydown', (e)=>{
     const step = 10;
-    const L = 24 + 8, R = (640 - 24) - 8;
+    const L = 24 + 8, R = (W - 24) - 8;
     let dx = G.__dropX ?? (L+R)/2;
     if (e.key === 'ArrowLeft'){
       e.preventDefault();
@@ -1321,7 +1290,7 @@
     dropping=true; dropBtn.disabled=true;
 
     const wallLeft = 24 - 10 + 10; // reuse values
-    const wallRight = 640 - 24 + 10 - 10;
+    const wallRight = W - 24 + 10 - 10;
     const BALL_R = 8;
     const startX = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, G.__dropX ?? 320));
     const initVx = ((G.__aimVX|| (Math.random()-0.5)*0.8)) * 0.08;
@@ -1346,7 +1315,7 @@
     const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
     const SUBSTEPS = 2, PEG_R = 6, BALL_R = 8;
     const wallLeft = 24 - 10 + 10;
-    const wallRight = 640 - 24 + 10 - 10;
+    const wallRight = W - 24 + 10 - 10;
     const bottomBoard = 880-120;
     const topBoard = 110;
     const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
@@ -1392,7 +1361,7 @@
   }
 
   (function genPegs(){
-    const W=640, H=880;
+    const W=720, H=880; /* ⬅ widened from 640 to 720 */
     const WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120, PEG_R=6, PEG_ROWS=15, PEG_COLS=13;
     const wallLeft = (WALL_PAD) - 10 + 10;
     const wallRight = (W - WALL_PAD) + 10 - 10;
@@ -1415,7 +1384,7 @@
   })();
 
   function boundarySlotIndex(x){
-    const wallLeft = 24 - 10 + 10, wallRight = 640 - 24 + 10 - 10;
+    const wallLeft = 24 - 10 + 10, wallRight = W - 24 + 10 - 10;
     const slotCount = 7;
     const slotWidth=(wallRight-wallLeft)/slotCount;
     const clamped = Math.min(wallRight-1, Math.max(wallLeft+1, x));
@@ -1479,7 +1448,8 @@
   }
 
   function drawBoard(){
-    const W=640, H=880, WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120;
+    const W=720, H=880; /* ⬅ widened from 640 to 720 */
+    const WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120;
     const ctx = document.getElementById('game').getContext('2d');
     const wallLeft   = (WALL_PAD) - 10 + 10;
     const wallRight  = (W - WALL_PAD) + 10 - 10;
