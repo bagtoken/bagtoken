@@ -1262,7 +1262,7 @@ if ('serviceWorker' in navigator) {
       if(beforeEl) hudbar.insertBefore(el, beforeEl);
       else hudbar.appendChild(el);
     }
-    el.dataset.label = label;
+    el.dataset.label = label; // (not used for UI; just a marker)
     return el;
   }
 
@@ -1271,10 +1271,9 @@ if ('serviceWorker' in navigator) {
   const betPill     = ensurePill('hudBet','Bet');
   const lastPill    = ensurePill('hudLast','Last');
 
-  // Formatting helpers
+  // Helpers
   const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
   const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
-
   const sessionObj = () => (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null;
   const stakeBag   = () => (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
   const stakeUsd   = () => (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
@@ -1287,7 +1286,6 @@ if ('serviceWorker' in navigator) {
   function renderBalance(){
     const s = sessionObj();
     const amt = s && Number(s.bag)>0 ? fmtBag(s.bag) : '—';
-    // Update your existing Balance pill content/labels
     const balLbl = document.getElementById('balLbl');
     const ccyLbl = document.getElementById('ccyLbl');
     if (balLbl) balLbl.textContent = amt;
@@ -1302,12 +1300,16 @@ if ('serviceWorker' in navigator) {
 
   function renderLast(ev){
     const d = ev && ev.detail ? ev.detail : null;
-    if(!d){ lastPill.innerHTML = `Last: <b>—</b>`; return; }
+    if(!d){
+      // SHOW LABEL IMMEDIATELY EVEN BEFORE FIRST SPIN
+      lastPill.innerHTML = `Last: <b>—</b>`;
+      return;
+    }
     let txt='Lose', delta='';
     if(d.mult===2.00){ txt='JACKPOT'; delta = ` +${fmtBag(d.stakeBag*1.00)} BAG`; }
     else if(d.mult===1.25){ txt='WIN'; delta = ` +${fmtBag(d.stakeBag*0.25)} BAG`; }
     else if(d.mult===1.00){ txt='SCRATCH'; delta = ` +0 BAG`; }
-    lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">${delta}</span>`;
+    lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">&nbsp;${delta}</span>`;
   }
 
   function paint(){ renderMode(); renderBalance(); renderBet(); }
@@ -1325,11 +1327,15 @@ if ('serviceWorker' in navigator) {
     document.getElementById('curToggle')?.addEventListener(t, renderBet);
   });
 
-  // Initial + short watchdog for late mounts
+  // INITIALIZE ALL FOUR PILLS RIGHT AWAY (this was missing before)
   paint();
-  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40) clearInterval(iv); }, 500);
+  renderLast(null);
+
+  // Short watchdog for late mounts
+  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
 })();
 </script>
+
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
