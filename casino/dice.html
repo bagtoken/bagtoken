@@ -812,10 +812,22 @@
     const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
     const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
     return `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`
-    )}")`;
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 -2' transform='scale(1,-1)'></svg>`
+    )}")`; // (Note: faces are built below in makeDie)
   }
-  function makeDie(el){ el.innerHTML=''; for(let i=1;i<=6;i++){ const f=document.createElement('div'); f.className='face f'+i; f.style.backgroundImage=faceSVG(i); el.appendChild(f);} }
+  function makeDie(el){
+    el.innerHTML='';
+    for(let i=1;i<=6;i++){
+      const f=document.createElement('div');
+      f.className='face f'+i;
+      // rebuild the SVG here for crisp dots:
+      const r=0.22,m=0.56,c=0;
+      const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[i];
+      const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
+      f.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`)}")`;
+      el.appendChild(f);
+    }
+  }
   const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
   makeDie(dieA); makeDie(dieB);
 
@@ -1064,25 +1076,32 @@
     credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemo(); return true; }
   };
 
-  // Ensure default 1 XRP bet when entering Demo (user can still change it)
-  function ensureDefaultBetXRP(){
-    try{
-      const bet = document.getElementById('betQty');
-      const usd = document.getElementById('usdBet');
-      const unit = document.querySelector('.unit');
-      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-      if (xrpRadio){ xrpRadio.checked = true; }
-      if (unit){ unit.textContent = 'XRP'; }
-      const v = parseFloat(bet?.value||'');
-      if (!(v>0)){
-        if (bet){ bet.value = '1'; bet.dispatchEvent(new Event('input', {bubbles:true})); }
-      } else {
-        // still trigger refresh so HUD/payouts sync
-        bet.dispatchEvent(new Event('input', {bubbles:true}));
-      }
-      // Nudge USD autofill to reflect the 1 XRP default once prices are ready
-      usd?.dispatchEvent(new Event('input', {bubbles:true}));
-    }catch{}
+  // Stronger: always force 1 XRP bet in Demo (user can still change)
+  function forceBetXRP1(){
+    const bet  = document.getElementById('betQty');
+    const usd  = document.getElementById('usdBet');
+    const unit = document.querySelector('.unit');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+
+    if (xrpRadio && !xrpRadio.checked){
+      xrpRadio.checked = true;
+      xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    if (unit) unit.textContent = 'XRP';
+
+    if (bet){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input', {bubbles:true}));
+      bet.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+
+    if (usd){
+      usd.dataset.userTyped = '0'; // allow USD autofill to recalc from 1 XRP
+      usd.dispatchEvent(new Event('input', {bubbles:true}));
+      usd.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
 
   function enableDemo(){
@@ -1092,7 +1111,13 @@
     }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
     renderDemo();
-    ensureDefaultBetXRP();
+
+    // Force default bet immediately + next tick + once after prices arrive
+    forceBetXRP1();
+    setTimeout(forceBetXRP1, 0);
+    const once = ()=>{ forceBetXRP1(); window.removeEventListener('bag:pricesUpdated', once); };
+    window.addEventListener('bag:pricesUpdated', once);
+
     if (connectEl) connectEl.style.opacity='0.9';
   }
 
