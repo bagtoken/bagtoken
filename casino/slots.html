@@ -1246,36 +1246,39 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- === SLOTS: HUD Live Balance Tweak (show session BAG in LIVE) === -->
+<!-- === SLOTS: HUD updater (match Dice — works in DEMO & LIVE) === -->
 <script>
 (function(){
   function fmtBag(n){
     const x = Number(n) || 0;
-    return x.toLocaleString(undefined, { maximumFractionDigits: 6 });
+    return x.toLocaleString(undefined,{ maximumFractionDigits: 6 });
   }
-  function getHudEls(){
-    return {
-      balLbl:  document.getElementById('balLbl'),
-      ccyLbl:  document.getElementById('ccyLbl')
-    };
-  }
-  function renderLiveHud(){
+  function els(){ return { balLbl:document.getElementById('balLbl'), ccyLbl:document.getElementById('ccyLbl') }; }
+
+  function renderHud(){
     try{
-      if (window.__BAG_FORCE_DEMO === true) return;
-      const s = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
-      if (!s) return;
-      const { balLbl, ccyLbl } = getHudEls();
-      if (balLbl) balLbl.textContent = fmtBag(s.bag);
+      const sess = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
+      if(!sess) return;
+      const { balLbl, ccyLbl } = els();
+      if (balLbl) balLbl.textContent = fmtBag(sess.bag);
       if (ccyLbl) ccyLbl.textContent = 'BAG';
     }catch(e){}
   }
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected']
-    .forEach(ev=>addEventListener(ev,renderLiveHud));
 
-  addEventListener('storage', (e)=>{ if (e && e.key === 'bag_session_v1') renderLiveHud(); });
+  // Update on all relevant state changes (mirrors Dice, plus slotsResult)
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated',
+   'bag:walletConnected','bag:walletDisconnected','bag:slotsResult']
+   .forEach(ev=>addEventListener(ev, renderHud));
 
-  renderLiveHud();
-  let tries=0; const iv=setInterval(()=>{ renderLiveHud(); if(++tries>40) clearInterval(iv); }, 500);
+  // Also react to localStorage changes (multi-tab demo + session)
+  addEventListener('storage', (e)=>{
+    if (!e) return;
+    if (e.key === '__bag_demo_bag_v1' || e.key === 'bag_session_v1') renderHud();
+  });
+
+  // First paint + small watchdog for late-mount
+  renderHud();
+  let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
