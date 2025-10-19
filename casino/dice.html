@@ -170,6 +170,16 @@
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
   .hudbar .pill b{ font-weight:800 }
+
+  /* --- NEW: preset chips row --- */
+  .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .preset-chip{
+    appearance:none; border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
+    border-radius:999px; padding:6px 10px; font-weight:800; cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .preset-chip:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+  .preset-chip.active{ background:#173c28; border-color:#3fa86a; box-shadow:0 0 0 2px rgba(63,168,106,.25) inset; }
 </style>
 
 <script src="/js/bag-session.js"></script>
@@ -217,6 +227,17 @@
                 <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="micro" aria-hidden="true">USD</span>
               </div>
+            </div>
+            <!-- NEW: preset chips -->
+            <div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet">
+              <button type="button" class="preset-chip" data-usd="1">$1</button>
+              <button type="button" class="preset-chip" data-usd="2">$2</button>
+              <button type="button" class="preset-chip" data-usd="5">$5</button>
+              <button type="button" class="preset-chip" data-usd="10">$10</button>
+              <button type="button" class="preset-chip" data-usd="20">$20</button>
+              <button type="button" class="preset-chip" data-usd="50">$50</button>
+              <button type="button" class="preset-chip" data-usd="100">$100</button>
+              <button type="button" class="preset-chip" data-usd="max">Max</button>
             </div>
           </div>
 
@@ -658,7 +679,7 @@
 })();
 </script>
 
-<!-- USD autofill + payouts + limits -->
+<!-- USD autofill + payouts + limits + PRESETS -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -673,6 +694,8 @@
   const betLimits = document.getElementById('betLimits');
   const rollBtn   = document.getElementById('rollBtn');
 
+  const presets   = document.getElementById('usdPresets');
+
   const MIN_USD = 1, MAX_USD = 2000;
 
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
@@ -681,24 +704,56 @@
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
     return el ? String(el.value).toUpperCase() : 'XRP';
   }
+  function priceForCurrent(){
+    const {bagUsd,xrpUsd}=PR();
+    return currentCurrency()==='BAG' ? bagUsd : xrpUsd;
+  }
   function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:1; }
 
   function derivedUsd(){
-    const {bagUsd,xrpUsd}=PR();
+    const px = priceForCurrent();
     const q=qty();
-    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
+    return px>0 ? q*px : 0;
   }
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+  function clearPresetActive(){
+    try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{}
+  }
+
+  function setFromUsd(value){
+    const u = Math.max(0, Math.min(MAX_USD, Number(value)||0));
+    // mark manual so autofill doesn't overwrite
+    if (usdBetEl){
+      usdBetEl.value = u ? u.toFixed(2) : '';
+      usdBetEl.dataset.userTyped = u ? '1' : '0';
+    }
+    // back-solve units from USD for selected currency
+    const px = priceForCurrent();
+    if (betQtyEl){
+      if (px>0 && u>0){
+        const units = Math.floor((u/px)*1e6)/1e6;
+        betQtyEl.value = units || '';
+      } else {
+        betQtyEl.value = '';
+      }
+    }
+    updatePayouts();
+    renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+
   function autoFillUsd(){
     if (!usdBetEl) return;
-    if (usdBetEl.dataset.userTyped==='1') return;
+    if (usdBetEl.dataset.userTyped==='1') return; // respect manual / preset
     const v = derivedUsd();
     if (v>0){
       usdBetEl.value = (Math.round(v*100)/100).toFixed(2);
       usdBetEl.dataset.autofill='1';
+    }else{
+      usdBetEl.value = '';
+      usdBetEl.dataset.autofill='0';
     }
   }
 
@@ -707,7 +762,10 @@
     const q=qty();
     const isBAG = currentCurrency()==='BAG';
     const bagStake = isBAG ? q : (bagUsd>0 ? q*(PR().xrpUsd/bagUsd) : 0);
-    const usdStake = derivedUsd();
+    const usdStake = (function(){
+      const direct = parseFloat(usdBetEl?.value||'');
+      return Number.isFinite(direct)&&direct>0 ? direct : derivedUsd();
+    })();
 
     const mCO=1.25, mPt=1.00, mJ=2.00;
 
@@ -717,17 +775,53 @@
   }
 
   function renderLimits(){
-    const usdVal = derivedUsd() || 0;
-    const warn = (usdVal>0 && usdVal<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
-                 (usdVal>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
-    if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${usdVal.toFixed(2)}${warn}`;
-    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && usdVal>0 && usdVal<MIN_USD);
+    const uv = (function(){
+      const direct = parseFloat(usdBetEl?.value||'');
+      return Number.isFinite(direct)&&direct>0 ? direct : derivedUsd();
+    })() || 0;
+
+    const warn = (uv>0 && uv<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (uv>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${uv.toFixed(2)}${warn}`;
+    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && uv>0 && uv<MIN_USD);
   }
 
-  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); renderLimits(); });
-  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); renderLimits(); });
-  curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); renderLimits(); });
-  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); renderLimits(); });
+  // Inputs
+  usdBetEl?.addEventListener('input', ()=>{ clearPresetActive(); usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); renderLimits(); });
+  betQtyEl?.addEventListener('input', ()=>{ clearPresetActive(); autoFillUsd(); updatePayouts(); renderLimits(); });
+  curToggle?.addEventListener('change', ()=>{
+    if(unitSpan) unitSpan.textContent=currentCurrency();
+    // if user typed or used preset, recompute units from USD for new currency
+    if (usdBetEl?.dataset.userTyped==='1'){
+      const val = parseFloat(usdBetEl.value)||0;
+      setFromUsd(val);
+    } else {
+      autoFillUsd();
+      updatePayouts();
+      renderLimits();
+    }
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{ 
+    if (usdBetEl?.dataset.userTyped==='1'){
+      const val = parseFloat(usdBetEl.value)||0;
+      setFromUsd(val);
+    } else {
+      autoFillUsd();
+      updatePayouts(); 
+      renderLimits(); 
+    }
+  });
+
+  // Preset chips handler
+  presets?.addEventListener('click', (e)=>{
+    const b = e.target.closest('.preset-chip');
+    if(!b) return;
+    clearPresetActive();
+    b.classList.add('active');
+    const d = b.dataset.usd;
+    const val = (d==='max') ? MAX_USD : Math.max(0, Number(d)||0);
+    setFromUsd(val);
+  });
 
   if(unitSpan) unitSpan.textContent=currentCurrency();
   autoFillUsd();
@@ -1239,7 +1333,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
