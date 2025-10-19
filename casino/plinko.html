@@ -269,7 +269,7 @@
   </div>
 </section>
 
-<!-- === AUDIO ENGINE (Plinko-specific) === -->
+<!-- === AUDIO ENGINE (Plinko-specific, with shared THUD) === -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -277,20 +277,28 @@
 
   function makeAC(){
     if(!AudioCtx) return null;
-    const ac=new AudioCtx();
-    const master=ac.createGain(); master.gain.value=0.28; master.connect(ac.destination);
-    AC=ac; MASTER=master;
-    ac.onstatechange=()=>{ if(ac.state==='suspended') tryResume(); };
+    const ac = new AudioCtx();
+    const master = ac.createGain();
+    master.gain.value = 0.28;
+    master.connect(ac.destination);
+    AC = ac; MASTER = master;
+    ac.onstatechange = () => { if (ac.state === 'suspended') tryResume(); };
     return ac;
   }
-  function getAC(){ if(AC && AC.state!=='closed') return AC; return makeAC(); }
+  function getAC(){ if (AC && AC.state !== 'closed') return AC; return makeAC(); }
   function silentTick(ac){ try{ const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=0.00001; o.connect(g).connect(MASTER); o.start(); o.stop(ac.currentTime+0.01);}catch{} }
-  async function tryResume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch{} } if(ac.state==='running') silentTick(ac); }
+  async function tryResume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } if(ac.state==='running') silentTick(ac); }
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running') await tryResume(); return ac; }
   function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
 
-  function mkComp(ac){ const c=ac.createDynamicsCompressor(); c.threshold.value=-20; c.knee.value=18; c.ratio.value=3.5; c.attack.value=0.001; c.release.value=0.12; c.connect(MASTER); return c; }
+  function mkComp(ac){
+    const c = ac.createDynamicsCompressor();
+    c.threshold.value = -20; c.knee.value = 18; c.ratio.value = 3.5; c.attack.value = 0.001; c.release.value = 0.12;
+    c.connect(MASTER);
+    return c;
+  }
 
+  // ====== SFX ======
   function playPeg(){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime, comp=mkComp(ac);
@@ -301,7 +309,9 @@
     const m2Gain=ac.createGain(); m2Gain.gain.setValueAtTime(60, now);
     m1.connect(m1Gain).connect(o1.frequency); m2.connect(m2Gain).connect(o2.frequency);
     m1.frequency.setValueAtTime(4200, now); m2.frequency.setValueAtTime(3600, now);
-    g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(0.12, now+0.006); g.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.12, now+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
     o1.connect(g); o2.connect(g); g.connect(comp);
     o1.start(now); o2.start(now); m1.start(now); m2.start(now);
     o1.stop(now+0.12); o2.stop(now+0.12); m1.stop(now+0.12); m2.stop(now+0.12);
@@ -309,51 +319,108 @@
 
   function playWall(){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
-    const now=ac.currentTime, comp=mkComp(ac); const o=ac.createOscillator(), g=ac.createGain();
-    o.type='square'; o.frequency.setValueAtTime(380, now); o.frequency.exponentialRampToValueAtTime(180, now+0.12);
-    g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(0.09, now+0.01); g.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
-    o.connect(g).connect(comp); o.start(now); o.stop(now+0.16);
+    const now=ac.currentTime, comp=mkComp(ac);
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type='square';
+    o.frequency.setValueAtTime(380, now);
+    o.frequency.exponentialRampToValueAtTime(180, now+0.12);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.09, now+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
+    o.connect(g).connect(comp);
+    o.start(now); o.stop(now+0.16);
   }
 
-  function playLose(){
+  // >>> Shared THUD (lose) — low sine hit + filtered noise body (no clicks)
+  function playThud(){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
-    const now=ac.currentTime; const buf=ac.createBuffer(1, Math.floor(ac.sampleRate*0.06), ac.sampleRate);
-    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*0.6*(1-i/d.length);
-    const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=1.2;
-    const g=ac.createGain(); g.gain.setValueAtTime(0.12, now); g.gain.exponentialRampToValueAtTime(0.0001, now+0.08);
-    src.connect(bp).connect(g).connect(MASTER); src.start(now); src.stop(now+0.09);
+    const now = ac.currentTime;
+    const comp = mkComp(ac);
+
+    // Body: sine drop
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(160, now);
+    o.frequency.exponentialRampToValueAtTime(70,  now + 0.18);
+
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.0001, now);          // click guard
+    og.gain.linearRampToValueAtTime(0.22, now+0.012);
+    og.gain.exponentialRampToValueAtTime(0.0001, now+0.22);
+
+    // Attack “thump”: short lowpassed noise
+    const noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate*0.12), ac.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i=0;i<ch.length;i++) ch[i] = (Math.random()*2-1) * (1 - i/ch.length); // quick decay
+    const n = ac.createBufferSource(); n.buffer = noiseBuf;
+
+    const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=220; lp.Q.value=0.6;
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0.0001, now);
+    ng.gain.linearRampToValueAtTime(0.18, now+0.006);
+    ng.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
+
+    // Wire
+    o.connect(og).connect(comp);
+    n.connect(lp).connect(ng).connect(comp);
+
+    // Go
+    o.start(now); o.stop(now+0.25);
+    n.start(now); n.stop(now+0.16);
   }
 
-  function playWin(jackpot=false){
+  function playWin(jp=false){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime, comp=mkComp(ac);
-    const notes = jackpot ? [880, 1175, 1568, 2093] : [660, 880, 1175];
-    notes.forEach((f,i)=>{ const t=now+i*0.06; const o=ac.createOscillator(), g=ac.createGain();
+    const notes = jp ? [880, 1175, 1568, 2093] : [660, 880, 1175];
+    notes.forEach((f,i)=>{
+      const t=now+i*0.06;
+      const o=ac.createOscillator(), g=ac.createGain();
       o.type='triangle'; o.frequency.setValueAtTime(f,t);
-      g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);
-      o.connect(g).connect(comp); o.start(t); o.stop(t+0.16);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(0.12,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);
+      o.connect(g).connect(comp);
+      o.start(t); o.stop(t+0.16);
     });
   }
 
+  // Public API (match other games)
   window.__bagAudio = {
     ensureInteractive,
-    nudge: playPeg,
-    peg: playPeg,
+    // collisions
+    peg:  playPeg,
     wall: playWall,
-    win: (jp=false)=>playWin(!!jp),
-    lose: playLose
+    // wins
+    win:  (jp=false)=>playWin(!!jp),
+    chime: ()=>playWin(false),      // used by shared overlay
+    // loses — alias everything to the same THUD
+    thud: playThud,
+    loseThud: playThud,
+    lose: playThud
   };
 
-  if(!watchdog){ watchdog=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30000; if(active && ac.state==='suspended') tryResume(); },1500); }
+  // Keep audio alive
+  if(!watchdog){
+    watchdog = setInterval(()=>{
+      const ac=AC; if(!ac) return;
+      const active = Date.now()-lastInteractTs < 30000;
+      if(active && ac.state==='suspended') tryResume();
+    }, 1500);
+  }
   ['pointerdown','mousedown','touchstart','keydown','click'].forEach(ev=>addEventListener(ev,markInteract,{passive:true,capture:true}));
   addEventListener('visibilitychange',()=>{ if(!document.hidden) tryResume(); });
   addEventListener('pageshow',()=>{ tryResume(); });
   addEventListener('focus',()=>{ tryResume(); });
 
-  addEventListener('pointerdown', async function once(){ removeEventListener('pointerdown', once, {capture:false});
-    try{ await ensureInteractive(); playPeg(); }catch{} }, {once:true});
+  // Prime on first touch/click
+  addEventListener('pointerdown', async function once(){
+    removeEventListener('pointerdown', once, {capture:false});
+    try{ await ensureInteractive(); playPeg(); }catch{}
+  }, {once:true});
 })();
 </script>
+
 
 <!-- === WALLET CONNECT (same as before) === -->
 <script>
