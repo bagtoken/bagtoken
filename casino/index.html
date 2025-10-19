@@ -78,7 +78,16 @@
   .btn:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
   .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
-  /* 🔊 Floating sound toggle (upper-right) */
+  /* COMING SOON placeholders */
+  .soon-box{display:flex;flex-direction:column;justify-content:center;align-items:center;
+    height:100%;aspect-ratio:16/9;background:radial-gradient(circle at center,#0e2419 0%,#08130d 100%);
+    border:1px dashed #2b6a48;text-align:center;border-radius:16px;
+    box-shadow:inset 0 0 40px rgba(255,215,0,.05)}
+  .soon-title{font-size:1.1rem;font-weight:800;color:#f5f7f4;margin-bottom:6px;letter-spacing:.03em}
+  .soon-sub{font-family:"Cinzel",serif;font-weight:700;font-size:1.25rem;letter-spacing:.08em;
+    color:#ffd700;text-shadow:0 0 8px rgba(255,215,0,.3)}
+
+  /* Floating sound toggle (upper-right) */
   #soundToggle{
     position:fixed;top:10px;right:12px;z-index:2147483647;
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
@@ -88,17 +97,6 @@
   }
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
-
-  /* 🎧 Music toggle — near sound, not touching */
-  #spotifyToggle{
-    position:fixed;top:10px;right:64px;z-index:2147483647;
-    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
-    border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
-    color:#ffd700;font-size:1.2rem;cursor:pointer;opacity:.9;
-    transition:opacity .2s ease, transform .12s ease;
-  }
-  #spotifyToggle:hover{opacity:1;transform:scale(1.06)}
-  #spotifyToggle:active{transform:scale(.98)}
 
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
@@ -120,6 +118,7 @@
 </style>
 
 <script src="/js/bag-session.js" defer></script>
+ 
 </head>
 <body>
 
@@ -130,10 +129,6 @@
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
-
-<!-- 🎧 Headphones (plays your local mix; no login) -->
-<button id="spotifyToggle" title="Play casino music" aria-pressed="false">🎧</button>
-<audio id="bagMusic" src="/assets/sounds/casino_music.mp3" preload="auto" loop></audio>
 
 <div class="wrap">
   <div class="top">
@@ -256,7 +251,7 @@
 </footer>
 </div>
 
-<!-- 🔊 Sound toggle with gesture unlock -->
+<!-- 🔊 Sound toggle with more sensitive first-tap unlock -->
 <script>
 (function(){
   const btn = document.getElementById('soundToggle');
@@ -276,10 +271,10 @@
       setIcon();
       localStorage.setItem(KEY,'on');
       removeGestureUnlock();
-    }).catch(()=>{
+    }).catch((e)=>{
       playing = false;
       setIcon();
-      return Promise.reject();
+      return Promise.reject(e);
     });
   }
 
@@ -293,13 +288,14 @@
 
   btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
 
-  // Gesture unlock helpers
+  // --- MORE SENSITIVE GESTURE UNLOCK ---
   const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
   let armed = false;
+
   function gestureHandler(){
     const pref = localStorage.getItem(KEY);
     if (pref !== 'off' && !playing){
-      playAudio().catch(()=>{});
+      playAudio().catch(()=>{ /* stay armed until a successful play */ });
     }
   }
   function armGestureUnlock(){
@@ -331,50 +327,6 @@
     armGestureUnlock();
   }
   setIcon();
-})();
-</script>
-
-<!-- 🎧 Headphones: plays your local mix; single tap, no login, no redirects -->
-<script>
-(function(){
-  const btn = document.getElementById('spotifyToggle');
-  const music = document.getElementById('bagMusic');
-  const KEY = 'bag_music_pref'; // 'on'|'off'
-  let on = false;
-
-  function setStateUI(){
-    btn.setAttribute('aria-pressed', on);
-    btn.textContent = '🎧'; // same icon; aria-pressed conveys state
-  }
-
-  async function playMusic(){
-    music.volume = 0.75; // adjust to taste
-    try{
-      await music.play();
-      on = true;
-      localStorage.setItem(KEY,'on');
-      setStateUI();
-    }catch(e){
-      on = false; setStateUI();
-      console.warn('Music play blocked', e);
-    }
-  }
-  function pauseMusic(){
-    music.pause();
-    on = false;
-    localStorage.setItem(KEY,'off');
-    setStateUI();
-  }
-
-  btn.addEventListener('click', ()=> on ? pauseMusic() : playMusic());
-
-  // Restore preference
-  on = localStorage.getItem(KEY) === 'on';
-  if (on){
-    playMusic().catch(()=>{}); // starts after first user gesture if needed
-  } else {
-    setStateUI();
-  }
 })();
 </script>
 
