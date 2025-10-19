@@ -139,6 +139,10 @@
     max-width:100%;
   }
   .cell > .tile--bar{ justify-self:center; align-self:center; }
+
+  /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -253,6 +257,11 @@
 
         <div class="spin-row">
           <button id="spinBtn" class="btn-spin">SPIN</button>
+        </div>
+
+        <!-- Tiny HUD row for Balance (used by the live-balance tweak) -->
+        <div class="hudbar" aria-live="polite">
+          <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
         </div>
 
         <!-- Audio notice -->
@@ -1257,6 +1266,41 @@
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
 }
+</script>
+
+<!-- === SLOTS: HUD Live Balance Tweak (show session BAG in LIVE) === -->
+<script>
+(function(){
+  // Helper: format BAG
+  function fmtBag(n){
+    const x = Number(n) || 0;
+    return x.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  }
+  function getHudEls(){
+    return {
+      balLbl:  document.getElementById('balLbl'),
+      ccyLbl:  document.getElementById('ccyLbl')
+    };
+  }
+  function renderLiveHud(){
+    try{
+      if (window.__BAG_FORCE_DEMO === true) return; // demo: keep game HUD
+      const s = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
+      if (!s) return;
+      const { balLbl, ccyLbl } = getHudEls();
+      if (balLbl) balLbl.textContent = fmtBag(s.bag);
+      if (ccyLbl) ccyLbl.textContent = 'BAG';
+    }catch(e){}
+  }
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected']
+    .forEach(ev=>addEventListener(ev,renderLiveHud));
+
+  addEventListener('storage', (e)=>{ if (e && e.key === 'bag_session_v1') renderLiveHud(); });
+
+  // First paint + small watchdog in case HUD mounts late
+  renderLiveHud();
+  let tries=0; const iv=setInterval(()=>{ renderLiveHud(); if(++tries>40) clearInterval(iv); }, 500);
+})();
 </script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
