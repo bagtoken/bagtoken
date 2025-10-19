@@ -143,6 +143,11 @@
   /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+  /* === Quick bet presets === */
+  .preset-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px }
+  .chip.preset{ cursor:pointer; user-select:none }
+  .chip.preset:active{ transform:translateY(1px) }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -218,6 +223,10 @@
               </div>
             </div>
             <div class="micro" id="betLimits" style="margin-top:6px" aria-live="polite"></div>
+
+            <!-- Quick presets -->
+            <div class="micro" style="margin-top:6px">Quick picks</div>
+            <div id="presetRow" class="preset-row" role="group" aria-label="Quick bet presets"></div>
           </div>
 
           <div class="divider"></div>
@@ -641,6 +650,62 @@
       if (payJackpotGain) payJackpotGain.textContent = showDash ? '' : ` (+${fmt(sBag*(mJack-1))} BAG)`;
     }
   }
+
+  /* ======= Quick bet presets (USD & units) ======= */
+  (function(){
+    const row = document.getElementById('presetRow');
+    if (!row) return;
+
+    // Adjust these to taste
+    const USD_PRESETS  = [1, 5, 10, 25, 50, 100];
+    const XRP_PRESETS  = [1, 2, 5, 10, 25];
+    const BAG_PRESETS  = [1, 5, 10, 25, 50];
+
+    function makeBtn(label, kind, val){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip preset';
+      b.textContent = label;
+      b.dataset.kind = kind; // 'usd' | 'units'
+      b.dataset.val = String(val);
+      b.addEventListener('click', ()=>{
+        if (kind === 'usd'){
+          const u = Math.max(MIN_USD, Math.min(MAX_USD, Number(val)));
+          if (usdBetEl){
+            usdBetEl.value = u.toFixed(2);
+            usdBetEl.dispatchEvent(new Event('input', { bubbles:true }));
+            usdBetEl.dispatchEvent(new Event('change', { bubbles:true }));
+          }
+        } else {
+          if (betQtyEl){
+            betQtyEl.value = String(val);
+            betQtyEl.dispatchEvent(new Event('input', { bubbles:true }));
+            betQtyEl.dispatchEvent(new Event('change', { bubbles:true }));
+          }
+        }
+        renderLimits(); renderPayouts();
+      });
+      return b;
+    }
+
+    function renderPresets(){
+      row.innerHTML = '';
+      const cur = selectedCur(); // 'XRP' | 'BAG'
+
+      // USD group
+      USD_PRESETS.forEach(u => row.appendChild(makeBtn(`$${u}`, 'usd', u)));
+      row.appendChild(makeBtn('½ Max', 'usd', MAX_USD/2));
+      row.appendChild(makeBtn('Max',  'usd', MAX_USD));
+
+      // Units group (match current currency toggle)
+      const unitList = (cur === 'XRP') ? XRP_PRESETS : BAG_PRESETS;
+      unitList.forEach(u => row.appendChild(makeBtn(`${u} ${cur}`, 'units', u)));
+    }
+
+    renderPresets();
+    curToggle?.addEventListener('change', renderPresets);
+  })();
+  /* ============================================== */
 
   usdBetEl?.addEventListener('input', updateBetFromUsd);
   betQtyEl?.addEventListener('input', updateUsdFromBet);
