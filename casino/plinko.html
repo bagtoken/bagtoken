@@ -968,6 +968,52 @@
 <!-- === PLINKO GAME LOGIC (global ball; board visible; sound & celebration) === -->
 <script>
 (function(){
+  // --- WIN OVERLAY SHIM (adds the same overlay used by Slots/Dice if missing) ---
+  (function ensureWinOverlay(){
+    if (typeof window.showWin === 'function') return;
+    // Inject CSS once
+    if (!document.getElementById('bag-win-css')){
+      const css = document.createElement('style'); css.id='bag-win-css';
+      css.textContent = `
+      #win-overlay{position:fixed;inset:0;display:none;place-items:center;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), rgba(0,0,0,.7));z-index:2147483647;backdrop-filter:saturate(120%) blur(2px)}
+      #win-card{position:relative;text-align:center;padding:24px 32px;border-radius:16px;background:rgba(0,0,0,.35);box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);transform:scale(.9);opacity:0;animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite}
+      #win-text{font:900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.06em;background:linear-gradient(90deg,#fff,#00ffb2,#fff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px rgba(0,255,178,.35),0 0 48px rgba(0,255,178,.25);filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));white-space:nowrap}
+      #win-sub{margin-top:8px;color:#e7f6ff;opacity:.9;font:600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+      #win-close{position:absolute;top:8px;right:10px;border:0;background:transparent;color:#cfeaff;font:700 20px/1 system-ui;cursor:pointer;padding:6px 8px;opacity:.7}
+      #win-canvas{position:fixed;inset:0;pointer-events:none;z-index:2147483646;display:none}
+      @keyframes win-pop{to{transform:scale(1);opacity:1}} @keyframes win-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+      `;
+      document.head.appendChild(css);
+    }
+    // Inject markup once
+    if (!document.getElementById('win-overlay')){
+      const c = document.createElement('canvas'); c.id='win-canvas';
+      const o = document.createElement('div'); o.id='win-overlay'; o.setAttribute('role','dialog');
+      o.innerHTML = `<div id="win-card"><button id="win-close" aria-label="Close">×</button><div id="win-text">WIN</div><div id="win-sub">Nice spin</div></div>`;
+      document.body.appendChild(c); document.body.appendChild(o);
+      // Behavior
+      const canvas=c, overlay=o, closeBtn=o.querySelector('#win-close'), title=o.querySelector('#win-text'), sub=o.querySelector('#win-sub');
+      const ctx=canvas.getContext('2d'); let rafId=null, particles=[], start=0, dur=2000;
+      function size(){const dpr=Math.min(devicePixelRatio||1,2);canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(dpr,0,0,dpr,0,0);}
+      function fire(n){particles.length=0;const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];for(let i=0;i<n;i++)particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});}
+      function draw(){ctx.clearRect(0,0,innerWidth,innerHeight);particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=p.g;p.rot+=p.vr;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=p.col;const s=p.sz;if(p.shape==='circle'){ctx.beginPath();ctx.arc(0,0,s*0.6,0,Math.PI*2);ctx.fill();}else if(p.shape==='square'){ctx.fillRect(-s/2,-s/2,s,s);}else{ctx.beginPath();ctx.moveTo(0,-s/1.2);ctx.lineTo(s/1.2,s/1.2);ctx.lineTo(-s/1.2,s/1.2);ctx.closePath();ctx.fill();}ctx.restore();});}
+      function anim(ts){if(!start) start=ts;draw();if(ts-start<dur){rafId=requestAnimationFrame(anim);}else stop();}
+      function stop(){cancelAnimationFrame(rafId);ctx.clearRect(0,0,innerWidth,innerHeight);canvas.style.display='none';}
+      function show(){overlay.style.display='grid';}
+      function hide(){overlay.style.display='none';stop();}
+      closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+      size(); addEventListener('resize', size);
+      window.showWin = function(opts={}) {
+        const { message='WIN', subtext='Nice spin', sound=true, duration=4000 }=opts;
+        title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+        if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
+        cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
+        clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
+      };
+    }
+  })();
+  // ---------------------------------------------------------------------------
+
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
   G.ball = G.ball || null;
   G.rafLive = G.rafLive || false;
@@ -977,43 +1023,28 @@
   const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // === Unified odds profiles (LIVE vs DEMO) ===
-  // LIVE → 2% JP, 42% at 1.25×. DEMO → 3% JP, 46% at 1.25× (slightly player-favored).
-  // Weights correspond to slot indices 0..6 and sum ≈ 100.
-  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14];   // win at 1 & 5 (21+21=42), jp at 3 (2)
-  const WEIGHTS_DEMO = [13, 23, 13,  3, 13, 23, 12];   // 46% win, 3% jackpot
-
-  function currentWeights(){
-    return (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE;
-  }
+  // Unified odds
+  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14];
+  const WEIGHTS_DEMO = [13, 23, 13,  3, 13, 23, 12];
+  const currentWeights = () => (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE;
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
   const canvas = document.getElementById('game');
-  if (!canvas) return; // graceful no-op if the board is not on this page
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const W=640, H=880; canvas.width=W; canvas.height=H;
 
-  // Peg band stays the same:
-  const pegLeft  = WALL_PAD;
-  const pegRight = W - WALL_PAD;
-
-  // Widen the playable walls slightly so the coin doesn’t snag on sides
-  const WALL_EXTRA = 10;
-  const wallLeft   = pegLeft  - WALL_EXTRA;
-  const wallRight  = pegRight + WALL_EXTRA;
-
+  const pegLeft=WALL_PAD, pegRight=W-WALL_PAD;
+  const WALL_EXTRA=10, wallLeft=pegLeft-WALL_EXTRA, wallRight=pegRight+WALL_EXTRA;
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
-  // ---------- Aiming state ----------
-  const SUBSTEPS = 2;
-  let dropX = (pegLeft + pegRight) / 2;
-  let aiming = false;
-  let lastAimX = dropX;
-  let aimVX = 0;
+  // Aiming state
+  const SUBSTEPS=2;
+  let dropX=(pegLeft+pegRight)/2, aiming=false, lastAimX=dropX, aimVX=0;
 
-  // ---------- Peg grid ----------
+  // Peg grid
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
@@ -1023,12 +1054,10 @@
     for(let c=0;c<PEG_COLS;c++){
       const x=pegLeft+20+c*pegSpacingX+off;
       if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
-      const y=topBoard+r*pegSpacingY;
-      pegs.push({x,y,r:PEG_R});
+      pegs.push({x,y:topBoard+r*pegSpacingY,r:PEG_R});
     }
   }
 
-  // Slots span the wider walls
   const slotWidth=(wallRight-wallLeft)/SLOTS;
   const slotX=i=>wallLeft+i*slotWidth;
 
@@ -1040,40 +1069,22 @@
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
 
-  function hud(){
-    if(balLbl) balLbl.textContent=balance.toFixed(2);
-    if(betLbl) betLbl.textContent=stake;
-    if(lastLbl) lastLbl.textContent=lastTxt;
-  }
-  betInput?.addEventListener('input', ()=>{
-    const raw=(betInput.value||'').replace(/[^\d]/g,'');
-    betInput.value = raw || '1';
-    stake = Math.max(1, parseInt(betInput.value,10)||1);
-    hud();
-  });
+  function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; }
+  betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
 
-  // Stake helpers (USD/BAG)
-  function selectedCur(){
-    return document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
-  }
+  // Currency helpers
+  function selectedCur(){ return document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP'; }
   function stakeUsdEquivalent(){
     const qty = Math.max(0, parseFloat(betInput?.value||0));
     const P=window.__PRICES__||{};
-    const cur = selectedCur();
-    if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
-    return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
+    return selectedCur()==='BAG' ? (P.bagUsd>0 ? qty*P.bagUsd : 0) : (P.xrpUsd>0 ? qty*P.xrpUsd : 0);
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
-  // Convert stake units -> BAG for live session credit/debit
   function stakeBag(){
-    const P = window.__PRICES__ || {};
-    const cur = selectedCur();
-    if (cur === 'BAG') return Number(stake) || 0;
-    if (P.bagUsd>0 && P.xrpUsd>0){
-      const bagPerXrp = P.xrpUsd / P.bagUsd;
-      return (Number(stake) || 0) * bagPerXrp;
-    }
+    const P=window.__PRICES__||{};
+    if (selectedCur()==='BAG') return Number(stake)||0;
+    if (P.bagUsd>0 && P.xrpUsd>0) return (Number(stake)||0) * (P.xrpUsd/P.bagUsd);
     return 0;
   }
 
@@ -1083,228 +1094,108 @@
   async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.win?.(!!jp); }catch{} }
 
   function weightedSlotIndex(){
-    const w=currentWeights();
-    const total=w.reduce((a,b)=>a+b,0);
-    let r=Math.random()*total;
-    for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
-    return 3;
+    const w=currentWeights(), total=w.reduce((a,b)=>a+b,0);
+    let r=Math.random()*total; for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
   }
 
-  function clearRoundState(){
-    clearTimeout(safetyTimer); safetyTimer=null;
-    dropping=false; dropBtn && (dropBtn.disabled=false);
-    lastPegTick=0;
-  }
+  function clearRoundState(){ clearTimeout(safetyTimer); safetyTimer=null; dropping=false; dropBtn && (dropBtn.disabled=false); lastPegTick=0; }
 
-  // ---------- Aiming helpers & controls ----------
-  function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
-  function clientToCanvasX(clientX){
-    const r = canvas.getBoundingClientRect();
-    const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, wallLeft + BALL_R, wallRight - BALL_R);
-  }
-
-  // Pointer aim
-  canvas.addEventListener('pointerdown', (e)=>{
-    aiming = true;
-    const nx = clientToCanvasX(e.clientX);
-    aimVX = 0;
-    lastAimX = nx;
-    dropX = nx;
-    try{ canvas.setPointerCapture(e.pointerId); }catch{}
-  });
-  canvas.addEventListener('pointermove', (e)=>{
-    if(!aiming) return;
-    const nx = clientToCanvasX(e.clientX);
-    aimVX = nx - lastAimX;
-    lastAimX = nx;
-    dropX = nx;
-  });
-  canvas.addEventListener('pointerup', ()=>{ aiming = false; });
-
-  // Keyboard aim (← →) and Space to drop
-  addEventListener('keydown', (e)=>{
-    const step = 10;
-    if (e.key === 'ArrowLeft'){
-      e.preventDefault();
-      dropX = clamp(dropX - step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = -step;
-      lastAimX = dropX;
-    } else if (e.key === 'ArrowRight'){
-      e.preventDefault();
-      dropX = clamp(dropX + step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = step;
-      lastAimX = dropX;
-    } else if (e.code === 'Space'){
-      e.preventDefault();
-      if (!dropping) dropBtn?.click();
-    }
+  // Aim controls
+  function clamp(v,lo,hi){ return Math.min(hi,Math.max(lo,v)); }
+  function clientToCanvasX(clientX){ const r=canvas.getBoundingClientRect(); const x=(clientX-r.left)*(canvas.width/r.width); return clamp(x, wallLeft+BALL_R, wallRight-BALL_R); }
+  canvas.addEventListener('pointerdown', e=>{ aiming=true; const nx=clientToCanvasX(e.clientX); aimVX=0; lastAimX=nx; dropX=nx; try{canvas.setPointerCapture(e.pointerId);}catch{} });
+  canvas.addEventListener('pointermove', e=>{ if(!aiming) return; const nx=clientToCanvasX(e.clientX); aimVX=nx-lastAimX; lastAimX=nx; dropX=nx; });
+  canvas.addEventListener('pointerup', ()=>{ aiming=false; });
+  addEventListener('keydown', e=>{
+    const step=10;
+    if(e.key==='ArrowLeft'){ e.preventDefault(); dropX=clamp(dropX-step, wallLeft+BALL_R, wallRight-BALL_R); aimVX=-step; lastAimX=dropX; }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); dropX=clamp(dropX+step, wallLeft+BALL_R, wallRight-BALL_R); aimVX= step; lastAimX=dropX; }
+    else if(e.code==='Space'){ e.preventDefault(); if(!dropping) dropBtn?.click(); }
   });
 
-  // ---------- Drop flow ----------
+  // Drop flow
   dropBtn?.addEventListener('click', async ()=>{
     try{ await window.__bagAudio?.ensureInteractive?.(); }catch{}
     clearRoundState();
 
     const usd = stakeUsdEquivalent();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
-    if (!passesMin){ if(resText) resText.textContent = 'Min $1'; return; }
+    if (!passesMin){ if(resText) resText.textContent='Min $1'; return; }
 
-    // Live session spend before starting the round
     const isDemo = window.__BAG_FORCE_DEMO === true;
     window.__PLINKO_LAST_STAKE_BAG__ = 0;
     if (!isDemo){
       const bagToSpend = stakeBag();
-      if (!window.__bagSession || !window.__bagSession.active()){
-        alert('Start a session first'); return;
-      }
-      if (!(bagToSpend > 0)){
-        alert('Enter a stake first'); return;
-      }
-      if (!window.__bagSession.spend(bagToSpend)){
-        alert('Insufficient session balance'); return;
-      }
+      if (!window.__bagSession || !window.__bagSession.active()){ alert('Start a session first'); return; }
+      if (!(bagToSpend > 0)){ alert('Enter a stake first'); return; }
+      if (!window.__bagSession.spend(bagToSpend)){ alert('Insufficient session balance'); return; }
       window.__PLINKO_LAST_STAKE_BAG__ = bagToSpend;
     }
 
-    // Demo HUD balance animation stays for visual consistency
     balance = Math.max(0, balance - stake);
     lastTxt='—'; if(resText) resText.textContent='—';
     if(stateText) stateText.textContent='Dropping…';
     celeEl?.classList.remove('show');
     hud();
 
-    startDrop();
-    ensureLoop();
+    startDrop(); ensureLoop();
   });
 
   function startDrop(){
-    dropping=true; if (dropBtn) dropBtn.disabled=true;
-
-    // spawn at aimed X with a tiny sideways nudge from last aim motion
-    const startX = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
-    const initVx = (aimVX || (Math.random()-0.5)*0.8) * 0.08;
-
-    const id = ++G.lastBallId;
-    G.ball = { id, x:startX, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
-
-    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
+    dropping=true; if(dropBtn) dropBtn.disabled=true;
+    const startX=clamp(dropX, wallLeft+BALL_R, wallRight-BALL_R);
+    const initVx=(aimVX || (Math.random()-0.5)*0.8)*0.08;
+    const id=++G.lastBallId;
+    G.ball={id,x:startX,y:topBoard-30,vx:initVx,vy:0.3,r:BALL_R,alive:true};
+    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } },9000);
   }
 
-  function ensureLoop(){
-    if(G.rafLive) return;
-    G.rafLive=true;
+  function ensureLoop(){ if(G.rafLive) return; G.rafLive=true;
     const tick=()=>{ drawBoard(); const b=G.ball; if(b && b.alive){ stepBall(b); drawBall(b.x,b.y); } requestAnimationFrame(tick); };
     requestAnimationFrame(tick);
   }
-  // Board visible immediately
   ensureLoop();
-
   setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)) clearRoundState(); }, 900);
 
   function stepBall(b){
-    const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
-    const gy = GRAVITY / SUBSTEPS;
-
-    for (let s = 0; s < SUBSTEPS; s++) {
-      // integrate
-      b.vy += gy;
-      b.x  += b.vx / SUBSTEPS;
-      b.y  += b.vy / SUBSTEPS;
-
-      // damping
-      b.vx *= fx;
-      b.vy *= fx;
-
-      // tiny lateral noise so paths don’t “rail”
-      b.vx += (Math.random() - 0.5) * 0.01;
-
-      // walls (use widened walls)
-      if (b.x - BALL_R < wallLeft){  b.x = wallLeft + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
-      if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
-      if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
-
-      // pegs
-      const now = performance.now();
+    const fx=Math.pow(FRICTION,1/SUBSTEPS), gy=GRAVITY/SUBSTEPS;
+    for(let s=0;s<SUBSTEPS;s++){
+      b.vy+=gy; b.x+=b.vx/SUBSTEPS; b.y+=b.vy/SUBSTEPS;
+      b.vx*=fx; b.vy*=fx; b.vx+=(Math.random()-0.5)*0.01;
+      if (b.x-BALL_R<wallLeft){ b.x=wallLeft+BALL_R; b.vx=Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.x+BALL_R>wallRight){ b.x=wallRight-BALL_R; b.vx=-Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.y-BALL_R<0){ b.y=BALL_R; b.vy=0; }
+      const now=performance.now();
       for (const p of pegs){
-        const dx = b.x - p.x, dy = b.y - p.y;
-        const dist = Math.hypot(dx, dy) || 0.0001;
-        const minD = BALL_R + p.r;
-        if (dist < minD){
-          const nx = dx / dist, ny = dy / dist;
-
-          // separate
-          b.x += nx * (minD - dist);
-          b.y += ny * (minD - dist);
-
-          // reflect
-          const vDot = b.vx*nx + b.vy*ny;
-          b.vx = (b.vx - 2 * vDot * nx) * RESTITUTION;
-          b.vy = (b.vy - 2 * vDot * ny) * RESTITUTION;
-
-          // small lateral “kick” promotes zig-zag and more peg hits
-          b.vx += nx * 0.08;
-          b.vy += ny * 0.02;
-
-          if (now - lastPegTick > 55){ lastPegTick = now; pegSound(); }
+        const dx=b.x-p.x, dy=b.y-p.y, dist=Math.hypot(dx,dy)||0.0001, minD=BALL_R+p.r;
+        if(dist<minD){
+          const nx=dx/dist, ny=dy/dist;
+          b.x+=nx*(minD-dist); b.y+=ny*(minD-dist);
+          const vDot=b.vx*nx+b.vy*ny;
+          b.vx=(b.vx-2*vDot*nx)*RESTITUTION; b.vy=(b.vy-2*vDot*ny)*RESTITUTION;
+          b.vx+=nx*0.08; b.vy+=ny*0.02;
+          if(now-lastPegTick>55){ lastPegTick=now; pegSound(); }
         }
       }
     }
-
-    const slowEnough = Math.abs(b.vy) < 0.22;
-    if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
-      resolveByIndex(boundarySlotIndex(b.x));
-    }
-    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
+    const slowEnough=Math.abs(b.vy)<0.22;
+    if (b.y>=bottomBoard+56 && (slowEnough || b.y>=bottomBoard+86)) resolveByIndex(boundarySlotIndex(b.x));
+    if (b.y>H+200) resolveByIndex(boundarySlotIndex(b.x));
   }
 
   function boundarySlotIndex(x){
-    const clamped = Math.min(wallRight-1, Math.max(wallLeft+1, x));
-    const idx = Math.floor((clamped - wallLeft) / slotWidth);
+    const clamped=Math.min(wallRight-1, Math.max(wallLeft+1, x));
+    const idx=Math.floor((clamped-wallLeft)/slotWidth);
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-  function confettiBurst(ms=900){
-    const wrap = canvas.parentElement;
-    const c = document.createElement('canvas');
-    c.width = canvas.width; c.height = canvas.height;
-    Object.assign(c.style,{position:'absolute',inset:'0',pointerEvents:'none'});
-    wrap.appendChild(c);
-    const cx=c.getContext('2d'); const t0=performance.now();
-    const N=80, bits=[];
-    for(let i=0;i<N;i++){
-      bits.push({ x:(wallLeft+wallRight)/2, y:topBoard+30, vx:(Math.random()-0.5)*6, vy:-(Math.random()*5+3),
-        s:Math.random()*3+2, rot:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.3,
-        col: i%3===0?'#ffd700':(i%3===1?'#baf2cd':'#e2b15b') });
-    }
-    function tick(t){
-      cx.clearRect(0,0,c.width,c.height);
-      bits.forEach(b=>{ b.vy+=0.18; b.x+=b.vx; b.y+=b.vy; b.rot+=b.vr;
-        cx.save(); cx.translate(b.x,b.y); cx.rotate(b.rot);
-        cx.fillStyle=b.col; cx.fillRect(-b.s/2,-b.s/2,b.s,b.s); cx.restore();
-      });
-      if(t-t0<ms) requestAnimationFrame(tick); else c.remove();
-    }
-    requestAnimationFrame(tick);
-  }
-
-  function winFlash(text, color, jackpot){
-    const celeEl=document.getElementById('cele'); if(!celeEl) return;
-    celeEl.textContent = text;
-    celeEl.style.color = color || '#ffd700';
-    celeEl.style.background = 'radial-gradient(closest-side, rgba(255,241,180,.25), rgba(0,0,0,0))';
-    celeEl.classList.add('show');
-    confettiBurst(jackpot?1200:900);
-    setTimeout(()=>{ celeEl.classList.remove('show'); celeEl.style.background='transparent'; }, jackpot?1300:1100);
-  }
+  // (kept for compatibility; overlay now mirrors the other games)
+  function confettiBurst(){}
 
   function resolveByIndex(idx){
-    const b = G.ball;
-    if(!b){ clearRoundState(); return; }
-    b.alive=false;
-    clearTimeout(safetyTimer); safetyTimer=null;
-
-    dropping=false; if (dropBtn) dropBtn.disabled=false;
+    const b=G.ball; if(!b){ clearRoundState(); return; }
+    b.alive=false; clearTimeout(safetyTimer); safetyTimer=null;
+    dropping=false; if(dropBtn) dropBtn.disabled=false;
 
     const rule = PAY_MAP[idx] ?? 'L';
 
@@ -1315,23 +1206,41 @@
     } else {
       const mult = Number(rule);
 
-      // Demo HUD payout in displayed currency units
+      // Demo HUD payout (visual)
       const payoutUnits = Math.floor(stake * mult * 100)/100;
       balance += payoutUnits; hud();
 
-      // Credit live session in BAG
+      // Live session credit in BAG
       if (window.__BAG_FORCE_DEMO !== true){
         const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
         const bagPayout = bagStake * mult;
         try{ window.__bagSession?.credit?.(bagPayout); }catch{}
       }
 
+      // Overlay feedback identical to Slots
+      const sBag = (window.__PLINKO_LAST_STAKE_BAG__ || stakeBag()) || 0;
+      const sUsd = stakeUsdEquivalent() || 0;
+
       if (mult === 2){
         lastTxt='Jackpot 2×'; if(resText) resText.textContent='🎉 Jackpot 2×';
-        winFlash(resText ? resText.textContent : 'Jackpot 2×', '#ffd700', true); winSound(true);
+        winSound(true);
+        try{
+          showWin({
+            message:'JACKPOT',
+            subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`,
+            duration:6200
+          });
+        }catch{}
       } else {
         lastTxt='Win 1.25×'; if(resText) resText.textContent='Win 1.25×';
-        winFlash(resText ? resText.textContent : 'Win 1.25×', '#baf2cd', false); winSound(false);
+        winSound(false);
+        try{
+          showWin({
+            message:'WIN',
+            subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`,
+            duration:4200
+          });
+        }catch{}
       }
       if(stateText) stateText.textContent='Resolved';
     }
@@ -1339,72 +1248,41 @@
   }
 
   function drawBoard(){
-    const W=canvas.width, H=canvas.height;
+    const W=canvas.width,H=canvas.height;
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
-    // frame around the wider play area
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
     ctx.strokeRect(wallLeft-8, topBoard-40, (wallRight-wallLeft)+16, bottomBoard-topBoard+60);
 
-    // pegs
     ctx.fillStyle='#704d1d';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
-    // slot floor and dividers across the wider span
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(wallLeft, bottomBoard); ctx.lineTo(wallRight, bottomBoard); ctx.stroke();
-    for(let i=1;i<SLOTS;i++){
-      const x = slotX(i);
-      ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
-    }
+    for(let i=1;i<SLOTS;i++){ const x=slotX(i); ctx.beginPath(); ctx.moveTo(x,bottomBoard); ctx.lineTo(x,bottomBoard+50); ctx.stroke(); }
 
-    // labels centered in wider slots
     const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
-      const rule = PAY_MAP[i];
-      const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.25×');
+      const rule=PAY_MAP[i]; const txt=rule==='L'?'Scratch':(rule===2?'2×':'1.25×');
       ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
       ctx.fillText(txt, centers[i], bottomBoard+72);
     }
 
-    // Aim guide clamped to wider walls + 🫳 finger above coin
     if (!dropping){
-      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, dropX));
-
-      ctx.save();
-      ctx.setLineDash([6,6]);
-      ctx.strokeStyle = '#2a5';
-      ctx.globalAlpha = 0.75;
-      ctx.beginPath();
-      ctx.moveTo(gx, topBoard - 40);
-      ctx.lineTo(gx, topBoard);
-      ctx.stroke();
-      ctx.restore();
-
-      // finger indicator
-      ctx.save();
-      ctx.font = '68px system-ui, Apple Color Emoji, Segoe UI Emoji';
-      ctx.textAlign = 'center';
-      ctx.globalAlpha = 0.95;
-      ctx.fillText('🫳', gx, topBoard - 58);
-      ctx.restore();
-
-      // ghost coin
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      drawBall(gx, topBoard - 30);
-      ctx.restore();
+      const gx = Math.min(wallRight-BALL_R, Math.max(wallLeft+BALL_R, dropX));
+      ctx.save(); ctx.setLineDash([6,6]); ctx.strokeStyle='#2a5'; ctx.globalAlpha=.75;
+      ctx.beginPath(); ctx.moveTo(gx, topBoard-40); ctx.lineTo(gx, topBoard); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.font='68px system-ui, Apple Color Emoji, Segoe UI Emoji'; ctx.textAlign='center'; ctx.globalAlpha=.95; ctx.fillText('🫳', gx, topBoard-58); ctx.restore();
+      ctx.save(); ctx.globalAlpha=.85; drawBall(gx, topBoard-30); ctx.restore();
     }
   }
 
   function drawBall(x,y){
-    const r=BALL_R;
-    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
+    const r=BALL_R, g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
     g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
