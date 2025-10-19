@@ -1393,118 +1393,102 @@
 })();
 </script>
 
-<!-- === HUD + PAYOUTS LIVE UPDATER (unchanged) === -->
+<!-- HUD updater (Mode / Balance / Bet / Last) with currency-aware Balance -->
 <script>
 (function(){
-  const $ = (s)=>document.querySelector(s);
-  const balLbl = $('#balLbl');
-  const ccyLbl = $('#ccyLbl');
-  const betLbl = $('#betLbl');
-  const lastLbl= $('#lastLbl');
-  const modeLbl= $('#modeLbl');
-  const payoutBox = $('#payoutBox');
-  const usdInput = $('#usdBet');
-  const stakeInput = $('#demoBet');
-  const curWrap = $('#curToggle');
-  const stateText = $('#stateText');
+  const curToggle = document.getElementById('curToggle');
 
-  function fmt(n, dp=6){
-    if (!Number.isFinite(n)) return '—';
-    if (Math.abs(n) >= 1) return n.toLocaleString(undefined,{maximumFractionDigits:Math.min(4,dp)});
-    return n.toLocaleString(undefined,{maximumFractionDigits:dp});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function selectedCur(){
-    return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){
+    const x = Number(n);
+    if (!Number.isFinite(x)) return '—';
+    return x.toLocaleString(undefined, { maximumFractionDigits: max });
   }
 
-  function prices(){ return window.__PRICES__ || {bagUsd:0,xrpUsd:0}; }
-
-  function getSessionBag(){
-    try{ return Number(window.__bagSession?.get?.().bag)||0; }catch{ return 0; }
+  function els(){ 
+    return { 
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betLbl'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
+    }; 
   }
 
-  function stakeUnits(){ const v = Math.max(0, parseFloat(stakeInput?.value||'0')); return Number.isFinite(v) ? v : 0; }
-  function toBag(units, cur){
-    const P = prices();
-    if (cur==='BAG') return units;
-    if (P.bagUsd>0 && P.xrpUsd>0) return units * (P.xrpUsd / P.bagUsd);
-    return 0;
-  }
-  function toUsdFromBag(bag){ const P=prices(); return P.bagUsd>0 ? bag*P.bagUsd : 0; }
-  function toUsd(units, cur){ const P=prices(); const px = cur==='BAG'?P.bagUsd:P.xrpUsd; return px>0? units*px : 0; }
-
-  function updateHUD(){
-    if (modeLbl) modeLbl.textContent = (window.__BAG_FORCE_DEMO === true ? 'Demo' : 'Live');
-    if (balLbl) balLbl.textContent = fmt(getSessionBag(), 6);
-    if (ccyLbl) ccyLbl.textContent = 'BAG';
-    if (betLbl) betLbl.textContent = String(Math.max(0, parseInt(stakeInput?.value||'0',10)||0));
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
   }
 
-  function updatePayouts(){
-    if (!payoutBox) return;
-    const cur = selectedCur();
-    const stake = stakeUnits();
-    const stakeBag = toBag(stake, cur);
-    const retWinBag  = stakeBag * 1.25;
-    const retJackBag = stakeBag * 2.0;
-    const retWinUsd  = toUsdFromBag(retWinBag);
-    const retJackUsd = toUsdFromBag(retJackBag);
-    const loseText   = (stake>0) ? `Lose ${fmt(stake)} ${cur}` : 'Lose stake';
+  // Pull balances (prefer session-provided; fall back to conversion)
+  function getBalances(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
 
-    const P = prices();
-    if (stateText && P){
-      stateText.textContent = (P.source === 'live-amm') ? 'Live pricing ready' :
-                              (P.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
+    // If session provides XRP explicitly, use it; otherwise convert BAG→XRP using prices.
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
     }
-
-    payoutBox.innerHTML = `
-      <div><strong>Payouts:</strong></div>
-      <div class="micro" style="margin-top:6px;">
-        <div><b>Scratch:</b> ${loseText}</div>
-        <div><b>Win 1.25×:</b> ${retWinBag?`${fmt(retWinBag)} BAG <span style="opacity:.7">(${fmtUsd(retWinUsd)})</span>`:'—'}</div>
-        <div><b>Jackpot 2×:</b> ${retJackBag?`${fmt(retJackBag)} BAG <span style="opacity:.7">(${fmtUsd(retJackUsd)})</span>`:'—'}</div>
-      </div>
-      <div class="micro" style="margin-top:6px;opacity:.85;">Min $1 · Max $2,000 (settled in $BAG)</div>
-    `;
+    return { bag, xrp };
   }
 
-  function patchSessionMethods(){
-    const ses = window.__bagSession;
-    if (!ses || ses.__patched_for_hud) return;
+  function currentBet(){
+    const { betQtyEl } = els();
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    // Display integer like Plinko (display-only; underlying may be fractional)
+    return Math.max(0, Math.floor(v));
+  }
+
+  function renderHud(){
     try{
-      const oS  = ses.spend?.bind(ses);
-      const oC = ses.credit?.bind(ses);
-      if (oS) ses.spend  = function(...a){ const ok = oS(...a);  if (ok) { updateHUD(); updatePayouts(); } return ok; };
-      if (oC) ses.credit = function(...a){ const ok = oC(...a); if (ok) { updateHUD(); updatePayouts(); } return ok; };
-      ses.__patched_for_hud = true;
-    }catch{}
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      const mode = selectedMode();
+      const ccy  = currentCurrency();
+      const { bag, xrp } = getBalances();
+
+      if (modeLbl) modeLbl.textContent = mode;
+      if (betLbl)  betLbl.textContent  = String(currentBet());
+      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
+
+      if (balLbl && ccyLbl){
+        if (ccy === 'XRP'){
+          balLbl.textContent = fmt(xrp, 6);
+          ccyLbl.textContent = 'XRP';
+        } else {
+          balLbl.textContent = fmt(bag, 6);
+          ccyLbl.textContent = 'BAG';
+        }
+      }
+    }catch(e){}
   }
 
-  stakeInput?.addEventListener('input', ()=>{ updateHUD(); updatePayouts(); });
-  usdInput?.addEventListener('input', ()=>{ updateHUD(); updatePayouts(); });
-  curWrap?.addEventListener('change', ()=>{ updateHUD(); updatePayouts(); });
+  // Re-render when anything relevant changes
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+    'bag:diceResult','bag:hudRefresh'
+  ].forEach(ev => addEventListener(ev, renderHud));
 
-  window.addEventListener('bag:pricesUpdated', ()=>{ updateHUD(); updatePayouts(); });
-  window.addEventListener('bag:sessionStarted', ()=>{ updateHUD(); updatePayouts(); });
-  window.addEventListener('bag:sessionToppedUp', ()=>{ updateHUD(); updatePayouts(); });
-  window.addEventListener('bag:sessionEnded', ()=>{ updateHUD(); updatePayouts(); });
-  window.addEventListener('bag:hudRefresh', ()=>{ updateHUD(); updatePayouts(); });
+  // React to bet amount & currency tab changes
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
 
-  patchSessionMethods();
-  updateHUD();
-  updatePayouts();
+  // Also react to localStorage changes (demo multi-tab)
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
 
-  const sesCheck = setInterval(()=>{
-    if (window.__bagSession){
-      patchSessionMethods();
-      updateHUD(); updatePayouts();
-      clearInterval(sesCheck);
-    }
-  }, 200);
+  // First paint + small watchdog for late-mount
+  renderHud();
+  let tries = 0; 
+  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
+
 
 <!-- === Shared celebration overlay (identical to Dice/Slots) === -->
 <canvas id="win-canvas"></canvas>
