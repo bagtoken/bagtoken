@@ -10,7 +10,7 @@
 <!-- Removed hard demo force. You can still use /demo path or ?demo=1 to force practice. -->
 <script>window.__BAG_FORCE_DEMO = false;</script>
 
-<!-- Robust Three.js loader (kept for future) -->
+<!-- Robust Three.js loader (opt-in via ?three=1) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -165,6 +165,10 @@
     #win-card{ animation:none; transform:none; opacity:1; }
     #win-text{ animation:none; }
   }
+
+  /* --- Tiny HUD --- */
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 </style>
 
 <script src="/js/bag-session.js"></script>
@@ -273,6 +277,12 @@
             <div class="roll-row">
               <button id="rollBtn" class="btn-roll">ROLL</button>
             </div>
+
+            <!-- Tiny HUD (Balance) -->
+            <div class="hudbar" aria-live="polite">
+              <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+            </div>
+
             <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
               🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
             </p>
@@ -1060,6 +1070,36 @@
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
   // Do NOT auto-switch on wallet connect; Live must be explicit (?live=1)
+})();
+</script>
+
+<!-- HUD updater -->
+<script>
+(function(){
+  function fmtBag(n){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function els(){ return { balLbl:document.getElementById('balLbl'), ccyLbl:document.getElementById('ccyLbl') }; }
+
+  function renderHud(){
+    try{
+      const sess = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
+      if(!sess) return;
+      const { balLbl, ccyLbl } = els();
+      if (balLbl) balLbl.textContent = fmtBag(sess.bag);
+      if (ccyLbl) ccyLbl.textContent = 'BAG';
+    }catch(e){}
+  }
+
+  // Update on all relevant state changes
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated',
+   'bag:walletConnected','bag:walletDisconnected','bag:diceResult']
+   .forEach(ev=>addEventListener(ev, renderHud));
+
+  // Also react to localStorage changes (multi-tab for demo)
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
+
+  // First paint + small watchdog for late-mount
+  renderHud();
+  let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
