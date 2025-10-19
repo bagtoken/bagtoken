@@ -3,39 +3,19 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>BAG Dice</title>
+<title>$BAG Dice</title>
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 <script>window.__BAG_FORCE_DEMO = true;</script>
-
-<!-- Robust Three.js loader (kept for future) -->
-<script>
-(function(){
-  function load(src, done, fail){
-    var s=document.createElement('script');
-    s.src=src; s.async=true; s.onload=done; s.onerror=fail; document.head.appendChild(s);
-  }
-  load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-    function(){ window.__THREE_READY__=true; },
-    function(){
-      console.warn('[bag-dice] jsDelivr failed, trying unpkg');
-      load('https://unpkg.com/three@0.158.0/build/three.min.js',
-        function(){ window.__THREE_READY__=true; },
-        function(){ console.error('[bag-dice] three.js failed to load'); window.__THREE_FAILED__=true; }
-      );
-    }
-  );
-})();
-</script>
 
 <style>
   *{box-sizing:border-box}
   :root{
     --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
     --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
-    --win-bg: rgba(10,12,16,.70);
-    --lose:#e25b5b; --warn:#e8a85c;
+    --red:#e25b5b;
+    --win-fg:#fff; --win-glow:#00ffb2; --win-accent:#18a0fb; --win-bg: rgba(10,12,16,.70);
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);
     font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
@@ -76,32 +56,29 @@
   .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
-  .micro{font-size:.85rem;color:#a8b5ab}
+  .micro{font-size:.85rem;color:#aeb7af}
   .muted{color:#cfd6cf}
   .divider{height:1px;background:#123221;margin:10px 0}
+
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
   .payout-grid{display:grid;gap:4px}
   .payout-grid .row{display:flex;justify-content:space-between}
   .payout-grid .lab{color:#cfd6cf}
   .payout-grid .val{font-variant-numeric:tabular-nums}
 
-  /* Status dot colors for prices */
-  #liveDot{margin-right:6px}
-  .ok{color:#2fbf6b}
-  .warn{color:#e8a85c}
-  .err{color:#e25b5b}
-
-  /* ----- Dice area ----- */
-  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
-  .felt{
-    display:grid;grid-template-columns:1fr;gap:12px;
-    background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;overflow:hidden
+  /* Dice stage */
+  .stage{display:grid;gap:10px}
+  .dice-wrap{
+    position:relative;width:100%;max-width:640px;margin:0 auto;
+    aspect-ratio:4/3;border-radius:14px;border:1px solid #1b4a2f;
+    background:radial-gradient(120% 100% at 50% 0%, #0b2016 0%, #07120d 60%, #060a08 100%);
+    box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+    display:grid;place-items:center;
   }
-  .marquee{ text-align:center;font-weight:900;letter-spacing:.08em;
-    color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
-    border:1px solid #254a33;border-radius:12px;padding:8px }
-  .stage3d{ height:260px; position:relative; border-radius:10px; overflow:hidden; }
-  .stage3d canvas{ display:block; width:100%; height:100%; }
+  .dice-num{font-weight:900;font-size:clamp(40px,14vw,120px);letter-spacing:.02em;text-shadow:0 6px 18px rgba(0,0,0,.45)}
+  .dice-anim{animation:spin 1.2s cubic-bezier(.2,.8,.2,1) infinite}
+  @keyframes spin{0%{transform:scale(1) rotate(0)}50%{transform:scale(1.06) rotate(3deg)}100%{transform:scale(1) rotate(0)}}
+
   .roll-row{display:flex;justify-content:center}
   .btn-roll{
     width:min(360px,90%);padding:16px 22px;margin-top:2px;
@@ -112,83 +89,60 @@
   }
   .btn-roll:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
   .btn-roll:disabled{opacity:.65;cursor:not-allowed}
+
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
-  .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
+  .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
 
-  /* CSS fallback dice (only if Three.js fails) */
-  .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
-  .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
-  .css-face{
-    position:absolute; inset:0; transform-style:preserve-3d;
-    background:#fff center/cover no-repeat;
-    border-radius:16px; box-shadow:inset 0 0 0 2px #dadada;
-  }
-  .css-face.f1{ transform: translateZ(48px); }
-  .css-face.f6{ transform: rotateX(180deg) translateZ(48px); }
-  .css-face.f3{ transform: rotateY(90deg) translateZ(48px); }
-  .css-face.f4{ transform: rotateY(-90deg) translateZ(48px); }
-  .css-face.f2{ transform: rotateX(-90deg) translateZ(48px); }
-  .css-face.f5{ transform: rotateX(90deg) translateZ(48px); }
-  .css-dice-wrap.active{ display:grid; }
-  .css-die{ transition: transform .65s cubic-bezier(.2,.9,.2,1); }
-  .settle{ animation:settle .35s ease-out; }
-  @keyframes settle{
-    0%{ transform:translateY(-6px) rotateZ(.6deg) }
-    55%{ transform:translateY(2px) rotateZ(-.5deg) }
-    100%{ transform:translateY(0) rotateZ(0) }
-  }
+  /* Status dot colors (used by JS) */
+  #liveDot{margin-right:6px}
+  .ok{color:#2fbf6b}
+  .warn{color:#e8a85c}
+  .err{color:#e25b5b}
 
-  /* WIN overlay visuals (same as Slots) */
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{
-    font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    letter-spacing:.06em;
-    background:linear-gradient(90deg, #fff, #00ffb2, #fff);
-    background-size:200% 100%;
-    -webkit-background-clip:text; background-clip:text;
-    color:transparent; -webkit-text-fill-color:transparent;
-    text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25);
-    filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));
-    animation:shine 1.6s linear infinite;
-    white-space:nowrap;
-  }
+  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
   #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
   #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  @media (prefers-reduced-motion: reduce){
-    #win-card{ animation:none; transform:none; opacity:1; }
-    #win-text{ animation:none; }
-  }
+  @keyframes shine{ 0%{ background-position:0% 50% } 100%{ background-position:200% 50% } }
+  @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
+
+  /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 </style>
 
-<script src="/js/bag-session.js"></script>
-  
+ <script src="/js/bag-session.js"></script>
+
 </head>
 <body>
 
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
-  <img src="/assets/bag-dice.jpeg" alt="BAG Dice" class="hero-img" loading="lazy" decoding="async">
-  <h2>🎲 $BAG DICE — Pass Line</h2>
-  <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
+  <img src="/assets/bag-dice.png" alt="$BAG Dice" class="hero-img" loading="lazy" decoding="async">
+  <h2>🎲 $BAG Dice</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">
+    💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+  </p>
 </section>
 
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
 
-    <!-- LEFT -->
-    <div class="panel mock" id="bagDiceDemo">
-      <!-- CONNECT -->
-      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
+    <!-- LEFT: Controls -->
+    <div class="panel mock">
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <button id="connectBtn" style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">Connect Xaman</button>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
       </div>
 
-      <!-- SESSION -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -206,7 +160,9 @@
             <div class="micro">Amount</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div style="display:flex;align-items:center;gap:6px">
-                <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" pattern="[0-9]*"
+                       min="0" max="2000" step="0.01" placeholder="0.00"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="micro" aria-hidden="true">USD</span>
               </div>
             </div>
@@ -224,7 +180,9 @@
             <div class="micro">Bet amount</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div>
-                <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done"
+                       min="0" step="any" value="1"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="unit">XRP</span>
               </div>
             </div>
@@ -247,74 +205,44 @@
       <!-- Payouts preview -->
       <div class="callout mono" id="payoutBox">
         <div class="payout-grid">
-          <div class="row"><div class="lab"><strong>Come-out WIN</strong> (7 or 11):</div><div class="val" id="payWinComeOut">—</div></div>
-          <div class="row"><div class="lab"><strong>Point WIN</strong> (roll point before 7):</div><div class="val" id="payWinPoint">—</div></div>
-          <div class="row"><div class="lab"><strong>JACKPOT</strong> (random upgrade on any WIN):</div><div class="val" id="payJackpot">—</div></div>
-          <div class="row"><div class="lab"><strong>SEVEN OUT / CRAPS</strong> (lose):</div><div class="val" id="payLose">0 BAG ($0.00)</div></div>
-          <div class="row"><div class="lab"><strong>Point established</strong> (no payout yet):</div><div class="val" id="payHold">Stake held</div></div>
+          <div class="row"><div class="lab"><strong>Lose</strong> (0.00×):</div><div class="val" id="payLose">—</div></div>
+          <div class="row"><div class="lab"><strong>Scratch</strong> (1.00×):</div><div class="val" id="payScratch">—</div></div>
+          <div class="row"><div class="lab"><strong>Win</strong> (1.25×):</div><div class="val" id="payNormal">— <span class="micro" id="payNormalGain" style="opacity:.9"></span></div></div>
+          <div class="row"><div class="lab"><strong>Jackpot</strong> (2.00×):</div><div class="val" id="payJackpot">— <span class="micro" id="payJackpotGain" style="opacity:.9"></span></div></div>
         </div>
         <div class="micro" style="margin-top:6px;opacity:.85;">
-          Pass Line: 7/11 on come-out = WIN · 2/3/12 = CRAPS (lose) · Any other total sets the <b>Point</b>. Then roll until <b>point</b> (WIN) or <b>7</b> (SEVEN OUT, lose).
-          Come-out win pays <b>1.25×</b>; point win pays <b>1.00×</b>. <b>Jackpot</b> may randomly upgrade a WIN to <b>2.00×</b> total.
-        </div>
-      </div>
-
-      <!-- DICE table -->
-      <div class="dice-wrap">
-        <div class="marquee">$BAG DICE</div>
-        <div class="table">
-          <div class="felt">
-            <div id="dice3d" class="stage3d" aria-label="3D dice area">
-              <div id="cssDice" class="css-dice-wrap"></div>
-            </div>
-            <div class="roll-row">
-              <button id="rollBtn" class="btn-roll">ROLL</button>
-            </div>
-            <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
-              🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
-            </p>
-            <div class="result"><div class="t" id="rollText">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
-          </div>
+          Odds match other games. Scratch is a push (1.00×) that occurs inside the lose bucket.
         </div>
       </div>
     </div>
 
-    <!-- RIGHT -->
-    <div class="panel" style="padding:16px">
-      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays (Pass Line)</h3>
+    <!-- RIGHT: Dice board -->
+    <div class="stage">
+      <div class="dice-wrap">
+        <div id="diceNum" class="dice-num">—</div>
+      </div>
 
-      <p style="color:#cfd6cf;margin:0 0 8px;">
-        Bet the <b>Pass Line</b>. The first roll is the <b>come-out roll</b>.
+      <div class="roll-row">
+        <button id="rollBtn" class="btn-roll">Roll</button>
+      </div>
+
+      <!-- Tiny HUD row for Balance (used by the live-balance tweak) -->
+      <div class="hudbar" aria-live="polite">
+        <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
+      </div>
+
+      <p class="micro" style="text-align:center;margin-top:10px;opacity:.7">
+        🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
       </p>
 
-      <h4 style="margin:12px 0 6px;">Come-out roll</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>7 or 11</b> → <b>Pass Line WIN</b> (pays <b>1.25×</b> total).</li>
-        <li><b>2, 3, or 12</b> → <b>CRAPS</b> (you lose, round ends).</li>
-        <li><b>4, 5, 6, 8, 9, or 10</b> → That number becomes the <b>Point</b>. Your stake stays up.</li>
-      </ul>
-
-      <h4 style="margin:12px 0 6px;">Point phase</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li>Roll until either the <b>Point</b> is made (you <b>WIN 1.00×</b>) or a <b>7</b> appears (<b>SEVEN OUT</b>, you lose).</li>
-        <li>Any other total is a <b>neutral</b> roll — no payout; stake remains.</li>
-      </ul>
-
-      <h4 style="margin:12px 0 6px;">Payouts</h4>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li><b>Come-out WIN</b> (7/11) — <b>1.25× total</b></li>
-        <li><b>Point WIN</b> — <b>1.00× total</b></li>
-        <li><b>JACKPOT</b> — <b>2.00× total</b> (random upgrade on any WIN)</li>
-        <li><b>CRAPS / SEVEN OUT</b> — lose</li>
-      </ul>
-
-      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA. All payouts settle in <b>$BAG</b>. $XRP stakes convert at live rate automatically.</p>
+      <div class="result">
+        <div class="t" id="rollText">Tap ROLL</div>
+      </div>
     </div>
 
   </div>
 </section>
 
-<!-- Celebration overlay (single instance; identical to Slots) -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
   <div id="win-card">
@@ -324,7 +252,38 @@
   </div>
 </div>
 
-<!-- Celebration overlay logic (Slots) -->
+<!-- AUDIO (simple) -->
+<script>
+(function(){
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
+  function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null;
+    AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.24; MASTER.connect(AC.destination); return AC;}
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } }
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
+  addEventListener('pointerdown', async ()=>{ if(armed) return; armed=true; await resume();
+    try{ const o=getAC().createOscillator(), g=getAC().createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER); o.start(); o.stop(getAC().currentTime+.02);}catch{} }, {once:true, passive:true});
+  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  if(!watchdog) watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); },1500);
+
+  function click(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain();
+    o.type='triangle'; o.frequency.value=1200; const t=ac.currentTime;
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.22,t+.04); g.gain.exponentialRampToValueAtTime(.0001,t+.22);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.24); }
+  function drum(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=getAC().createGain();
+    o.type='sine'; const t=ac.currentTime; o.frequency.setValueAtTime(200,t); o.frequency.exponentialRampToValueAtTime(90,t+.24);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.14,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.3);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.32); }
+  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
+
+  window.__bagAudio = { click, drum, chime, resume };
+})();
+</script>
+
+<!-- WIN overlay -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -334,41 +293,18 @@
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
   let rafId=null, particles=[], start=0, dur=2000;
-
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2);
-    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
+  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
-
-  function fire(n){
-    particles.length=0;
-    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++){
-      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
-    }
-  }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
+  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
+    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
   function show(){ overlay.style.display='grid'; }
   function hide(){ overlay.style.display='none'; stop(); }
+  closeBtn.addEventListener('click', hide); overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  closeBtn.addEventListener('click', hide);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-
-  // EXACT same API as Slots
-  window.showWin=function(opts={}){ 
-    const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
+  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
     if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
     cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
@@ -377,144 +313,30 @@
 })();
 </script>
 
-<!-- AUDIO: unified WebAudio (reliable) + HTMLAudio fallback -->
-<script>
-(function(){
-  /* === Slots audio core (unchanged) === */
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  let AC=null, MASTER=null, lastTap=0, watchdog=null;
-
-  function getAC(){
-    if (AC && AC.state!=='closed') return AC;
-    if (!AudioCtx) return null;
-    AC = new AudioCtx();
-    MASTER = AC.createGain();
-    MASTER.gain.value = .22;
-    MASTER.connect(AC.destination);
-    return AC;
-  }
-  async function resume(){
-    const ac = getAC();
-    if (!ac) return;
-    if (ac.state === 'suspended'){ try{ await ac.resume(); }catch{} }
-  }
-
-  // Re-arm on EVERY touch (not once) to recover after backgrounding
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
-  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
-
-  if(!watchdog){
-    watchdog = setInterval(()=>{ const ac=getAC(); if(!ac) return;
-      if(Date.now()-lastTap<30000 && ac.state==='suspended') resume();
-    }, 1500);
-  }
-
-  function ping(){
-    try{
-      const ac=getAC(); if(!ac||ac.state!=='running') return;
-      const o=ac.createOscillator(), g=ac.createGain();
-      g.gain.value=.0001; o.connect(g).connect(MASTER);
-      const t=ac.currentTime; o.start(t); o.stop(t+.02);
-    }catch{}
-  }
-
-  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
-  }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
-    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
-    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27);
-  }
-  window.__bagAudio = { chime, thud, resume };
-
-  /* === Dice roll via WebAudio buffer (primary) === */
-  let diceBuf=null, diceGain=null, bufLoading=false;
-
-  async function loadDiceBuffer(){
-    if (diceBuf || bufLoading) return diceBuf;
-    const ac=getAC(); if(!ac) return null;
-    try{
-      bufLoading=true;
-      const res = await fetch('/assets/sounds/diceshakeroll.mp3', {cache:'force-cache'});
-      const arr = await res.arrayBuffer();
-      diceBuf = await ac.decodeAudioData(arr);
-      if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
-    }catch{} finally{ bufLoading=false; }
-    return diceBuf;
-  }
-
-  function playDiceWebAudio(){
-    const ac=getAC(); if(!ac || !diceBuf || ac.state!=='running') return false;
-    try{
-      const src = ac.createBufferSource();
-      src.buffer = diceBuf;
-      src.connect(diceGain || MASTER);
-      src.start();
-      return true;
-    }catch{ return false; }
-  }
-
-  /* === HTMLAudio fallback (only if buffer failed) === */
-  const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
-  rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
-
-  function primeHtmlAudio(){
-    try{
-      rollTag.muted = true;
-      const p = rollTag.play();
-      if (p && p.then) p.then(()=>{ rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }).catch(()=>{});
-      else { rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }
-    }catch{}
-  }
-
-  async function roll(){
-    try{ await resume(); }catch{}
-    await loadDiceBuffer();
-    if (!playDiceWebAudio()){
-      try{
-        rollTag.pause();
-        rollTag.currentTime = 0;
-        rollTag.play().catch(()=>{});
-      }catch{}
-    }
-  }
-
-  window.__bagDiceAudio = { roll };
-})();
-</script>
-
-<!-- === PRICES (live-first; fallback to last-live; then view cache; cross-tab sync) === -->
+<!-- === PRICES (shared live-first module) === -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const LIVE_CACHE_TTL_MS = 24*60*60*1000;  // last-live pricing bundle TTL
-  const VIEW_CACHE_TTL_MS = 6*60*60*1000;   // view cache TTL
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
 
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
 
-  // Shared keys used across all games (keep these identical everywhere)
-  const VIEW_CACHE_KEY = 'bag_prices_v8';     // { bagUsd, xrpUsd }
-  const LAST_LIVE_KEY  = 'bag_last_live_v1';  // { bagUsd, xrpUsd }
-  const XRP_KEY        = 'xrp_usd';           // number
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';
+  const XRP_KEY        = 'xrp_usd';
 
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
 
-  // DOM (optional; script tolerates missing elements)
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
   const liveConv = document.getElementById('liveConv');
-  const diagSpan = document.getElementById('bagDiag');
 
-  // ---------- Utils ----------
   function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k, ttlMs){
@@ -554,11 +376,9 @@
         liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
       }
     }
-    // Let other modules (stake sync, HUDs) react
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  // ---------- Live fetchers ----------
   async function fetchXrpUsdLive(){
     try{
       const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
@@ -566,7 +386,7 @@
       const v = (await r.json())?.ripple?.usd;
       if(Number(v)>0){
         PRICES.xrpUsd = Number(v);
-        cacheSet(XRP_KEY, PRICES.xrpUsd); // share across tabs/games
+        cacheSet(XRP_KEY, PRICES.xrpUsd);
         return true;
       }
     }catch(_){}
@@ -575,11 +395,10 @@
   function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
   function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
   async function fetchBagViaAMMLive(){
-    // Returns true if PRICES.bagUsd set (requires PRICES.xrpUsd already)
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket(XRPL_WSS);
-      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
       ws.onmessage = (ev)=>{
@@ -593,22 +412,18 @@
           if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
           const price = xrpBal / bagBal;
           if (!(price>0) || !isFinite(price)) return resolve(null);
-          if (diagSpan) diagSpan.textContent =
-            `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
           resolve(price);
         }catch{ resolve(null); }
       };
     });
     if (!(xrpPerBag>0)) return false;
-    if (!(PRICES.xrpUsd>0)) return false; // need XRP/USD to compute BAG/USD
+    if (!(PRICES.xrpUsd>0)) return false;
     PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
     PRICES.source = 'live-amm';
     cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
     cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
     return true;
   }
-
-  // ---------- Fallback loaders ----------
   function loadLastLiveBundle(){
     const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
     if (v && Number(v.bagUsd)>0){
@@ -632,55 +447,36 @@
     if (ok && PRICES.source==='—') PRICES.source = 'last-live';
     return ok;
   }
-
-  // ---------- Orchestration (LIVE-FIRST) ----------
   async function refreshPrices(){
     let liveOk = false;
-
-    // 1) LIVE XRP first
     const gotX = await fetchXrpUsdLive();
-
-    // 2) LIVE AMM for BAG using that XRP
     const gotBag = await fetchBagViaAMMLive();
-
     liveOk = gotX && gotBag;
-
-    // 3) If live failed, fall back to last-live bundle; if still nothing, use view cache
-    if (!liveOk){
-      if (!loadLastLiveBundle()) loadViewCache();
-    }
-
+    if (!liveOk){ if (!loadLastLiveBundle()) loadViewCache(); }
     updateLiveLine();
   }
-
-  // Initial pass: try LIVE immediately; on failure, UI will show last-live/view
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
-
-  // Cross-tab sync: if any tab writes shared caches, update instantly
-  window.addEventListener('storage', (e)=>{
-    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
-      // Prefer last-live bundle, else view cache
-      if (!loadLastLiveBundle()) loadViewCache();
-      updateLiveLine();
-    }
-  });
+  window.addEventListener('storage', (e)=>{ if (e.key==='bag_prices_v8'||e.key==='xrp_usd'||e.key==='bag_last_live_v1'){ if (!loadLastLiveBundle()) loadViewCache(); updateLiveLine(); } });
 })();
 </script>
 
-<!-- ✅ Dice — Stake sync (USD ↔ units), limits, payout preview, helpers -->
+<!-- ✅ Stake sync (USD ↔ units), limits, payout preview, helpers -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
   const betQtyEl = document.getElementById('betQty');
   const curToggle = document.getElementById('curToggle');
   const unitSpan  = document.querySelector('.unit');
+
+  const payLose = document.getElementById('payLose');
+  const payScratch = document.getElementById('payScratch');
+  const payNormal  = document.getElementById('payNormal');
+  const payNormalGain = document.getElementById('payNormalGain');
+  const payJackpot = document.getElementById('payJackpot');
+  const payJackpotGain = document.getElementById('payJackpotGain');
+
+  const rollBtn = document.getElementById('rollBtn');
   const limitsEl  = document.getElementById('betLimits');
-
-  const payWinCO = document.getElementById('payWinComeOut');
-  const payWinPt = document.getElementById('payWinPoint');
-  const payJack  = document.getElementById('payJackpot');
-
-  const rollBtn  = document.getElementById('rollBtn');
 
   const MIN_USD = 1;
   const MAX_USD = 2000;
@@ -692,18 +488,13 @@
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Current numeric stake (units in selected currency)
   function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-
-  // Stake in USD: prefer direct USD box if user typed; else compute from qty
   function stakeUsd(){
     const direct = parseFloat(usdBetEl?.value||'');
     if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
     const px = priceFor(selectedCur());
     return (px>0 && qty()>0) ? qty()*px : 0;
   }
-
-  // Stake in BAG (regardless of staking currency)
   function stakeBag(){
     const q = qty();
     const {bagUsd,xrpUsd} = PR();
@@ -712,9 +503,36 @@
     return 0;
   }
 
-  // ----- Two-way sync (USD ↔ units) -----
-  let syncing = false;
+  let syncing=false;
+  function renderPayouts(){
+    const sUsd = stakeUsd()||0;
+    const sBag = stakeBag()||0;
+    const mScratch=1.00, mWin=1.25, mJack=2.00;
 
+    if (payLose)         payLose.textContent    = `${fmt(0)} BAG (${usd(0)})`;
+    if (payScratch)      payScratch.textContent = `${fmt(sBag*mScratch)} BAG (${usd(sUsd*mScratch)})`;
+
+    if (payNormal){
+      const base = `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
+      if (payNormal.firstChild) payNormal.firstChild.nodeValue = base;
+      else payNormal.textContent = base;
+      if (payNormalGain) payNormalGain.textContent = ` (+${fmt(sBag*(mWin-1))} BAG)`;
+    }
+
+    if (payJackpot){
+      const base = `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
+      if (payJackpot.firstChild) payJackpot.firstChild.nodeValue = base;
+      else payJackpot.textContent = base;
+      if (payJackpotGain) payJackpotGain.textContent = ` (+${fmt(sBag*(mJack-1))} BAG)`;
+    }
+  }
+  function renderLimits(){
+    const sUsd = stakeUsd()||0;
+    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
+    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd<MIN_USD);
+  }
   function updateUsdFromBet(){
     if (!usdBetEl || !betQtyEl || syncing) return;
     const px = priceFor(selectedCur());
@@ -724,319 +542,376 @@
     syncing = false;
     renderLimits(); renderPayouts();
   }
-
   function updateBetFromUsd(){
     if (!usdBetEl || !betQtyEl || syncing) return;
     const px = priceFor(selectedCur());
-    let usdVal = parseFloat(usdBetEl.value||'');
-    if (!Number.isFinite(usdVal) || usdVal<=0 || px<=0) { renderLimits(); renderPayouts(); return; }
-    usdVal = Math.min(MAX_USD, Math.max(0, usdVal));
-    // keep precision (supports fractional BAG)
-    const units = Math.floor((usdVal/px) * 1e6)/1e6;
+    let u = parseFloat(usdBetEl.value||'');
+    if (!Number.isFinite(u) || u<=0 || px<=0){ renderLimits(); renderPayouts(); return; }
+    u = Math.min(MAX_USD, Math.max(0, u));
+    const units = Math.floor((u/px) * 1e6)/1e6;
     syncing = true;
     betQtyEl.value = units || '';
     syncing = false;
     renderLimits(); renderPayouts();
   }
 
-  // ----- UI rendering: limits + payouts -----
-  function renderLimits(){
-    const sUsd = stakeUsd()||0;
-    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
-                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
-    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
-    // Only gate the button in live mode
-    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd < MIN_USD);
-  }
-
-  function renderPayouts(){
-    const sUsd = stakeUsd()||0;
-    const sBag = stakeBag()||0;
-    const mCO=1.25, mPt=1.00, mJ=2.00;
-
-    if (payWinCO) payWinCO.textContent = `${fmt(sBag*mCO)} BAG (${usd(sUsd*mCO)})`;
-    if (payWinPt) payWinPt.textContent = `${fmt(sBag*mPt)} BAG (${usd(sUsd*mPt)})`;
-    if (payJack)  payJack.textContent  = `${fmt(sBag*mJ)} BAG (${usd(sUsd*mJ)})`;
-  }
-
-  // ----- Wire up events -----
   usdBetEl?.addEventListener('input', updateBetFromUsd);
   betQtyEl?.addEventListener('input', updateUsdFromBet);
-  curToggle?.addEventListener('change', ()=>{
-    if (unitSpan) unitSpan.textContent = selectedCur();
-    // Keep units numeric; recompute USD against the new currency
-    updateUsdFromBet();
-  });
-  window.addEventListener('bag:pricesUpdated', ()=>{
-    // Recompute both sides when prices land/refresh
-    if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
-  });
+  curToggle?.addEventListener('change', ()=>{ if (unitSpan) unitSpan.textContent = selectedCur(); updateUsdFromBet(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{ if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet(); });
 
-  // ----- Init -----
   if (unitSpan) unitSpan.textContent = selectedCur();
   updateUsdFromBet();
   renderLimits();
   renderPayouts();
 
-  // Expose for game logic
   window.__bagStake = { usd: stakeUsd, bag: stakeBag, minUsd: MIN_USD, maxUsd: MAX_USD };
 })();
 </script>
 
-
-<!-- 🎲 BAG Dice — Game logic (Pass Line rules intact, min-$ gate, odds injected) -->
+<!-- ===================== Dice Roll Logic ===================== -->
 <script>
 (function(){
-  const container = document.getElementById('dice3d');
-  const rollBtn   = document.getElementById('rollBtn');
-  const rollText  = document.getElementById('rollText');
+  const rollBtn = document.getElementById('rollBtn');
+  const rollText = document.getElementById('rollText');
+  const diceNum = document.getElementById('diceNum');
 
-  /* ----- Stake helpers (now use shared __bagStake) ----- */
-  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  function stakeBag(){ return (window.__bagStake && __bagStake.bag()) || 0; }
-  function stakeUsd(){ return (window.__bagStake && __bagStake.usd()) || 0; }
-  function minUsd(){  return (window.__bagStake && __bagStake.minUsd) || 1; }
+  // Odds aligned with the rest:
+  // LIVE: 2% Jackpot, 42% Win; DEMO: 3% Jackpot, 46% Win.
+  // Scratch (1.00×) happens inside the lose bucket ~10–11% of the time for “feel”.
+  const LIVE = { P_JP: 0.02, P_WIN: 0.42, P_SCRATCH_IN_LOSE: 0.10 };
+  const DEMO = { P_JP: 0.03, P_WIN: 0.46, P_SCRATCH_IN_LOSE: 0.11 };
+  const P = (window.__BAG_FORCE_DEMO === true) ? DEMO : LIVE;
 
-  function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
 
-  /* ----- Cosmetic CSS dice (visual only) ----- */
-  container.innerHTML = `
-    <style>
-      .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
-      .dice-row{position:relative;width:100%;height:100%;display:grid;place-items:center;}
-      .die{position:absolute;width:104px;height:104px;transform-style:preserve-3d;will-change:transform;}
-      .face{position:absolute;inset:0;background:#fff no-repeat center/cover;
-            transform-style:preserve-3d;border-radius:13px;
-            box-shadow:inset 0 0 0 2px rgba(0,0,0,.08);backface-visibility:hidden;}
-      .f1{ transform: translateZ(52px); } .f6{ transform: rotateY(180deg) translateZ(52px); }
-      .f3{ transform: rotateY( 90deg) translateZ(52px); } .f4{ transform: rotateY(-90deg) translateZ(52px); }
-      .f2{ transform: rotateX( 90deg) translateZ(52px); } .f5{ transform: rotateX(-90deg) translateZ(52px); }
-
-      .dieA{ transform: translate3d(-74px,16px,0) rotateX(10deg) rotateY(-16deg); }
-      .dieB{ transform: translate3d( 74px,20px,0) rotateX(-8deg) rotateY(18deg); }
-
-      @keyframes tumbleA { from{ transform:translate3d(-74px,16px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d(-74px,16px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn);} }
-      @keyframes tumbleB { from{ transform:translate3d( 74px,20px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d( 74px,20px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn);} }
-      .tumblingA{ animation:tumbleA .42s linear infinite; }
-      .tumblingB{ animation:tumbleB .42s linear infinite; }
-      .tossing{ transition: transform .70s cubic-bezier(.2,.9,.2,1); }
-    </style>
-    <div class="cssstage">
-      <div class="dice-row">
-        <div class="die dieA" id="dieA"></div>
-        <div class="die dieB" id="dieB"></div>
-      </div>
-    </div>
-  `;
-  function faceSVG(val){
-    const r=0.22,m=0.56,c=0;
-    const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
-    const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-    return `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`
-    )}")`;
-  }
-  function makeDie(el){ el.innerHTML=''; for(let i=1;i<=6;i++){ const f=document.createElement('div'); f.className='face f'+i; f.style.backgroundImage=faceSVG(i); el.appendChild(f);} }
-  const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
-  makeDie(dieA); makeDie(dieB);
-
-  const FRONT={
-    1:()=>`rotateX(0rad) rotateY(0rad)`,
-    2:()=>`rotateX(-1.5708rad)`,
-    3:()=>`rotateY(-1.5708rad)`,
-    4:()=>`rotateY( 1.5708rad)`,
-    5:()=>`rotateX( 1.5708rad)`,
-    6:()=>`rotateY( 3.1416rad)`,
-  };
-  const poseToFront=v=>(FRONT[v]||FRONT[1])();
-  async function rollCssDice(a,b){
-    try{ window.__bagDiceAudio && __bagDiceAudio.roll(); }catch{}
-    try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
-    const A=document.getElementById('dieA'), B=document.getElementById('dieB');
-    A.classList.add('tumblingA'); B.classList.add('tumblingB');
-    await new Promise(r=>setTimeout(r, 1200));
-    A.classList.remove('tumblingA'); B.classList.remove('tumblingB');
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    A.classList.add('tossing'); B.classList.add('tossing');
-    A.style.transform = `translate3d(-60px,6px,0) ${poseToFront(a)}`;
-    B.style.transform = `translate3d( 60px,6px,0) ${poseToFront(b)}`;
-    await new Promise(r=>setTimeout(r, 700));
-    A.classList.remove('tossing'); B.classList.remove('tossing');
+  function animateRoll(ms=1400){
+    return new Promise(res=>{
+      const t0=performance.now();
+      diceNum.classList.add('dice-anim');
+      let raf;
+      const tick=(t)=>{
+        const p=(t-t0)/ms;
+        const n=1+Math.floor(Math.random()*100);
+        diceNum.textContent=n;
+        if(p<1){ raf=requestAnimationFrame(tick); }
+        else { cancelAnimationFrame(raf); diceNum.classList.remove('dice-anim'); res(); }
+      };
+      raf=requestAnimationFrame(tick);
+      try{ __bagAudio && __bagAudio.click(); }catch{}
+    });
   }
 
-  /* ======= ODDS ENGINE (rules intact) ======= */
-  const MULT_CO = 1.25;   // come-out win total multiplier
-  const MULT_PT = 1.00;   // point win total multiplier
-  const MULT_JP = 2.00;   // jackpot upgrade total multiplier
-
-  // Live baseline (house-favored)
-  const LIVE = {
-    CO: { P_JP: 0.02, P_WIN: 0.38, P_CRAPS: 0.10 }, // P_POINT = 1 - sum
-    PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }  // P_HOLD = 1 - sum
-  };
-  // Demo (slightly player-favored)
-  const DEMO = {
-    CO: { P_JP: 0.03, P_WIN: 0.42, P_CRAPS: 0.08 },
-    PT: { P_JP: 0.03, P_WIN: 0.34, P_SEVEN: 0.24 }
-  };
-
-  const PROB = ()=> (window.__BAG_FORCE_DEMO === true ? DEMO : LIVE);
-
-  // Helpers to pick dice faces matching a requested sum
-  function facesForSum(sum){
-    const opts=[]; for(let a=1;a<=6;a++){ const b=sum-a; if (b>=1 && b<=6) opts.push([a,b]); }
-    return opts[(Math.random()*opts.length)|0];
-  }
-  function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
-
-  // Outcome pickers per phase
-  function outcomeComeOut(){
-    const p = PROB().CO;
+  function decideOutcome(){
+    // We still roll a visible 1–100, but the outcome bucket follows the house odds.
     const r = Math.random();
-    if (r < p.P_JP)  return { kind:'jackpot-co' };
-    if (r < p.P_JP + p.P_WIN) return { kind:'win-co' };
-    if (r < p.P_JP + p.P_WIN + p.P_CRAPS) return { kind:'craps' };
-    return { kind:'point' };
-  }
-  function outcomePoint(){
-    const p = PROB().PT;
-    const r = Math.random();
-    if (r < p.P_JP)  return { kind:'jackpot-pt' };
-    if (r < p.P_JP + p.P_WIN) return { kind:'win-pt' };
-    if (r < p.P_JP + p.P_WIN + p.P_SEVEN) return { kind:'sevenout' };
-    return { kind:'hold' };
+    if (r < P.P_JP) return { bucket:'jackpot', mult:2.00 };
+    if (r < P.P_JP + P.P_WIN) return { bucket:'win', mult:1.25 };
+    // Lose bucket — sometimes return Scratch
+    if (Math.random() < P.P_SCRATCH_IN_LOSE) return { bucket:'scratch', mult:1.00 };
+    return { bucket:'lose', mult:0.00 };
   }
 
-  // Choose a valid dice total for each outcome
-  function sumForOutcome(kind, point){
-    if (kind==='craps')        return pick([2,3,12]);
-    if (kind==='win-co')       return pick([7,11]);
-    if (kind==='jackpot-co')   return pick([7,11]);
-    if (kind==='point')        return pick([4,5,6,8,9,10]);
-    if (kind==='sevenout')     return 7;
-    if (kind==='win-pt')       return point;
-    if (kind==='jackpot-pt')   return point;
-    const neutrals=[2,3,4,5,6,8,9,10,11,12].filter(s=>s!==7 && s!==point);
-    return pick(neutrals);
-  }
+  rollBtn.addEventListener('click', async ()=>{
+    const sBag = (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+    const sUsd = (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
 
-  /* ======= Round state ======= */
-  const ROUND={active:false,point:null};
-  const isComeOut=()=>!ROUND.active||ROUND.point==null;
+    if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
+    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
 
-  rollBtn?.addEventListener('click', async ()=>{
-    rollBtn.disabled=true;
+    rollBtn.disabled = true;
+    rollText.className = 't';
+    rollText.textContent = 'Rolling…';
+    try{ __bagAudio && __bagAudio.resume && await __bagAudio.resume(); }catch{}
 
-    const sUsd = stakeUsd();
-    const sBag = stakeBag();
+    await animateRoll(1400);
 
-    // Enforce min in live (demo bypasses — button also gated by the sync block)
-    if (!window.__BAG_FORCE_DEMO && (!(sUsd >= minUsd()))) {
-      alert(`Min stake is $${minUsd().toFixed(2)}`);
-      rollBtn.disabled=false; return;
-    }
+    const outcome = decideOutcome();
+    // Freeze a nice “final” roll number to show
+    const finalNum = 1 + Math.floor(Math.random()*100);
+    diceNum.textContent = finalNum;
 
-    // Live session spend (demo bypass)
-    if (!window.__BAG_FORCE_DEMO){
-      if (!window.__bagSession || !__bagSession.active()){
-        alert('Start a session at The Cage');
-        rollBtn.disabled=false; return;
+    if (outcome.mult > 0){
+      if (outcome.mult === 1.00){
+        try{ __bagAudio && __bagAudio.click(); }catch{}
+        credit(sBag*1.00);
+        rollText.className='t scratch'; rollText.textContent='SCRATCH — 1.00×';
+        showWin({ message:'SCRATCH', subtext:`${(outcome.mult*100).toFixed(0)}% back`, duration:2200, sound:false });
+      } else if (outcome.mult === 1.25){
+        try{ __bagAudio && __bagAudio.chime(); }catch{}
+        credit(sBag*1.25);
+        rollText.className='t win'; rollText.textContent='WIN — 1.25×';
+        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200 });
+      } else {
+        try{ __bagAudio && __bagAudio.chime(); }catch{}
+        credit(sBag*2.00);
+        rollText.className='t win'; rollText.textContent='JACKPOT — 2.00×';
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200 });
       }
-      if (!(sBag > 0)){
-        alert('Enter a stake first');
-        rollBtn.disabled=false; return;
-      }
-      if (!__bagSession.spend(sBag)){
-        alert('Insufficient balance');
-        rollBtn.disabled=false; return;
-      }
-    }
-
-    // Decide outcome by phase, then show dice that match that outcome
-    let outcome;
-    if (isComeOut()){
-      outcome = outcomeComeOut();
-      const sum = sumForOutcome(outcome.kind, null);
-      const [a,b] = facesForSum(sum);
-      await rollCssDice(a,b);
-
-      if (outcome.kind==='craps'){
-        rollText.className='t lose';
-        rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
-        try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
-      } else if (outcome.kind==='win-co' || outcome.kind==='jackpot-co'){
-        const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
-        const gainBag = sBag*(mult-1);
-        window.showWin && showWin({
-          message: (mult===MULT_JP)?'JACKPOT':'WIN',
-          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
-          duration: (mult===MULT_JP)? 5600 : 4200,
-          sound: true
-        });
-        rollText.className='t win';
-        rollText.textContent = (mult===MULT_JP)
-          ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
-          : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
-      } else { // point established
-        ROUND.active=true; ROUND.point=sum;
-        rollText.className='t';
-        rollText.textContent=`Rolled ${sum} — Point is ${sum}`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'point-set', point:sum}}));
-      }
-
     } else {
-      outcome = outcomePoint();
-      const sum = sumForOutcome(outcome.kind, ROUND.point);
-      const [a,b] = facesForSum(sum);
-      await rollCssDice(a,b);
-
-      if (outcome.kind==='sevenout'){
-        rollText.className='t lose';
-        rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
-        try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
-      } else if (outcome.kind==='win-pt' || outcome.kind==='jackpot-pt'){
-        const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
-        const gainBag = sBag*(mult-1);
-        window.showWin && showWin({
-          message: (mult===MULT_JP)?'JACKPOT':'WIN',
-          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
-          duration: (mult===MULT_JP)? 5600 : 4200,
-          sound: true
-        });
-        rollText.className='t win';
-        rollText.textContent = (mult===MULT_JP)
-          ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
-          : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
-        ROUND.active=false; ROUND.point=null;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
-      } else { // hold / neutral
-        rollText.className='t';
-        rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
-        window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
-      }
+      try{ __bagAudio && __bagAudio.drum(); }catch{}
+      rollText.className='t lose'; rollText.textContent='Lose — try again';
     }
 
-    rollBtn.disabled=false;
+    rollBtn.disabled = false;
   });
 })();
 </script>
 
-
-
-<!-- Practice Mode Wrapper (decimal-safe demo balance) -->
+<!-- Xaman wallet connect (same pattern) -->
 <script>
 (function(){
-  const qs = new URLSearchParams(location.search);
-  const pathDemo = location.pathname.toLowerCase().includes('/demo');
+  const WALLET_KEY = 'bag_wallet_v1';
+  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+
+  function safeShort(a){ try{ const s = a == null ? '' : String(a); if (!s) return ''; return s.slice(0,6) + '…' + s.slice(-4); }catch{ return ''; } }
+
+  let connectedNow = false;
+  let currentAddr = '';
+
+  function render(){
+    try{
+      if (connectedNow && currentAddr){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(currentAddr)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      statusEl.textContent = 'Wallet: error'; btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
+    if (ready) return true;
+    if (typeof window.Xumm === 'function'){
+      xumm = new Xumm(API_KEY);
+      ready = true;
+      xumm.on('success', () => {
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            connectedNow = true; currentAddr = String(acct);
+            write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+            render();
+          }
+        }catch(e){}
+      });
+      xumm.on('ready', () => { render(); });
+      return true;
+    }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
+    return false;
+  }
+
+  async function connectXaman(){
+    if (!ready && !initIfSdk()){ alert('Loading Xaman… try again in a moment.'); return; }
+    btn.disabled = true;
+    try {
+      const auth = await xumm.authorize();
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      connectedNow = true; currentAddr = String(acct);
+      write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+      render();
+    } catch (e) {
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    if (connectedNow){
+      connectedNow = false; currentAddr = '';
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+  initIfSdk();
+})();
+</script>
+
+<!-- TAB SESSION -->
+<script>
+(function(){
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 1;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML =
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
+      startBtn.style.display = 'none';
+      if (topUpBtn) topUpBtn.style.display = 'inline-block';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      topUpBtn.style.display = 'none';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const PRICES = window.__PRICES__ || {bagUsd:0,xrpUsd:0};
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
+    const depositUsd = Math.max(1, suggestDepositUsd());
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    try{
+      const { created, resolved } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('DICE_SESSION')}}] },
+        options: { submit:true, expire:300 }
+      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      const res = await resolved;
+      if (!res?.signed) throw new Error('User declined in Xaman');
+      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      if (!txid) throw new Error('No account returned');
+      const validated = await waitForTx(txid, 60000);
+      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      alert('Session started — you’re good to play!');
+    } catch (err){
+      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  async function topUpSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+    const s = read();
+    if (!(s && s.addr)){ alert('Start a session first.'); return; }
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('DICE_TOPUP')}}] },
+        options: { submit:true, expire:300 }
+      }, ()=>{});
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+      const addBag = (depositUsd / PRICES.bagUsd);
+      const cur = read() || { addr: s.addr, bag: 0 };
+      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
+      write(cur); render();
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
+    } catch(e){
+      alert('Top-up cancelled or failed.');
+    } finally {
+      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
+    }
+  }
+
+  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
+
+  startBtn?.addEventListener('click', startSession);
+  topUpBtn?.addEventListener('click', topUpSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
+</script>
+
+<!-- Practice Mode wrapper (decimal-safe demo balance) -->
+<script>
+(function(){
   const liveSession = window.__bagSession;
 
   const $ = (s)=>document.querySelector(s);
@@ -1049,7 +924,7 @@
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
   function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} } /* preserve decimals */
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
   function fmt(n){
@@ -1065,13 +940,12 @@
     const bag = getBal();
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
-      statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
-    if (topUpBtn) topUpBtn.style.display = 'none';
-    if (endBtn)   endBtn.style.display   = 'none';
+    if (topUpBtn)  topUpBtn.style.display  = 'none';
+    if (endBtn)    endBtn.style.display     = 'none';
   }
 
   function toast(msg){
@@ -1098,38 +972,41 @@
     credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemoSession(); return true; }
   };
 
-  function enableDemo(){
-    window.__BAG_FORCE_DEMO = true;
-    window.__bagSession = demoSession;
-    renderDemoSession();
-    if (connectEl) connectEl.style.opacity = '0.9';
-  }
-  function enableLive(){
-    window.__BAG_FORCE_DEMO = false;
-    if (liveSession) window.__bagSession = liveSession;
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    toast('Wallet connected — Live mode enabled');
-  }
+  function enableDemo(){ window.__BAG_FORCE_DEMO = true; window.__bagSession = demoSession; renderDemoSession(); if (connectEl) connectEl.style.opacity='0.9'; }
+  function enableLive(){ window.__BAG_FORCE_DEMO = false; if (liveSession) window.__bagSession = liveSession; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); toast('Wallet connected — Live mode enabled'); }
 
-  const demoWanted = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
+  const demoWanted = true;
   if (demoWanted) enableDemo();
 
   window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
-
-  window.addEventListener('bag:diceResult', (ev)=>{
-    if (!window.__BAG_FORCE_DEMO) return;
-    const d = ev?.detail || {};
-    if (d.outcome?.includes('jackpot'))   toast('JACKPOT 2× paid — connect when ready to play live');
-    else if (d.outcome?.includes('win'))  toast('WIN paid — connect when ready to play live');
-    else if (d.outcome?.includes('lose')) toast('Round lost — connect when ready to play live');
-    else                                   toast('Point set — roll again');
-  });
 
   window.addEventListener('bag:walletConnected', enableLive);
   window.addEventListener('bag:walletDisconnected', enableDemo);
 })();
 </script>
 
+<!-- === DICE: HUD Live Balance Tweak (show session BAG in LIVE) === -->
+<script>
+(function(){
+  function fmtBag(n){ const x = Number(n) || 0; return x.toLocaleString(undefined, { maximumFractionDigits: 6 }); }
+  function els(){ return { balLbl:document.getElementById('balLbl'), ccyLbl:document.getElementById('ccyLbl') }; }
+  function renderLiveHud(){
+    try{
+      if (window.__BAG_FORCE_DEMO === true) return;
+      const s = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
+      if (!s) return;
+      const { balLbl, ccyLbl } = els();
+      if (balLbl) balLbl.textContent = fmtBag(s.bag);
+      if (ccyLbl) ccyLbl.textContent = 'BAG';
+    }catch(e){}
+  }
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected']
+    .forEach(ev=>addEventListener(ev,renderLiveHud));
+  addEventListener('storage', (e)=>{ if (e && e.key === 'bag_session_v1') renderLiveHud(); });
+  renderLiveHud();
+  let tries=0; const iv=setInterval(()=>{ renderLiveHud(); if(++tries>40) clearInterval(iv); }, 500);
+})();
+</script>
 
 <script>
 if ('serviceWorker' in navigator) {
@@ -1143,6 +1020,5 @@ if ('serviceWorker' in navigator) {
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
-
 </body>
 </html>
