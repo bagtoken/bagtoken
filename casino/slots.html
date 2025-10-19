@@ -1283,14 +1283,31 @@ if ('serviceWorker' in navigator) {
     modePill.innerHTML = `Mode: <b>${live?'LIVE':'DEMO'}</b>`;
   }
 
+  /* ======== UPDATED to follow currency toggle and convert balance ======== */
   function renderBalance(){
     const s = sessionObj();
-    const amt = s && Number(s.bag)>0 ? fmtBag(s.bag) : '—';
+    const bagBal = s && Number(s.bag) > 0 ? Number(s.bag) : 0;
     const balLbl = document.getElementById('balLbl');
     const ccyLbl = document.getElementById('ccyLbl');
-    if (balLbl) balLbl.textContent = amt;
-    if (ccyLbl) ccyLbl.textContent = 'BAG';
+    if (!balLbl || !ccyLbl) return;
+
+    // read current currency from toggle
+    const curEl = document.querySelector('#curToggle input[name="betCur"]:checked');
+    const cur = curEl ? String(curEl.value).toUpperCase() : 'XRP';
+
+    const { bagUsd=0, xrpUsd=0 } = (window.__PRICES__ || {});
+
+    if (cur === 'BAG') {
+      balLbl.textContent = bagBal ? fmtBag(bagBal) : '—';
+      ccyLbl.textContent = 'BAG';
+    } else {
+      // convert BAG session balance to XRP for display
+      const xrpBal = (bagBal && bagUsd>0 && xrpUsd>0) ? bagBal * (bagUsd/xrpUsd) : NaN;
+      balLbl.textContent = Number.isFinite(xrpBal) ? fmtBag(xrpBal) : '—';
+      ccyLbl.textContent = 'XRP';
+    }
   }
+  /* ===================================================================== */
 
   function renderBet(){
     const b = stakeBag();
@@ -1327,7 +1344,10 @@ if ('serviceWorker' in navigator) {
     document.getElementById('curToggle')?.addEventListener(t, renderBet);
   });
 
-  // INITIALIZE ALL FOUR PILLS RIGHT AWAY (this was missing before)
+  // ALSO repaint Balance immediately when currency toggles
+  document.getElementById('curToggle')?.addEventListener('change', renderBalance);
+
+  // INITIALIZE ALL FOUR PILLS RIGHT AWAY
   paint();
   renderLast(null);
 
