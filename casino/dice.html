@@ -169,6 +169,7 @@
   /* --- Tiny HUD --- */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+  .hudbar .pill b{ font-weight:800 }
 </style>
 
 <script src="/js/bag-session.js"></script>
@@ -278,9 +279,12 @@
               <button id="rollBtn" class="btn-roll">ROLL</button>
             </div>
 
-            <!-- Tiny HUD (Balance) -->
-            <div class="hudbar" aria-live="polite">
+            <!-- Tiny HUD (Plinko-style pills) -->
+            <div class="hudbar" aria-live="polite" id="diceHud">
+              <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
               <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+              <span class="pill">Bet: <b id="betLbl">1</b></span>
+              <span class="pill">Last: <b id="lastLbl">—</b></span>
             </div>
 
             <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
@@ -746,6 +750,12 @@
 
   const MIN_USD = 1, MAX_USD = 2000;
 
+  // --- HUD "Last:" helper (Plinko parity) ---
+  window.__DICE_LAST__ = window.__DICE_LAST__ || '—';
+  function setLast(s){
+    try{ window.__DICE_LAST__ = s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{}
+  }
+
   function currentCurrency(){
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
     return el ? String(el.value).toUpperCase() : 'XRP';
@@ -930,6 +940,7 @@
       if (outcome.kind==='craps'){
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
+        setLast('Scratch'); // HUD (Plinko parity)
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
@@ -947,12 +958,14 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
+        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.25×'); // HUD
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Point is ${sum}`;
+        setLast('Point set'); // HUD
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'point-set', point:sum}}));
       }
 
@@ -965,6 +978,7 @@
       if (outcome.kind==='sevenout'){
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
+        setLast('Scratch'); // HUD
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
@@ -982,11 +996,13 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
+        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.00×'); // HUD
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
       } else {
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
+        setLast('Hold'); // HUD (neutral)
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
       }
     }
@@ -1031,7 +1047,7 @@
     const bag=getBal();
     const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
     if(statusEl){
-      statusEl.innerHTML='Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML='Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
         (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
     if(startBtn) startBtn.style.display='inline-block';
@@ -1073,26 +1089,51 @@
 })();
 </script>
 
-<!-- HUD updater -->
+<!-- HUD updater (Plinko-style: Mode / Balance / Bet / Last) -->
 <script>
 (function(){
   function fmtBag(n){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
-  function els(){ return { balLbl:document.getElementById('balLbl'), ccyLbl:document.getElementById('ccyLbl') }; }
+  function els(){ 
+    return { 
+      balLbl:document.getElementById('balLbl'), 
+      ccyLbl:document.getElementById('ccyLbl'),
+      betLbl:document.getElementById('betLbl'),
+      modeLbl:document.getElementById('modeLbl'),
+      lastLbl:document.getElementById('lastLbl'),
+      betQtyEl:document.getElementById('betQty')
+    }; 
+  }
+
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO===true) ? 'Demo' : 'Live'; }
+  function currentBet(){
+    const {betQtyEl} = els();
+    const v = parseFloat(betQtyEl?.value||'0');
+    if (!Number.isFinite(v) || v<0) return 0;
+    // Plinko shows integer units; mirror that for display only
+    return Math.max(0, Math.floor(v));
+  }
 
   function renderHud(){
     try{
       const sess = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
-      if(!sess) return;
-      const { balLbl, ccyLbl } = els();
-      if (balLbl) balLbl.textContent = fmtBag(sess.bag);
-      if (ccyLbl) ccyLbl.textContent = 'BAG';
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      if (modeLbl) modeLbl.textContent = selectedMode();
+      if (betLbl)  betLbl.textContent  = String(currentBet());
+      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
+      if (sess){
+        if (balLbl) balLbl.textContent = fmtBag(sess.bag);
+        if (ccyLbl) ccyLbl.textContent = 'BAG';
+      }
     }catch(e){}
   }
 
   // Update on all relevant state changes
   ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated',
-   'bag:walletConnected','bag:walletDisconnected','bag:diceResult']
+   'bag:walletConnected','bag:walletDisconnected','bag:diceResult','bag:hudRefresh']
    .forEach(ev=>addEventListener(ev, renderHud));
+
+  // Bet input changes should refresh Bet:
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
 
   // Also react to localStorage changes (multi-tab for demo)
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
