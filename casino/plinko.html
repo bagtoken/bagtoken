@@ -48,7 +48,7 @@
 
   .stack{display:grid;gap:10px}
   .choice{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800;cursor:pointer}
   .chip input{accent-color:#2fbf6b}
   .mono{font-variant-numeric:tabular-nums}
   .micro{font-size:.85rem;color:#a8b5ab}
@@ -935,11 +935,39 @@
 })();
 </script>
 
-<!-- === QUICK AMOUNT BUTTONS (adds chips; layout/elements untouched) === -->
+<!-- === QUICK AMOUNT BUTTONS (currency-aware + MAX) === -->
 <script>
 (function(){
-  const USD_PRESETS  = [1, 5, 10, 25, 50, 100];
-  const UNIT_PRESETS = [1, 5, 10, 25, 50, 100];
+  const MAX_USD = 2000;
+
+  // Base presets
+  const USD_PRESETS  = [1, 5, 10, 25, 50, 100, 'MAX'];
+
+  // Returns unit presets based on active currency
+  function unitPresetsFor(ccy){
+    if (String(ccy).toUpperCase() === 'BAG'){
+      // As requested (including big jumps and MAX)
+      return [300000, 1500000, 3000000, 75000000, 15000000, 30000000, 'MAX'];
+    }
+    // XRP (keep the familiar ones + MAX)
+    return [1, 5, 10, 25, 50, 100, 'MAX'];
+  }
+
+  // Helpers mirrored from your price sync block (kept local to avoid coupling)
+  function selectedCur(){
+    const wrap = document.getElementById('curToggle');
+    return wrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP';
+  }
+  function priceFor(cur){
+    const P = window.__PRICES__ || {};
+    return cur==='BAG' ? (P.bagUsd||0) : (P.xrpUsd||0);
+  }
+  function dispatchInput(el){
+    try{
+      el.dispatchEvent(new Event('input', { bubbles:true }));
+      el.dispatchEvent(new Event('change', { bubbles:true }));
+    }catch{}
+  }
 
   function makeChipRow(values, onPick, id){
     const row = document.createElement('div');
@@ -958,39 +986,55 @@
     return row;
   }
 
-  function dispatchInput(el){
-    try{
-      el.dispatchEvent(new Event('input', { bubbles:true }));
-      el.dispatchEvent(new Event('change', { bubbles:true }));
-    }catch{}
-  }
-
   function mount(){
     const usd = document.getElementById('usdBet');
     const units = document.getElementById('demoBet');
     if (!usd || !units) return;
 
-    // Avoid double-mount
+    // USD quick row (with MAX)
     if (!document.getElementById('usdQuickRow')){
       const usdWrap = usd.parentElement && usd.parentElement.parentElement;
       if (usdWrap){
         const row = makeChipRow(USD_PRESETS, (val)=>{
-          usd.value = Number(val).toFixed(2);
+          if (val === 'MAX'){
+            usd.value = MAX_USD.toFixed(2);
+          } else {
+            usd.value = Number(val).toFixed(2);
+          }
           dispatchInput(usd); // triggers existing sync → unit calc
         }, 'usdQuickRow');
         usdWrap.insertAdjacentElement('afterend', row);
       }
     }
 
-    if (!document.getElementById('unitQuickRow')){
-      const unitWrap = units.parentElement && units.parentElement.parentElement;
-      if (unitWrap){
-        const row = makeChipRow(UNIT_PRESETS, (val)=>{
+    // Units quick row (rebuildable per currency)
+    const unitWrap = units.parentElement && units.parentElement.parentElement;
+    function rebuildUnitRow(){
+      const existing = document.getElementById('unitQuickRow');
+      if (existing) existing.remove();
+      const ccy = selectedCur();
+      const row = makeChipRow(unitPresetsFor(ccy), (val)=>{
+        if (val === 'MAX'){
+          const px = priceFor(ccy);
+          if (px > 0){
+            const maxUnits = Math.floor(MAX_USD / px);
+            units.value = String(Math.max(0, maxUnits));
+          } else {
+            units.value = units.value; // leave unchanged if no price yet
+          }
+        } else {
           units.value = String(Math.max(0, Math.floor(Number(val) || 0)));
-          dispatchInput(units); // triggers existing sync → USD calc + HUD update
-        }, 'unitQuickRow');
-        unitWrap.insertAdjacentElement('afterend', row);
-      }
+        }
+        dispatchInput(units); // triggers USD calc + HUD update
+      }, 'unitQuickRow');
+      unitWrap.insertAdjacentElement('afterend', row);
+    }
+
+    // Initial build + react to currency changes
+    if (unitWrap){
+      rebuildUnitRow();
+      const curWrap = document.getElementById('curToggle');
+      curWrap?.addEventListener('change', rebuildUnitRow);
     }
   }
 
@@ -1320,6 +1364,7 @@
 
   function drawBoard(){
     const W=canvas.width, H=canvas.height;
+    const ctx=canvas.getContext('2d');
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
@@ -1346,7 +1391,7 @@
     }
 
     if (!dropping){
-      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, dropX));
+      const gx = Math.min(wallRight - 8, Math.max(wallLeft + 8, (window.__BAG_PLINKO?.ball?.x) ?? (wallLeft+wallRight)/2));
 
       ctx.save();
       ctx.setLineDash([6,6]);
@@ -1367,18 +1412,14 @@
 
       ctx.save();
       ctx.globalAlpha = 0.85;
-      drawBall(gx, topBoard - 30);
+      const r=8;
+      const g=ctx.createRadialGradient(gx-3,topBoard-33,2,gx,topBoard-30,r);
+      g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
+      ctx.fillStyle=g;
+      ctx.beginPath(); ctx.arc(gx,topBoard-30,r,0,Math.PI*2); ctx.fill();
+      ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
       ctx.restore();
     }
-  }
-
-  function drawBall(x,y){
-    const r=8;
-    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
-    g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
-    ctx.fillStyle=g;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
   hud();
