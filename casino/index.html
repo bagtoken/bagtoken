@@ -98,6 +98,17 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
+  /* 🎧 Spotify toggle — slightly spaced next to the sound switch */
+  #spotifyToggle{
+    position:fixed;top:10px;right:56px;z-index:2147483647;
+    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
+    border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
+    color:var(--gold);font-size:1.2rem;cursor:pointer;opacity:.9;
+    transition:opacity .2s ease, transform .12s ease;
+  }
+  #spotifyToggle:hover{opacity:1;transform:scale(1.06)}
+  #spotifyToggle:active{transform:scale(.98)}
+
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -129,6 +140,10 @@
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
+
+<!-- 🎧 Headphones (Spotify) -->
+<button id="spotifyToggle" title="Play $BAG Casino Spotify" aria-pressed="false">🎧</button>
+<div id="spotifyMount" style="position:fixed;top:-9999px;left:-9999px;width:0;height:0;overflow:hidden" aria-hidden="true"></div>
 
 <div class="wrap">
   <div class="top">
@@ -325,6 +340,101 @@
     playing = false;
   } else {
     armGestureUnlock();
+  }
+  setIcon();
+})();
+</script>
+
+<!-- 🎧 Spotify headphone toggle: plays playlist in-page, pauses ambience while active -->
+<script>
+(function(){
+  const headphoneBtn = document.getElementById('spotifyToggle');
+  const mount = document.getElementById('spotifyMount');
+  const ambience = document.getElementById('casinoAmbience');
+
+  const KEY  = 'bag_spotify_pref';        // 'on' | 'off'
+  const LAST = 'bag_spotify_last_state';  // remembers ambience state while Spotify is on
+
+  // Your playlist embed — plays inside the page (no app switch)
+  const EMBED_SRC = "https://open.spotify.com/embed/playlist/0Vt5oZbeLKuqwLq489DJso?utm_source=generator&theme=0&autoplay=1";
+
+  let active = false;
+
+  function setIcon(){
+    headphoneBtn.textContent = '🎧'; // icon constant, aria-pressed communicates state
+    headphoneBtn.setAttribute('aria-pressed', active);
+  }
+
+  function createEmbed(){
+    if (mount.firstChild) return mount.firstChild;
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('data-testid', 'embed-iframe');
+    iframe.style.borderRadius = '12px';
+    iframe.src = EMBED_SRC;
+    iframe.width = '100%';
+    iframe.height = '152';
+    iframe.frameBorder = '0';
+    iframe.allowFullscreen = true;
+    iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+    iframe.loading = 'lazy';
+    mount.appendChild(iframe);
+    return iframe;
+  }
+
+  function destroyEmbed(){
+    if (mount.firstChild) mount.removeChild(mount.firstChild);
+  }
+
+  function pauseAmbienceRemember(){
+    try{
+      const wasOn = !ambience.paused;
+      localStorage.setItem(LAST, wasOn ? 'on' : 'off');
+      if (wasOn) ambience.pause();
+    }catch{}
+  }
+
+  function maybeResumeAmbience(){
+    try{
+      if (localStorage.getItem(LAST) === 'on'){
+        ambience.play().catch(()=>{});
+      }
+      localStorage.removeItem(LAST);
+    }catch{}
+  }
+
+  async function enableSpotify(){
+    createEmbed();      // first user tap satisfies autoplay policy
+    active = true;
+    localStorage.setItem(KEY,'on');
+    setIcon();
+    pauseAmbienceRemember();
+  }
+
+  function disableSpotify(){
+    destroyEmbed();
+    active = false;
+    localStorage.setItem(KEY,'off');
+    setIcon();
+    maybeResumeAmbience();
+  }
+
+  headphoneBtn.addEventListener('click', ()=>{
+    if (active) disableSpotify();
+    else enableSpotify();
+  });
+
+  function tryAutoResume(){
+    if (localStorage.getItem(KEY) === 'on' && !active){
+      enableSpotify().catch(()=>{});
+    }
+  }
+  window.addEventListener('focus', tryAutoResume);
+  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) tryAutoResume(); });
+
+  active = localStorage.getItem(KEY) === 'on';
+  if (active){
+    createEmbed();
+    pauseAmbienceRemember();
   }
   setIcon();
 })();
