@@ -550,139 +550,29 @@
 })();
 </script>
 
-<!-- ✅ Slots — Stake sync (USD ↔ units), limits, payout preview, helpers -->
+<!-- ✅ Slots — Stake sync (…) ABOVE stays the same -->
 <script>
 (function(){
-  const usdBetEl = document.getElementById('usdBet');
-  const betQtyEl = document.getElementById('betQty');
-  const curToggle = document.getElementById('curToggle');
-  const unitSpan  = document.querySelector('.unit');
-  const limitsEl  = document.getElementById('betLimits');
+  // …everything above in this IIFE stays the same…
 
-  const payScratch = document.getElementById('payScratch');
-  const payNormal  = document.getElementById('payNormal');
-  const payNormalGain = document.getElementById('payNormalGain');
-  const payJackpot = document.getElementById('payJackpot');
-  const payJackpotGain = document.getElementById('payJackpotGain');
-
-  const spinBtn = document.getElementById('spinBtn');
-
-  const MIN_USD = 1;
-  const MAX_USD = 2000;
-
-  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const selectedCur = () => (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
-  const priceFor = (cur) => (cur==='BAG'? PR().bagUsd : PR().xrpUsd) || 0;
-
-  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
-  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-
-  function stakeUsd(){
-    const direct = parseFloat(usdBetEl?.value||'');
-    if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
-    const px = priceFor(selectedCur());
-    return (px>0 && qty()>0) ? qty()*px : 0;
-  }
-
-  function stakeBag(){
-    const q = qty();
-    const {bagUsd,xrpUsd} = PR();
-    if (selectedCur()==='BAG') return q;
-    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
-    return 0;
-  }
-
-  let syncing=false;
-
-  function updateUsdFromBet(){
-    if (!usdBetEl || !betQtyEl || syncing) return;
-    const px = priceFor(selectedCur());
-    const usdVal = (px>0 ? qty()*px : 0);
-    syncing = true;
-    usdBetEl.value = usdVal>0 ? usdVal.toFixed(2) : '';
-    syncing = false;
-    renderLimits(); renderPayouts();
-  }
-
-  function updateBetFromUsd(){
-    if (!usdBetEl || !betQtyEl || syncing) return;
-    const px = priceFor(selectedCur());
-    let u = parseFloat(usdBetEl.value||'');
-    if (!Number.isFinite(u) || u<=0 || px<=0){ renderLimits(); renderPayouts(); return; }
-    u = Math.min(MAX_USD, Math.max(0, u));
-    const units = Math.floor((u/px) * 1e6)/1e6;
-    syncing = true;
-    betQtyEl.value = units || '';
-    syncing = false;
-    renderLimits(); renderPayouts();
-  }
-
-  function renderLimits(){
-    const sUsd = stakeUsd()||0;
-    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
-                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
-    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
-    if (spinBtn) spinBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd<MIN_USD);
-  }
-
-  function renderPayouts(){
-    const sUsd = stakeUsd()||0;
-    const sBag = stakeBag()||0;
-    const mScratch=1.00, mWin=1.25, mJack=2.00;
-    const showDash = !(sUsd>0 && sBag>0);
-
-    const scratchStr = showDash ? '—' : `${fmt(sBag*mScratch)} BAG (${usd(sUsd*mScratch)})`;
-    if (payScratch) payScratch.textContent = scratchStr;
-
-    if (payNormal){
-      const base = showDash ? '—' : `${fmt(sBag*mWin)} BAG (${usd(sUsd*mWin)})`;
-      if (payNormal.firstChild) payNormal.firstChild.nodeValue = base;
-      else payNormal.textContent = base;
-      if (payNormalGain) payNormalGain.textContent = showDash ? '' : ` (+${fmt(sBag*(mWin-1))} BAG)`;
-    }
-
-    if (payJackpot){
-      const base = showDash ? '—' : `${fmt(sBag*mJack)} BAG (${usd(sUsd*mJack)})`;
-      if (payJackpot.firstChild) payJackpot.firstChild.nodeValue = base;
-      else payJackpot.textContent = base;
-      if (payJackpotGain) payJackpotGain.textContent = showDash ? '' : ` (+${fmt(sBag*(mJack-1))} BAG)`;
-    }
-  }
-
-  /* ======= Quick bet presets (USD & units) ======= */
+  /* ======= Quick bet presets — USD only ======= */
   (function(){
     const row = document.getElementById('presetRow');
     if (!row) return;
 
-    // Adjust these to taste
-    const USD_PRESETS  = [1, 5, 10, 25, 50, 100];
-    const XRP_PRESETS  = [1, 2, 5, 10, 25];
-    const BAG_PRESETS  = [1, 5, 10, 25, 50];
+    const USD_PRESETS = [1, 2, 5, 10, 20, 50, 100];
 
-    function makeBtn(label, kind, val){
+    function makeUsdBtn(label, usdVal){
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'chip preset';
       b.textContent = label;
-      b.dataset.kind = kind; // 'usd' | 'units'
-      b.dataset.val = String(val);
       b.addEventListener('click', ()=>{
-        if (kind === 'usd'){
-          const u = Math.max(MIN_USD, Math.min(MAX_USD, Number(val)));
-          if (usdBetEl){
-            usdBetEl.value = u.toFixed(2);
-            usdBetEl.dispatchEvent(new Event('input', { bubbles:true }));
-            usdBetEl.dispatchEvent(new Event('change', { bubbles:true }));
-          }
-        } else {
-          if (betQtyEl){
-            betQtyEl.value = String(val);
-            betQtyEl.dispatchEvent(new Event('input', { bubbles:true }));
-            betQtyEl.dispatchEvent(new Event('change', { bubbles:true }));
-          }
-        }
+        if (!usdBetEl) return;
+        const u = Math.max(MIN_USD, Math.min(MAX_USD, Number(usdVal)));
+        usdBetEl.value = u.toFixed(2);
+        usdBetEl.dispatchEvent(new Event('input',  { bubbles:true }));
+        usdBetEl.dispatchEvent(new Event('change', { bubbles:true }));
         renderLimits(); renderPayouts();
       });
       return b;
@@ -690,48 +580,15 @@
 
     function renderPresets(){
       row.innerHTML = '';
-      const cur = selectedCur(); // 'XRP' | 'BAG'
-
-      // USD group
-      USD_PRESETS.forEach(u => row.appendChild(makeBtn(`$${u}`, 'usd', u)));
-      row.appendChild(makeBtn('½ Max', 'usd', MAX_USD/2));
-      row.appendChild(makeBtn('Max',  'usd', MAX_USD));
-
-      // Units group (match current currency toggle)
-      const unitList = (cur === 'XRP') ? XRP_PRESETS : BAG_PRESETS;
-      unitList.forEach(u => row.appendChild(makeBtn(`${u} ${cur}`, 'units', u)));
+      USD_PRESETS.forEach(u => row.appendChild(makeUsdBtn(`$${u}`, u)));
+      row.appendChild(makeUsdBtn('MAX', MAX_USD));
     }
 
     renderPresets();
-    curToggle?.addEventListener('change', renderPresets);
   })();
-  /* ============================================== */
+  /* ============================================ */
 
-  usdBetEl?.addEventListener('input', updateBetFromUsd);
-  betQtyEl?.addEventListener('input', updateUsdFromBet);
-  curToggle?.addEventListener('change', ()=>{
-    if (unitSpan) unitSpan.textContent = selectedCur();
-    updateUsdFromBet();
-  });
-  window.addEventListener('bag:pricesUpdated', ()=>{
-    if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
-  });
-
-  // Keyboard: Space/Enter trigger SPIN
-  addEventListener('keydown', (e)=>{
-    if ((e.code==='Space' || e.key==='Enter') && document.activeElement === document.body){
-      e.preventDefault();
-      const b = document.getElementById('spinBtn');
-      if (b && !b.disabled) b.click();
-    }
-  });
-
-  if (unitSpan) unitSpan.textContent = selectedCur();
-  updateUsdFromBet();
-  renderLimits();
-  renderPayouts();
-
-  window.__bagStake = { usd: stakeUsd, bag: stakeBag, minUsd: MIN_USD, maxUsd: MAX_USD };
+  // …everything below in this IIFE stays the same…
 })();
 </script>
 
