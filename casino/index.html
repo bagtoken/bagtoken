@@ -115,12 +115,15 @@
 @media (max-width:720px){
   .cage-panel{flex-direction:column;align-items:flex-start}
 }
+
+/* HUB-ONLY: hide RTP panel from compliance block on the Hub */
+.is-hub .comp-rtp{display:none}
 </style>
 
 <script src="/js/bag-session.js" defer></script>
  
 </head>
-<body>
+<body class="is-hub">
 
 <nav class="backbar" role="navigation" aria-label="Back">
   <a class="backlink" href="/" aria-label="Back to $BAG">⬅ Back to $BAG</a>
@@ -368,6 +371,220 @@
 })();
 </script>
 
+<!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub) ===== -->
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+
+<style>
+  .comp-wrap{margin-top:24px;border-top:1px solid var(--line);padding:16px 0;color:var(--muted);font-size:14px;line-height:1.5}
+  .comp-grid{display:grid;gap:12px}
+  .comp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .comp-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--panel2);color:var(--fg);font-size:13px}
+  .comp-pill small{opacity:.8}
+  .comp-links a{color:var(--gold);text-decoration:none}
+  .comp-links a:hover{text-decoration:underline}
+  .comp-note{font-size:12px;color:var(--muted)}
+  .comp-rtp{padding:12px;border-radius:12px;background:var(--panel)}
+  .badge-18{background:#e25b5b;color:#111;padding:2px 8px;border-radius:999px;font-weight:700}
+  .comp-disclaimer{margin-top:8px;font-size:12px;color:var(--muted)}
+  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:saturate(120%) blur(2px);display:none;z-index:1000}
+  .modal{position:fixed;inset:0;display:grid;place-items:center;z-index:1001}
+  .card{width:min(560px,92vw);background:linear-gradient(180deg,var(--panel2),#0a1912);color:var(--fg);border:1px solid #173524;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:20px}
+  .card h3{margin:0 0 6px 0}
+  .card p{margin:0 0 12px 0;color:var(--muted)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .btn.comp{cursor:pointer;border:0;border-radius:10px;padding:12px 14px;background:var(--gold);color:#111;font-weight:700}
+  .btn.comp.secondary{background:#173524;color:var(--fg);border:1px solid #245a3b}
+  .agree{display:flex;gap:8px;align-items:flex-start;margin:10px 0}
+  .agree input{margin-top:3px}
+  .hide{display:none !important}
+  .warn{color:#e25b5b;font-size:12px;margin-top:8px}
+</style>
+
+<!-- Responsible Play bar (sticky subtle) -->
+<div id="respBar" class="comp-row" style="position:sticky;top:0;z-index:999;background:rgba(2,7,3,.85);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:8px 12px;">
+  <span class="comp-pill"><span class="badge-18">21+</span> <small>Play responsibly</small></span>
+  <span class="comp-pill"><small>Crypto-only play. No fiat deposits</small></span>
+  <div class="comp-links" style="margin-left:auto;display:flex;gap:14px;">
+    <a id="selfExLink" href="#" rel="noopener">Self-exclude</a>
+    <a href="/support" rel="noopener">Support</a>
+    <a href="/terms" rel="noopener">Terms</a>
+    <a href="/privacy" rel="noopener">Privacy</a>
+  </div>
+</div>
+
+<!-- RTP / Odds disclosure (hidden on Hub via .is-hub .comp-rtp) -->
+<div class="comp-wrap" role="complementary" aria-label="Compliance">
+  <div class="comp-grid">
+    <div class="comp-rtp">
+      <strong>Game disclosure</strong>
+      <div id="rtpBlock" class="comp-note"></div>
+      <div class="comp-disclaimer">
+        $BAG Casino runs on XRPL. All transfers are on-ledger. Crypto carries risk. Never play with funds you cannot lose.
+      </div>
+    </div>
+
+    <div class="comp-row comp-links">
+      <span>Need help</span>
+      <a href="https://www.ncpgambling.org/help-treatment/" target="_blank" rel="noopener">NCPG</a>
+      <a href="https://www.gamblersanonymous.org/ga/locations" target="_blank" rel="noopener">Gamblers Anonymous</a>
+      <a href="https://www.gamcare.org.uk/get-support/" target="_blank" rel="noopener">GamCare</a>
+      <a href="https://www.begambleaware.org" target="_blank" rel="noopener">BeGambleAware</a>
+    </div>
+
+    <div class="comp-note">
+      By playing you confirm you are at least 21 years old in the U.S. or the legal minimum age in your region. Availability may be restricted by jurisdiction.
+    </div>
+  </div>
+</div>
+
+<!-- AGE + GEO MODAL -->
+<div id="gateMask" class="modal-mask"></div>
+<div id="gateModal" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+  <div class="card">
+    <h3 id="gateTitle">$BAG Casino — Play responsibly</h3>
+    <p>Crypto-only entertainment. Some regions restrict play. Confirm age and acceptance to continue.</p>
+
+    <div class="agree">
+      <input type="checkbox" id="chkAge">
+      <label for="chkAge">I am 21 or older in the U.S., or of legal age in my region</label>
+    </div>
+    <div class="agree">
+      <input type="checkbox" id="chkTerms">
+      <label for="chkTerms">I have read and accept the <a href="/terms" target="_blank" rel="noopener">Terms</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy</a></label>
+    </div>
+
+    <div id="geoWarn" class="warn hide"></div>
+
+    <div class="row" style="margin-top:10px">
+      <button id="btnEnter" class="btn comp">Enter Casino</button>
+      <button id="btnExit" class="btn comp secondary">Exit</button>
+      <a id="btnSelfExclude" href="#" class="btn comp secondary" style="text-decoration:none">Self-exclude</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = "bag_age_verified_v1";
+  const SELF_EX_KEY = "bag_self_excluded_v1";
+  const GEO_BLOCK_KEY = "bag_geo_override_v1"; // set to 'allow' manually to bypass during dev
+
+  const mask = document.getElementById('gateMask');
+  const modal = document.getElementById('gateModal');
+  const btnEnter = document.getElementById('btnEnter');
+  const btnExit  = document.getElementById('btnExit');
+  const btnSE    = document.getElementById('btnSelfExclude');
+  const chkAge   = document.getElementById('chkAge');
+  const chkTerms = document.getElementById('chkTerms');
+  const geoWarn  = document.getElementById('geoWarn');
+  const selfExLinkTop = document.getElementById('selfExLink');
+
+  function setSelfExcluded(){
+    localStorage.setItem(SELF_EX_KEY, '1');
+    alert('Self-exclusion active. Access blocked until you clear it in your browser storage or contact support.');
+    hardBlock();
+  }
+  function isSelfExcluded(){
+    return localStorage.getItem(SELF_EX_KEY) === '1';
+  }
+
+  selfExLinkTop.addEventListener('click', function(e){
+    e.preventDefault();
+    setSelfExcluded();
+  });
+  btnSE.addEventListener('click', function(e){
+    e.preventDefault();
+    setSelfExcluded();
+  });
+
+  // GEO stub — wire up window.__BAG_GEO = { country:'US', region:'WA' } server-side if needed
+  const blockedStates = ['US-AK','US-HI'];
+  const blockedISO = []; // e.g., ['GB','NL']
+
+  async function geoCheck(){
+    try{
+      const g = window.__BAG_GEO || null;
+      if(!g){ return {ok:true, msg:'Geo not enforced'}; }
+      if(blockedISO.includes(g.country)){ return {ok:false, msg:'Region not supported'}; }
+      if(g.country === 'US' && g.region && blockedStates.includes(`US-${g.region}`)){
+        return {ok:false, msg:'State not supported'};
+      }
+      return {ok:true};
+    }catch(e){
+      return {ok:true, msg:'Geo check skipped'};
+    }
+  }
+
+  function showGate(){
+    mask.style.display = 'block';
+    modal.classList.remove('hide');
+  }
+  function hideGate(){
+    mask.style.display = 'none';
+    modal.classList.add('hide');
+  }
+  function hardBlock(){
+    showGate();
+    geoWarn.classList.remove('hide');
+    geoWarn.textContent = 'Access restricted. Self-exclusion or region block active.';
+    btnEnter.disabled = true;
+  }
+
+  // Fills RTP box if attributes exist (Hub hides it via CSS)
+  function fillRTP(){
+    const root = document.querySelector('[data-game]') || document.body;
+    const name = root.getAttribute('data-game') || 'Game';
+    const type = root.getAttribute('data-type') || 'Chance';
+    const rtp  = root.getAttribute('data-rtp')  || 'Variable';
+    const odds = root.getAttribute('data-odds') || '';
+    const maxp = root.getAttribute('data-maxpayout') || '';
+    const blk  = document.getElementById('rtpBlock');
+    if(!blk) return;
+    let html = `<div><strong>${name}</strong> • ${type} • RTP: ${rtp}</div>`;
+    if(odds) html += `<div>Odds: ${odds}</div>`;
+    if(maxp) html += `<div>Max payout: ${maxp}</div>`;
+    blk.innerHTML = html;
+  }
+
+  async function initGate(){
+    fillRTP();
+
+    if(isSelfExcluded()){
+      hardBlock();
+      return;
+    }
+
+    if(localStorage.getItem(STORAGE_KEY) === '1' || localStorage.getItem(GEO_BLOCK_KEY) === 'allow'){
+      hideGate();
+      return;
+    }
+    showGate();
+
+    btnEnter.addEventListener('click', async function(){
+      const geo = await geoCheck();
+      if(!chkAge.checked || !chkTerms.checked){
+        geoWarn.classList.remove('hide');
+        geoWarn.textContent = 'Confirm age and accept Terms to continue';
+        return;
+      }
+      if(!geo.ok){
+        geoWarn.classList.remove('hide');
+        geoWarn.textContent = geo.msg || 'Region not supported';
+        return;
+      }
+      localStorage.setItem(STORAGE_KEY, '1');
+      hideGate();
+    });
+
+    btnExit.addEventListener('click', function(){
+      window.location.href = '/';
+    });
+  }
+
+  initGate();
+})();
+</script>
+<!-- ===== /COMPLIANCE BLOCK ===== -->
 
 </body>
 </html>
