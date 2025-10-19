@@ -13,6 +13,8 @@
 <!-- Robust Three.js loader (kept for future) -->
 <script>
 (function(){
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('three') !== '1') return; // only load if ?three=1
   function load(src, done, fail){
     var s=document.createElement('script');
     s.src=src; s.async=true; s.onload=done; s.onerror=fail; document.head.appendChild(s);
@@ -111,6 +113,8 @@
   }
   .btn-roll:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
   .btn-roll:disabled{opacity:.65;cursor:not-allowed}
+  .btn-roll:focus-visible, .chip:focus-within { outline:2px solid #ffe175; outline-offset:2px; }
+
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
 
@@ -272,7 +276,7 @@
             <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
               🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
             </p>
-            <div class="result"><div class="t" id="rollText">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
+            <div class="result"><div class="t" id="rollText" role="status" aria-live="polite">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
           </div>
         </div>
       </div>
@@ -364,6 +368,7 @@
 
   closeBtn.addEventListener('click', hide);
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
 
   window.showWin=function(opts={}){ 
     const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
@@ -565,7 +570,7 @@
   async function fetchBagViaAMMLive(){
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket(XRPL_WSS);
+      const ws = new WebSocket('wss://s1.ripple.com');
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
@@ -639,7 +644,7 @@
 })();
 </script>
 
-<!-- USD autofill + payouts -->
+<!-- USD autofill + payouts + limits -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -650,6 +655,11 @@
   const payWinCO = document.getElementById('payWinComeOut');
   const payWinPt = document.getElementById('payWinPoint');
   const payJack  = document.getElementById('payJackpot');
+
+  const betLimits = document.getElementById('betLimits');
+  const rollBtn   = document.getElementById('rollBtn');
+
+  const MIN_USD = 1, MAX_USD = 2000;
 
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 
@@ -692,18 +702,27 @@
     if (payJack)  payJack.textContent  = `${fmt(bagStake*mJ)} BAG (${usd(usdStake*mJ)})`;
   }
 
-  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); });
-  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); });
-  curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); });
-  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); });
+  function renderLimits(){
+    const usdVal = derivedUsd() || 0;
+    const warn = (usdVal>0 && usdVal<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (usdVal>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${usdVal.toFixed(2)}${warn}`;
+    if (rollBtn) rollBtn.disabled = (!window.__BAG_FORCE_DEMO && usdVal>0 && usdVal<MIN_USD);
+  }
+
+  usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); renderLimits(); });
+  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); renderLimits(); });
+  curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); renderLimits(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); renderLimits(); });
 
   if(unitSpan) unitSpan.textContent=currentCurrency();
   autoFillUsd();
   updatePayouts();
+  renderLimits();
 })();
 </script>
 
-<!-- Game logic (unchanged layout) -->
+<!-- Game logic (with locked stake across the round) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
@@ -714,6 +733,8 @@
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
   const curToggle = document.getElementById('curToggle');
+
+  const MIN_USD = 1, MAX_USD = 2000;
 
   function currentCurrency(){
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
@@ -856,32 +877,41 @@
     return pick(neutrals);
   }
 
-  const ROUND={active:false,point:null};
+  // Round state with locked stake (for correct Pass Line behavior)
+  const ROUND={active:false,point:null,lockedBag:0,lockedUsd:0};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    const sBag = stakeBag();
-    const sUsd = stakeUsd();
+    const sBagNow = stakeBag();
+    const sUsdNow = stakeUsd();
+
+    const startingComeOut = isComeOut();
 
     if (!window.__BAG_FORCE_DEMO) {
       if (!window.__bagSession || !__bagSession.active()) {
         alert('Start a session at The Cage');
         rollBtn.disabled=false; return;
       }
-      if (!(sBag > 0)) {
-        alert('Enter a stake first');
-        rollBtn.disabled=false; return;
+      if (sUsdNow < MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+      if (sUsdNow > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+
+      if (startingComeOut){
+        if (!(sBagNow > 0)) { alert('Enter a stake first'); rollBtn.disabled=false; return; }
+        if (!__bagSession.spend(sBagNow)) { alert('Insufficient balance'); rollBtn.disabled=false; return; }
+        ROUND.lockedBag = sBagNow;
+        ROUND.lockedUsd = sUsdNow;
       }
-      if (!__bagSession.spend(sBag)) {
-        alert('Insufficient balance');
-        rollBtn.disabled=false; return;
+    } else {
+      if (startingComeOut){
+        ROUND.lockedBag = sBagNow;
+        ROUND.lockedUsd = sUsdNow;
       }
     }
 
     let outcome;
-    if (isComeOut()){
+    if (startingComeOut){
       outcome = outcomeComeOut();
       const sum = sumForOutcome(outcome.kind, null);
       const [a,b] = facesForSum(sum);
@@ -891,15 +921,15 @@
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
+        ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
       } else if (outcome.kind==='win-co' || outcome.kind==='jackpot-co'){
         const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
-        const gainBag = sBag*(mult-1);
+        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
+        const gainBag = ROUND.lockedBag*(mult-1);
         showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
-          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
+          subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(ROUND.lockedUsd)} → ${fmtUsd(ROUND.lockedUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
           sound: true
         });
@@ -907,7 +937,7 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
-        ROUND.active=false; ROUND.point=null;
+        ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
@@ -926,15 +956,15 @@
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-        ROUND.active=false; ROUND.point=null;
+        ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
       } else if (outcome.kind==='win-pt' || outcome.kind==='jackpot-pt'){
         const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(sBag*mult); }catch{} }
-        const gainBag = sBag*(mult-1);
+        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
+        const gainBag = ROUND.lockedBag*(mult-1);
         showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
-          subtext: `+${fmt(gainBag)} BAG · ${fmtUsd(sUsd)} → ${fmtUsd(sUsd*mult)}`,
+          subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(ROUND.lockedUsd)} → ${fmtUsd(ROUND.lockedUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
           sound: true
         });
@@ -942,7 +972,7 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
-        ROUND.active=false; ROUND.point=null;
+        ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
       } else {
         rollText.className='t';
@@ -974,7 +1004,8 @@
   const START_BAG = 1000;
 
   function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
+  // preserve decimals like Slots demo (no Math.floor)
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
   if(localStorage.getItem(DEMO_KEY)==null) setBal(START_BAG);
 
   function fmt(n){
@@ -1019,8 +1050,6 @@
 
   function enableLive(){
     window.__BAG_FORCE_DEMO=false;
-    // If you already include /js/bag-session.js, it sets window.__bagSession
-    // No UI changes here; your existing Start/Top Up/End buttons remain
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
@@ -1031,7 +1060,6 @@
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
   // Do NOT auto-switch on wallet connect; Live must be explicit (?live=1)
-  // (No bag:walletConnected / bag:walletDisconnected listeners here)
 })();
 </script>
 
