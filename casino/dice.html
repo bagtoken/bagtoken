@@ -7,7 +7,8 @@
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<script>window.__BAG_FORCE_DEMO = true;</script>
+<!-- Removed hard demo force. You can still use /demo path or ?demo=1 to force practice. -->
+<script>window.__BAG_FORCE_DEMO = false;</script>
 
 <!-- Robust Three.js loader (kept for future) -->
 <script>
@@ -85,13 +86,11 @@
   .payout-grid .lab{color:#cfd6cf}
   .payout-grid .val{font-variant-numeric:tabular-nums}
 
-  /* Status dot colors for prices */
   #liveDot{margin-right:6px}
   .ok{color:#2fbf6b}
   .warn{color:#e8a85c}
   .err{color:#e25b5b}
 
-  /* ----- Dice area ----- */
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
   .felt{
     display:grid;grid-template-columns:1fr;gap:12px;
@@ -115,7 +114,7 @@
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
 
-  /* CSS fallback dice (only if Three.js fails) */
+  /* CSS fallback dice */
   .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
   .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
   .css-face{
@@ -138,7 +137,7 @@
     100%{ transform:translateY(0) rotateZ(0) }
   }
 
-  /* WIN overlay visuals (same as Slots) */
+  /* WIN overlay visuals */
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
   #win-text{
@@ -162,10 +161,6 @@
     #win-card{ animation:none; transform:none; opacity:1; }
     #win-text{ animation:none; }
   }
-
-  /* ===== Tiny HUD pill (same as Slots) ===== */
-  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
-  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 </style>
 
 <script src="/js/bag-session.js"></script>
@@ -274,12 +269,6 @@
             <div class="roll-row">
               <button id="rollBtn" class="btn-roll">ROLL</button>
             </div>
-
-            <!-- Tiny HUD row for Balance (LIVE shows BAG; Demo keeps your HUD) -->
-            <div class="hudbar" aria-live="polite">
-              <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
-            </div>
-
             <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
               🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
             </p>
@@ -334,7 +323,7 @@
   </div>
 </div>
 
-<!-- Celebration overlay logic (Slots) -->
+<!-- Celebration overlay logic -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -376,7 +365,6 @@
   closeBtn.addEventListener('click', hide);
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  // EXACT same API as Slots
   window.showWin=function(opts={}){ 
     const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
@@ -387,10 +375,9 @@
 })();
 </script>
 
-<!-- AUDIO: unified WebAudio (reliable) + HTMLAudio fallback -->
+<!-- AUDIO -->
 <script>
 (function(){
-  /* === Slots audio core (unchanged) === */
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
 
@@ -409,7 +396,6 @@
     if (ac.state === 'suspended'){ try{ await ac.resume(); }catch{} }
   }
 
-  // Re-arm on EVERY touch (not once) to recover after backgrounding
   addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
 
@@ -441,7 +427,6 @@
   }
   window.__bagAudio = { chime, thud, resume };
 
-  /* === Dice roll via WebAudio buffer (primary) === */
   let diceBuf=null, diceGain=null, bufLoading=false;
 
   async function loadDiceBuffer(){
@@ -468,7 +453,6 @@
     }catch{ return false; }
   }
 
-  /* === HTMLAudio fallback (only if buffer failed) === */
   const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
   rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
 
@@ -497,34 +481,30 @@
 })();
 </script>
 
-<!-- === PRICES (live-first; fallback to last-live; then view cache; cross-tab sync) === -->
+<!-- PRICES -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-  const LIVE_CACHE_TTL_MS = 24*60*60*1000;  // last-live pricing bundle TTL
-  const VIEW_CACHE_TTL_MS = 6*60*60*1000;   // view cache TTL
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
 
   const XRPL_WSS = 'wss://s1.ripple.com';
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
 
-  // Shared keys used across all games (keep these identical everywhere)
-  const VIEW_CACHE_KEY = 'bag_prices_v8';     // { bagUsd, xrpUsd }
-  const LAST_LIVE_KEY  = 'bag_last_live_v1';  // { bagUsd, xrpUsd }
-  const XRP_KEY        = 'xrp_usd';           // number
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';
+  const XRP_KEY        = 'xrp_usd';
 
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
 
-  // DOM (optional; script tolerates missing elements)
   const liveDot = document.getElementById('liveDot');
   const liveBAG = document.getElementById('liveBAG');
   const liveXRP = document.getElementById('liveXRP');
   const liveNote = document.getElementById('liveNote');
   const liveConv = document.getElementById('liveConv');
-  const diagSpan = document.getElementById('bagDiag');
 
-  // ---------- Utils ----------
   function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k, ttlMs){
@@ -564,11 +544,9 @@
         liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
       }
     }
-    // Let other modules (stake sync, HUDs) react
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  // ---------- Live fetchers ----------
   async function fetchXrpUsdLive(){
     try{
       const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
@@ -576,7 +554,7 @@
       const v = (await r.json())?.ripple?.usd;
       if(Number(v)>0){
         PRICES.xrpUsd = Number(v);
-        cacheSet(XRP_KEY, PRICES.xrpUsd); // share across tabs/games
+        cacheSet(XRP_KEY, PRICES.xrpUsd);
         return true;
       }
     }catch(_){}
@@ -585,11 +563,10 @@
   function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
   function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
   async function fetchBagViaAMMLive(){
-    // Returns true if PRICES.bagUsd set (requires PRICES.xrpUsd already)
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
       const ws = new WebSocket(XRPL_WSS);
-      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
       ws.onmessage = (ev)=>{
@@ -603,14 +580,12 @@
           if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
           const price = xrpBal / bagBal;
           if (!(price>0) || !isFinite(price)) return resolve(null);
-          if (diagSpan) diagSpan.textContent =
-            `AMM pool · BAG=${bagBal.toLocaleString()} · XRP=${xrpBal.toLocaleString(undefined,{maximumFractionDigits:6})} · spot ${price.toLocaleString(undefined,{maximumFractionDigits:10})} XRP/BAG`;
           resolve(price);
         }catch{ resolve(null); }
       };
     });
     if (!(xrpPerBag>0)) return false;
-    if (!(PRICES.xrpUsd>0)) return false; // need XRP/USD to compute BAG/USD
+    if (!(PRICES.xrpUsd>0)) return false;
     PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
     PRICES.source = 'live-amm';
     cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
@@ -618,7 +593,6 @@
     return true;
   }
 
-  // ---------- Fallback loaders ----------
   function loadLastLiveBundle(){
     const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
     if (v && Number(v.bagUsd)>0){
@@ -643,33 +617,21 @@
     return ok;
   }
 
-  // ---------- Orchestration (LIVE-FIRST) ----------
   async function refreshPrices(){
     let liveOk = false;
-
-    // 1) LIVE XRP first
     const gotX = await fetchXrpUsdLive();
-
-    // 2) LIVE AMM for BAG using that XRP
     const gotBag = await fetchBagViaAMMLive();
-
     liveOk = gotX && gotBag;
-
-    // 3) If live failed, fall back to last-live bundle; if still nothing, use view cache
     if (!liveOk){
       if (!loadLastLiveBundle()) loadViewCache();
     }
-
     updateLiveLine();
   }
 
-  // Initial pass: try LIVE immediately; on failure, UI will show last-live/view
   (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
 
-  // Cross-tab sync: if any tab writes shared caches, update instantly
   window.addEventListener('storage', (e)=>{
     if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
-      // Prefer last-live bundle, else view cache
       if (!loadLastLiveBundle()) loadViewCache();
       updateLiveLine();
     }
@@ -677,7 +639,7 @@
 })();
 </script>
 
-<!-- ✅ USD auto-fill to match default bet (1 XRP or 1 BAG) + payout preview -->
+<!-- USD autofill + payouts -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -689,7 +651,6 @@
   const payWinPt = document.getElementById('payWinPoint');
   const payJack  = document.getElementById('payJackpot');
 
-  const MIN_USD = 0; // (no button gating here)
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 
   function currentCurrency(){
@@ -707,7 +668,6 @@
   function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  // Auto-fill policy: keep updating unless user typed into USD box
   function autoFillUsd(){
     if (!usdBetEl) return;
     if (usdBetEl.dataset.userTyped==='1') return;
@@ -718,7 +678,6 @@
     }
   }
 
-  // Update payout preview
   function updatePayouts(){
     const {bagUsd}=PR();
     const q=qty();
@@ -733,27 +692,24 @@
     if (payJack)  payJack.textContent  = `${fmt(bagStake*mJ)} BAG (${usd(usdStake*mJ)})`;
   }
 
-  // Hooks
   usdBetEl?.addEventListener('input', ()=>{ usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; updatePayouts(); });
   betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); updatePayouts(); });
   curToggle?.addEventListener('change', ()=>{ if(unitSpan) unitSpan.textContent=currentCurrency(); autoFillUsd(); updatePayouts(); });
   window.addEventListener('bag:pricesUpdated', ()=>{ autoFillUsd(); updatePayouts(); });
 
-  // Init
   if(unitSpan) unitSpan.textContent=currentCurrency();
   autoFillUsd();
   updatePayouts();
 })();
 </script>
 
-<!-- 🎲 BAG Dice — Game logic (Pass Line rules intact, odds injected) -->
+<!-- Game logic (unchanged layout) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
   const rollBtn   = document.getElementById('rollBtn');
   const rollText  = document.getElementById('rollText');
 
-  /* ----- Stake helpers (unchanged) ----- */
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
@@ -782,7 +738,6 @@
   function fmt(n,max=4){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  /* ----- Cosmetic CSS dice (visual only) ----- */
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
@@ -847,17 +802,14 @@
     A.classList.remove('tossing'); B.classList.remove('tossing');
   }
 
-  /* ======= ODDS ENGINE (rules intact) ======= */
-  const MULT_CO = 1.25;   // come-out win total multiplier
-  const MULT_PT = 1.00;   // point win total multiplier
-  const MULT_JP = 2.00;   // jackpot upgrade total multiplier
+  const MULT_CO = 1.25;
+  const MULT_PT = 1.00;
+  const MULT_JP = 2.00;
 
-  // Live baseline (house-favored)
   const LIVE = {
-    CO: { P_JP: 0.02, P_WIN: 0.38, P_CRAPS: 0.10 }, // P_POINT = 1 - sum
-    PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }  // P_HOLD = 1 - sum
+    CO: { P_JP: 0.02, P_WIN: 0.38, P_CRAPS: 0.10 },
+    PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }
   };
-  // Demo (slightly player-favored)
   const DEMO = {
     CO: { P_JP: 0.03, P_WIN: 0.42, P_CRAPS: 0.08 },
     PT: { P_JP: 0.03, P_WIN: 0.34, P_SEVEN: 0.24 }
@@ -865,9 +817,7 @@
 
   const PROB = ()=> (window.__BAG_FORCE_DEMO === true ? DEMO : LIVE);
 
-  // Helpers to pick dice faces matching a requested sum
   function facesForSum(sum){
-    // Random split into two valid die faces (1..6) summing to "sum"
     const opts=[];
     for(let a=1;a<=6;a++){
       const b=sum-a;
@@ -877,27 +827,23 @@
   }
   function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
 
-  // Outcome pickers per phase (respect rules; odds override frequency only)
   function outcomeComeOut(){
     const p = PROB().CO;
     const r = Math.random();
-    const pPoint = 1 - (p.P_JP + p.P_WIN + p.P_CRAPS);
     if (r < p.P_JP)  return { kind:'jackpot-co' };
     if (r < p.P_JP + p.P_WIN) return { kind:'win-co' };
     if (r < p.P_JP + p.P_WIN + p.P_CRAPS) return { kind:'craps' };
-    return { kind:'point' }; // default remainder
+    return { kind:'point' };
   }
   function outcomePoint(){
     const p = PROB().PT;
     const r = Math.random();
-    const pHold = 1 - (p.P_JP + p.P_WIN + p.P_SEVEN);
     if (r < p.P_JP)  return { kind:'jackpot-pt' };
     if (r < p.P_JP + p.P_WIN) return { kind:'win-pt' };
     if (r < p.P_JP + p.P_WIN + p.P_SEVEN) return { kind:'sevenout' };
-    return { kind:'hold' }; // neutral roll
+    return { kind:'hold' };
   }
 
-  // Choose a valid dice total for each outcome
   function sumForOutcome(kind, point){
     if (kind==='craps')        return pick([2,3,12]);
     if (kind==='win-co')       return pick([7,11]);
@@ -906,12 +852,10 @@
     if (kind==='sevenout')     return 7;
     if (kind==='win-pt')       return point;
     if (kind==='jackpot-pt')   return point;
-    // hold (neutral): anything except 7 or the point
     const neutrals=[2,3,4,5,6,8,9,10,11,12].filter(s=>s!==7 && s!==point);
     return pick(neutrals);
   }
 
-  /* ======= Round state (rules preserved) ======= */
   const ROUND={active:false,point:null};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
@@ -921,7 +865,6 @@
     const sBag = stakeBag();
     const sUsd = stakeUsd();
 
-    // Live session gating (demo bypasses)
     if (!window.__BAG_FORCE_DEMO) {
       if (!window.__bagSession || !__bagSession.active()) {
         alert('Start a session at The Cage');
@@ -937,7 +880,6 @@
       }
     }
 
-    // Decide outcome by phase, then show dice that match that outcome
     let outcome;
     if (isComeOut()){
       outcome = outcomeComeOut();
@@ -967,7 +909,7 @@
           : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
-      } else { // point established
+      } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Point is ${sum}`;
@@ -1002,7 +944,7 @@
           : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
         ROUND.active=false; ROUND.point=null;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
-      } else { // hold / neutral
+      } else {
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
@@ -1118,43 +1060,10 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- === DICE: HUD Live Balance Tweak (LIVE shows BAG; Demo untouched) === -->
-<script>
-(function(){
-  function fmtBag(n){
-    const x = Number(n) || 0;
-    return x.toLocaleString(undefined, { maximumFractionDigits: 6 });
-  }
-  function els(){
-    return {
-      balLbl:  document.getElementById('balLbl'),
-      ccyLbl:  document.getElementById('ccyLbl')
-    };
-  }
-  function renderLiveHud(){
-    try{
-      if (window.__BAG_FORCE_DEMO === true) return; // Demo: keep your game HUD
-      const s = window.__bagSession && window.__bagSession.get && window.__bagSession.get();
-      if (!s) return;
-      const { balLbl, ccyLbl } = els();
-      if (balLbl) balLbl.textContent = fmtBag(s.bag);
-      if (ccyLbl) ccyLbl.textContent = 'BAG';
-    }catch(e){}
-  }
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected']
-    .forEach(ev=>addEventListener(ev,renderLiveHud));
-
-  addEventListener('storage', (e)=>{ if (e && e.key === 'bag_session_v1') renderLiveHud(); });
-
-  renderLiveHud();
-  let tries=0; const iv=setInterval(()=>{ renderLiveHud(); if(++tries>40) clearInterval(iv); }, 500);
-})();
-</script>
-
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
