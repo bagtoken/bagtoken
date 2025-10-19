@@ -89,9 +89,9 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
-  /* 🎧 Spotify toggle — pushed farther from 🔊 */
+  /* 🎧 Spotify toggle — close to 🔊 but not touching */
   #spotifyToggle{
-    position:fixed;top:10px;right:148px;z-index:2147483647;
+    position:fixed;top:10px;right:64px;z-index:2147483647;
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
     border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
     color:#ffd700;font-size:1.2rem;cursor:pointer;opacity:.9;
@@ -100,22 +100,16 @@
   #spotifyToggle:hover{opacity:1;transform:scale(1.06)}
   #spotifyToggle:active{transform:scale(.98)}
 
-  /* Compact Spotify bar */
-  .spotify-bar{
-    position:fixed;left:12px;right:12px;bottom:12px;height:68px;
-    border:1px solid #2b6a48;border-radius:12px;background:rgba(0,0,0,.6);
-    backdrop-filter:blur(6px);box-shadow:0 8px 24px var(--shadow);
-    display:flex;align-items:center;gap:10px;padding:6px 8px;z-index:2147483647;
-    opacity:0;transform:translateY(8px);pointer-events:none;transition:all .18s ease;
+  /* Tiny status toast (bottom-right) */
+  .toast{
+    position:fixed;right:12px;bottom:12px;background:rgba(0,0,0,.7);
+    border:1px solid #2b6a48;border-radius:10px;padding:8px 10px;color:#e9efe9;
+    font-size:.9rem;opacity:0;transform:translateY(6px);transition:all .18s ease;z-index:2147483647
   }
-  .spotify-bar.open{opacity:1;transform:translateY(0);pointer-events:auto}
-  .spotify-bar .label{font-size:.9rem;color:#e9efe9;font-weight:800;white-space:nowrap}
-  .spotify-bar .sp{flex:1;min-width:240px;height:56px;border:0}
-  .spotify-bar .close{
-    background:rgba(0,0,0,.35);border:1px solid #2b6a48;color:#ffd700;border-radius:10px;
-    padding:6px 10px;font-weight:800;cursor:pointer;white-space:nowrap
-  }
-
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.ok{border-color:#2fbf6b}
+  .toast.err{border-color:#b93a3a}
+  
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -135,8 +129,9 @@
 }
 </style>
 
+<!-- Spotify Web Playback SDK -->
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="/js/bag-session.js" defer></script>
- 
 </head>
 <body>
 
@@ -149,17 +144,10 @@
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
 
 <!-- 🎧 Headphones (Spotify) -->
-<button id="spotifyToggle" title="Open $BAG Casino Spotify" aria-pressed="false">🎧</button>
+<button id="spotifyToggle" title="Play $BAG Casino Spotify" aria-pressed="false">🎧</button>
 
-<!-- Compact Spotify bar -->
-<div id="spotifyBar" class="spotify-bar" aria-hidden="true">
-  <div class="label">Tap ▶ in the bar once</div>
-  <iframe id="spotifyFrame" class="sp"
-    src=""
-    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-    loading="lazy"></iframe>
-  <button id="spotifyClose" class="close">Hide</button>
-</div>
+<!-- Tiny status toast -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <div class="wrap">
   <div class="top">
@@ -282,7 +270,7 @@
 </footer>
 </div>
 
-<!-- 🔊 Sound toggle with more sensitive first-tap unlock -->
+<!-- 🔊 Sound toggle with gesture unlock -->
 <script>
 (function(){
   const btn = document.getElementById('soundToggle');
@@ -319,14 +307,13 @@
 
   btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
 
-  // --- MORE SENSITIVE GESTURE UNLOCK ---
   const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
   let armed = false;
 
   function gestureHandler(){
     const pref = localStorage.getItem(KEY);
     if (pref !== 'off' && !playing){
-      playAudio().catch(()=>{ /* stay armed until a successful play */ });
+      playAudio().catch(()=>{});
     }
   }
   function armGestureUnlock(){
@@ -361,39 +348,233 @@
 })();
 </script>
 
-<!-- 🎧 Spotify headphone toggle: shows a compact player; never touches ambience -->
+<!-- 🎧 Spotify: PKCE + Web Playback SDK. One-tap from 🎧, no app switch. -->
 <script>
 (function(){
-  const btn   = document.getElementById('spotifyToggle');
-  const bar   = document.getElementById('spotifyBar');
-  const frame = document.getElementById('spotifyFrame');
-  const close = document.getElementById('spotifyClose');
+  // ---- Config ----
+  const CLIENT_ID = '3cc3b47a65c54b91be924b3875cefea5'; // provided
+  const REDIRECT_URI = window.location.origin + window.location.pathname; // add this in Spotify dashboard
+  const SCOPES = [
+    'streaming',
+    'user-read-email',
+    'user-read-private',
+    'user-read-playback-state',
+    'user-modify-playback-state'
+  ];
+  const PLAYLIST_URI = 'spotify:playlist:0Vt5oZbeLKuqwLq489DJso';
 
-  const KEY = 'bag_spotify_bar'; // 'open'|'closed'
-  const EMBED = "https://open.spotify.com/embed/playlist/0Vt5oZbeLKuqwLq489DJso?utm_source=generator&theme=0";
+  // ---- Elements ----
+  const btn = document.getElementById('spotifyToggle');
+  const toast = document.getElementById('toast');
 
-  function openBar(){
-    if (!frame.src) frame.src = EMBED; // load on demand so your next tap is inside the player
-    bar.classList.add('open');
-    bar.setAttribute('aria-hidden','false');
-    btn.setAttribute('aria-pressed','true');
-    localStorage.setItem(KEY,'open');
+  // ---- Storage keys ----
+  const K = {
+    access: 'bag_sp_access',
+    refresh: 'bag_sp_refresh',
+    exp:    'bag_sp_exp',
+    ver:    'bag_sp_code_verifier',
+    state:  'bag_sp_state'
+  };
+
+  // ---- Utils ----
+  function showToast(msg, ok=true){
+    toast.textContent = msg;
+    toast.className = 'toast ' + (ok ? 'ok' : 'err') + ' show';
+    setTimeout(()=> toast.classList.remove('show'), 2600);
   }
-  function closeBar(){
-    bar.classList.remove('open');
-    bar.setAttribute('aria-hidden','true');
-    btn.setAttribute('aria-pressed','false');
-    localStorage.setItem(KEY,'closed');
+  function randStr(len=64){
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let s=''; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+  async function sha256base64url(input){
+    const enc = new TextEncoder().encode(input);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return b64;
+  }
+  function now(){ return Math.floor(Date.now()/1000); }
+
+  function saveTokens({access_token, refresh_token, expires_in}){
+    localStorage.setItem(K.access, access_token);
+    if (refresh_token) localStorage.setItem(K.refresh, refresh_token);
+    localStorage.setItem(K.exp, String(now() + (expires_in||3600) - 30));
+  }
+  function getAccessToken(){ return localStorage.getItem(K.access)||''; }
+  function isExpired(){
+    const exp = parseInt(localStorage.getItem(K.exp)||'0',10);
+    return !exp || now() >= exp;
+  }
+  function clearAuth(){
+    Object.values(K).forEach(k=>localStorage.removeItem(k));
   }
 
-  btn.addEventListener('click', ()=>{
-    if (bar.classList.contains('open')) closeBar();
-    else openBar();
-  });
-  close.addEventListener('click', closeBar);
+  // ---- PKCE auth ----
+  async function ensureAuth(){
+    // If redirected back with ?code=..., exchange it
+    const params = new URLSearchParams(window.location.search);
+    const code  = params.get('code');
+    const state = params.get('state');
 
-  // Restore previous bar state
-  if (localStorage.getItem(KEY) === 'open') openBar();
+    if (code){
+      const storedState = localStorage.getItem(K.state);
+      const verifier = localStorage.getItem(K.ver);
+      try{
+        if (!verifier || state !== storedState) throw new Error('State mismatch');
+        const body = new URLSearchParams({
+          client_id: CLIENT_ID,
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: REDIRECT_URI,
+          code_verifier: verifier
+        });
+        const res = await fetch('https://accounts.spotify.com/api/token',{
+          method:'POST',
+          headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body
+        });
+        if (!res.ok) throw new Error('Token exchange failed');
+        const json = await res.json();
+        saveTokens(json);
+        // Clean the URL
+        history.replaceState({}, document.title, REDIRECT_URI);
+        showToast('Spotify linked', true);
+      }catch(e){
+        showToast('Spotify auth failed', false);
+        clearAuth();
+        throw e;
+      }
+    }
+
+    // If we already have a token and it’s not expired, done
+    if (getAccessToken() && !isExpired()) return;
+
+    // If token expired and we have refresh, refresh it
+    const refresh = localStorage.getItem(K.refresh);
+    if (refresh){
+      const body = new URLSearchParams({
+        client_id: CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: refresh
+      });
+      const res = await fetch('https://accounts.spotify.com/api/token',{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body
+      });
+      if (res.ok){
+        const json = await res.json();
+        saveTokens(json);
+        return;
+      } else {
+        // fall through to new auth
+        clearAuth();
+      }
+    }
+
+    // New login with PKCE
+    const verifier = randStr(64);
+    const challenge = await sha256base64url(verifier);
+    const state2 = randStr(16);
+    localStorage.setItem(K.ver, verifier);
+    localStorage.setItem(K.state, state2);
+
+    const auth = new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      code_challenge_method: 'S256',
+      code_challenge: challenge,
+      state: state2,
+      scope: SCOPES.join(' ')
+    });
+
+    // Redirect to Spotify (first-time only)
+    window.location.href = 'https://accounts.spotify.com/authorize?' + auth.toString();
+  }
+
+  // ---- Web Playback SDK ----
+  let player, deviceId;
+
+  async function initPlayer(){
+    const token = getAccessToken();
+    if (!token) throw new Error('No token');
+
+    if (player) return;
+
+    await new Promise((resolve)=>{
+      if (window.Spotify && window.Spotify.Player) return resolve();
+      window.onSpotifyWebPlaybackSDKReady = resolve;
+    });
+
+    player = new Spotify.Player({
+      name: '$BAG Casino',
+      getOAuthToken: cb => cb(getAccessToken()),
+      volume: 0.8
+    });
+
+    player.addListener('ready', ({ device_id }) => {
+      deviceId = device_id;
+      showToast('Headphones ready', true);
+    });
+    player.addListener('not_ready', ({ device_id }) => {
+      if (deviceId === device_id) deviceId = undefined;
+      showToast('Headphones sleeping', false);
+    });
+    player.addListener('initialization_error', ({ message }) => showToast('Init error', false));
+    player.addListener('authentication_error', ({ message }) => { showToast('Reauth needed', false); clearAuth(); });
+    player.addListener('account_error', ({ message }) => showToast('Premium required', false));
+
+    await player.connect();
+  }
+
+  async function transferPlayback(){
+    const token = getAccessToken();
+    const res = await fetch('https://api.spotify.com/v1/me/player',{
+      method:'PUT',
+      headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
+      body: JSON.stringify({ device_ids:[deviceId], play:true })
+    });
+    if (!res.ok && res.status !== 204) throw new Error('Transfer failed');
+  }
+
+  async function startPlaylist(){
+    const token = getAccessToken();
+    const res = await fetch('https://api.spotify.com/v1/me/player/play',{
+      method:'PUT',
+      headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        context_uri: PLAYLIST_URI,
+        offset:{ position: 0 },
+        position_ms: 0
+      })
+    });
+    if (!res.ok && res.status !== 204) throw new Error('Play failed');
+    showToast('Playing $BAG playlist', true);
+  }
+
+  async function toggleSpotify(){
+    try{
+      await ensureAuth();          // may redirect first-time
+      await initPlayer();          // create SDK player if needed
+      if (!deviceId) {
+        // Allow a short wait for "ready" callback
+        await new Promise(r=>setTimeout(r, 600));
+        if (!deviceId) throw new Error('Device not ready');
+      }
+      await transferPlayback();    // move playback to web player
+      await startPlaylist();       // start playlist
+      btn.setAttribute('aria-pressed','true');
+    }catch(e){
+      // Show succinct reason
+      if (String(e).includes('Premium')) showToast('Spotify Premium needed', false);
+      else showToast('Headphones error', false);
+      console.error(e);
+    }
+  }
+
+  btn.addEventListener('click', toggleSpotify);
 })();
 </script>
 
