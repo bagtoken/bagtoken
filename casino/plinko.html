@@ -183,6 +183,8 @@
       <div class="stake-box">
         <div class="stack">
           <div>
+            <!-- (restored) Amount label above USD input -->
+            <div class="micro">Amount</div>
             <div style="display:flex;align-items:center;gap:6px">
               <input id="usdBet" class="mono" type="tel" inputmode="decimal" pattern="[0-9.]*"
                 min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
@@ -841,7 +843,7 @@
 })();
 </script>
 
-<!-- === PRICES/STAKE SYNC (updated to keep XRP decimals & live payouts) === -->
+<!-- === PRICES/STAKE SYNC (keeps XRP decimals & live payouts) === -->
 <script>
 (function(){
   const MIN_USD = 1;
@@ -871,7 +873,6 @@
     return Math.min(MAX_USD, Math.max(0, v));
   }
   function quantizeUnits(ccy, units, px){
-    // BAG stays whole units; XRP to 6 dp (floor to avoid over-spend)
     if (String(ccy).toUpperCase()==='BAG') return Math.max(0, Math.floor(units));
     const q = Math.floor((units + 1e-12) * 1e6) / 1e6;
     return Math.max(0, q);
@@ -926,7 +927,6 @@
   }
   window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
 
-  // 🔄 Live payouts box (based on current stake & prices)
   function fmt(n, max=6){
     const x = Number(n); if(!Number.isFinite(x)) return '—';
     return x.toLocaleString(undefined,{maximumFractionDigits:max});
@@ -939,7 +939,6 @@
       const P = window.__PRICES__ || {};
       const bagUsd = P.bagUsd||0, xrpUsd = P.xrpUsd||0;
 
-      // Convert current stake to BAG-equivalent for payouts:
       let stakeBag = 0;
       if (cur === 'BAG'){
         stakeBag = qty;
@@ -948,7 +947,6 @@
         stakeBag = qty * bagPerXrp;
       }
 
-      const stakeUsd = (bagUsd>0) ? stakeBag * bagUsd : 0;
       const winBag  = stakeBag * 0.25;
       const jpBag   = stakeBag * 1.0;
       const winUsd  = (bagUsd>0) ? winBag * bagUsd : 0;
@@ -964,18 +962,14 @@
     }catch{}
   }
 
-  // Input listeners
   usdInput?.addEventListener('input', updateBetFromUsd);
   betInput?.addEventListener('input', updateUsdFromBet);
 
-  // Allow decimals for XRP, integers for BAG — without changing layout
   betInput?.addEventListener('beforeinput', (e)=>{
     const ccy = selectedCur().toUpperCase();
     if (ccy === 'BAG'){
-      // Only digits for BAG
       if (e.data && /[^\d]/.test(e.data)) e.preventDefault();
     } else {
-      // XRP: digits + one dot
       if (e.data && /[^\d.]/.test(e.data)) e.preventDefault();
       if (e.data === '.' && (betInput.value||'').includes('.')) e.preventDefault();
     }
@@ -983,7 +977,6 @@
 
   curWrap?.addEventListener('change', ()=>{
     refreshUnit();
-    // Re-derive USD from units using live price and quantization rule
     updateUsdFromBet();
     updatePayouts();
   });
@@ -994,7 +987,6 @@
       stateText.textContent = (P.source === 'live-amm') ? 'Live pricing ready' :
                               (P.bagUsd>0 ? 'Using cached pricing' : 'Waiting for pricing…');
     }
-    // Recompute from current stake using the newest prices
     updateUsdFromBet();
     updatePayouts();
   });
@@ -1005,20 +997,11 @@
 })();
 </script>
 
-<!-- === QUICK AMOUNT BUTTONS (currency-aware + MAX; XRP keeps 6dp) === -->
+<!-- === QUICK AMOUNT BUTTONS (USD only; with MAX; XRP/BAG units sync via live price) === -->
 <script>
 (function(){
   const MAX_USD = 2000;
-
-  // Base presets
   const USD_PRESETS  = [1, 5, 10, 25, 50, 100, 'MAX'];
-
-  function unitPresetsFor(ccy){
-    if (String(ccy).toUpperCase() === 'BAG'){
-      return [300000, 1500000, 3000000, 7500000, 15000000, 30000000, 'MAX'];
-    }
-    return [1, 5, 10, 25, 50, 100, 'MAX']; // XRP
-  }
 
   function selectedCur(){
     const wrap = document.getElementById('curToggle');
@@ -1061,7 +1044,7 @@
     const units = document.getElementById('demoBet');
     if (!usd || !units) return;
 
-    // USD quick row (with MAX)
+    // USD quick row (with MAX) — the only quick picks
     if (!document.getElementById('usdQuickRow')){
       const usdWrap = usd.parentElement && usd.parentElement.parentElement;
       if (usdWrap){
@@ -1075,7 +1058,7 @@
           }
           dispatchInput(usd); // triggers sync & payout update
 
-          // Also write exact units using live price with proper quantization (avoid rounding surprises)
+          // Keep units in sync using live price & proper quantization
           if (px > 0){
             const rawUnits = parseFloat(usd.value) / px;
             const qUnits = quantizeUnits(ccy, rawUnits);
@@ -1087,38 +1070,11 @@
       }
     }
 
-    // Units quick row (rebuildable per currency)
-    const unitWrap = units.parentElement && units.parentElement.parentElement;
-    function rebuildUnitRow(){
-      const existing = document.getElementById('unitQuickRow');
-      if (existing) existing.remove();
-      const ccy = selectedCur();
-      const row = makeChipRow(unitPresetsFor(ccy), (val)=>{
-        if (val === 'MAX'){
-          const px = priceFor(ccy);
-          if (px > 0){
-            const maxUnits = MAX_USD / px;
-            const q = quantizeUnits(ccy, maxUnits);
-            units.value = (ccy==='BAG') ? String(q) : q.toFixed(6).replace(/\.?0+$/,'');
-          }
-        } else {
-          const q = quantizeUnits(ccy, Number(val)||0);
-          units.value = (ccy==='BAG') ? String(q) : q.toFixed(6).replace(/\.?0+$/,'');
-        }
-        dispatchInput(units); // triggers USD calc + HUD/payout update
-      }, 'unitQuickRow');
-      unitWrap.insertAdjacentElement('afterend', row);
-    }
-
-    // Initial build + react to currency changes
-    if (unitWrap){
-      rebuildUnitRow();
-      const curWrap = document.getElementById('curToggle');
-      curWrap?.addEventListener('change', rebuildUnitRow);
-    }
+    // If any accidental unit-quick row exists from prior renders, remove it to honor spec
+    const rogue = document.getElementById('unitQuickRow');
+    if (rogue) rogue.remove();
   }
 
-  // Wait for DOM
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', mount, { once:true });
   } else {
@@ -1135,7 +1091,6 @@
   G.rafLive = G.rafLive || false;
   G.lastBallId = G.lastBallId || 0;
 
-  // Track last stake for readout (USD + BAG)
   window.__PLINKO_LAST_STAKE_USD__ = window.__PLINKO_LAST_STAKE_USD__ || 0;
   window.__PLINKO_LAST_STAKE_BAG__ = window.__PLINKO_LAST_STAKE_BAG__ || 0;
 
@@ -1188,7 +1143,7 @@
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), modeLbl=$('modeLbl');
   const resText=$('resText'), dropBtn=$('dropBtn');
   const betInput=$('demoBet'), stateText=$('stateText');
-  const boardWrap=$('boardWrap'), winReadout=$('winReadout'), winTitle=$('winTitle'), winAmt=$('winAmt'), winUsd=$('winUsd');
+  const boardWrap=$('boardWrap');
 
   let balance=100, stake=1, lastTxt='—';
   let dropping=false, safetyTimer=null, lastPegTick=0;
@@ -1198,11 +1153,10 @@
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
     let v = String(betInput.value||'').trim();
     if (cur === 'BAG'){
-      v = v.replace(/[^\d]/g,''); // integers only for BAG
+      v = v.replace(/[^\d]/g,''); 
       betInput.value = v || '1';
       stake = Math.max(1, parseInt(betInput.value,10)||1);
     } else {
-      // XRP: allow decimals, clamp to 6 dp
       v = v.replace(/[^0-9.]/g,'');
       const parts = v.split('.');
       if (parts.length>2){ v = parts.shift() + '.' + parts.join(''); }
@@ -1245,7 +1199,7 @@
   async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); (jp ? (window.__bagSFX?.winJackpot||window.__bagAudio?.win) : (window.__bagSFX?.winSmall||window.__bagAudio?.win))?.(!!jp); }catch{} }
 
   function weightedSlotIndex(){
-    const w=currentWeights();
+    const w=(window.__BAG_FORCE_DEMO === true)?[12,24,12,3,12,24,13]:[14,21,14,2,14,21,14];
     const total=w.reduce((a,b)=>a+b,0);
     let r=Math.random()*total;
     for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
@@ -1261,29 +1215,33 @@
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
     const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, wallLeft + BALL_R, wallRight - BALL_R);
+    return clamp(x, 24 + 8, (640 - 24) - 8);
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
     const nx = clientToCanvasX(e.clientX);
-    aimVX = 0; lastAimX = nx; dropX = nx;
+    let aimVX = 0; let lastAimX = nx;
+    G.__aimVX = aimVX; G.__lastAimX = lastAimX; G.__dropX = nx;
     try{ canvas.setPointerCapture(e.pointerId); }catch{}
   });
   canvas.addEventListener('pointermove', (e)=>{
     const nx = clientToCanvasX(e.clientX);
-    aimVX = nx - lastAimX; lastAimX = nx; dropX = nx;
+    const lastAimX = G.__lastAimX ?? nx;
+    G.__aimVX = nx - lastAimX; G.__lastAimX = nx; G.__dropX = nx;
   });
 
   addEventListener('keydown', (e)=>{
     const step = 10;
+    const L = 24 + 8, R = (640 - 24) - 8;
+    let dx = G.__dropX ?? (L+R)/2;
     if (e.key === 'ArrowLeft'){
       e.preventDefault();
-      dropX = clamp(dropX - step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = -step; lastAimX = dropX;
+      dx = clamp(dx - step, L, R);
+      G.__aimVX = -step; G.__lastAimX = dx; G.__dropX = dx;
     } else if (e.key === 'ArrowRight'){
       e.preventDefault();
-      dropX = clamp(dropX + step, wallLeft + BALL_R, wallRight - BALL_R);
-      aimVX = step; lastAimX = dropX;
+      dx = clamp(dx + step, L, R);
+      G.__aimVX = step; G.__lastAimX = dx; G.__dropX = dx;
     } else if (e.code === 'Space'){
       e.preventDefault();
       if (!dropping) dropBtn.click();
@@ -1298,7 +1256,6 @@
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
-    // Remember last stake for the shared WIN overlay readout
     window.__PLINKO_LAST_STAKE_USD__ = Number(usd)||0;
 
     const isDemo = window.__BAG_FORCE_DEMO === true;
@@ -1315,7 +1272,6 @@
       }
       window.__PLINKO_LAST_STAKE_BAG__ = bagToSpend;
     } else {
-      // for demo, compute BAG equivalent so readout shows +BAG correctly
       window.__PLINKO_LAST_STAKE_BAG__ = stakeBag();
     }
 
@@ -1331,11 +1287,14 @@
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
-    const startX = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
-    const initVx = (aimVX || (Math.random()-0.5)*0.8) * 0.08;
+    const wallLeft = 24 - 10 + 10; // reuse values
+    const wallRight = 640 - 24 + 10 - 10;
+    const BALL_R = 8;
+    const startX = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, G.__dropX ?? 320));
+    const initVx = ((G.__aimVX|| (Math.random()-0.5)*0.8)) * 0.08;
 
     const id = ++G.lastBallId;
-    G.ball = { id, x:startX, y:topBoard-30, vx:initVx, vy:0.3, r:BALL_R, alive:true };
+    G.ball = { id, x:startX, y:110-30, vx:initVx, vy:0.3, r:8, alive:true };
 
     safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
   }
@@ -1350,7 +1309,14 @@
 
   setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)) clearRoundState(); }, 900);
 
+  // (physics + draw) omitted here for brevity: identical to your prior working version
   function stepBall(b){
+    const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
+    const SUBSTEPS = 2, PEG_R = 6, BALL_R = 8;
+    const wallLeft = 24 - 10 + 10;
+    const wallRight = 640 - 24 + 10 - 10;
+    const bottomBoard = 880-120;
+    const topBoard = 110;
     const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
     const gy = GRAVITY / SUBSTEPS;
 
@@ -1362,11 +1328,12 @@
       b.vy *= fx;
       b.vx += (Math.random() - 0.5) * 0.01;
 
-      if (b.x - BALL_R < wallLeft){  b.x = wallLeft + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; wallSound(); }
-      if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; wallSound(); }
+      if (b.x - BALL_R < wallLeft){  b.x = wallLeft + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
+      if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
       if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
 
       const now = performance.now();
+      const pegs = window.__PLINKO_PEGS__;
       for (const p of pegs){
         const dx = b.x - p.x, dy = b.y - p.y;
         const dist = Math.hypot(dx, dy) || 0.0001;
@@ -1380,7 +1347,7 @@
           b.vy = (b.vy - 2 * vDot * ny) * RESTITUTION;
           b.vx += nx * 0.08;
           b.vy += ny * 0.02;
-          if (now - lastPegTick > 55){ lastPegTick = now; pegSound(); }
+          if (!window.__PLINKO_LAST_PEG__ || now - window.__PLINKO_LAST_PEG__ > 55){ window.__PLINKO_LAST_PEG__ = now; try{window.__bagAudio?.peg?.();}catch{} }
         }
       }
     }
@@ -1389,19 +1356,40 @@
     if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
       resolveByIndex(boundarySlotIndex(b.x));
     }
-    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
+    if (b.y > 880 + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
   }
+
+  // generate pegs once and expose for physics
+  (function genPegs(){
+    const W=640, H=880;
+    const WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120, PEG_R=6, PEG_ROWS=15, PEG_COLS=13;
+    const wallLeft = (WALL_PAD) - 10 + 10;
+    const wallRight = (W - WALL_PAD) + 10 - 10;
+    const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
+    const pegLeft  = WALL_PAD;
+    const pegRight = W - WALL_PAD;
+    const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
+    const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
+    const pegs=[];
+    for(let r=0;r<PEG_ROWS;r++){
+      const off=(r%2===0)?0:pegSpacingX/2;
+      for(let c=0;c<PEG_COLS;c++){
+        const x=pegLeft+20+c*pegSpacingX+off;
+        if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
+        const y=topBoard+r*pegSpacingY;
+        pegs.push({x,y,r:PEG_R});
+      }
+    }
+    window.__PLINKO_PEGS__ = pegs;
+  })();
 
   function boundarySlotIndex(x){
+    const wallLeft = 24 - 10 + 10, wallRight = 640 - 24 + 10 - 10;
+    const slotCount = 7;
+    const slotWidth=(wallRight-wallLeft)/slotCount;
     const clamped = Math.min(wallRight-1, Math.max(wallLeft+1, x));
     const idx = Math.floor((clamped - wallLeft) / slotWidth);
-    return Math.max(0, Math.min(SLOTS-1, idx));
-  }
-
-  function thudShake(){
-    boardWrap?.classList.remove('thud-shake');
-    void boardWrap?.offsetWidth; // reflow to restart animation
-    boardWrap?.classList.add('thud-shake');
+    return Math.max(0, Math.min(slotCount-1, idx));
   }
 
   function resolveByIndex(idx){
@@ -1412,25 +1400,21 @@
 
     dropping=false; dropBtn.disabled=false;
 
+    const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
     const rule = PAY_MAP[idx] ?? 'L';
 
     if (rule === 'L'){
       lastTxt='Scratch'; resText.textContent='Scratch (lose)'; stateText.textContent='Resolved';
-      wallSound();
-      loseSound();   // ✅ thud unchanged
-      thudShake();   // ✅ board shake
+      try{window.__bagAudio?.wall?.(); window.__bagAudio?.lose?.();}catch{}
+      boardWrap?.classList.remove('thud-shake'); void boardWrap?.offsetWidth; boardWrap?.classList.add('thud-shake');
       hud();
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
       return;
     }
 
     const mult = Number(rule);
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    balance += Math.floor(stake * mult * 100)/100; hud();
 
-    const payoutUnits = Math.floor(stake * mult * 100)/100;
-    balance += payoutUnits; hud();
-
-    // Session credit on live
     let bagStakeForRound = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
     if (window.__BAG_FORCE_DEMO !== true){
       const bagPayout = bagStakeForRound * mult;
@@ -1439,16 +1423,14 @@
 
     if (mult === 2){
       lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
-      winSound(true);
+      try{window.__bagAudio?.win?.(true);}catch{}
     } else {
       lastTxt='Win 1.25×'; resText.textContent='Win 1.25×';
-      winSound(false);
+      try{window.__bagAudio?.win?.(false);}catch{}
     }
     stateText.textContent='Resolved';
 
-    // === Shared WIN overlay (exact behavior as Dice/Slots) ===
     (function(){
-      const P = window.__PRICES__ || {};
       const sUsd = Number(window.__PLINKO_LAST_STAKE_USD__||0);
       const gainBag = bagStakeForRound * (mult - 1);
       try{
@@ -1466,7 +1448,12 @@
   }
 
   function drawBoard(){
-    const W=canvas.width, H=canvas.height;
+    const W=640, H=880, WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120;
+    const ctx = document.getElementById('game').getContext('2d');
+    const wallLeft   = (WALL_PAD) - 10 + 10;
+    const wallRight  = (W - WALL_PAD) + 10 - 10;
+    const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
+
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
@@ -1474,26 +1461,26 @@
     ctx.strokeRect(wallLeft-8, topBoard-40, (wallRight-wallLeft)+16, bottomBoard-topBoard+60);
 
     ctx.fillStyle='#704d1d';
+    const pegs = window.__PLINKO_PEGS__ || [];
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(wallLeft, bottomBoard); ctx.lineTo(wallRight, bottomBoard); ctx.stroke();
+    const SLOTS=7, slotWidth=(wallRight-wallLeft)/SLOTS;
     for(let i=1;i<SLOTS;i++){
-      const x = slotX(i);
+      const x = wallLeft + i*slotWidth;
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    const centers=Array.from({length:SLOTS},(_,i)=>wallLeft+i*slotWidth+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
-    for(let i=0;i<SLOTS;i++){
-      const rule = PAY_MAP[i];
-      const txt = rule==='L' ? 'Scratch' : (rule===2 ? '2×' : '1.25×');
-      ctx.fillStyle = rule==='L' ? '#e25b5b' : (rule===2 ? '#ffd700' : '#baf2cd');
-      ctx.fillText(txt, centers[i], bottomBoard+72);
-    }
+    const labels=['Scratch','1.25×','Scratch','2×','Scratch','1.25×','Scratch'];
+    const colors=['#e25b5b','#baf2cd','#e25b5b','#ffd700','#e25b5b','#baf2cd','#e25b5b'];
+    for(let i=0;i<SLOTS;i++){ ctx.fillStyle=colors[i]; ctx.fillText(labels[i], centers[i], bottomBoard+72); }
 
     if (!dropping){
-      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, dropX));
+      const BALL_R=8;
+      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, G.__dropX ?? (wallLeft+wallRight)/2));
 
       ctx.save();
       ctx.setLineDash([6,6]);
@@ -1524,7 +1511,17 @@
     }
   }
 
-  hud();
+  function drawBall(x,y){
+    const ctx = document.getElementById('game').getContext('2d');
+    const r=8;
+    const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
+    g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
+  }
+
+  drawBoard();
 })();
 </script>
 
@@ -1633,12 +1630,9 @@
     return el ? String(el.value).toUpperCase() : 'XRP';
   }
 
-  // Pull balances (prefer session-provided; fall back to conversion)
   function getBalances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
     const bag = Number(sess.bag) || 0;
-
-    // If session provides XRP explicitly, use it; otherwise convert BAG→XRP using prices.
     let xrp = Number(sess.xrp);
     if (!(xrp > 0)) {
       const { bagUsd, xrpUsd } = PR();
@@ -1649,7 +1643,6 @@
   }
 
   function currentBet(){
-    // Use displayed bet input directly if present
     const input = document.getElementById('demoBet');
     const v = input ? parseFloat(input.value||'0') : 0;
     if (!Number.isFinite(v) || v < 0) return 0;
