@@ -89,7 +89,7 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
-  /* 🎧 Spotify toggle — close to 🔊 but not touching */
+  /* 🎧 Spotify toggle — near sound, not touching */
   #spotifyToggle{
     position:fixed;top:10px;right:64px;z-index:2147483647;
     background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
@@ -348,12 +348,13 @@
 })();
 </script>
 
-<!-- 🎧 Spotify: PKCE + Web Playback SDK. One-tap from 🎧, no app switch. -->
+<!-- 🎧 Spotify: PKCE + Web Playback SDK with POPUP auth (no main-page redirect) -->
 <script>
 (function(){
   // ---- Config ----
-  const CLIENT_ID = '3cc3b47a65c54b91be924b3875cefea5'; // provided
-  const REDIRECT_URI = window.location.origin + window.location.pathname; // add this in Spotify dashboard
+  const CLIENT_ID = '3cc3b47a65c54b91be924b3875cefea5'; // your client id
+  // Add THIS EXACT URL as a Redirect URI in your Spotify app:
+  const REDIRECT_URI = window.location.origin + window.location.pathname; 
   const SCOPES = [
     'streaming',
     'user-read-email',
@@ -395,11 +396,10 @@
     return b64;
   }
   function now(){ return Math.floor(Date.now()/1000); }
-
   function saveTokens({access_token, refresh_token, expires_in}){
-    localStorage.setItem(K.access, access_token);
+    if (access_token) localStorage.setItem(K.access, access_token);
     if (refresh_token) localStorage.setItem(K.refresh, refresh_token);
-    localStorage.setItem(K.exp, String(now() + (expires_in||3600) - 30));
+    if (expires_in) localStorage.setItem(K.exp, String(now() + expires_in - 30));
   }
   function getAccessToken(){ return localStorage.getItem(K.access)||''; }
   function isExpired(){
@@ -410,23 +410,74 @@
     Object.values(K).forEach(k=>localStorage.removeItem(k));
   }
 
-  // ---- PKCE auth ----
-  async function ensureAuth(){
-    // If redirected back with ?code=..., exchange it
-    const params = new URLSearchParams(window.location.search);
-    const code  = params.get('code');
-    const state = params.get('state');
+  // ---- Popup PKCE auth (main page never navigates) ----
+  async function openAuthPopup(){
+    // Prepare PKCE
+    const verifier = randStr(64);
+    const challenge = await sha256base64url(verifier);
+    const state = randStr(16);
+    localStorage.setItem(K.ver, verifier);
+    localStorage.setItem(K.state, state);
 
-    if (code){
-      const storedState = localStorage.getItem(K.state);
-      const verifier = localStorage.getItem(K.ver);
+    const authParams = new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI + '?auth=1', // mark popup return
+      code_challenge_method: 'S256',
+      code_challenge: challenge,
+      state,
+      scope: SCOPES.join(' ')
+    });
+
+    // Centered popup
+    const w = 520, h = 680;
+    const y = Math.max(0, (screen.height - h) / 2);
+    const x = Math.max(0, (screen.width  - w) / 2);
+    const popup = window.open(
+      'https://accounts.spotify.com/authorize?' + authParams.toString(),
+      'bag_spotify_auth',
+      `width=${w},height=${h},top=${y},left=${x},status=no,toolbar=no,menubar=no,resizable=yes,scrollbars=yes`
+    );
+    if (!popup) throw new Error('Popup blocked');
+
+    // Listen for the popup to send tokens back
+    return new Promise((resolve, reject)=>{
+      const timer = setInterval(()=>{
+        if (popup.closed){ clearInterval(timer); reject(new Error('Popup closed')); }
+      }, 500);
+
+      window.addEventListener('message', function onMsg(ev){
+        try{
+          if (ev.origin !== window.location.origin) return;
+          if (!ev.data || ev.data.type !== 'bag_spotify_tokens') return;
+          window.removeEventListener('message', onMsg);
+          clearInterval(timer);
+          saveTokens(ev.data.payload);
+          resolve();
+        }catch(e){ reject(e); }
+      });
+    });
+  }
+
+  // If this is the popup return (auth=1) handle code exchange IN POPUP then postMessage back
+  (async function maybePopupHandler(){
+    const isPopupReturn = new URLSearchParams(window.location.search).get('auth') === '1';
+    const hasOpener = !!window.opener;
+    const code = new URLSearchParams(window.location.search).get('code');
+    const state = new URLSearchParams(window.location.search).get('state');
+
+    if (isPopupReturn && hasOpener){
       try{
+        if (!code) return; // still on accounts page
+        const storedState = localStorage.getItem(K.state);
+        const verifier = localStorage.getItem(K.ver);
         if (!verifier || state !== storedState) throw new Error('State mismatch');
+
         const body = new URLSearchParams({
           client_id: CLIENT_ID,
           grant_type: 'authorization_code',
-          code: code,
-          redirect_uri: REDIRECT_URI,
+          code,
+          redirect_uri: REDIRECT_URI + '?auth=1',
           code_verifier: verifier
         });
         const res = await fetch('https://accounts.spotify.com/api/token',{
@@ -434,23 +485,21 @@
           headers:{'Content-Type':'application/x-www-form-urlencoded'},
           body
         });
-        if (!res.ok) throw new Error('Token exchange failed');
         const json = await res.json();
-        saveTokens(json);
-        // Clean the URL
-        history.replaceState({}, document.title, REDIRECT_URI);
-        showToast('Spotify linked', true);
+        // send tokens to opener and close
+        window.opener.postMessage({ type:'bag_spotify_tokens', payload: json }, window.location.origin);
       }catch(e){
-        showToast('Spotify auth failed', false);
-        clearAuth();
-        throw e;
+        window.opener.postMessage({ type:'bag_spotify_tokens', payload: {} }, window.location.origin);
+      }finally{
+        window.close();
       }
     }
+  })();
 
-    // If we already have a token and it’s not expired, done
-    if (getAccessToken() && !isExpired()) return;
+  // Token maintenance (refresh if needed)
+  async function ensureToken(){
+    if (getAccessToken() && !isExpired()) return true;
 
-    // If token expired and we have refresh, refresh it
     const refresh = localStorage.getItem(K.refresh);
     if (refresh){
       const body = new URLSearchParams({
@@ -466,115 +515,74 @@
       if (res.ok){
         const json = await res.json();
         saveTokens(json);
-        return;
-      } else {
-        // fall through to new auth
-        clearAuth();
+        return true;
       }
     }
-
-    // New login with PKCE
-    const verifier = randStr(64);
-    const challenge = await sha256base64url(verifier);
-    const state2 = randStr(16);
-    localStorage.setItem(K.ver, verifier);
-    localStorage.setItem(K.state, state2);
-
-    const auth = new URLSearchParams({
-      response_type: 'code',
-      client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
-      code_challenge_method: 'S256',
-      code_challenge: challenge,
-      state: state2,
-      scope: SCOPES.join(' ')
-    });
-
-    // Redirect to Spotify (first-time only)
-    window.location.href = 'https://accounts.spotify.com/authorize?' + auth.toString();
+    // Need fresh auth in popup
+    await openAuthPopup();
+    return !!getAccessToken();
   }
 
   // ---- Web Playback SDK ----
   let player, deviceId;
 
   async function initPlayer(){
-    const token = getAccessToken();
-    if (!token) throw new Error('No token');
-
     if (player) return;
-
     await new Promise((resolve)=>{
       if (window.Spotify && window.Spotify.Player) return resolve();
       window.onSpotifyWebPlaybackSDKReady = resolve;
     });
-
     player = new Spotify.Player({
       name: '$BAG Casino',
       getOAuthToken: cb => cb(getAccessToken()),
-      volume: 0.8
+      volume: 0.85
     });
-
-    player.addListener('ready', ({ device_id }) => {
-      deviceId = device_id;
-      showToast('Headphones ready', true);
-    });
-    player.addListener('not_ready', ({ device_id }) => {
-      if (deviceId === device_id) deviceId = undefined;
-      showToast('Headphones sleeping', false);
-    });
-    player.addListener('initialization_error', ({ message }) => showToast('Init error', false));
-    player.addListener('authentication_error', ({ message }) => { showToast('Reauth needed', false); clearAuth(); });
-    player.addListener('account_error', ({ message }) => showToast('Premium required', false));
-
+    player.addListener('ready', ({ device_id }) => { deviceId = device_id; showToast('Headphones ready', true); });
+    player.addListener('not_ready', () => { deviceId = undefined; showToast('Headphones sleeping', false); });
+    player.addListener('initialization_error', () => showToast('Init error', false));
+    player.addListener('authentication_error', () => { showToast('Reauth needed', false); clearAuth(); });
+    player.addListener('account_error', () => showToast('Premium required', false));
     await player.connect();
   }
 
   async function transferPlayback(){
-    const token = getAccessToken();
     const res = await fetch('https://api.spotify.com/v1/me/player',{
       method:'PUT',
-      headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
+      headers:{'Authorization':'Bearer ' + getAccessToken(), 'Content-Type':'application/json'},
       body: JSON.stringify({ device_ids:[deviceId], play:true })
     });
     if (!res.ok && res.status !== 204) throw new Error('Transfer failed');
   }
 
   async function startPlaylist(){
-    const token = getAccessToken();
     const res = await fetch('https://api.spotify.com/v1/me/player/play',{
       method:'PUT',
-      headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
-      body: JSON.stringify({
-        context_uri: PLAYLIST_URI,
-        offset:{ position: 0 },
-        position_ms: 0
-      })
+      headers:{'Authorization':'Bearer ' + getAccessToken(), 'Content-Type':'application/json'},
+      body: JSON.stringify({ context_uri: 'spotify:playlist:0Vt5oZbeLKuqwLq489DJso', offset:{position:0}, position_ms:0 })
     });
     if (!res.ok && res.status !== 204) throw new Error('Play failed');
     showToast('Playing $BAG playlist', true);
   }
 
-  async function toggleSpotify(){
+  async function onHeadphones(){
     try{
-      await ensureAuth();          // may redirect first-time
-      await initPlayer();          // create SDK player if needed
-      if (!deviceId) {
-        // Allow a short wait for "ready" callback
-        await new Promise(r=>setTimeout(r, 600));
+      await ensureToken();          // popup if needed (main page stays put)
+      await initPlayer();           // set up SDK
+      if (!deviceId){
+        await new Promise(r=>setTimeout(r, 400));
         if (!deviceId) throw new Error('Device not ready');
       }
-      await transferPlayback();    // move playback to web player
-      await startPlaylist();       // start playlist
+      await transferPlayback();     // route playback here
+      await startPlaylist();        // start playlist
       btn.setAttribute('aria-pressed','true');
     }catch(e){
-      // Show succinct reason
-      if (String(e).includes('Premium')) showToast('Spotify Premium needed', false);
+      if (String(e).includes('Premium')) showToast('Spotify Premium required', false);
       else showToast('Headphones error', false);
       console.error(e);
     }
   }
 
-  btn.addEventListener('click', toggleSpotify);
+  btn.addEventListener('click', onHeadphones);
 })();
 </script>
 
