@@ -90,7 +90,7 @@
   .hudbar .pill b{font-weight:800}
   .aim-tip{ margin:-2px 0 8px; opacity:.9 }
 
-  /* ✨ Win readout banner (same vibe as Dice/Slots) */
+  /* Win readout banner (matches Dice/Slots structure) */
   .win-readout{
     position:absolute; inset:auto 0 18%; margin:auto; width:min(82%,520px);
     display:none; justify-content:center; align-items:center;
@@ -105,7 +105,7 @@
   .win-amt{ margin-left:8px; color:#ffd700; font-weight:900 }
   .win-sub{ margin-left:10px; opacity:.85; font-weight:700; font-size:.95rem }
 
-  /* Glow pulse on board rim for wins / jackpot */
+  /* Board pulse and jackpot pulse */
   .canvas-wrap.win-pulse{ animation:winPulse 900ms ease; }
   .canvas-wrap.jp-pulse{ animation:jackpotPulse 1200ms ease; }
   @keyframes winPulse{
@@ -117,6 +117,17 @@
     0%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
     20%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 44px 12px rgba(255,215,0,.45), inset 0 1px 0 rgba(255,255,255,.1)}
     100%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
+  }
+
+  /* Lose thud shake (to match the “thud” feel in other games) */
+  .thud-shake{ animation:thud 420ms cubic-bezier(.34,.01,.22,1); }
+  @keyframes thud{
+    0%{ transform:translateY(0) }
+    18%{ transform:translateY(6px) }
+    36%{ transform:translateY(-3px) }
+    54%{ transform:translateY(2px) }
+    72%{ transform:translateY(-1px) }
+    100%{ transform:translateY(0) }
   }
 
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
@@ -231,9 +242,9 @@
                 <span class="pill">Bet: <b>1</b></span>
                 <span class="pill">Last: <b>—</b></span>
               </div>
-              <!-- Readout banner for wins (Dice/Slots style) -->
+              <!-- Readout banner for wins -->
               <div id="winReadout" class="win-readout" aria-live="polite">
-                <span id="winTitle">WIN</span>
+                <span id="winTitle">YOU WIN!</span>
                 <span class="win-amt" id="winAmt">+0.00 BAG</span>
                 <span class="win-sub" id="winUsd">(+$0.00)</span>
               </div>
@@ -287,7 +298,7 @@
     </div>
 </section>
 
-<!-- === AUDIO ENGINE (Updated win SFX to match Dice/Slots vibe) === -->
+<!-- === AUDIO ENGINE (with SFX compatibility + solid thud) === -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -307,50 +318,54 @@
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running') await tryResume(); return ac; }
   function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
 
+  /* If your casino exposes shared SFX, we’ll use those */
+  const shared = ()=> window.__bagSFX || null;
+
   function mkComp(ac){ const c=ac.createDynamicsCompressor(); c.threshold.value=-20; c.knee.value=18; c.ratio.value=3.5; c.attack.value=0.001; c.release.value=0.12; c.connect(MASTER); return c; }
 
   function playPeg(){
+    if(shared()?.peg){ shared().peg(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime, comp=mkComp(ac);
-    const o1=ac.createOscillator(), o2=ac.createOscillator(), m1=ac.createOscillator(), m2=ac.createOscillator(), g=ac.createGain();
-    o1.type='sine'; o2.type='triangle'; m1.type='sine'; m2.type='sine';
-    o1.frequency.setValueAtTime(2100, now); o2.frequency.setValueAtTime(2800, now);
-    const m1Gain=ac.createGain(); m1Gain.gain.setValueAtTime(85, now);
-    const m2Gain=ac.createGain(); m2Gain.gain.setValueAtTime(60, now);
-    m1.connect(m1Gain).connect(o1.frequency); m2.connect(m2Gain).connect(o2.frequency);
-    m1.frequency.setValueAtTime(4200, now); m2.frequency.setValueAtTime(3600, now);
+    const o1=ac.createOscillator(), o2=ac.createOscillator(), g=ac.createGain();
+    o1.type='triangle'; o2.type='sine';
+    o1.frequency.setValueAtTime(2300, now);
+    o2.frequency.setValueAtTime(1700, now);
     g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(0.12, now+0.006); g.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
     o1.connect(g); o2.connect(g); g.connect(comp);
-    o1.start(now); o2.start(now); m1.start(now); m2.start(now);
-    o1.stop(now+0.12); o2.stop(now+0.12); m1.stop(now+0.12); m2.stop(now+0.12);
+    o1.start(now); o2.start(now);
+    o1.stop(now+0.11); o2.stop(now+0.11);
   }
 
   function playWall(){
+    if(shared()?.wall){ shared().wall(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime, comp=mkComp(ac); const o=ac.createOscillator(), g=ac.createGain();
-    o.type='square'; o.frequency.setValueAtTime(380, now); o.frequency.exponentialRampToValueAtTime(180, now+0.12);
+    o.type='square'; o.frequency.setValueAtTime(360, now); o.frequency.exponentialRampToValueAtTime(180, now+0.12);
     g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(0.09, now+0.01); g.gain.exponentialRampToValueAtTime(0.0001, now+0.14);
     o.connect(g).connect(comp); o.start(now); o.stop(now+0.16);
   }
 
-  function playLose(){
+  function playLoseThud(){
+    if(shared()?.loseThud){ shared().loseThud(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
-    const now=ac.currentTime; const buf=ac.createBuffer(1, Math.floor(ac.sampleRate*0.06), ac.sampleRate);
-    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*0.6*(1-i/d.length);
-    const src=ac.createBufferSource(); src.buffer=buf; const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=1.2;
-    const g=ac.createGain(); g.gain.setValueAtTime(0.12, now); g.gain.exponentialRampToValueAtTime(0.0001, now+0.08);
-    src.connect(bp).connect(g).connect(MASTER); src.start(now); src.stop(now+0.09);
+    const now=ac.currentTime;
+    // Layered thud: low sine + short noise + lowpass
+    const bass=ac.createOscillator(); bass.type='sine'; bass.frequency.setValueAtTime(120, now); bass.frequency.exponentialRampToValueAtTime(70, now+0.08);
+    const gBass=ac.createGain(); gBass.gain.setValueAtTime(0.0001, now); gBass.gain.linearRampToValueAtTime(0.22, now+0.01); gBass.gain.exponentialRampToValueAtTime(0.0001, now+0.18);
+    bass.connect(gBass);
+    const len=ac.sampleRate*0.06, buf=ac.createBuffer(1, len, ac.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++){ d[i]=(Math.random()*2-1)*(1-i/len); }
+    const n=ac.createBufferSource(); n.buffer=buf; const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600; lp.Q.value=0.6;
+    const gN=ac.createGain(); gN.gain.setValueAtTime(0.14, now); gN.gain.exponentialRampToValueAtTime(0.0001, now+0.08);
+    n.connect(lp).connect(gN);
+    const mix=ac.createGain(); mix.connect(MASTER);
+    gBass.connect(mix); gN.connect(mix);
+    bass.start(now); bass.stop(now+0.2); n.start(now); n.stop(now+0.09);
   }
 
-  /* New: richer win tones (same palette as Dice/Slots) */
-  function coinShimmer(ac, t0, len=0.35){
-    const n=ac.createOscillator(), g=ac.createGain();
-    n.type='triangle'; n.frequency.setValueAtTime(1200, t0);
-    n.frequency.exponentialRampToValueAtTime(2200, t0+len);
-    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.11, t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0+len);
-    n.connect(g).connect(MASTER); n.start(t0); n.stop(t0+len+0.02);
-  }
   function playWinSmall(){
+    if(shared()?.winSmall){ shared().winSmall(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const t=ac.currentTime;
     const seq=[660,880,1175];
@@ -361,9 +376,9 @@
       o.connect(g).connect(MASTER);
       o.start(t+i*0.07); o.stop(t+i*0.07+0.25);
     });
-    coinShimmer(ac, t+0.12, 0.32);
   }
   function playWinJackpot(){
+    if(shared()?.winJackpot){ shared().winJackpot(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const t=ac.currentTime;
     const seq=[880,1175,1568,2093,2637];
@@ -374,7 +389,6 @@
       o.connect(g).connect(MASTER);
       o.start(t+i*0.075); o.stop(t+i*0.075+0.28);
     });
-    coinShimmer(ac, t+0.18, 0.42);
   }
 
   window.__bagAudio = {
@@ -383,7 +397,7 @@
     peg: playPeg,
     wall: playWall,
     win: (jp=false)=> jp ? playWinJackpot() : playWinSmall(),
-    lose: playLose
+    lose: playLoseThud
   };
 
   if(!watchdog){ watchdog=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30000; if(active && ac.state==='suspended') tryResume(); },1500); }
@@ -397,7 +411,7 @@
 })();
 </script>
 
-<!-- === WALLET CONNECT (same as before) === -->
+<!-- === WALLET CONNECT (unchanged) === -->
 <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
@@ -498,7 +512,7 @@
 })();
 </script>
 
-<!-- === TAB SESSION (same as before, with bugfix) === -->
+<!-- === TAB SESSION (unchanged) === -->
 <script>
 (function(){
   const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
@@ -658,7 +672,7 @@
 })();
 </script>
 
-<!-- === PRICES (live-first; fallback to last-live; then view cache; cross-tab sync) === -->
+<!-- === PRICES (unchanged) === -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -743,7 +757,7 @@
   async function fetchBagViaAMMLive(){
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket(XRPL_WSS);
+      const ws = new WebSocket('wss://s1.ripple.com');
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
@@ -819,7 +833,7 @@
 })();
 </script>
 
-<!-- === PRICES/STAKE SYNC (Dice-style USD ↔ stake, currency toggle aware) === -->
+<!-- === PRICES/STAKE SYNC (unchanged) === -->
 <script>
 (function(){
   const MIN_USD = 1;
@@ -913,7 +927,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (now with Dice/Slots-style win celebration + readouts) === -->
+<!-- === PLINKO GAME LOGIC (celebrations aligned to Dice/Slots) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -947,7 +961,6 @@
 
   const SUBSTEPS = 2;
   let dropX = (pegLeft + pegRight) / 2;
-  let aiming = false;
   let lastAimX = dropX;
   let aimVX = 0;
 
@@ -1000,10 +1013,10 @@
     return 0;
   }
 
-  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.peg?.(); }catch{} }
-  async function wallSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.wall?.(); }catch{} }
-  async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.lose?.(); }catch{} }
-  async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.win?.(!!jp); }catch{} }
+  async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.peg ? window.__bagSFX.peg() : window.__bagAudio?.peg?.()); }catch{} }
+  async function wallSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.wall ? window.__bagSFX.wall() : window.__bagAudio?.wall?.()); }catch{} }
+  async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.loseThud ? window.__bagSFX.loseThud() : window.__bagAudio?.lose?.()); }catch{} }
+  async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); (jp ? (window.__bagSFX?.winJackpot||window.__bagAudio?.win) : (window.__bagSFX?.winSmall||window.__bagAudio?.win))?.(!!jp); }catch{} }
 
   function weightedSlotIndex(){
     const w=currentWeights();
@@ -1154,19 +1167,27 @@
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-  // 🔔 Dice/Slots-style win celebration
+  // Central celebration (uses global if present)
   function celebrateWin(mult, stakeUnits, cur){
-    // Compute BAG and USD win amounts
     const P = window.__PRICES__ || {};
     const bagPerXrp = (P.bagUsd>0 && P.xrpUsd>0) ? (P.xrpUsd / P.bagUsd) : 0;
     const stakeBag = (cur==='BAG') ? stakeUnits : stakeUnits * bagPerXrp;
     const winBag = stakeBag * mult;
     const winUsd = P.bagUsd>0 ? winBag * P.bagUsd : 0;
 
-    // Show banner + count up
+    // Emit the shared toaster event used by Dice/Slots
+    window.dispatchEvent(new CustomEvent('bag:winToaster', { detail: { game:'plinko', mult, winBag, winUsd } }));
+    window.dispatchEvent(new CustomEvent(mult>=2?'bag:jackpot':'bag:win', { detail:{ game:'plinko', mult, winBag, winUsd } }));
+
+    // If a global celebration handler exists, use it
+    if (window.__bagCelebrations?.showWin){
+      try{ window.__bagCelebrations.showWin({ game:'plinko', mult, bag:winBag, usd:winUsd }); }catch{}
+    }
+
+    // Local banner fallback (kept to ensure parity visually if global is missing)
     try{
       if (!winReadout) return;
-      winTitle.textContent = (mult>=2 ? 'JACKPOT' : 'WIN');
+      winTitle.textContent = (mult>=2 ? 'JACKPOT!' : 'YOU WIN!');
       winAmt.textContent = '+0.00 BAG';
       winUsd.textContent = '(+$0.00)';
       winReadout.classList.add('show');
@@ -1177,8 +1198,9 @@
       const dur = mult>=2 ? 1200 : 900;
       function tick(t){
         const k = Math.min(1, (t - t0)/dur);
-        const val = winBag * (0.6*k + 0.4*k*k); // ease-up
-        const usd = winUsd * (0.6*k + 0.4*k*k);
+        const e = 0.6*k + 0.4*k*k;
+        const val = winBag * e;
+        const usd = winUsd * e;
         winAmt.textContent = `+${val.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
         winUsd.textContent = `(+${usd.toLocaleString(undefined,{style:'currency',currency:'USD',currencyDisplay:'symbol',maximumFractionDigits:2})})`;
         if (k<1) requestAnimationFrame(tick);
@@ -1189,10 +1211,12 @@
       }
       requestAnimationFrame(tick);
     }catch{}
+  }
 
-    // Dispatch cross-game bus events so global overlays (if any) can react
-    const evtName = mult>=2 ? 'bag:jackpot' : 'bag:win';
-    window.dispatchEvent(new CustomEvent(evtName, { detail: { game:'plinko', mult, winBag, winUsd } }));
+  function thudShake(){
+    boardWrap?.classList.remove('thud-shake');
+    void boardWrap?.offsetWidth; // reflow to restart animation
+    boardWrap?.classList.add('thud-shake');
   }
 
   function resolveByIndex(idx){
@@ -1207,28 +1231,26 @@
 
     if (rule === 'L'){
       lastTxt='Scratch'; resText.textContent='Scratch (lose)'; stateText.textContent='Resolved';
-      loseSound();
+      wallSound(); // subtle wall hit as it lands
+      loseSound(); // ✅ solid thud
+      thudShake(); // ✅ board shake to match feel of other games
       hud();
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
       return;
     }
 
-    // Win path
     const mult = Number(rule);
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
 
-    // Demo HUD balance in visible units
     const payoutUnits = Math.floor(stake * mult * 100)/100;
     balance += payoutUnits; hud();
 
-    // Credit live session (BAG)
     if (window.__BAG_FORCE_DEMO !== true){
       const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
       const bagPayout = bagStake * mult;
       try{ window.__bagSession?.credit?.(bagPayout); }catch{}
     }
 
-    // Sound + readout (Dice/Slots style)
     if (mult === 2){
       lastTxt='Jackpot 2×'; resText.textContent='🎉 Jackpot 2×';
       winSound(true);
@@ -1238,7 +1260,6 @@
     }
     stateText.textContent='Resolved';
 
-    // Launch celebration banner & dispatch shared events
     celebrateWin(mult, stake, cur);
 
     hud();
@@ -1312,7 +1333,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (force DEMO by default; Live only with ?live=1) -->
+<!-- Practice Mode Wrapper (unchanged) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1388,7 +1409,7 @@
 })();
 </script>
 
-<!-- === HUD + PAYOUTS LIVE UPDATER (keeps HUD + dynamic payout tiers current) === -->
+<!-- === HUD + PAYOUTS LIVE UPDATER (unchanged) === -->
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
