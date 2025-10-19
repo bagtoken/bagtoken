@@ -1246,102 +1246,95 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- HUD updater (Mode / Balance / Bet / Last) with currency-aware Balance -->
+<!-- === SLOTS: Unified HUD — Mode / Balance / Bet / Last (DEMO & LIVE) === -->
 <script>
 (function(){
-  const curToggle = document.getElementById('curToggle');
+  const hudbar = document.querySelector('.hudbar');
+  if(!hudbar) return;
 
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n, max=6){
-    const x = Number(n);
-    if (!Number.isFinite(x)) return '—';
-    return x.toLocaleString(undefined, { maximumFractionDigits: max });
-  }
-
-  function els(){ 
-    return { 
-      balLbl: document.getElementById('balLbl'),
-      ccyLbl: document.getElementById('ccyLbl'),
-      betLbl: document.getElementById('betLbl'),
-      modeLbl: document.getElementById('modeLbl'),
-      lastLbl: document.getElementById('lastLbl'),
-      betQtyEl: document.getElementById('betQty'),
-    }; 
-  }
-
-  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-
-  // Pull balances (prefer session-provided; fall back to conversion)
-  function getBalances(){
-    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
-    const bag = Number(sess.bag) || 0;
-
-    // If session provides XRP explicitly, use it; otherwise convert BAG→XRP using prices.
-    let xrp = Number(sess.xrp);
-    if (!(xrp > 0)) {
-      const { bagUsd, xrpUsd } = PR();
-      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
-      else xrp = 0;
+  // Ensure pills exist in correct order: Mode, Balance(existing), Bet, Last
+  function ensurePill(id, label, beforeEl=null){
+    let el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('span');
+      el.id = id;
+      el.className = 'pill';
+      if(beforeEl) hudbar.insertBefore(el, beforeEl);
+      else hudbar.appendChild(el);
     }
-    return { bag, xrp };
+    el.dataset.label = label; // (not used for UI; just a marker)
+    return el;
   }
 
-  function currentBet(){
-    const { betQtyEl } = els();
-    const v = parseFloat(betQtyEl?.value || '0');
-    if (!Number.isFinite(v) || v < 0) return 0;
-    // Display integer like Plinko (display-only; underlying may be fractional)
-    return Math.max(0, Math.floor(v));
+  const balancePill = hudbar.querySelector('#balLbl')?.closest('.pill') || ensurePill('balancePill','Balance');
+  const modePill    = ensurePill('hudMode','Mode', balancePill); // insert before Balance
+  const betPill     = ensurePill('hudBet','Bet');
+  const lastPill    = ensurePill('hudLast','Last');
+
+  // Helpers
+  const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
+  const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
+  const sessionObj = () => (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null;
+  const stakeBag   = () => (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+  const stakeUsd   = () => (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
+  function renderMode(){
+    const live = (window.__BAG_FORCE_DEMO !== true);
+    modePill.innerHTML = `Mode: <b>${live?'LIVE':'DEMO'}</b>`;
   }
 
-  function renderHud(){
-    try{
-      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-      const mode = selectedMode();
-      const ccy  = currentCurrency();
-      const { bag, xrp } = getBalances();
-
-      if (modeLbl) modeLbl.textContent = mode;
-      if (betLbl)  betLbl.textContent  = String(currentBet());
-      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
-
-      if (balLbl && ccyLbl){
-        if (ccy === 'XRP'){
-          balLbl.textContent = fmt(xrp, 6);
-          ccyLbl.textContent = 'XRP';
-        } else {
-          balLbl.textContent = fmt(bag, 6);
-          ccyLbl.textContent = 'BAG';
-        }
-      }
-    }catch(e){}
+  function renderBalance(){
+    const s = sessionObj();
+    const amt = s && Number(s.bag)>0 ? fmtBag(s.bag) : '—';
+    const balLbl = document.getElementById('balLbl');
+    const ccyLbl = document.getElementById('ccyLbl');
+    if (balLbl) balLbl.textContent = amt;
+    if (ccyLbl) ccyLbl.textContent = 'BAG';
   }
 
-  // Re-render when anything relevant changes
-  [
-    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
-    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
-    'bag:diceResult','bag:hudRefresh'
-  ].forEach(ev => addEventListener(ev, renderHud));
+  function renderBet(){
+    const b = stakeBag();
+    const u = stakeUsd();
+    betPill.innerHTML = `Bet: <b>${b>0?fmtBag(b):'—'}</b>` + (b>0&&u>0? ` <span class="micro">(${fmtUsd(u)})</span>`:'');
+  }
 
-  // React to bet amount & currency tab changes
-  document.getElementById('betQty')?.addEventListener('input', renderHud);
-  curToggle?.addEventListener('change', renderHud);
+  function renderLast(ev){
+    const d = ev && ev.detail ? ev.detail : null;
+    if(!d){
+      // SHOW LABEL IMMEDIATELY EVEN BEFORE FIRST SPIN
+      lastPill.innerHTML = `Last: <b>—</b>`;
+      return;
+    }
+    let txt='Lose', delta='';
+    if(d.mult===2.00){ txt='JACKPOT'; delta = ` +${fmtBag(d.stakeBag*1.00)} BAG`; }
+    else if(d.mult===1.25){ txt='WIN'; delta = ` +${fmtBag(d.stakeBag*0.25)} BAG`; }
+    else if(d.mult===1.00){ txt='SCRATCH'; delta = ` +0 BAG`; }
+    lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">&nbsp;${delta}</span>`;
+  }
 
-  // Also react to localStorage changes (demo multi-tab)
-  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
+  function paint(){ renderMode(); renderBalance(); renderBet(); }
 
-  // First paint + small watchdog for late-mount
-  renderHud();
-  let tries = 0; 
-  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+  // Events
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:walletConnected','bag:walletDisconnected','bag:pricesUpdated']
+    .forEach(ev=>addEventListener(ev, paint));
+
+  addEventListener('bag:slotsResult', (e)=>{ paint(); renderLast(e); });
+
+  // Update Bet pill as user edits stake
+  ['input','change'].forEach(t=>{
+    document.getElementById('usdBet')?.addEventListener(t, renderBet);
+    document.getElementById('betQty')?.addEventListener(t, renderBet);
+    document.getElementById('curToggle')?.addEventListener(t, renderBet);
+  });
+
+  // INITIALIZE ALL FOUR PILLS RIGHT AWAY (this was missing before)
+  paint();
+  renderLast(null);
+
+  // Short watchdog for late mounts
+  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
 })();
 </script>
-
 
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
