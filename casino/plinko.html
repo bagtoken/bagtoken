@@ -1320,12 +1320,12 @@
 
 
 
-<!-- === Practice Mode Wrapper (unchanged UI text, with decimal fix) === -->
+<!-- Practice Mode Wrapper (force DEMO by default; Live only with ?live=1) -->
 <script>
 (function(){
+  // Only go live if URL has ?live=1
   const qs = new URLSearchParams(location.search);
-  const pathDemo = location.pathname.toLowerCase().includes('/demo');
-  const liveSession = window.__bagSession;
+  const forceLive = qs.get('live') === '1';
 
   const $ = (s)=>document.querySelector(s);
   const statusEl  = $('#sessionStatus');
@@ -1336,8 +1336,8 @@
 
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
-  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} } /* FIXED: preserve decimals */
+  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
+  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} } // keep decimals
 
   if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
 
@@ -1355,7 +1355,7 @@
     const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if (statusEl){
       statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
@@ -1363,6 +1363,7 @@
     if (endBtn)   endBtn.style.display   = 'none';
   }
 
+  // Demo-only in-tab session
   const demoSession = {
     active: () => true,
     get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
@@ -1372,33 +1373,30 @@
   };
 
   function enableDemo(){
-    window.__BAG_FORCE_DEMO = true;
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
+    catch{ window.__BAG_FORCE_DEMO = true; }
     window.__bagSession = demoSession;
     renderDemoSession();
     if (connectEl) connectEl.style.opacity = '0.9';
   }
+
   function enableLive(){
     window.__BAG_FORCE_DEMO = false;
-    if (liveSession) window.__bagSession = liveSession;
+    // If you included /js/bag-session.js, it already set window.__bagSession for live
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  // DEFAULT DEMO ON
-  const demoWanted = true;
-  if (demoWanted) enableDemo();
+  // Mode selection: DEMO default; Live only if ?live=1 present
+  if (forceLive) enableLive(); else enableDemo();
 
+  // Keep demo balance display in sync with price updates
   window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
 
-  window.addEventListener('bag:walletConnected', enableLive);
-  window.addEventListener('bag:walletDisconnected', enableDemo);
+  // IMPORTANT: no auto-switch on wallet events
+  // (Intentionally NOT listening to bag:walletConnected / bag:walletDisconnected)
 })();
 </script>
 
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-}
-</script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
