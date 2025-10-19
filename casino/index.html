@@ -376,66 +376,54 @@
 })();
 </script>
 
-<!-- 🎧 Spotify button — embedded autoplay (Premium) with clean fallback -->
+<!-- 🎧 Spotify button — instant in-page playback (Premium) -->
 <script>
 (function(){
-  const BTN   = document.getElementById('musicBtn');
+  const BTN = document.getElementById('musicBtn');
   if (!BTN) return;
 
-  // ===== Config =====
-  const STORAGE_URL   = 'bag_playlist_url';     // accepts full open.spotify URL or 22-char ID via ?playlist=
-  const STORAGE_TOKEN = 'bag_spotify_token';    // store a valid OAuth token (Premium) with scopes:
-                                                // streaming,user-read-playback-state,user-modify-playback-state
-  const DEFAULT_URL   = 'https://open.spotify.com/playlist/37i9dQZF1DX0b1hHYQtJjp'; // fallback demo (replace if you want)
-  const FALLBACK_OPEN = (url)=>{
-    const start = Date.now();
-    window.location.href = url; // deep-links to app on mobile
-    setTimeout(()=>{ if (Date.now() - start < 1500) window.open(url,'_blank','noopener,noreferrer'); }, 1100);
-  };
+  // === Config ===
+  const STORAGE_TOKEN = 'bag_spotify_token';      // OAuth token (Premium)
+  const STORAGE_URL   = 'bag_playlist_url';       // optional custom playlist
+  const DEFAULT_PLAYLIST = '7TNBTNkwAXbH2zWT81wAXb'; // your $BAG Casino playlist ID
+  const FALLBACK_URL  = `https://open.spotify.com/playlist/${DEFAULT_PLAYLIST}`;
 
-  // Allow quick holiday swaps via ?playlist=<URL or 22-char ID>
+  // grab any ?playlist param once
   (function resolveQuery(){
-    try{
+    try {
       const u = new URL(location.href);
       const p = u.searchParams.get('playlist');
       if (p) localStorage.setItem(STORAGE_URL, p);
-    }catch(e){}
+    } catch(e){}
   })();
 
-  function extractPlaylistId(ref){
+  function extractId(ref){
     if (!ref) return null;
-    // raw ID
-    if (/^[0-9A-Za-z]{22}$/.test(ref)) return ref;
-    // open.spotify.com/playlist/<id>
+    if (/^[A-Za-z0-9]{22}$/.test(ref)) return ref;
     try{
       const u = new URL(ref);
-      const m = u.pathname.match(/playlist\/([0-9A-Za-z]{22})/);
+      const m = u.pathname.match(/playlist\/([A-Za-z0-9]{22})/);
       if (m) return m[1];
-      // NOTE: spotify.link shorteners can’t be resolved here without a network redirect follow.
-      // For embedded playback, prefer open.spotify.com URLs or pass ?playlist=<22-char-id>.
     }catch(e){}
     return null;
   }
 
-  const savedRef  = localStorage.getItem(STORAGE_URL) || DEFAULT_URL;
-  const playlistId = extractPlaylistId(savedRef);
-  const token    = localStorage.getItem(STORAGE_TOKEN) || '';
+  const savedRef = localStorage.getItem(STORAGE_URL) || DEFAULT_PLAYLIST;
+  const playlistId = extractId(savedRef) || DEFAULT_PLAYLIST;
 
-  // Lazy-load SDK
+  // === SDK ===
   let sdkLoaded = false, player = null, deviceId = null;
-
   function loadSDK(){
     return new Promise((res, rej)=>{
       if (sdkLoaded) return res();
       const s = document.createElement('script');
       s.src = 'https://sdk.scdn.co/spotify-player.js';
-      s.onload = ()=>{ sdkLoaded = true; res(); };
+      s.onload = ()=>{sdkLoaded = true;res();};
       s.onerror = rej;
       document.head.appendChild(s);
     });
   }
 
-  // Spotify global hook
   window.onSpotifyWebPlaybackSDKReady = async function(){
     if (player) return;
     player = new Spotify.Player({
@@ -443,64 +431,57 @@
       volume: 0.85,
       getOAuthToken: cb => cb(localStorage.getItem(STORAGE_TOKEN) || '')
     });
-    player.addListener('ready', ({ device_id }) => { deviceId = device_id; });
-    player.addListener('initialization_error', ({message}) => console.warn('Spotify init error', message));
-    player.addListener('authentication_error', ({message}) => console.warn('Spotify auth error', message));
-    player.addListener('account_error', ({message}) => console.warn('Spotify account error (Premium required)', message));
-    player.addListener('playback_error', ({message}) => console.warn('Spotify playback error', message));
-    try { await player.connect(); } catch(e){ console.warn('player.connect failed', e); }
+    player.addListener('ready', ({ device_id }) => deviceId = device_id);
+    player.addListener('authentication_error', e => console.warn('Spotify auth error', e.message));
+    player.addListener('account_error', e => console.warn('Spotify account error', e.message));
+    try { await player.connect(); } catch(e){ console.warn('connect failed', e); }
   };
 
-  async function ensureDeviceReady(timeoutMs=5000){
+  async function waitDevice(){
     const start = Date.now();
-    while(!deviceId && Date.now() - start < timeoutMs){
+    while(!deviceId && Date.now() - start < 5000){
       await new Promise(r=>setTimeout(r,100));
     }
     if (!deviceId) throw new Error('DEVICE_TIMEOUT');
   }
 
-  async function startEmbeddedPlayback(){
+  async function playSpotify(){
+    const token = localStorage.getItem(STORAGE_TOKEN) || '';
     if (!token) throw new Error('NO_TOKEN');
-    if (!playlistId) throw new Error('NO_ID'); // savedRef might be spotify.link
     await loadSDK();
-    await ensureDeviceReady();
+    await waitDevice();
 
     const headers = {
-      'Authorization': `Bearer ${localStorage.getItem(STORAGE_TOKEN) || ''}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
 
-    // Transfer playback to Web Player
+    // force device transfer & play
     await fetch('https://api.spotify.com/v1/me/player', {
-      method: 'PUT', headers,
-      body: JSON.stringify({ device_ids: [deviceId], play: true })
+      method: 'PUT', headers, body: JSON.stringify({device_ids:[deviceId],play:true})
     });
 
-    // Start playing the playlist from the beginning
-    const playEndpoint = `https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(deviceId)}`;
-    await fetch(playEndpoint, {
-      method:'PUT', headers,
-      body: JSON.stringify({ context_uri: `spotify:playlist:${playlistId}`, position_ms: 0 })
+    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+      method: 'PUT', headers,
+      body: JSON.stringify({context_uri:`spotify:playlist:${playlistId}`,position_ms:0})
     });
   }
 
   BTN.addEventListener('click', async ()=>{
     BTN.classList.remove('pulse');
     BTN.title = 'BAG Casino Playlist — Playing';
-
-    try{
-      await startEmbeddedPlayback();
-    }catch(e){
-      // Fallback to opening the playlist (still continues over the whole casino)
-      console.warn('Embedded playback failed, fallback to app/web:', e && e.message);
-      // If you currently store a spotify.link URL, this will still work via app.
-      // To guarantee embedded playback, store an open.spotify.com playlist link or pass ?playlist=<22-char-id> once.
-      const openUrl = playlistId ? `https://open.spotify.com/playlist/${playlistId}` : savedRef;
-      FALLBACK_OPEN(openUrl);
+    try {
+      await playSpotify(); // ✅ starts instantly in-page
+    } catch(e){
+      console.warn('Spotify autoplay failed, fallback to app', e.message);
+      const start = Date.now();
+      window.location.href = FALLBACK_URL;
+      setTimeout(()=>{if (Date.now()-start<1500)window.open(FALLBACK_URL,'_blank');},1100);
     }
   });
 })();
 </script>
+
 
 </body>
 </html>
