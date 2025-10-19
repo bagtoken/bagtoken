@@ -968,10 +968,9 @@
 <!-- === PLINKO GAME LOGIC (global ball; board visible; sound & celebration) === -->
 <script>
 (function(){
-  // --- WIN OVERLAY SHIM (adds the same overlay used by Slots/Dice if missing) ---
+  // --- WIN OVERLAY SHIM (same as before) ---
   (function ensureWinOverlay(){
     if (typeof window.showWin === 'function') return;
-    // Inject CSS once
     if (!document.getElementById('bag-win-css')){
       const css = document.createElement('style'); css.id='bag-win-css';
       css.textContent = `
@@ -985,13 +984,11 @@
       `;
       document.head.appendChild(css);
     }
-    // Inject markup once
     if (!document.getElementById('win-overlay')){
       const c = document.createElement('canvas'); c.id='win-canvas';
       const o = document.createElement('div'); o.id='win-overlay'; o.setAttribute('role','dialog');
       o.innerHTML = `<div id="win-card"><button id="win-close" aria-label="Close">×</button><div id="win-text">WIN</div><div id="win-sub">Nice spin</div></div>`;
       document.body.appendChild(c); document.body.appendChild(o);
-      // Behavior
       const canvas=c, overlay=o, closeBtn=o.querySelector('#win-close'), title=o.querySelector('#win-text'), sub=o.querySelector('#win-sub');
       const ctx=canvas.getContext('2d'); let rafId=null, particles=[], start=0, dur=2000;
       function size(){const dpr=Math.min(devicePixelRatio||1,2);canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(dpr,0,0,dpr,0,0);}
@@ -1023,11 +1020,28 @@
   const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
   const SLOTS = PAY_MAP.length;
 
-  // Unified odds
-  const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14];
-  const WEIGHTS_DEMO = [13, 23, 13,  3, 13, 23, 12];
+  // === Unified odds, shared across games via window.__BAG_ODDS ===
+  // DEMO (player-lean): ~54% Win, ~4% JP. LIVE (house-lean): ~34% Win, ~2% JP.
+  window.__BAG_ODDS = window.__BAG_ODDS || {
+    demo: { win: 0.54, jp: 0.04 },
+    live: { win: 0.34, jp: 0.02 }
+  };
+  function slotWeights(from){
+    // Distribute win across slots 1 & 5; jackpot at 3; remaining to the four Scratch slots.
+    const wWin = from.win/2, wJp = from.jp, wL = (1 - from.win - from.jp)/4;
+    const toPct = v => Math.round(v*100);
+    const base = [toPct(wL), toPct(wWin), toPct(wL), toPct(wJp), toPct(wL), toPct(wWin), toPct(wL)];
+    // Normalize to 100
+    let s = base.reduce((a,b)=>a+b,0);
+    while(s>100){ for(let i=0;i<base.length&&s>100;i++){ if(base[i]>0){ base[i]--; s--; } } }
+    while(s<100){ for(let i=0;i<base.length&&s<100;i++){ base[i]++; s++; } }
+    return base;
+  }
+  const WEIGHTS_DEMO = slotWeights(window.__BAG_ODDS.demo);
+  const WEIGHTS_LIVE = slotWeights(window.__BAG_ODDS.live);
   const currentWeights = () => (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE;
 
+  // Physics
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
 
@@ -1042,7 +1056,7 @@
 
   // Aiming state
   const SUBSTEPS=2;
-  let dropX=(pegLeft+pegRight)/2, aiming=false, lastAimX=dropX, aimVX=0;
+  let dropX=(pegLeft+pegRight)/2, aiming=false, lastAimX=dropX, aimVX=0, lastUserAimMs=0;
 
   // Peg grid
   const PEG_ROWS=15, PEG_COLS=13;
@@ -1060,6 +1074,8 @@
 
   const slotWidth=(wallRight-wallLeft)/SLOTS;
   const slotX=i=>wallLeft+i*slotWidth;
+  const slotCenter=i=>slotX(i)+slotWidth/2;
+  const centers=Array.from({length:SLOTS},(_,i)=>slotCenter(i));
 
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl');
@@ -1067,7 +1083,7 @@
   const betInput=$('demoBet'), stateText=$('stateText');
 
   let balance=100, stake=1, lastTxt='—';
-  let dropping=false, safetyTimer=null, lastPegTick=0;
+  let dropping=false, safetyTimer=null, lastPegTick=0, targetIdx=null, isDemo= false;
 
   function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; }
   betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
@@ -1088,6 +1104,7 @@
     return 0;
   }
 
+  // Audio (lose sound identical hook to other games)
   async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.peg?.(); }catch{} }
   async function wallSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.wall?.(); }catch{} }
   async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); window.__bagAudio?.lose?.(); }catch{} }
@@ -1098,18 +1115,18 @@
     let r=Math.random()*total; for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; } return 3;
   }
 
-  function clearRoundState(){ clearTimeout(safetyTimer); safetyTimer=null; dropping=false; dropBtn && (dropBtn.disabled=false); lastPegTick=0; }
+  function clearRoundState(){ clearTimeout(safetyTimer); safetyTimer=null; dropping=false; dropBtn && (dropBtn.disabled=false); lastPegTick=0; targetIdx=null; }
 
   // Aim controls
   function clamp(v,lo,hi){ return Math.min(hi,Math.max(lo,v)); }
   function clientToCanvasX(clientX){ const r=canvas.getBoundingClientRect(); const x=(clientX-r.left)*(canvas.width/r.width); return clamp(x, wallLeft+BALL_R, wallRight-BALL_R); }
-  canvas.addEventListener('pointerdown', e=>{ aiming=true; const nx=clientToCanvasX(e.clientX); aimVX=0; lastAimX=nx; dropX=nx; try{canvas.setPointerCapture(e.pointerId);}catch{} });
-  canvas.addEventListener('pointermove', e=>{ if(!aiming) return; const nx=clientToCanvasX(e.clientX); aimVX=nx-lastAimX; lastAimX=nx; dropX=nx; });
+  canvas.addEventListener('pointerdown', e=>{ aiming=true; const nx=clientToCanvasX(e.clientX); aimVX=0; lastAimX=nx; dropX=nx; lastUserAimMs=Date.now(); try{canvas.setPointerCapture(e.pointerId);}catch{} });
+  canvas.addEventListener('pointermove', e=>{ if(!aiming) return; const nx=clientToCanvasX(e.clientX); aimVX=nx-lastAimX; lastAimX=nx; dropX=nx; lastUserAimMs=Date.now(); });
   canvas.addEventListener('pointerup', ()=>{ aiming=false; });
   addEventListener('keydown', e=>{
     const step=10;
-    if(e.key==='ArrowLeft'){ e.preventDefault(); dropX=clamp(dropX-step, wallLeft+BALL_R, wallRight-BALL_R); aimVX=-step; lastAimX=dropX; }
-    else if(e.key==='ArrowRight'){ e.preventDefault(); dropX=clamp(dropX+step, wallLeft+BALL_R, wallRight-BALL_R); aimVX= step; lastAimX=dropX; }
+    if(e.key==='ArrowLeft'){ e.preventDefault(); dropX=clamp(dropX-step, wallLeft+BALL_R, wallRight-BALL_R); aimVX=-step; lastAimX=dropX; lastUserAimMs=Date.now(); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); dropX=clamp(dropX+step, wallLeft+BALL_R, wallRight-BALL_R); aimVX= step; lastAimX=dropX; lastUserAimMs=Date.now(); }
     else if(e.code==='Space'){ e.preventDefault(); if(!dropping) dropBtn?.click(); }
   });
 
@@ -1122,7 +1139,7 @@
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ if(resText) resText.textContent='Min $1'; return; }
 
-    const isDemo = window.__BAG_FORCE_DEMO === true;
+    isDemo = (window.__BAG_FORCE_DEMO === true);
     window.__PLINKO_LAST_STAKE_BAG__ = 0;
     if (!isDemo){
       const bagToSpend = stakeBag();
@@ -1143,11 +1160,24 @@
 
   function startDrop(){
     dropping=true; if(dropBtn) dropBtn.disabled=true;
-    const startX=clamp(dropX, wallLeft+BALL_R, wallRight-BALL_R);
-    const initVx=(aimVX || (Math.random()-0.5)*0.8)*0.08;
+
+    // Choose a gentle target slot only for DEMO (player-lean); LIVE has no assist.
+    targetIdx = isDemo ? weightedSlotIndex() : null;
+
+    // If the player hasn’t aimed recently, snap the spawn above the target lane (DEMO only).
+    let startX = clamp(dropX, wallLeft + BALL_R, wallRight - BALL_R);
+    const noRecentAim = (Date.now() - lastUserAimMs) > 800;
+    if (isDemo && targetIdx!=null && noRecentAim){
+      startX = clamp(slotCenter(targetIdx), wallLeft + BALL_R, wallRight - BALL_R);
+    }
+
+    // Tiny sideways nudge from last aim motion
+    let initVx = (aimVX || (Math.random()-0.5)*0.8) * 0.08;
     const id=++G.lastBallId;
     G.ball={id,x:startX,y:topBoard-30,vx:initVx,vy:0.3,r:BALL_R,alive:true};
-    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } },9000);
+
+    // Safety: resolve by CURRENT POSITION (nearest slot), never RNG.
+    safetyTimer=setTimeout(()=>{ if(dropping){ const bx = (G.ball && G.ball.x) || startX; resolveByIndex(nearestSlotIndex(bx)); } },9000);
   }
 
   function ensureLoop(){ if(G.rafLive) return; G.rafLive=true;
@@ -1162,9 +1192,19 @@
     for(let s=0;s<SUBSTEPS;s++){
       b.vy+=gy; b.x+=b.vx/SUBSTEPS; b.y+=b.vy/SUBSTEPS;
       b.vx*=fx; b.vy*=fx; b.vx+=(Math.random()-0.5)*0.01;
+
+      // Gentle demo-only “lane bias” near the floor: small pull toward target center
+      if (isDemo && targetIdx!=null && b.y > bottomBoard-130){
+        const t = slotCenter(targetIdx);
+        b.vx += (t - b.x) * 0.0008; // subtle, keeps play fair/visible
+      }
+
+      // walls
       if (b.x-BALL_R<wallLeft){ b.x=wallLeft+BALL_R; b.vx=Math.abs(b.vx)*RESTITUTION; wallSound(); }
       if (b.x+BALL_R>wallRight){ b.x=wallRight-BALL_R; b.vx=-Math.abs(b.vx)*RESTITUTION; wallSound(); }
       if (b.y-BALL_R<0){ b.y=BALL_R; b.vy=0; }
+
+      // pegs
       const now=performance.now();
       for (const p of pegs){
         const dx=b.x-p.x, dy=b.y-p.y, dist=Math.hypot(dx,dy)||0.0001, minD=BALL_R+p.r;
@@ -1179,17 +1219,22 @@
       }
     }
     const slowEnough=Math.abs(b.vy)<0.22;
-    if (b.y>=bottomBoard+56 && (slowEnough || b.y>=bottomBoard+86)) resolveByIndex(boundarySlotIndex(b.x));
-    if (b.y>H+200) resolveByIndex(boundarySlotIndex(b.x));
+    // Result is always determined by WHERE IT LANDS: nearest slot center
+    if (b.y>=bottomBoard+56 && (slowEnough || b.y>=bottomBoard+86)) resolveByIndex(nearestSlotIndex(b.x));
+    if (b.y>H+200) resolveByIndex(nearestSlotIndex(b.x));
   }
 
-  function boundarySlotIndex(x){
+  function nearestSlotIndex(x){
     const clamped=Math.min(wallRight-1, Math.max(wallLeft+1, x));
-    const idx=Math.floor((clamped-wallLeft)/slotWidth);
-    return Math.max(0, Math.min(SLOTS-1, idx));
+    let best=0, bestD=Infinity;
+    for(let i=0;i<SLOTS;i++){
+      const d = Math.abs(clamped - centers[i]);
+      if (d < bestD){ bestD=d; best=i; }
+    }
+    return best;
   }
 
-  // (kept for compatibility; overlay now mirrors the other games)
+  // (compat shim)
   function confettiBurst(){}
 
   function resolveByIndex(idx){
@@ -1202,7 +1247,7 @@
     if (rule === 'L'){
       lastTxt='Scratch'; if(resText) resText.textContent='Scratch (lose)';
       if(stateText) stateText.textContent='Resolved';
-      loseSound();
+      loseSound(); // (1) same lose sound
     } else {
       const mult = Number(rule);
 
@@ -1262,7 +1307,7 @@
     ctx.beginPath(); ctx.moveTo(wallLeft, bottomBoard); ctx.lineTo(wallRight, bottomBoard); ctx.stroke();
     for(let i=1;i<SLOTS;i++){ const x=slotX(i); ctx.beginPath(); ctx.moveTo(x,bottomBoard); ctx.lineTo(x,bottomBoard+50); ctx.stroke(); }
 
-    const centers=Array.from({length:SLOTS},(_,i)=>slotX(i)+slotWidth/2);
+    // Labels
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     for(let i=0;i<SLOTS;i++){
       const rule=PAY_MAP[i]; const txt=rule==='L'?'Scratch':(rule===2?'2×':'1.25×');
@@ -1270,6 +1315,7 @@
       ctx.fillText(txt, centers[i], bottomBoard+72);
     }
 
+    // Aim guide + ghost coin
     if (!dropping){
       const gx = Math.min(wallRight-BALL_R, Math.max(wallLeft+BALL_R, dropX));
       ctx.save(); ctx.setLineDash([6,6]); ctx.strokeStyle='#2a5'; ctx.globalAlpha=.75;
