@@ -261,8 +261,7 @@
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
 
-  // Set your target loudness here (0 = silent, 1 = original level). You can go above 1 to boost.
-  const TARGET_GAIN = 0.10; // was 0.35
+  const TARGET_GAIN = 0.10;
 
   let playing   = false;
   let audioCtx  = null;
@@ -275,13 +274,12 @@
   }
 
   async function ensureGraph(){
-    // Create audio graph on first user gesture
     if (!audioCtx){
       const Ctx = window.AudioContext || window.webkitAudioContext;
       audioCtx = new Ctx();
       source   = audioCtx.createMediaElementSource(audio);
       gainNode = audioCtx.createGain();
-      gainNode.gain.value = TARGET_GAIN; // initial level
+      gainNode.gain.value = TARGET_GAIN;
       source.connect(gainNode).connect(audioCtx.destination);
     }
     if (audioCtx.state !== 'running'){
@@ -291,7 +289,6 @@
 
   function setGain(v){
     if (!gainNode || !audioCtx) return;
-    // Allow a tiny ramp for click-free changes
     const clamped = Math.max(0, Math.min(2, v));
     gainNode.gain.setTargetAtTime(clamped, audioCtx.currentTime, 0.05);
   }
@@ -301,7 +298,6 @@
       await ensureGraph();
       setGain(TARGET_GAIN);
       audio.loop = true;
-      // Keep HTML volume at 1.0; we control loudness via GainNode for reliability
       audio.volume = 1.0;
       await audio.play();
       playing = true;
@@ -325,14 +321,13 @@
 
   btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
 
-  // --- MORE SENSITIVE GESTURE UNLOCK (unchanged) ---
   const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
   let armed = false;
 
   function gestureHandler(){
     const pref = localStorage.getItem(KEY);
     if (pref !== 'off' && !playing){
-      playAudio().catch(()=>{ /* stay armed until a successful play */ });
+      playAudio().catch(()=>{});
     }
   }
   function armGestureUnlock(){
@@ -346,7 +341,6 @@
     GESTURES.forEach(t => document.removeEventListener(t, gestureHandler, {capture:true}));
   }
 
-  // Auto-resume on focus/visibility (unchanged)
   window.addEventListener('focus', () => {
     const pref = localStorage.getItem(KEY);
     if (pref !== 'off' && !playing) playAudio().catch(()=>{});
@@ -366,12 +360,11 @@
   }
   setIcon();
 
-  // Optional: expose a quick way to tweak volume from the console
   window.__bagSetAmbienceGain = (val)=> setGain(val);
 })();
 </script>
 
-<!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub) ===== -->
+<!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub, self-exclusion removed) ===== -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
 <style>
@@ -405,7 +398,6 @@
   <span class="comp-pill"><span class="badge-18">21+</span> <small>Play responsibly</small></span>
   <span class="comp-pill"><small>Crypto-only play. No fiat deposits</small></span>
   <div class="comp-links" style="margin-left:auto;display:flex;gap:14px;">
-    <a id="selfExLink" href="#" rel="noopener">Self-exclude</a>
     <a href="/support" rel="noopener">Support</a>
     <a href="/terms" rel="noopener">Terms</a>
     <a href="/privacy" rel="noopener">Privacy</a>
@@ -458,7 +450,6 @@
     <div class="row" style="margin-top:10px">
       <button id="btnEnter" class="btn comp">Enter Casino</button>
       <button id="btnExit" class="btn comp secondary">Exit</button>
-      <a id="btnSelfExclude" href="#" class="btn comp secondary" style="text-decoration:none">Self-exclude</a>
     </div>
   </div>
 </div>
@@ -466,36 +457,15 @@
 <script>
 (function(){
   const STORAGE_KEY = "bag_age_verified_v1";
-  const SELF_EX_KEY = "bag_self_excluded_v1";
   const GEO_BLOCK_KEY = "bag_geo_override_v1"; // set to 'allow' manually to bypass during dev
 
   const mask = document.getElementById('gateMask');
   const modal = document.getElementById('gateModal');
   const btnEnter = document.getElementById('btnEnter');
   const btnExit  = document.getElementById('btnExit');
-  const btnSE    = document.getElementById('btnSelfExclude');
   const chkAge   = document.getElementById('chkAge');
   const chkTerms = document.getElementById('chkTerms');
   const geoWarn  = document.getElementById('geoWarn');
-  const selfExLinkTop = document.getElementById('selfExLink');
-
-  function setSelfExcluded(){
-    localStorage.setItem(SELF_EX_KEY, '1');
-    alert('Self-exclusion active. Access blocked until you clear it in your browser storage or contact support.');
-    hardBlock();
-  }
-  function isSelfExcluded(){
-    return localStorage.getItem(SELF_EX_KEY) === '1';
-  }
-
-  selfExLinkTop.addEventListener('click', function(e){
-    e.preventDefault();
-    setSelfExcluded();
-  });
-  btnSE.addEventListener('click', function(e){
-    e.preventDefault();
-    setSelfExcluded();
-  });
 
   // GEO stub — wire up window.__BAG_GEO = { country:'US', region:'WA' } server-side if needed
   const blockedStates = ['US-AK','US-HI'];
@@ -523,10 +493,10 @@
     mask.style.display = 'none';
     modal.classList.add('hide');
   }
-  function hardBlock(){
+  function hardBlock(msg){
     showGate();
     geoWarn.classList.remove('hide');
-    geoWarn.textContent = 'Access restricted. Self-exclusion or region block active.';
+    geoWarn.textContent = msg || 'Access restricted.';
     btnEnter.disabled = true;
   }
 
@@ -548,11 +518,6 @@
 
   async function initGate(){
     fillRTP();
-
-    if(isSelfExcluded()){
-      hardBlock();
-      return;
-    }
 
     if(localStorage.getItem(STORAGE_KEY) === '1' || localStorage.getItem(GEO_BLOCK_KEY) === 'allow'){
       hideGate();
