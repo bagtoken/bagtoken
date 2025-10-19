@@ -90,7 +90,7 @@
   .hudbar .pill b{font-weight:800}
   .aim-tip{ margin:-2px 0 8px; opacity:.9 }
 
-  /* Win readout banner (matches Dice/Slots structure) */
+  /* Win readout banner (kept for compatibility; not used when overlay is present) */
   .win-readout{
     position:absolute; inset:auto 0 18%; margin:auto; width:min(82%,520px);
     display:none; justify-content:center; align-items:center;
@@ -119,7 +119,7 @@
     100%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
   }
 
-  /* Lose thud shake (to match the “thud” feel in other games) */
+  /* Lose thud shake — unchanged */
   .thud-shake{ animation:thud 420ms cubic-bezier(.34,.01,.22,1); }
   @keyframes thud{
     0%{ transform:translateY(0) }
@@ -169,7 +169,7 @@
         </button>
       </div>
 
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
@@ -242,7 +242,7 @@
                 <span class="pill">Bet: <b>1</b></span>
                 <span class="pill">Last: <b>—</b></span>
               </div>
-              <!-- Readout banner for wins -->
+              <!-- Readout banner for wins (kept; not used when overlay is active) -->
               <div id="winReadout" class="win-readout" aria-live="polite">
                 <span id="winTitle">YOU WIN!</span>
                 <span class="win-amt" id="winAmt">+0.00 BAG</span>
@@ -298,7 +298,7 @@
     </div>
 </section>
 
-<!-- === AUDIO ENGINE (with SFX compatibility + solid thud) === -->
+<!-- === AUDIO ENGINE (SFX compatible) — LOSE thud unchanged === -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -318,9 +318,7 @@
   async function ensureInteractive(){ const ac=getAC(); if(!ac) return null; if(ac.state!=='running') await tryResume(); return ac; }
   function markInteract(){ lastInteractTs=Date.now(); tryResume(); }
 
-  /* If your casino exposes shared SFX, we’ll use those */
   const shared = ()=> window.__bagSFX || null;
-
   function mkComp(ac){ const c=ac.createDynamicsCompressor(); c.threshold.value=-20; c.knee.value=18; c.ratio.value=3.5; c.attack.value=0.001; c.release.value=0.12; c.connect(MASTER); return c; }
 
   function playPeg(){
@@ -346,11 +344,11 @@
     o.connect(g).connect(comp); o.start(now); o.stop(now+0.16);
   }
 
+  /* ✅ DO NOT TOUCH: LOSE thud */
   function playLoseThud(){
     if(shared()?.loseThud){ shared().loseThud(); return; }
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime;
-    // Layered thud: low sine + short noise + lowpass
     const bass=ac.createOscillator(); bass.type='sine'; bass.frequency.setValueAtTime(120, now); bass.frequency.exponentialRampToValueAtTime(70, now+0.08);
     const gBass=ac.createGain(); gBass.gain.setValueAtTime(0.0001, now); gBass.gain.linearRampToValueAtTime(0.22, now+0.01); gBass.gain.exponentialRampToValueAtTime(0.0001, now+0.18);
     bass.connect(gBass);
@@ -391,13 +389,23 @@
     });
   }
 
+  /* ✅ WIN overlay uses a simple chime just like Dice/Slots */
+  function playChime(){
+    const ac=getAC(); if(!ac || ac.state!=='running') return;
+    const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
+  }
+
   window.__bagAudio = {
     ensureInteractive,
     nudge: playPeg,
     peg: playPeg,
     wall: playWall,
     win: (jp=false)=> jp ? playWinJackpot() : playWinSmall(),
-    lose: playLoseThud
+    lose: playLoseThud,
+    chime: playChime
   };
 
   if(!watchdog){ watchdog=setInterval(()=>{ const ac=AC; if(!ac) return; const active=Date.now()-lastInteractTs<30000; if(active && ac.state==='suspended') tryResume(); },1500); }
@@ -927,7 +935,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (celebrations aligned to Dice/Slots) === -->
+<!-- === PLINKO GAME LOGIC (hooks to shared Dice/Slots celebration) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -935,12 +943,15 @@
   G.rafLive = G.rafLive || false;
   G.lastBallId = G.lastBallId || 0;
 
+  // Track last stake for readout (USD + BAG)
+  window.__PLINKO_LAST_STAKE_USD__ = window.__PLINKO_LAST_STAKE_USD__ || 0;
+  window.__PLINKO_LAST_STAKE_BAG__ = window.__PLINKO_LAST_STAKE_BAG__ || 0;
+
   const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
   const SLOTS = PAY_MAP.length;
 
   const WEIGHTS_LIVE = [14, 21, 14,  2, 14, 21, 14];
   const WEIGHTS_DEMO = [12, 24, 12,  3, 12, 24, 13];
-
   function currentWeights(){ return (window.__BAG_FORCE_DEMO === true) ? WEIGHTS_DEMO : WEIGHTS_LIVE; }
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
@@ -993,14 +1004,14 @@
   function hud(){ if(balLbl) balLbl.textContent=balance.toFixed(2); if(betLbl) betLbl.textContent=stake; if(lastLbl) lastLbl.textContent=lastTxt; if(modeLbl) modeLbl.textContent=(window.__BAG_FORCE_DEMO===true?'Demo':'Live'); }
   betInput?.addEventListener('input', ()=>{ const raw=(betInput.value||'').replace(/[^\d]/g,''); betInput.value = raw || '1'; stake = Math.max(1, parseInt(betInput.value,10)||1); hud(); });
 
-  function stakeUsdEquivalent(){
+  function stakeUsdEq(){
     const qty = Math.max(0, parseFloat(betInput?.value||0));
     const P=window.__PRICES__||{};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
     if (cur==='BAG') return P.bagUsd>0 ? qty * P.bagUsd : 0;
     return P.xrpUsd>0 ? qty * P.xrpUsd : 0;
   }
-  window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEquivalent;
+  window.stakeUsdEquivalent = window.stakeUsdEquivalent || stakeUsdEq;
 
   function stakeBag(){
     const P = window.__PRICES__ || {};
@@ -1068,12 +1079,14 @@
     try{ await window.__bagAudio?.ensureInteractive?.(); }catch{}
     clearRoundState();
 
-    const usd = stakeUsdEquivalent();
+    const usd = stakeUsdEq();
     const passesMin = usd > 0 ? usd >= 1 : (Number(stake) >= 1);
     if (!passesMin){ resText.textContent = 'Min $1'; return; }
 
+    // Remember last stake for the shared WIN overlay readout
+    window.__PLINKO_LAST_STAKE_USD__ = Number(usd)||0;
+
     const isDemo = window.__BAG_FORCE_DEMO === true;
-    window.__PLINKO_LAST_STAKE_BAG__ = 0;
     if (!isDemo){
       const bagToSpend = stakeBag();
       if (!window.__bagSession || !window.__bagSession.active()){
@@ -1086,6 +1099,9 @@
         alert('Insufficient session balance'); return;
       }
       window.__PLINKO_LAST_STAKE_BAG__ = bagToSpend;
+    } else {
+      // for demo, compute BAG equivalent so readout shows +BAG correctly
+      window.__PLINKO_LAST_STAKE_BAG__ = stakeBag();
     }
 
     balance = Math.max(0, balance - stake);
@@ -1167,52 +1183,6 @@
     return Math.max(0, Math.min(SLOTS-1, idx));
   }
 
-  // Central celebration (uses global if present)
-  function celebrateWin(mult, stakeUnits, cur){
-    const P = window.__PRICES__ || {};
-    const bagPerXrp = (P.bagUsd>0 && P.xrpUsd>0) ? (P.xrpUsd / P.bagUsd) : 0;
-    const stakeBag = (cur==='BAG') ? stakeUnits : stakeUnits * bagPerXrp;
-    const winBag = stakeBag * mult;
-    const winUsd = P.bagUsd>0 ? winBag * P.bagUsd : 0;
-
-    // Emit the shared toaster event used by Dice/Slots
-    window.dispatchEvent(new CustomEvent('bag:winToaster', { detail: { game:'plinko', mult, winBag, winUsd } }));
-    window.dispatchEvent(new CustomEvent(mult>=2?'bag:jackpot':'bag:win', { detail:{ game:'plinko', mult, winBag, winUsd } }));
-
-    // If a global celebration handler exists, use it
-    if (window.__bagCelebrations?.showWin){
-      try{ window.__bagCelebrations.showWin({ game:'plinko', mult, bag:winBag, usd:winUsd }); }catch{}
-    }
-
-    // Local banner fallback (kept to ensure parity visually if global is missing)
-    try{
-      if (!winReadout) return;
-      winTitle.textContent = (mult>=2 ? 'JACKPOT!' : 'YOU WIN!');
-      winAmt.textContent = '+0.00 BAG';
-      winUsd.textContent = '(+$0.00)';
-      winReadout.classList.add('show');
-      const pulseClass = (mult>=2 ? 'jp-pulse' : 'win-pulse');
-      boardWrap?.classList.add(pulseClass);
-
-      const t0 = performance.now();
-      const dur = mult>=2 ? 1200 : 900;
-      function tick(t){
-        const k = Math.min(1, (t - t0)/dur);
-        const e = 0.6*k + 0.4*k*k;
-        const val = winBag * e;
-        const usd = winUsd * e;
-        winAmt.textContent = `+${val.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
-        winUsd.textContent = `(+${usd.toLocaleString(undefined,{style:'currency',currency:'USD',currencyDisplay:'symbol',maximumFractionDigits:2})})`;
-        if (k<1) requestAnimationFrame(tick);
-        else setTimeout(()=>{
-          winReadout.classList.remove('show');
-          boardWrap?.classList.remove(pulseClass);
-        }, 520);
-      }
-      requestAnimationFrame(tick);
-    }catch{}
-  }
-
   function thudShake(){
     boardWrap?.classList.remove('thud-shake');
     void boardWrap?.offsetWidth; // reflow to restart animation
@@ -1231,9 +1201,9 @@
 
     if (rule === 'L'){
       lastTxt='Scratch'; resText.textContent='Scratch (lose)'; stateText.textContent='Resolved';
-      wallSound(); // subtle wall hit as it lands
-      loseSound(); // ✅ solid thud
-      thudShake(); // ✅ board shake to match feel of other games
+      wallSound();
+      loseSound();   // ✅ thud unchanged
+      thudShake();   // ✅ board shake
       hud();
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
       return;
@@ -1245,9 +1215,10 @@
     const payoutUnits = Math.floor(stake * mult * 100)/100;
     balance += payoutUnits; hud();
 
+    // Session credit on live
+    let bagStakeForRound = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
     if (window.__BAG_FORCE_DEMO !== true){
-      const bagStake  = window.__PLINKO_LAST_STAKE_BAG__ || stakeBag();
-      const bagPayout = bagStake * mult;
+      const bagPayout = bagStakeForRound * mult;
       try{ window.__bagSession?.credit?.(bagPayout); }catch{}
     }
 
@@ -1260,7 +1231,20 @@
     }
     stateText.textContent='Resolved';
 
-    celebrateWin(mult, stake, cur);
+    // === Shared WIN overlay (exact behavior as Dice/Slots) ===
+    (function(){
+      const P = window.__PRICES__ || {};
+      const sUsd = Number(window.__PLINKO_LAST_STAKE_USD__||0);
+      const gainBag = bagStakeForRound * (mult - 1);
+      try{
+        showWin({
+          message: (mult>=2 ? 'JACKPOT' : 'WIN'),
+          subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${(sUsd||0).toFixed(2)} → $${((sUsd||0)*mult).toFixed(2)}`,
+          duration: (mult>=2 ? 5600 : 4200),
+          sound: true
+        });
+      }catch{}
+    })();
 
     hud();
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
@@ -1519,6 +1503,72 @@
       clearInterval(sesCheck);
     }
   }, 200);
+})();
+</script>
+
+<!-- === Shared celebration overlay (identical to Dice/Slots) === -->
+<canvas id="win-canvas"></canvas>
+<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70);position:fixed;inset:0;z-index:2147483647;backdrop-filter:saturate(120%) blur(2px);">
+  <div id="win-card" style="position:relative;text-align:center;padding:24px 32px;border-radius:16px;background:rgba(0,0,0,.35);box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);transform:scale(.9);opacity:0;animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite;">
+    <button id="win-close" aria-label="Close" style="position:absolute;top:8px;right:10px;border:0;background:transparent;color:#cfeaff;font:700 20px/1 system-ui;cursor:pointer;padding:6px 8px;opacity:.7;">×</button>
+    <div id="win-text" style="font:900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.06em;background:linear-gradient(90deg,#fff,#00ffb2,#fff);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow:0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25);filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));animation:shine 1.6s linear infinite;white-space:nowrap;">WIN</div>
+    <div id="win-sub" style="margin-top:8px;color:#e7f6ff;opacity:.9;font:600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">Nice roll</div>
+  </div>
+</div>
+<style>
+@keyframes win-pop{to{transform:scale(1);opacity:1}}
+@keyframes win-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes shine{0%{background-position:0% 0}100%{background-position:200% 0}}
+</style>
+<script>
+(function(){
+  const overlay=document.getElementById('win-overlay');
+  const canvas=document.getElementById('win-canvas');
+  const ctx=canvas.getContext('2d');
+  const closeBtn=document.getElementById('win-close');
+  const sub=document.getElementById('win-sub');
+  const title=document.getElementById('win-text');
+  let rafId=null, particles=[], start=0, dur=2000;
+
+  function size(){ const dpr=Math.min(devicePixelRatio||1,2);
+    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
+    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  size(); addEventListener('resize', size);
+
+  function fire(n){
+    particles.length=0;
+    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++){
+      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
+    }
+  }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
+  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
+  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
+  function show(){ overlay.style.display='grid'; }
+  function hide(){ overlay.style.display='none'; stop(); }
+
+  closeBtn.addEventListener('click', hide);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
+
+  window.showWin=function(opts={}){ 
+    const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
+    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+    if(sound) try{ window.__bagAudio && window.__bagAudio.chime && window.__bagAudio.chime(); }catch(e){}
+    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
+    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
+  };
 })();
 </script>
 
