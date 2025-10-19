@@ -98,24 +98,6 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
-  /* Floating Spotify button (upper-right, spaced a bit left of sound) */
-  #musicBtn{
-    position:fixed;top:10px;right:78px; /* more space from speaker than before */
-    z-index:2147483647;
-    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
-    border:1px solid #1f3d2b;border-radius:12px;padding:8px 10px;
-    color:#1ed760;font-size:1.2rem;cursor:pointer;opacity:.95;
-    transition:opacity .2s ease, transform .12s ease, box-shadow .2s ease;
-    box-shadow:0 0 0 0 rgba(30,215,96,.0);
-  }
-  #musicBtn:hover{opacity:1;transform:scale(1.06)}
-  #musicBtn.pulse{box-shadow:0 0 0 0 rgba(30,215,96,.35);animation:bagSoftPulse 2.6s ease-in-out infinite}
-  @keyframes bagSoftPulse{
-    0%{box-shadow:0 0 0 0 rgba(30,215,96,.35)}
-    60%{box-shadow:0 0 0 10px rgba(30,215,96,0)}
-    100%{box-shadow:0 0 0 0 rgba(30,215,96,0)}
-  }
-
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -147,9 +129,6 @@
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
-
-<!-- 🎧 Floating Spotify button -->
-<button id="musicBtn" class="pulse" title="Play BAG Casino Playlist">🎧</button>
 
 <div class="wrap">
   <div class="top">
@@ -350,138 +329,6 @@
   setIcon();
 })();
 </script>
-
-<!-- 🔁 Silent token refresh (PKCE refresh_token), does not change layout -->
-<script>
-(async function bagRefreshSpotifyTokenIfNeeded(){
-  try{
-    const issuedAt = Number(localStorage.getItem("bag_spotify_token_time")||0);
-    const ageMs = Date.now() - issuedAt;
-    if (ageMs < 45*60*1000) return; // refresh after ~45 min
-    const refresh = localStorage.getItem("bag_spotify_refresh");
-    if (!refresh) return;
-    const CLIENT_ID = "3cc3b47a65c54b91be924b3875cefea5"; // your Spotify app Client ID
-    const body = new URLSearchParams({ client_id: CLIENT_ID, grant_type: "refresh_token", refresh_token: refresh });
-    const r = await fetch("https://accounts.spotify.com/api/token", {
-      method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body
-    });
-    if (!r.ok) return;
-    const d = await r.json();
-    if (d.access_token){
-      localStorage.setItem("bag_spotify_token", d.access_token);
-      localStorage.setItem("bag_spotify_token_time", String(Date.now()));
-      if (d.refresh_token) localStorage.setItem("bag_spotify_refresh", d.refresh_token);
-    }
-  }catch(e){ /* no-op */ }
-})();
-</script>
-
-<!-- 🎧 Spotify button — instant in-page playback (Premium) -->
-<script>
-(function(){
-  const BTN = document.getElementById('musicBtn');
-  if (!BTN) return;
-
-  // === Config ===
-  const STORAGE_TOKEN = 'bag_spotify_token';      // OAuth token (Premium)
-  const STORAGE_URL   = 'bag_playlist_url';       // optional custom playlist
-  const DEFAULT_PLAYLIST = '7TNBTNkwAXbH2zWT81wAXb'; // your $BAG Casino playlist ID
-  const FALLBACK_URL  = `https://open.spotify.com/playlist/${DEFAULT_PLAYLIST}`;
-
-  // grab any ?playlist param once
-  (function resolveQuery(){
-    try {
-      const u = new URL(location.href);
-      const p = u.searchParams.get('playlist');
-      if (p) localStorage.setItem(STORAGE_URL, p);
-    } catch(e){}
-  })();
-
-  function extractId(ref){
-    if (!ref) return null;
-    if (/^[A-Za-z0-9]{22}$/.test(ref)) return ref;
-    try{
-      const u = new URL(ref);
-      const m = u.pathname.match(/playlist\/([A-Za-z0-9]{22})/);
-      if (m) return m[1];
-    }catch(e){}
-    return null;
-  }
-
-  const savedRef = localStorage.getItem(STORAGE_URL) || DEFAULT_PLAYLIST;
-  const playlistId = extractId(savedRef) || DEFAULT_PLAYLIST;
-
-  // === SDK ===
-  let sdkLoaded = false, player = null, deviceId = null;
-  function loadSDK(){
-    return new Promise((res, rej)=>{
-      if (sdkLoaded) return res();
-      const s = document.createElement('script');
-      s.src = 'https://sdk.scdn.co/spotify-player.js';
-      s.onload = ()=>{sdkLoaded = true;res();};
-      s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
-
-  window.onSpotifyWebPlaybackSDKReady = async function(){
-    if (player) return;
-    player = new Spotify.Player({
-      name: '$BAG Casino Player',
-      volume: 0.85,
-      getOAuthToken: cb => cb(localStorage.getItem(STORAGE_TOKEN) || '')
-    });
-    player.addListener('ready', ({ device_id }) => deviceId = device_id);
-    player.addListener('authentication_error', e => console.warn('Spotify auth error', e.message));
-    player.addListener('account_error', e => console.warn('Spotify account error', e.message));
-    try { await player.connect(); } catch(e){ console.warn('connect failed', e); }
-  };
-
-  async function waitDevice(){
-    const start = Date.now();
-    while(!deviceId && Date.now() - start < 5000){
-      await new Promise(r=>setTimeout(r,100));
-    }
-    if (!deviceId) throw new Error('DEVICE_TIMEOUT');
-  }
-
-  async function playSpotify(){
-    const token = localStorage.getItem(STORAGE_TOKEN) || '';
-    if (!token) throw new Error('NO_TOKEN');
-    await loadSDK();
-    await waitDevice();
-
-    const headers = {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-
-    // force device transfer & play
-    await fetch('https://api.spotify.com/v1/me/player', {
-      method: 'PUT', headers, body: JSON.stringify({device_ids:[deviceId],play:true})
-    });
-
-    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
-      method: 'PUT', headers,
-      body: JSON.stringify({context_uri:`spotify:playlist:${playlistId}`,position_ms:0})
-    });
-  }
-
-  BTN.addEventListener('click', async ()=>{
-    BTN.classList.remove('pulse');
-    BTN.title = 'BAG Casino Playlist — Playing';
-    try {
-      await playSpotify(); // ✅ starts instantly in-page
-    } catch(e){
-      console.warn('Spotify autoplay failed, fallback to app', e.message);
-      const start = Date.now();
-      window.location.href = FALLBACK_URL;
-      setTimeout(()=>{if (Date.now()-start<1500)window.open(FALLBACK_URL,'_blank');},1100);
-    }
-  });
-})();
-</script>
-
 
 </body>
 </html>
