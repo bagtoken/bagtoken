@@ -98,6 +98,25 @@
   #soundToggle:hover{opacity:1;transform:scale(1.06)}
   #soundToggle:active{transform:scale(.98)}
 
+  /* NEW: Floating Spotify button (upper-right, beside sound) */
+  #musicBtn{
+    position:fixed;top:10px;right:58px; /* sits just left of the speaker */
+    z-index:2147483647;
+    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
+    border:1px solid #1f3d2b;border-radius:12px;padding:8px 10px;
+    color:#1ed760;font-size:1.2rem;cursor:pointer;opacity:.95;
+    transition:opacity .2s ease, transform .12s ease, box-shadow .2s ease;
+    box-shadow:0 0 0 0 rgba(30,215,96,.0);
+  }
+  #musicBtn:hover{opacity:1;transform:scale(1.06)}
+  /* Optional gentle attention pulse until first click */
+  #musicBtn.pulse{box-shadow:0 0 0 0 rgba(30,215,96,.35);animation:bagSoftPulse 2.6s ease-in-out infinite}
+  @keyframes bagSoftPulse{
+    0%{box-shadow:0 0 0 0 rgba(30,215,96,.35)}
+    60%{box-shadow:0 0 0 10px rgba(30,215,96,0)}
+    100%{box-shadow:0 0 0 0 rgba(30,215,96,0)}
+  }
+
   .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
   .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
 
@@ -129,6 +148,9 @@
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
+
+<!-- 🎧 NEW: Floating Spotify button -->
+<button id="musicBtn" class="pulse" title="Open BAG Casino Playlist (Spotify)">🎧</button>
 
 <div class="wrap">
   <div class="top">
@@ -327,6 +349,51 @@
     armGestureUnlock();
   }
   setIcon();
+})();
+</script>
+
+<!-- 🎧 Spotify button behavior (app-first, holiday-ready) -->
+<script>
+(function(){
+  const BTN = document.getElementById('musicBtn');
+  if (!BTN) return;
+
+  const STORAGE_KEY = 'bag_playlist_url';
+  const DEFAULT_URL = 'https://spotify.link/H2zWT81wAXb'; // current official 80s playlist
+
+  // Allow quick holiday swaps via ?playlist=<URL or 22-char ID>
+  function resolveFromQuery(){
+    try{
+      const u = new URL(location.href);
+      const p = u.searchParams.get('playlist');
+      if (!p) return null;
+      // accept raw ID or full URL
+      const idLike = /^[0-9A-Za-z]{22}$/.test(p);
+      return idLike ? ('https://open.spotify.com/playlist/' + p) : p;
+    }catch(e){ return null; }
+  }
+
+  // Initial resolve order: query → localStorage → default
+  const q = resolveFromQuery();
+  if (q) localStorage.setItem(STORAGE_KEY, q);
+  const PLAYLIST_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_URL;
+
+  function openSpotify(url){
+    const start = Date.now();
+    // Most mobile browsers deep-link to app from these URLs; still provide fallback
+    window.location.href = url;
+    setTimeout(()=>{
+      if (Date.now() - start < 1600){
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    }, 1200);
+  }
+
+  BTN.addEventListener('click', ()=>{
+    openSpotify(PLAYLIST_URL);
+    BTN.classList.remove('pulse'); // stop gentle pulse after first click
+    BTN.title = 'BAG Casino Playlist — Playing';
+  });
 })();
 </script>
 
