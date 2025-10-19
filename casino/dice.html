@@ -956,12 +956,12 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper -->
+<!-- Practice Mode Wrapper (force DEMO by default; Live only with ?live=1) -->
 <script>
 (function(){
+  // Live only if you explicitly add ?live=1 to the URL
   const qs = new URLSearchParams(location.search);
-  const pathDemo = location.pathname.toLowerCase().includes('/demo');
-  const liveSession = window.__bagSession;
+  const forceLive = qs.get('live') === '1';
 
   const $ = (s)=>document.querySelector(s);
   const statusEl  = $('#sessionStatus');
@@ -972,85 +972,66 @@
 
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
-  function getBal(){ try{ const n = Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n) && n>0 ? n : START_BAG; }catch{ return START_BAG; } }
+
+  function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
   function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Math.floor(v)))) }catch{} }
-  if (localStorage.getItem(DEMO_KEY) == null) setBal(START_BAG);
+  if(localStorage.getItem(DEMO_KEY)==null) setBal(START_BAG);
 
   function fmt(n){
-    if (!Number.isFinite(n)) return '—';
-    if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4});
-    if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6});
-    if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8});
-    return n.toLocaleString(undefined, {maximumFractionDigits:10});
+    if(!Number.isFinite(n)) return '—';
+    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
+    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
+    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
+    return n.toLocaleString(undefined,{maximumFractionDigits:10});
   }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  function renderDemoSession(){
-    const bag = getBal();
-    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
-    if (statusEl){
-      statusEl.innerHTML =
-        'Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
-        (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
+  function renderDemo(){
+    const bag=getBal();
+    const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
+    if(statusEl){
+      statusEl.innerHTML='Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
-    if (startBtn) startBtn.style.display = 'inline-block';
-    if (topUpBtn) topUpBtn.style.display = 'none';
-    if (endBtn)   endBtn.style.display   = 'none';
+    if(startBtn) startBtn.style.display='inline-block';
+    if(topUpBtn) topUpBtn.style.display='none';
+    if(endBtn)   endBtn.style.display='none';
   }
 
-  function toast(msg){
-    try{
-      let t = document.getElementById('bag-demo-toast');
-      if (!t){
-        t = document.createElement('div');
-        t.id = 'bag-demo-toast';
-        t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:#0b2217;color:#eaf3ed;border:1px solid #1b4a2f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 13px system-ui;z-index:2147483647';
-        document.body.appendChild(t);
-      }
-      t.textContent = msg;
-      t.style.display = 'block';
-      clearTimeout(window.__bagDemoToastTimer);
-      window.__bagDemoToastTimer = setTimeout(()=>{ t.style.display='none'; }, 2200);
-    }catch{}
-  }
-
-  const demoSession = {
-    active: () => true,
-    get: () => ({ addr:'demo', bag: getBal(), ts: Date.now() }),
-    set: () => {},
-    spend(bag){ const b=getBal(); if(!(bag>0) || b<bag) return false; setBal(b-bag); renderDemoSession(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemoSession(); return true; }
+  // Simple demo-only session
+  const demoSession={
+    active:()=>true,
+    get:()=>({addr:'demo',bag:getBal(),ts:Date.now()}),
+    set:()=>{},
+    spend(bag){ const b=getBal(); if(!(bag>0)||b<bag) return false; setBal(b-bag); renderDemo(); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemo(); return true; }
   };
 
   function enableDemo(){
-    window.__BAG_FORCE_DEMO = true;
+    // Freeze demo flag so other scripts can’t flip it later
+    try{
+      Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true});
+    }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
-    renderDemoSession();
-    if (connectEl) connectEl.style.opacity = '0.9';
+    renderDemo();
+    if (connectEl) connectEl.style.opacity='0.9';
   }
+
   function enableLive(){
-    window.__BAG_FORCE_DEMO = false;
-    if (liveSession) window.__bagSession = liveSession;
+    window.__BAG_FORCE_DEMO=false;
+    // If you already include /js/bag-session.js, it sets window.__bagSession
+    // No UI changes here; your existing Start/Top Up/End buttons remain
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    toast('Wallet connected — Live mode enabled');
   }
 
-  const demoWanted = pathDemo || qs.get('demo') === '1' || window.__BAG_FORCE_DEMO === true;
-  if (demoWanted) enableDemo();
+  // --- Mode selection: DEMO default; Live only via ?live=1 ---
+  if (forceLive) enableLive(); else enableDemo();
 
-  window.addEventListener('bag:pricesUpdated', ()=>{ if (window.__BAG_FORCE_DEMO) renderDemoSession(); });
+  // Keep the demo balance display in sync with price updates
+  window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  window.addEventListener('bag:diceResult', (ev)=>{
-    if (!window.__BAG_FORCE_DEMO) return;
-    const d = ev?.detail || {};
-    if (d.outcome?.includes('jackpot'))   toast('JACKPOT 2× paid — connect when ready to play live');
-    else if (d.outcome?.includes('win'))  toast('WIN paid — connect when ready to play live');
-    else if (d.outcome?.includes('lose')) toast('Round lost — connect when ready to play live');
-    else                                   toast('Point set — roll again');
-  });
-
-  window.addEventListener('bag:walletConnected', enableLive);
-  window.addEventListener('bag:walletDisconnected', enableDemo);
+  // Do NOT auto-switch on wallet connect; Live must be explicit (?live=1)
+  // (No bag:walletConnected / bag:walletDisconnected listeners here)
 })();
 </script>
 
