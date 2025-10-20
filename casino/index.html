@@ -257,74 +257,118 @@
 </footer>
 </div>
 
-<!-- 🔊 ZERO-friction audio toggle (no WebAudio; pointerdown = instant) -->
+<!-- 🔊 Instant, audible audio (promote to WebAudio within same tap) -->
 <script>
 (function(){
   const btn   = document.getElementById('soundToggle');
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
-  const TARGET_VOLUME = 0.10; // 0..1
 
-  let playing = false;
+  // Make it clearly audible to confirm signal; tune after testing.
+  const TARGET_GAIN = 1.0; // 0..2 (WebAudio)
+  const TARGET_VOL  = 1.0; // 0..1 (HTMLAudio)
 
-  // Ensure inline playback + eager buffer
+  let playing   = false;
+  let audioCtx  = null, source = null, gainNode = null;
+
+  // Ensure inline & eager buffering
   audio.setAttribute('playsinline','');
   audio.preload = 'auto';
-  audio.volume = TARGET_VOLUME;
+  audio.loop = true;
 
   function setIcon(){
     btn.textContent = playing ? '🔊' : '🔇';
     btn.setAttribute('aria-pressed', String(playing));
   }
 
-  function tryPlaySync(){
-    // On iOS, calling play() synchronously during a user gesture is key
+  function attachGraphInGesture(){
     try{
+      if (!audioCtx){
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new Ctx();
+      }
+      if (!source){
+        source = audioCtx.createMediaElementSource(audio);
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value = TARGET_GAIN;
+        source.connect(gainNode).connect(audioCtx.destination);
+      }
+      if (audioCtx.state === 'suspended'){
+        audioCtx.resume().catch(()=>{});
+      }
+    }catch(e){
+      console.warn('Audio graph attach failed:', e);
+    }
+  }
+
+  function playNow(){
+    try{
+      // Maximize the chance of audible output (bypass silent switch via WebAudio)
+      audio.muted  = false;
+      audio.volume = TARGET_VOL;
+
+      // Start playback immediately in the gesture
       const p = audio.play();
-      if (p && typeof p.then === 'function') p.catch(()=>{ /* ignore block; user can tap again */ });
+      if (p && typeof p.then === 'function') p.catch(err => console.warn('audio.play() rejected:', err));
+
+      // Promote to WebAudio graph in the SAME gesture
+      attachGraphInGesture();
+
       playing = true;
       setIcon();
       localStorage.setItem(KEY,'on');
     }catch(e){
-      // ignored
+      console.warn('playNow error:', e);
     }
   }
 
   function pauseNow(){
-    try { audio.pause(); } catch(e){}
+    try{ audio.pause(); }catch(e){}
     playing = false;
     setIcon();
     localStorage.setItem(KEY,'off');
   }
 
-  // Button: use pointerdown for fastest response (fires before click)
+  // Use pointerdown for fastest response (before click)
   btn.addEventListener('pointerdown', function(ev){
     ev.preventDefault();
-    playing ? pauseNow() : tryPlaySync();
+    playing ? pauseNow() : playNow();
   }, {passive:false});
 
-  // One-time page-wide unlock: if user taps anywhere first and pref was ON, start immediately
+  // One-time page-wide unlock (if user taps anywhere first)
   function unlockOnce(){
     if (localStorage.getItem(KEY) !== 'off' && !playing){
-      tryPlaySync();
+      playNow();
     }
   }
   window.addEventListener('pointerdown', unlockOnce, {capture:true, once:true});
 
-  // Resume quickly if user left it ON
+  // Soft resume on focus/visibility if user left it ON
   function softResume(){
     if (localStorage.getItem(KEY) !== 'off' && !playing){
-      tryPlaySync();
+      playNow();
     }
   }
   window.addEventListener('focus', softResume);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) softResume(); });
 
-  // Boost first-start reliability: if file isn’t buffered yet, kick a quick load on first interaction
-  document.addEventListener('pointerdown', () => { try { audio.load(); } catch(e){} }, {once:true, capture:true});
+  // Diagnostics to console (optional)
+  audio.addEventListener('error', () => {
+    const m = audio.error;
+    console.warn('Audio element error', m ? m.code : '(unknown)');
+  });
+  audio.addEventListener('waiting', () => console.log('Audio waiting/buffering…'));
+  audio.addEventListener('playing', () => console.log('Audio playing'));
+  audio.addEventListener('canplay', () => console.log('Audio canplay'));
 
-  // Initial icon + honor saved pref without auto-starting
+  // Initialize icon
   setIcon();
+
+  // Console helpers for quick tuning:
+  window.__bagAudio = {
+    setHTMLVolume(v){ audio.volume = Math.max(0, Math.min(1, v)); },
+    setGain(v){ if (gainNode){ gainNode.gain.value = Math.max(0, Math.min(2, v)); } }
+  };
 })();
 </script>
 
