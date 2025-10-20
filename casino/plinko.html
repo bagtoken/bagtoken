@@ -16,6 +16,7 @@
     --red:#e25b5b;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
+  body{overflow-x:hidden;} /* prevent horizontal drift/scroll on any device */
   img{display:block;max-width:100%;height:auto}
   button,input{font-size:16px}
 
@@ -39,8 +40,38 @@
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
     border-top:1px solid #131313;border-bottom:1px solid #131313}
-  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
-  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
+
+  /* === LAYOUT: centered on desktop, full-width on mobile === */
+  .game-wrap{
+    max-width:1200px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns: minmax(0, 760px) minmax(0, 420px); /* L panel (board) + R rules */
+    gap:22px;
+    align-items:start;
+    justify-content:center; /* center the grid as a whole */
+  }
+  @media (max-width:1100px){
+    .game-wrap{ grid-template-columns: 1fr; } /* mobile/tablet: stack */
+  }
+
+  /* Center the left game panel and the board inside it on desktop */
+  #bagPlinko{
+    justify-self:center;      /* center the left column within the grid */
+    width:100%;
+    max-width:860px;
+  }
+  #bagPlinko .stage{
+    width:100%;
+    display:flex;
+    justify-content:center;   /* center the canvas area */
+  }
+  #bagPlinko .canvas-wrap{
+    margin-left:auto;
+    margin-right:auto;
+    max-width:720px;          /* your intended board max width */
+    width:100%;
+  }
 
   .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
   .mock{padding:16px}
@@ -56,7 +87,7 @@
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
 
-  /* ✅ Payouts grid (matches other games) */
+  /* ✅ Payouts grid */
   .payout-grid{display:grid;gap:4px}
   .payout-grid .row{display:flex;justify-content:space-between;align-items:baseline}
   .payout-grid .lab{color:#cfd6cf}
@@ -96,7 +127,6 @@
   .hudbar .pill b{font-weight:800}
   .aim-tip{ margin:-2px 0 8px; opacity:.9 }
 
-  /* Win readout banner (kept for compatibility; not used when overlay is present) */
   .win-readout{
     position:absolute; inset:auto 0 18%; margin:auto; width:min(82%,520px);
     display:none; justify-content:center; align-items:center;
@@ -111,7 +141,6 @@
   .win-amt{ margin-left:8px; color:#ffd700; font-weight:900 }
   .win-sub{ margin-left:10px; opacity:.85; font-weight:700; font-size:.95rem }
 
-  /* Board pulse and jackpot pulse */
   .canvas-wrap.win-pulse{ animation:winPulse 900ms ease; }
   .canvas-wrap.jp-pulse{ animation:jackpotPulse 1200ms ease; }
   @keyframes winPulse{
@@ -125,7 +154,6 @@
     100%{box-shadow:0 10px 30px rgba(0,0,0,.28), 0 0 0 0 rgba(255,215,0,.0), inset 0 1px 0 rgba(255,255,255,.04)}
   }
 
-  /* Lose thud shake — unchanged */
   .thud-shake{ animation:thud 420ms cubic-bezier(.34,.01,.22,1); }
   @keyframes thud{
     0%{ transform:translateY(0) }
@@ -139,6 +167,32 @@
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
+
+  @media (hover:hover) and (pointer:fine){
+    #boardWrap canvas{ cursor: crosshair; }
+    #boardWrap{ -webkit-user-select:none; user-select:none; }
+  }
+
+  /* === Footer: ensure proper wrapping on all screens === */
+  footer.footer, .footer{
+    display:block;
+    width:100%;
+    max-width:1100px;
+    margin:24px auto 20px;
+    padding:16px 12px;
+    text-align:center;
+    line-height:1.6;
+    white-space:normal;
+    word-break:normal;
+  }
+  .footer a{
+    display:inline-block;
+    margin:0 6px;
+    color:#e0c66f;
+    text-decoration:none;
+    font-weight:700;
+  }
+  .footer a:hover{ text-decoration:underline; }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -257,7 +311,7 @@
                 <span class="pill">Bet: <b>1</b></span>
                 <span class="pill">Last: <b>—</b></span>
               </div>
-              <!-- Readout banner for wins (kept; not used when overlay is active) -->
+              <!-- Readout banner for wins (kept) -->
               <div id="winReadout" class="win-readout" aria-live="polite">
                 <span id="winTitle">YOU WIN!</span>
                 <span class="win-amt" id="winAmt">+0.00 BAG</span>
@@ -404,7 +458,6 @@
     });
   }
 
-  /* ✅ WIN overlay uses a simple chime just like Dice/Slots */
   function playChime(){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const now=ac.currentTime;
@@ -434,7 +487,7 @@
 })();
 </script>
 
-<!-- === WALLET CONNECT (unchanged) === -->
+<!-- === WALLET CONNECT === -->
 <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
@@ -535,7 +588,7 @@
 })();
 </script>
 
-<!-- === TAB SESSION (unchanged) === -->
+<!-- === TAB SESSION === -->
 <script>
 (function(){
   const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
@@ -747,7 +800,6 @@
 
   function updateLiveLine(){
     if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
-    // ✅ XRP shown with exactly 2 decimals everywhere the live price is displayed
     if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
       ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
       : '—';
@@ -859,7 +911,7 @@
 })();
 </script>
 
-<!-- === PRICES/STAKE SYNC (unchanged aside from payouts calc) === -->
+<!-- === PRICES/STAKE SYNC === -->
 <script>
 (function(){
   const MIN_USD = 1;
@@ -949,7 +1001,7 @@
   }
   function usdFmt(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-  /* ✅ Nicely formatted payouts (like other games) */
+  /* ✅ Nicely formatted payouts */
   function updatePayouts(){
     try{
       if (!payoutBox) return;
@@ -1030,7 +1082,7 @@
 })();
 </script>
 
-<!-- === QUICK AMOUNT BUTTONS (USD only; with MAX; XRP/BAG units sync via live price) === -->
+<!-- === QUICK AMOUNT BUTTONS (USD only) === -->
 <script>
 (function(){
   const MAX_USD = 2000;
@@ -1077,7 +1129,7 @@
     const units = document.getElementById('demoBet');
     if (!usd || !units) return;
 
-    // USD quick row (with MAX) — the only quick picks
+    // USD quick row (with MAX)
     if (!document.getElementById('usdQuickRow')){
       const usdWrap = usd.parentElement && usd.parentElement.parentElement;
       if (usdWrap){
@@ -1091,7 +1143,7 @@
           }
           dispatchInput(usd); // triggers sync & payout update
 
-          // Keep units in sync using live price & proper quantization
+          // Keep units in sync
           if (px > 0){
             const rawUnits = parseFloat(usd.value) / px;
             const qUnits = quantizeUnits(ccy, rawUnits);
@@ -1103,7 +1155,7 @@
       }
     }
 
-    // If any accidental unit-quick row exists from prior renders, remove it to honor spec
+    // Remove any rogue unit-quick row if present
     const rogue = document.getElementById('unitQuickRow');
     if (rogue) rogue.remove();
   }
@@ -1116,7 +1168,45 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (unchanged visuals) === -->
+<!-- === PC HiDPI scaler (keeps mobile untouched) === -->
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const WORLD_W = 640, WORLD_H = 880;
+
+  function isDesktop(){ return matchMedia('(hover:hover) and (pointer:fine)').matches; }
+
+  function resizeHiDPI(){
+    if (!isDesktop()) {
+      // Mobile: original world space; no transforms
+      canvas.width  = WORLD_W;
+      canvas.height = WORLD_H;
+      ctx.setTransform(1,0,0,1,0,0);
+      return;
+    }
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    // Backing store matches CSS*DPR for razor sharpness
+    canvas.width  = Math.max(1, Math.round(r.width  * dpr));
+    canvas.height = Math.max(1, Math.round(r.height * dpr));
+
+    // Scale the 640x880 world to the CSS box, then to device pixels
+    const sx = (r.width  / WORLD_W) * dpr;
+    const sy = (r.height / WORLD_H) * dpr;
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+  }
+
+  const ro = new ResizeObserver(resizeHiDPI);
+  ro.observe(canvas);
+  window.addEventListener('orientationchange', resizeHiDPI);
+  window.addEventListener('load', resizeHiDPI);
+  resizeHiDPI();
+})();
+</script>
+
+<!-- === PLINKO GAME LOGIC === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1136,8 +1226,7 @@
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
-  // widen the board walls outward a tiny bit so the coin doesn't get trapped at the sides
-  const WALL_WIDEN = 6; // pixels per side
+  const WALL_WIDEN = 6; // pixels per side (PC trap fix)
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -1247,10 +1336,16 @@
   }
 
   function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+
+  /* ✅ Accurate pointer → world mapping (PC or mobile) */
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
-    const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, (24 - WALL_WIDEN) + 8, (640 - 24 + WALL_WIDEN) - 8);
+    // Map CSS pixels to world (640) regardless of DPR or transforms
+    const worldX = (clientX - r.left) * (640 / r.width);
+
+    const L = (24 - WALL_WIDEN) + 8;
+    const R = (640 - 24 + WALL_WIDEN) - 8;
+    return Math.min(R, Math.max(L, worldX));
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
@@ -1558,7 +1653,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (unchanged) -->
+<!-- Practice Mode Wrapper -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1596,6 +1691,7 @@
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
+    if (topUpBtn) startUpBtn = 'none';
     if (topUpBtn) topUpBtn.style.display = 'none';
     if (endBtn)   endBtn.style.display   = 'none';
   }
@@ -1722,7 +1818,7 @@
 })();
 </script>
 
-<!-- === Shared celebration overlay (identical to Dice/Slots) === -->
+<!-- === Shared celebration overlay === -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70);position:fixed;inset:0;z-index:2147483647;backdrop-filter:saturate(120%) blur(2px);">
   <div id="win-card" style="position:relative;text-align:center;padding:24px 32px;border-radius:16px;background:rgba(0,0,0,.35);box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);transform:scale(.9);opacity:0;animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite;">
@@ -1788,11 +1884,11 @@
 })();
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
-  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+<footer class="footer">
+  © 2025 $BAG Protocol · getthebag.io · Powered by $XRP
   <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
-  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener">𝕏 @getthebag_io</a> |
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">Telegram @getthebag_io</a>
 </footer>
 
 </body>
