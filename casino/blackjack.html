@@ -30,6 +30,7 @@
   .hud{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px}
   .hud .panel{background:var(--panel);border:1px solid #0f2b1e;border-radius:12px;box-shadow:0 8px 20px var(--shadow);padding:10px 14px;display:flex;align-items:center;gap:10px}
   .hud .panel strong{color:var(--gold)}
+  .hud .mode{background:#0a1e15;border:1px solid #244330;border-radius:999px;color:#cfe6d8;padding:6px 10px}
 
   .currency-toggle{display:flex;background:#0a1c13;border:1px solid #143a25;border-radius:10px;overflow:hidden}
   .currency-toggle button{border:0;background:transparent;color:var(--muted);padding:8px 12px;cursor:pointer}
@@ -69,7 +70,7 @@
   .split-ribbon{position:absolute;top:0;left:50%;transform:translate(-50%,-40%);background:#153e2a;border:1px solid #256648;padding:2px 8px;border-radius:8px;font-size:12px;color:var(--gold)}
   .paytable{margin-top:10px;font-size:12px;color:var(--muted);display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 
-  /* Small screens: tighten spacing slightly */
+  /* Small screens */
   @media (max-width:480px){
     .wrap{padding:14px}
     .hud .panel{padding:8px 10px}
@@ -78,6 +79,7 @@
   }
 </style>
 
+<!-- Session helper (shared with other games) -->
 <script src="/js/bag-session.js"></script>
 </head>
 <body>
@@ -89,6 +91,7 @@
   </header>
 
   <div class="hud">
+    <div class="mode" id="modePill">Mode: DEMO</div>
     <div class="panel"><strong>Balance</strong><span id="balance">—</span></div>
     <div class="panel betbox">
       <strong>Bet</strong><div class="bet"><span id="bet">0</span> <span id="unit">BAG</span></div>
@@ -148,9 +151,37 @@
 <div id="toast" class="toast"></div>
 
 <script>
+/* ========= Pricing, session, and HUD ========= */
+const PRICES = Object.assign({ xrpUsd: 0.50, bagUsd: 0.0001 }, (window.__PRICES__||window.PRICES||{}));
+const DEMO_KEY='__bag_demo_blackjack_v1';
+
+const demoTag = document.getElementById('demoTag');
+const modePill = document.getElementById('modePill');
+function inDemo(){ return window.__BAG_FORCE_DEMO===true || !window.__bagSession || !window.__bagSession.active || !window.__bagSession.active(); }
+function getDemoBal(){ try{ const v=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(v)&&v>0?v:1000 }catch{return 1000} }
+function setDemoBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0,Number(v)||0))); }catch{} }
+if(localStorage.getItem(DEMO_KEY)==null) setDemoBal(1000);
+function renderMode(){ const live=!inDemo(); demoTag.style.display=live?'none':'inline-block'; modePill.textContent = 'Mode: ' + (live?'LIVE':'DEMO'); }
+
+function sessionBalanceBAG(){
+  if(inDemo()) return getDemoBal();
+  try{ const s = window.__bagSession && window.__bagSession.get && window.__bagSession.get(); return s && Number(s.bag)>0 ? Number(s.bag) : 0; }catch{ return 0; }
+}
+function spendBAG(amount){
+  if(!(amount>0)) return true;
+  if(inDemo()){
+    const b=getDemoBal(); if(b<amount) return false; setDemoBal(b-amount); return true;
+  }
+  try{ return !!(window.__bagSession && __bagSession.spend && __bagSession.spend(amount)); }catch{ return false; }
+}
+function creditBAG(amount){
+  if(!(amount>0)) return;
+  if(inDemo()){ setDemoBal(getDemoBal()+amount); return; }
+  try{ if(window.__bagSession && __bagSession.credit) __bagSession.credit(amount); }catch{}
+}
+
 /* ========= Config ========= */
 const CONFIG = {
-  startBalance: 1000,
   blackjackPayout: 2.0,    // Natural blackjack
   regularWinPayout: 1.25,  // Standard win
   pushPayout: 1.0,         // Refund
@@ -161,15 +192,12 @@ const CONFIG = {
 };
 
 /* ========= Demo flag / currency ========= */
-const FORCE_DEMO = (window.__BAG_FORCE_DEMO === true); // respect external flag; no forced-true
-const demoTag = document.getElementById('demoTag');
-if (FORCE_DEMO) demoTag.style.display = 'inline-block';
-
+renderMode();
 let currency = 'BAG';
 
 /* ========= State ========= */
-let balance = CONFIG.startBalance;
-let bet = 0;
+let balanceBAG = sessionBalanceBAG(); // always store in BAG units
+let betDisplay = 0;                   // shown in selected currency units
 let shoe = [];
 let playerHands = [];   // array of hands if split
 let dealerHand = [];
@@ -195,36 +223,59 @@ const btnSplit = document.getElementById('split');
 const btnNew = document.getElementById('newHand');
 const btnClearBet = document.getElementById('clearBet');
 
-/* ========= Audio (inline beeps) ========= */
-const sfx = {
-  chip: () => beep(280, 0.05),
-  deal: () => beep(520, 0.06),
-  win:  () => beep(760, 0.09),
-  lose: () => beep(180, 0.12)
-};
-function beep(freq=440, dur=0.08){
+/* ========= Audio (autoplay-safe) ========= */
+let _ac=null;
+function ac(){ if(_ac && _ac.state!=='closed') return _ac; const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return null; _ac=new AC(); return _ac; }
+async function resumeAudio(){ const c=ac(); if(c && c.state==='suspended'){ try{ await c.resume(); }catch{} } }
+function beep(freq=440, dur=0.08, type='triangle', gain=0.05){
+  const c=ac(); if(!c || c.state!=='running') return;
   try{
-    const ctx=new (window.AudioContext||window.webkitAudioContext)();
-    const o=ctx.createOscillator(), g=ctx.createGain();
-    o.type='triangle';o.frequency.value=freq;g.gain.value=0.06;o.connect(g);g.connect(ctx.destination);
-    o.start();setTimeout(()=>{o.stop();ctx.close()}, dur*1000);
-  }catch(e){}
+    const o=c.createOscillator(), g=c.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=gain; o.connect(g); g.connect(c.destination);
+    o.start(); setTimeout(()=>{ try{o.stop();o.disconnect();g.disconnect();}catch{} }, dur*1000);
+  }catch{}
+}
+const sfx = {
+  chip: () => beep(280, 0.05,'square',0.04),
+  deal: () => beep(520, 0.06,'sawtooth',0.04),
+  win:  () => [520,700,880].forEach((f,i)=>setTimeout(()=>beep(f,0.07,'sine',0.06),i*90)),
+  lose: () => [220,180,140].forEach((f,i)=>setTimeout(()=>beep(f,0.09,'sine',0.05),i*120))
+};
+['click','touchstart','keydown'].forEach(ev=>addEventListener(ev, ()=>resumeAudio(), {passive:true, once:true}));
+
+/* ========= Currency helpers ========= */
+function displayToUSD(v){
+  if(currency==='BAG') return PRICES.bagUsd>0 ? v*PRICES.bagUsd : 0;
+  if(currency==='XRP') return PRICES.xrpUsd>0 ? v*PRICES.xrpUsd : 0;
+  return 0;
+}
+function usdToBAG(usd){ return PRICES.bagUsd>0 ? (usd/PRICES.bagUsd) : 0; }
+function displayToBAG(v){ return usdToBAG(displayToUSD(v)); }
+function fmtAmountDisplay(v){
+  const n = Number(v||0);
+  return (currency==='BAG' ? n.toFixed(2) : n.toFixed(6));
+}
+function fmtBalance(){
+  if(currency==='BAG') return `${balanceBAG.toFixed(2)} BAG`;
+  // convert BAG to XRP for HUD
+  const {bagUsd,xrpUsd}=PRICES;
+  if(bagUsd>0 && xrpUsd>0){
+    const xrp = balanceBAG*(bagUsd/xrpUsd);
+    return `${xrp.toFixed(6)} XRP`;
+  }
+  return '—';
 }
 
 /* ========= Utilities ========= */
 function shuffle(a){
-  for(let i=a.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];
-  }
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]; }
   return a;
 }
 function buildShoe(){
   const ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   const suits=['♠','♥','♦','♣'];
   const tmp=[];
-  for(let d=0; d<CONFIG.decks; d++){
-    for(const r of ranks) for(const s of suits) tmp.push({r,s});
-  }
+  for(let d=0; d<CONFIG.decks; d++) for(const r of ranks) for(const s of suits) tmp.push({r,s});
   shoe = shuffle(tmp);
 }
 function handValue(hand){
@@ -259,10 +310,8 @@ function showToast(txt){
 /* ========= Rendering ========= */
 function clearHands(){
   elDealerHand.querySelectorAll('.card').forEach(n=>n.remove());
-  // keep the first player hand container; we'll rebuild containers separately
   const first = document.getElementById('playerHand0');
   if(first) first.querySelectorAll('.card').forEach(c=>c.remove());
-  // remove any extra hands
   [...elPlayerArea.querySelectorAll('.hand')].forEach((n,i)=>{ if(i>0) n.remove(); });
 }
 function renderCard(node, card, facedown=false){
@@ -302,8 +351,9 @@ function updateTotals(){
   });
 }
 function updateHUD(){
-  elBalance.textContent = `${balance.toFixed(2)} ${currency}`;
-  elBet.textContent = bet.toFixed(2);
+  balanceBAG = sessionBalanceBAG(); // refresh from session/demo
+  elBalance.textContent = fmtBalance();
+  elBet.textContent = fmtAmountDisplay(betDisplay);
   elUnit.textContent = currency;
 }
 
@@ -318,9 +368,15 @@ function resetRoundUI(){
   elMessage.innerHTML = 'Place your bet then Deal';
 }
 function startRound(){
-  if(bet<=0 || bet>balance){ showToast('Invalid bet'); return; }
+  // Spend the displayed bet (converted to BAG) up front
+  const bagStake = displayToBAG(betDisplay);
+  if(!(betDisplay>0) || !(bagStake>0)){ showToast('Invalid bet'); return; }
+  if(!spendBAG(bagStake)){ showToast('Insufficient balance'); return; }
+
+  updateHUD(); // reflect spend
   hasSplit=false; activeHandIndex=0;
-  balance -= bet; updateHUD();
+  roundOver=false;
+
   clearHands();
   dealerHand=[]; playerHands=[[]];
   ensurePlayerHandsContainers();
@@ -330,19 +386,20 @@ function startRound(){
   dealTo(playerHands[0], p0);
   dealTo(dealerHand, elDealerHand);
   dealTo(playerHands[0], p0);
-  dealTo(dealerHand, elDealerHand, true); // facedown
+  dealTo(dealerHand, elDealerHand, true);
   updateTotals();
 
   btnDeal.disabled = true;
 
-  // Check naturals
+  // naturals
   const pBJ = isBlackjack(playerHands[0]);
 
   if(pBJ){
-    // Peek & settle
     revealDealerHole();
     const dBJ = isBlackjack(dealerHand);
-    settleSingleHand(playerHands[0], dBJ ? 'push-bj' : 'blackjack');
+    const deltaBag = settleSingleHandBAG(playerHands[0], dBJ ? 'push-bj' : 'blackjack');
+    if(deltaBag>0) creditBAG(deltaBag);
+    updateHUD();
     endRoundControls();
     return;
   }
@@ -350,12 +407,12 @@ function startRound(){
   // Enable actions
   btnHit.disabled = false;
   btnStand.disabled = false;
-  btnDouble.disabled = !CONFIG.allowDouble;
-  btnSplit.disabled = !canSplit(playerHands[0]);
+  btnDouble.disabled = CONFIG.allowDouble;
+  btnSplit.disabled = canSplit(playerHands[0]);
   elMessage.innerHTML = 'Play your hand';
 }
 function dealTo(targetHand, targetNode, facedown=false){
-  if (shoe.length === 0) buildShoe();
+  if(shoe.length === 0) buildShoe();
   const c = shoe.pop(); targetHand.push(c); sfx.deal();
   renderCard(targetNode, c, facedown);
 }
@@ -376,12 +433,12 @@ btnHit.addEventListener('click', ()=>{
   const node=document.getElementById('playerHand'+idx);
   dealTo(playerHands[idx], node);
   updateTotals();
-  const v=handValue(playerHands[idx]).total;
-  // disallow double after any hit
+  // after any hit, double is no longer allowed on this hand
   btnDouble.disabled = true;
+  const v=handValue(playerHands[idx]).total;
   if(v>21){
     markMessage(`Hand ${playerHands.length>1?idx+1:''} busts`);
-    nextHandOrDealer();
+    nextHandOrDealer(true);
   }
 });
 
@@ -392,11 +449,11 @@ btnStand.addEventListener('click', ()=>{
 
 btnDouble.addEventListener('click', ()=>{
   const idx=activeHandIndex;
-  // Only on first action with 2 cards
   if(playerHands[idx].length!==2){ showToast('Double only on first turn'); return; }
-  if(balance<bet){ showToast('Insufficient balance'); return; }
-  balance -= bet; updateHUD();
-  // mark doubled on this hand
+  // spend an extra stake immediately (same as initial)
+  const bagStake = displayToBAG(betDisplay);
+  if(!spendBAG(bagStake)){ showToast('Insufficient balance'); return; }
+  updateHUD();
   playerHands[idx]._doubled = true;
 
   markMessage(`Hand ${playerHands.length>1?idx+1:''} doubled`);
@@ -410,8 +467,9 @@ btnDouble.addEventListener('click', ()=>{
 btnSplit.addEventListener('click', ()=>{
   const h0=playerHands[0];
   if(!canSplit(h0)) return;
-  if(balance<bet) { showToast('Insufficient balance'); return; }
-  balance -= bet; updateHUD();
+  const bagStake = displayToBAG(betDisplay);
+  if(!spendBAG(bagStake)){ showToast('Insufficient balance'); return; }
+  updateHUD();
   hasSplit=true;
 
   // split into two hands
@@ -431,7 +489,7 @@ btnSplit.addEventListener('click', ()=>{
   activeHandIndex = 0;
   highlightActive();
   btnSplit.disabled = true; // one split only
-  // Double still allowed on each split hand's first action (balance permitting)
+  btnDouble.disabled = false; // still allowed on first action of each split hand
 });
 
 btnNew.addEventListener('click', ()=>{
@@ -449,29 +507,16 @@ function highlightActive(){
     }
   }
 }
-function nextHandOrDealer(forceStand=false){
-  // disable Double for subsequent actions
-  btnDouble.disabled = true;
-
+function nextHandOrDealer(/* stoodOrBusted */){
+  // Double only available at first action of a hand; when moving, re-evaluate for next hand
   if(playerHands.length>1){
-    // advance if current hand complete or player chose to stand/double
-    if(forceStand || handValue(playerHands[activeHandIndex]).total>=21){
-      activeHandIndex++;
-      if(activeHandIndex<playerHands.length){
-        highlightActive();
-        // re-enable Double on next hand if it still has 2 cards and balance allows
-        btnDouble.disabled = !(CONFIG.allowDouble && playerHands[activeHandIndex].length===2 && balance>=bet);
-        updateTotals();
-        return;
-      }
-    } else {
-      // shouldn't hit here because stand sets forceStand=true
-      activeHandIndex++;
-      if(activeHandIndex<playerHands.length){
-        highlightActive();
-        btnDouble.disabled = !(CONFIG.allowDouble && playerHands[activeHandIndex].length===2 && balance>=bet);
-        return;
-      }
+    activeHandIndex++;
+    if(activeHandIndex<playerHands.length){
+      highlightActive();
+      btnDouble.disabled = !(CONFIG.allowDouble && playerHands[activeHandIndex].length===2);
+      btnHit.disabled = false;
+      btnStand.disabled = false;
+      return;
     }
   }
   dealerPlayAndSettle();
@@ -486,59 +531,58 @@ function dealerPlayAndSettle(){
   }
   updateTotals();
 
+  let totalBagDelta = 0;
   if(playerHands.length===1){
-    const delta = settleSingleHand(playerHands[0]);
-    balance += delta;         // <<< apply single-hand delta
-    updateHUD();
+    totalBagDelta += settleSingleHandBAG(playerHands[0]);
   }else{
-    let totalDelta=0;
-    playerHands.forEach((h,idx)=>{
-      totalDelta += settleSingleHand(h, undefined, idx);
-    });
-    balance += totalDelta;
-    updateHUD();
+    playerHands.forEach((h,idx)=>{ totalBagDelta += settleSingleHandBAG(h, undefined, idx); });
   }
+  if(totalBagDelta>0) creditBAG(totalBagDelta);
+  updateHUD();
   endRoundControls();
 }
-function settleSingleHand(hand, override, splitIndex){
-  let delta = 0;
+function settleSingleHandBAG(hand, override, splitIndex){
+  // returns positive BAG delta to credit (stake+win for wins, stake for push, 0 on losses)
+  let bagDelta = 0;
   const pv = handValue(hand).total;
   const dv = handValue(dealerHand).total;
+
+  const stakeBagBase = displayToBAG(betDisplay);
+  const doubledFlag = hand._doubled === true;
+  const stakeBag = stakeBagBase * (doubledFlag ? 2 : 1);
 
   if(pv>21){
     markMessage(`Hand ${playerHands.length>1?(splitIndex+1)+' ':''}busts — dealer wins`);
     sfx.lose();
-    return delta; // lost stake already deducted at deal/double
+    return 0;
   }
   if(override==='blackjack'){
-    const win = bet * CONFIG.blackjackPayout;
-    delta += bet + win;                // return stake + win
+    const win = stakeBagBase * CONFIG.blackjackPayout;
+    bagDelta += stakeBagBase + win; // return stake + win
     markMessage('Blackjack. Paid 2×');
     sfx.win();
-    return delta;
+    return bagDelta;
   }
   if(override==='push-bj'){
-    delta += bet;                      // return stake
+    bagDelta += stakeBagBase;
     markMessage('Both have Blackjack — push');
-    return delta;
+    return bagDelta;
   }
 
-  const doubledFlag = hand._doubled === true;
-  const stake = bet * (doubledFlag ? 2 : 1);
-
   if(dv>21){
-    const win = stake * CONFIG.regularWinPayout;
-    delta += stake + win;
+    const win = stakeBag * CONFIG.regularWinPayout;
+    bagDelta += stakeBag + win;
     markMessage(`Dealer busts — you win ${CONFIG.regularWinPayout.toFixed(2)}×`);
     sfx.win();
   }else if(pv>dv){
-    if(isBlackjack(hand)){ // (edge case: split A,10 is not natural; we’ll still treat > dv)
-      const win = stake * CONFIG.blackjackPayout;
-      delta += stake + win;
+    if(isBlackjack(hand) && !doubledFlag && !hasSplit){
+      // natural already handled earlier; treat as regular if reached here
+      const win = stakeBag * CONFIG.blackjackPayout;
+      bagDelta += stakeBag + win;
       markMessage(`Blackjack — paid 2×`);
     }else{
-      const win = stake * CONFIG.regularWinPayout;
-      delta += stake + win;
+      const win = stakeBag * CONFIG.regularWinPayout;
+      bagDelta += stakeBag + win;
       markMessage(`You win ${CONFIG.regularWinPayout.toFixed(2)}×`);
     }
     sfx.win();
@@ -546,10 +590,10 @@ function settleSingleHand(hand, override, splitIndex){
     markMessage('Dealer wins');
     sfx.lose();
   }else{
-    delta += stake * CONFIG.pushPayout;
+    bagDelta += stakeBag * CONFIG.pushPayout; // return stake
     markMessage('Push — bet returned');
   }
-  return delta;
+  return bagDelta;
 }
 function endRoundControls(){
   btnHit.disabled = true;
@@ -569,11 +613,13 @@ function markMessage(t){
 /* ========= Betting & Currency ========= */
 document.querySelectorAll('.chip').forEach(ch=>{
   ch.addEventListener('click', ()=>{
-    // chips allowed if round not started (Deal enabled)
     if(roundOver===true || btnDeal.disabled===false){
       const v=Number(ch.dataset.v)||0;
-      if(balance>=bet+v){
-        bet += v;
+      // Check if user can afford this added amount in current currency
+      const neededBag = displayToBAG(betDisplay + v) - displayToBAG(betDisplay);
+      const afford = sessionBalanceBAG() >= neededBag;
+      if(afford){
+        betDisplay += v;
         updateHUD();
         sfx.chip();
       }else{
@@ -586,7 +632,7 @@ document.querySelectorAll('.chip').forEach(ch=>{
 });
 btnClearBet.addEventListener('click', ()=>{
   if(btnDeal.disabled) { showToast('Bet locked for this round'); return; }
-  bet=0; updateHUD();
+  betDisplay=0; updateHUD();
 });
 document.getElementById('ccyToggle').addEventListener('click', (e)=>{
   if(e.target.tagName!=='BUTTON') return;
@@ -599,8 +645,8 @@ document.getElementById('ccyToggle').addEventListener('click', (e)=>{
 /* ========= Init ========= */
 function init(){
   buildShoe();
-  balance = CONFIG.startBalance;
-  bet = 0;
+  balanceBAG = sessionBalanceBAG();
+  betDisplay = 0;
   updateHUD();
   resetRoundUI();
 }
@@ -608,6 +654,10 @@ init();
 
 /* ========= Reshuffle guard ========= */
 setInterval(()=>{ if(shoe.length<15){ buildShoe(); showToast('Shuffled'); } }, 1500);
+
+// Live session/price updates (optional events your shell can dispatch)
+addEventListener('bag:pricesUpdated', ()=>updateHUD(), {passive:true});
+addEventListener('bag:sessionUpdated', ()=>{ renderMode(); updateHUD(); }, {passive:true});
 </script>
 </body>
 </html>
