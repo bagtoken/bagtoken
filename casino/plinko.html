@@ -139,6 +139,12 @@
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
+
+  /* --- PC-only niceties; mobile untouched --- */
+  @media (hover:hover) and (pointer:fine){
+    #boardWrap canvas{ cursor: crosshair; }
+    #boardWrap{ -webkit-user-select:none; user-select:none; }
+  }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -1116,7 +1122,45 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (unchanged visuals) === -->
+<!-- === PC HiDPI scaler (keeps mobile untouched) === -->
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const WORLD_W = 640, WORLD_H = 880;
+
+  function isDesktop(){ return matchMedia('(hover:hover) and (pointer:fine)').matches; }
+
+  function resizeHiDPI(){
+    if (!isDesktop()) {
+      // Mobile: original world space; no transforms
+      canvas.width  = WORLD_W;
+      canvas.height = WORLD_H;
+      ctx.setTransform(1,0,0,1,0,0);
+      return;
+    }
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    // Backing store matches CSS*DPR for razor sharpness
+    canvas.width  = Math.max(1, Math.round(r.width  * dpr));
+    canvas.height = Math.max(1, Math.round(r.height * dpr));
+
+    // Scale the 640x880 world to the CSS box, then to device pixels
+    const sx = (r.width  / WORLD_W) * dpr;
+    const sy = (r.height / WORLD_H) * dpr;
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+  }
+
+  const ro = new ResizeObserver(resizeHiDPI);
+  ro.observe(canvas);
+  window.addEventListener('orientationchange', resizeHiDPI);
+  window.addEventListener('load', resizeHiDPI);
+  resizeHiDPI();
+})();
+</script>
+
+<!-- === PLINKO GAME LOGIC (unchanged visuals; PC mapping fixed) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1136,8 +1180,7 @@
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
-  // widen the board walls outward a tiny bit so the coin doesn't get trapped at the sides
-  const WALL_WIDEN = 6; // pixels per side
+  const WALL_WIDEN = 6; // pixels per side (PC trap fix)
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -1247,10 +1290,16 @@
   }
 
   function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+
+  /* ✅ Accurate pointer → world mapping (PC or mobile) */
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
-    const x = (clientX - r.left) * (canvas.width / r.width);
-    return clamp(x, (24 - WALL_WIDEN) + 8, (640 - 24 + WALL_WIDEN) - 8);
+    // Map CSS pixels to world (640) regardless of DPR or transforms
+    const worldX = (clientX - r.left) * (640 / r.width);
+
+    const L = (24 - WALL_WIDEN) + 8;
+    const R = (640 - 24 + WALL_WIDEN) - 8;
+    return Math.min(R, Math.max(L, worldX));
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
