@@ -2,313 +2,505 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>$BAG Roulette — Demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>$BAG Roulette — Demo & Live Ready</title>
 
 <style>
   :root{
-    --bg:#020703; --felt:#0c2319; --felt2:#0f2a1f; --gold:#ffd700; --fg:#f5f7f4; --muted:#aeb7af;
-    --red:#cf2b2b; --black:#141414; --green:#1b7b3a; --ring:#7c4f2a; --wood:#5a371d; --shadow:rgba(0,0,0,.35);
+    --bg:#020703; --fg:#f5f7f4; --muted:#aeb7af;
+    --felt:#0c2319; --felt2:#0f2a1f; --line:#1e3a2b; --shadow:rgba(0,0,0,.35);
+    --gold:#ffe175; --red:#cf2b2b; --black:#141414; --green:#1b7b3a;
+
+    /* set by JS for responsive wheel */
+    --ball-r: 160px;           /* ball orbital radius */
+    --pocket-h: 26px;          /* pocket height */
+    --marker-origin: 200px;    /* pointer arm origin */
+    --wheel-font: 14px;        /* pocket number font size */
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
 
-  .wrap{max-width:1100px;margin:24px auto;padding:16px}
-  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between;margin-bottom:16px}
-  .brand{font-weight:700;letter-spacing:.5px}
-  .pill{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--felt),var(--felt2));border:1px solid #1e3a2b;border-radius:10px;padding:8px 12px}
-  .pill select,.pill input{background:transparent;color:var(--fg);border:none;outline:none}
-  .pill input{width:110px}
-  .row{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
-  @media (max-width:980px){.row{grid-template-columns:1fr}}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0 10px}
+  .brand{font-weight:900;letter-spacing:.4px}
+  .tag{font-size:12px;border:1px solid var(--line);padding:2px 8px;border-radius:999px;color:var(--muted);background:#08120c}
+  .tag.demo{color:#16301f;background:#0a2215;border-color:#1c4729}
+  .hudbar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+  .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+  .pill b{color:#fff}
 
-  /* Wheel card */
-  .card{background:linear-gradient(180deg,var(--felt),var(--felt2));border:1px solid #1e3a2b;border-radius:16px;box-shadow:0 20px 50px var(--shadow);padding:16px}
-  .wheelBox{position:relative;aspect-ratio:1;border-radius:14px;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.05),transparent 55%)}
+  .row{display:grid;grid-template-columns:1.12fr .88fr;gap:18px}
+  @media (max-width:980px){ .row{grid-template-columns:1fr} }
+
+  .card{background:linear-gradient(180deg,var(--felt),var(--felt2));border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 50px var(--shadow);padding:14px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px}
+  button{cursor:pointer;border:1px solid #30523f;background:linear-gradient(180deg,#214034,#10251c);
+         color:var(--fg);padding:10px 14px;border-radius:10px;font-weight:800;letter-spacing:.3px;min-height:44px}
+  button.primary{background:linear-gradient(180deg,#3c7d52,#1f4d33);border-color:#4aa368;box-shadow:0 10px 28px rgba(0,0,0,.25)}
+  button:disabled{opacity:.6;cursor:not-allowed}
+
+  /* Wheel */
+  .wheelBox{position:relative;aspect-ratio:1;border-radius:14px;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.08),transparent 55%);overflow:hidden}
   .wood{position:absolute;inset:6% 6% 6% 6%;border-radius:50%;
     background:
-      radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), rgba(0,0,0,.3) 70%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), rgba(0,0,0,.35) 70%),
       conic-gradient(from 0deg, #744923, #5e3a1b 25%, #744923 50%, #5e3a1b 75%, #744923 100%);
     box-shadow:inset 0 0 0 12px #b8844f, inset 0 0 0 20px #8d5b2e;
   }
-  .pocketRing{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;}
-  .pockets{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;transform:rotate(0deg);transition:transform 4.2s cubic-bezier(.15,.9,.15,1);}
-  .pocket{position:absolute;left:50%;top:50%;transform-origin:0% 0%;
-          width:46%;height:26px;margin-top:-13px;border-radius:4px 999px 999px 4px;
-          display:flex;align-items:center;justify-content:flex-end;
-          padding-right:10px;font-weight:700;font-size:14px;color:#fff;
-          border:1px solid #0007; text-shadow:0 1px 2px #000c;}
+  .pockets{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;transform:rotate(0deg);transition:transform 4.2s cubic-bezier(.15,.9,.15,1)}
+  .pocket{
+    position:absolute;left:50%;top:50%;transform-origin:0% 0%;
+    width:46%;height:var(--pocket-h);margin-top:calc(var(--pocket-h)*-0.5);border-radius:4px 999px 999px 4px;
+    display:flex;align-items:center;justify-content:flex-end;padding-right:10px;font-weight:900;
+    font-size:var(--wheel-font);color:#fff;border:1px solid #0007; text-shadow:0 1px 2px #000c; user-select:none
+  }
   .pocket.green{background:var(--green)}
   .pocket.red{background:var(--red)}
   .pocket.black{background:var(--black)}
   .spindle{position:absolute;inset:27% 27% 27% 27%;border-radius:50%;
-    background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 70%);box-shadow:0 8px 16px var(--shadow);}
-  .ball{position:absolute;width:18px;height:18px;background:#eee;border-radius:50%;box-shadow:0 1px 4px #000a;
-        left:50%;top:50%;margin:-9px;transform-origin:0 0;transform:rotate(0deg) translate(170px);}
-  .marker{position:absolute;left:50%;top:50%;width:3px;height:22px;background:#d2a253;transform-origin:50% 210px;border-radius:2px}
+    background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 70%);box-shadow:0 8px 16px var(--shadow)}
+  .ball{
+    position:absolute;width:18px;height:18px;background:#eee;border-radius:50%;box-shadow:0 1px 4px #000a;
+    left:50%;top:50%;margin:-9px;transform-origin:0 0;transform:rotate(0deg) translate(var(--ball-r));
+    transition:transform 4.2s cubic-bezier(.15,.9,.15,1)
+  }
+  .marker{position:absolute;left:50%;top:50%;width:3px;height:22px;background:#d2a253;transform-origin:50% var(--marker-origin);border-radius:2px}
 
-  /* Controls and log */
-  .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
-  button{cursor:pointer;border:1px solid #30523f;background:linear-gradient(180deg,#214034,#10251c);
-         color:var(--fg);padding:10px 14px;border-radius:10px;font-weight:600;letter-spacing:.3px}
-  button.primary{background:linear-gradient(180deg,#3c7d52,#1f4d33);border-color:#4aa368;box-shadow:0 10px 28px rgba(0,0,0,.25)}
-  button:disabled{opacity:.6;cursor:not-allowed}
-  .ledger{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:var(--muted);word-break:break-all}
-  .stat{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;color:var(--muted)}
-  .bets{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:10px}
-  .bets .panel{background:#0b1f16;border:1px solid #1b3b2c;border-radius:10px;padding:10px}
-  .bets label{display:flex;align-items:center;justify-content:space-between;margin:6px 0;color:#e7efe9}
-  .bets select,.bets input{width:120px;background:#092016;color:#e7efe9;border:1px solid #274a39;border-radius:8px;padding:6px}
-  .win{color:#2fbf6b;font-weight:700}
-  .lose{color:#e25b5b;font-weight:700}
+  .stat{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:12px}
+
+  /* Betting board */
+  .board{display:grid;gap:6px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+  .chip{width:40px;height:40px;border-radius:50%;border:2px solid #d8b800;background:radial-gradient(circle,#ffe688,#ffd700);color:#1b1500;font-weight:900;display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,.35)}
+  .chip.active{outline:2px solid #fff}
+  .money{font-variant-numeric:tabular-nums}
+  .grid{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:6px
+  }
+  @media (min-width:760px){
+    .grid{grid-template-columns:repeat(5,1fr)}
+  }
+  .cell{
+    background:#0b1f16;border:1px solid #1b3b2c;border-radius:10px;padding:8px;min-height:46px;display:grid;place-items:center;
+    font-weight:800;cursor:pointer;user-select:none;position:relative
+  }
+  .cell[data-kind="n"].red{color:#ffb3b3}
+  .cell[data-kind="n"].black{color:#ddd}
+  .cell[data-kind="n"].green{color:#bff3c8}
+  .badge{position:absolute;bottom:4px;right:6px;background:#0e2a1c;border:1px solid #204a32;border-radius:6px;padding:2px 6px;font-size:11px;color:#ddefe5}
+  .legend{font-size:12px;color:var(--muted);margin-top:8px}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1b13;border:1px solid #173524;color:#e7efe9;
+         padding:8px 12px;border-radius:10px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;z-index:10}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  .win{color:#2fbf6b;font-weight:900}
+  .lose{color:#e25b5b;font-weight:900}
 </style>
 
-  <script src="/js/bag-session.js"></script>
-
+<!-- Optional: session helper (matches your other games) -->
+<script src="/js/bag-session.js"></script>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">🎰 <strong>$BAG Roulette</strong> — demo</div>
-    <div class="pill">
-      <span>Play in</span>
-      <select id="token">
-        <option value="BAG">$BAG</option>
+    <div class="brand">🎰 <strong>$BAG Roulette</strong></div>
+    <span id="demoTag" class="tag demo" style="display:none">Demo</span>
+  </header>
+
+  <!-- HUD pills to match your other pages -->
+  <div class="hudbar">
+    <span class="pill" id="modePill">Mode: <b>DEMO</b></span>
+    <span class="pill" id="balPill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+    <span class="pill">Bet: <b class="money" id="betPill">—</b></span>
+    <span class="pill">Last: <b id="lastPill">—</b></span>
+    <span class="pill">
+      Currency:
+      <select id="ccyToggle" style="background:#0a1e15;color:#e7efe9;border:1px solid #244330;border-radius:8px;padding:4px 8px;font:inherit">
+        <option value="BAG">BAG</option>
         <option value="XRP">XRP</option>
       </select>
-      <span>Stake</span>
-      <input id="stake" type="number" min="1" step="1" value="10" />
-    </div>
-  </header>
+    </span>
+  </div>
 
   <div class="row">
     <!-- Wheel -->
     <section class="card">
       <div id="wheel" class="wheelBox">
         <div class="wood"></div>
-        <div id="ring" class="pockets"></div>
+        <div id="ring" class="pockets" aria-label="Roulette wheel pockets"></div>
         <div class="spindle"></div>
-        <div id="ball" class="ball"></div>
+        <div id="ball" class="ball" aria-hidden="true"></div>
         <div class="marker"></div>
       </div>
       <div class="controls">
         <button id="spin" class="primary">SPIN</button>
-        <button id="clear">CLEAR BETS</button>
-        <div id="result"></div>
+        <button id="undo">UNDO</button>
+        <button id="clear">CLEAR</button>
+        <div id="result" role="status" aria-live="polite"></div>
       </div>
       <div class="stat">
         <div>Round <span id="round">0</span></div>
         <div>Last <span id="last">—</span></div>
         <div>Seed <span id="seed">—</span></div>
+        <div>Total stake <span id="stakeTotal" class="money">0</span> <span id="stakeUnit">BAG</span></div>
       </div>
     </section>
 
-    <!-- Bets -->
+    <!-- Betting board -->
     <aside class="card">
-      <h3 style="margin:4px 0 10px">Place bets</h3>
-      <div class="bets">
-        <div class="panel">
-          <label>Straight (35:1)
-            <input id="straight" placeholder="e.g. 17 or 00" />
-          </label>
-          <label>Red / Black (1:1)
-            <select id="rb">
-              <option value="">none</option>
-              <option value="RED">RED</option>
-              <option value="BLACK">BLACK</option>
-            </select>
-          </label>
-          <label>Even / Odd (1:1)
-            <select id="eo">
-              <option value="">none</option>
-              <option value="EVEN">EVEN</option>
-              <option value="ODD">ODD</option>
-            </select>
-          </label>
-          <label>High / Low (1:1)
-            <select id="hl">
-              <option value="">none</option>
-              <option value="LOW">1–18</option>
-              <option value="HIGH">19–36</option>
-            </select>
-          </label>
-        </div>
-        <div class="panel">
-          <label>Dozen (2:1)
-            <select id="dozen">
-              <option value="">none</option>
-              <option value="D1">1–12</option>
-              <option value="D2">13–24</option>
-              <option value="D3">25–36</option>
-            </select>
-          </label>
-          <label>Column (2:1)
-            <select id="col">
-              <option value="">none</option>
-              <option value="C1">Column 1</option>
-              <option value="C2">Column 2</option>
-              <option value="C3">Column 3</option>
-            </select>
-          </label>
-          <div style="margin-top:10px;font-size:12px;color:var(--muted)">
-            Multiple bet types allowed per spin. Stake applies per selection.
-          </div>
+      <div class="bar">
+        <strong>Chip</strong>
+        <div id="chips" style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="chip" data-v="1">1</div>
+          <div class="chip" data-v="5">5</div>
+          <div class="chip" data-v="10">10</div>
+          <div class="chip" data-v="25">25</div>
+          <div class="chip" data-v="100">100</div>
         </div>
       </div>
-      <div class="ledger" style="margin-top:12px" id="log"></div>
+
+      <div class="board">
+        <!-- Simple, fast board = numbers + common outside bets -->
+        <div class="grid" id="grid"></div>
+        <div class="grid" id="outsides">
+          <div class="cell" data-kind="rb" data-val="RED">RED</div>
+          <div class="cell" data-kind="rb" data-val="BLACK">BLACK</div>
+          <div class="cell" data-kind="eo" data-val="EVEN">EVEN</div>
+          <div class="cell" data-kind="eo" data-val="ODD">ODD</div>
+          <div class="cell" data-kind="hl" data-val="LOW">1–18</div>
+          <div class="cell" data-kind="hl" data-val="HIGH">19–36</div>
+          <div class="cell" data-kind="dozen" data-val="D1">1–12</div>
+          <div class="cell" data-kind="dozen" data-val="D2">13–24</div>
+          <div class="cell" data-kind="dozen" data-val="D3">25–36</div>
+          <div class="cell" data-kind="col" data-val="C1">Column 1</div>
+          <div class="cell" data-kind="col" data-val="C2">Column 2</div>
+          <div class="cell" data-kind="col" data-val="C3">Column 3</div>
+        </div>
+        <div class="legend">Tap cells to add chips. UNDO removes the last chip you placed. CLEAR wipes all bets.</div>
+      </div>
+      <div id="log" style="margin-top:10px;font:12px ui-monospace;color:var(--muted)"></div>
     </aside>
   </div>
 </div>
 
+<div id="toast" class="toast"></div>
+
 <script>
-/* ---------- CONFIG ---------- */
-// Accurate American double-zero sequence, clockwise starting at 00
+/* =========================
+   DATA & WHEEL GEOMETRY
+========================= */
+// American double-zero sequence, clockwise starting at 00
 const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,
                28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
 
-// Pocket colors
 const COLOR = {};
 ["00",0].forEach(n=>COLOR[n]="green");
 [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
 [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
 
-// Column lookup (1..36 only)
 const COLUMN = {};
 [1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
 [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
 [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
 
-/* ---------- BUILD WHEEL UI ---------- */
 const ring = document.getElementById('ring');
 const DEG = 360 / WHEEL.length;
-WHEEL.forEach((val, i)=>{
-  const el = document.createElement('div');
-  el.className = `pocket ${COLOR[val]||'black'}`;
-  el.style.transform = `rotate(${i*DEG}deg) translate(-2%, -50%)`;
+WHEEL.forEach((val,i)=>{
+  const el=document.createElement('div');
+  el.className = 'pocket ' + (COLOR[val]||'black');
+  el.style.transform = \`rotate(\${i*DEG}deg) translate(-2%, -50%)\`;
   el.textContent = String(val);
   ring.appendChild(el);
 });
 
-/* ---------- STATE ---------- */
-let spinning = false, round = 0;
-
-/* ---------- HELPERS ---------- */
-const $ = id => document.getElementById(id);
-function randUint32(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
-function pickIndex(seed){
-  // Derive a fair index from the seed using mulhi trick
-  const n = WHEEL.length;
-  return Math.floor((seed / 0x100000000) * n);
+// Responsive wheel sizing
+const wheelBox = document.getElementById('wheel');
+const ballEl = document.getElementById('ball');
+function sizeWheel(){
+  const r=wheelBox.getBoundingClientRect();
+  const size=Math.min(r.width,r.height);
+  const ballR = size*0.39;
+  const pocketH = Math.max(20, Math.round(size*0.04));
+  const markerOrigin = Math.round(size*0.40);
+  const font = Math.max(10, Math.round(size*0.028));
+  wheelBox.style.setProperty('--ball-r', ballR+'px');
+  wheelBox.style.setProperty('--pocket-h', pocketH+'px');
+  wheelBox.style.setProperty('--marker-origin', markerOrigin+'px');
+  wheelBox.style.setProperty('--wheel-font', font+'px');
 }
-function indexOfValue(v){ return WHEEL.findIndex(x=>String(x)===String(v)); }
-function formatTok(){ return $('token').value; }
+addEventListener('resize', sizeWheel, {passive:true}); sizeWheel();
 
-function computePayout(hit, stake){
-  let win = 0, notes = [];
+/* =========================
+   BOARD (NUMBERS + OUTSIDE)
+========================= */
+const grid = document.getElementById('grid');
+// Order visually (simple 0/00 + rows of 1..36; you can re-skin to 3-column table later)
+const NUMBERS = ["00",0, ...Array.from({length:36},(_,i)=>i+1)];
+NUMBERS.forEach(n=>{
+  const c=document.createElement('div');
+  c.className='cell';
+  c.dataset.kind='n';
+  c.dataset.val=String(n);
+  const color=COLOR[n]||'black';
+  c.classList.add(color);
+  c.textContent=String(n);
+  grid.appendChild(c);
+});
 
-  // Straight
-  const sVal = $('straight').value.trim().toUpperCase();
-  if(sVal){
-    const valid = (sVal==="00") || (!isNaN(+sVal) && +sVal>=0 && +sVal<=36);
-    if(valid && String(hit)===sVal){ win += 35*stake; notes.push(`Straight +${35}x`); }
+/* =========================
+   DEMO/LIVE • PRICES & HUD
+========================= */
+const demoTag = document.getElementById('demoTag');
+const modePill=document.getElementById('modePill');
+const balLbl=document.getElementById('balLbl');
+const ccyLbl=document.getElementById('ccyLbl');
+const betPill=document.getElementById('betPill');
+const lastPill=document.getElementById('lastPill');
+const ccyToggle=document.getElementById('ccyToggle');
+const stakeTotalLbl=document.getElementById('stakeTotal');
+const stakeUnitLbl=document.getElementById('stakeUnit');
+
+const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+function fmtAmt(n, max=6){ return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:max}); }
+
+let currency='BAG';
+ccyToggle.value='BAG';
+ccyToggle.addEventListener('change', ()=>{ currency=ccyToggle.value; stakeUnitLbl.textContent=currency; renderBalance(); });
+
+function sessionObj(){ try{ return (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null }catch{ return null } }
+function inDemo(){ return window.__BAG_FORCE_DEMO===true || !window.__bagSession || !window.__bagSession.active || !window.__bagSession.active(); }
+
+function renderMode(){ const live=!inDemo(); modePill.innerHTML = 'Mode: <b>'+(live?'LIVE':'DEMO')+'</b>'; demoTag.style.display = live?'none':'inline-block'; }
+function renderBalance(){
+  const s = sessionObj();
+  const bag = s && Number(s.bag)>0 ? Number(s.bag) : (inDemo()? getDemoBal(): 0);
+  const {bagUsd,xrpUsd} = PR();
+  if(currency==='BAG'){ balLbl.textContent = bag ? fmtAmt(bag) : '—'; ccyLbl.textContent='BAG'; }
+  else { // XRP view from BAG session balance
+    const xrp = (bag && bagUsd>0 && xrpUsd>0) ? bag*(bagUsd/xrpUsd) : NaN;
+    balLbl.textContent = Number.isFinite(xrp)? fmtAmt(xrp): '—'; ccyLbl.textContent='XRP';
   }
+}
+function renderBetTotal(){ stakeTotalLbl.textContent = fmtAmt(totalStake()); }
 
-  // Red/Black
-  const rb = $('rb').value;
-  if(rb && COLOR[hit] && COLOR[hit].toUpperCase()===rb){ win += 1*stake; notes.push(`RB +1x`); }
+renderMode(); renderBalance();
 
-  // Even/Odd
-  const eo = $('eo').value;
-  if(eo && typeof hit==="number" && hit!==0){
-    if((eo==="EVEN" && hit%2===0) || (eo==="ODD" && hit%2===1)){ win += 1*stake; notes.push(`EO +1x`); }
+/* Demo balance for practice (persists in localStorage so it feels like other games) */
+const DEMO_KEY='__bag_demo_roulette_v1';
+function getDemoBal(){ try{ const v=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(v)&&v>0?v:1000 }catch{ return 1000 } }
+function setDemoBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0,Number(v)||0))); }catch{} }
+if(localStorage.getItem(DEMO_KEY)==null) setDemoBal(1000);
+
+/* =========================
+   CHIPS & BET STATE
+========================= */
+const chips = document.getElementById('chips').querySelectorAll('.chip');
+let chip=10; // active chip value
+chips.forEach(el=>{
+  el.addEventListener('click', ()=>{
+    chips.forEach(x=>x.classList.remove('active'));
+    el.classList.add('active'); chip=Number(el.dataset.v)||1;
+  });
+});
+chips[2].classList.add('active'); // 10
+
+// Bet store per-category with undo stack
+const bets = {
+  n: {},        // straight: {"17": amount, "00": amount, ...}
+  rb: {},       // RED/BLACK
+  eo: {},       // EVEN/ODD
+  hl: {},       // LOW/HIGH
+  dozen: {},    // D1/D2/D3
+  col: {}       // C1/C2/C3
+};
+const undoStack=[];
+
+function bumpBet(kind, key, amt){
+  const b = bets[kind];
+  const nxt = (Number(b[key])||0) + amt;
+  b[key] = nxt;
+  undoStack.push({kind,key,amt});
+  paintCell(kind,key);
+  renderBetTotal();
+}
+function paintCell(kind,key){
+  const sel = kind==='n' ? \`.cell[data-kind="n"][data-val="\${key}"]\` : \`.cell[data-kind="\${kind}"][data-val="\${key}"]\`;
+  const el = document.querySelector(sel);
+  if(!el) return;
+  el.querySelector('.badge')?.remove();
+  const v = bets[kind][key];
+  if(v>0){
+    const bd=document.createElement('div'); bd.className='badge'; bd.textContent=v;
+    el.appendChild(bd);
   }
+}
+function clearAllBets(){
+  Object.keys(bets).forEach(k=>{ Object.keys(bets[k]).forEach(key=>bets[k][key]=0); });
+  undoStack.length=0;
+  document.querySelectorAll('.badge').forEach(b=>b.remove());
+  renderBetTotal();
+}
+function undoLast(){
+  const last=undoStack.pop(); if(!last) return;
+  const cur = Number(bets[last.kind][last.key])||0;
+  bets[last.kind][last.key] = Math.max(0, cur - last.amt);
+  paintCell(last.kind,last.key);
+  renderBetTotal();
+}
+function totalStake(){
+  let t=0;
+  Object.values(bets.n).forEach(v=>t+=v||0);
+  ['rb','eo','hl','dozen','col'].forEach(k=>Object.values(bets[k]).forEach(v=>t+=v||0));
+  return t;
+}
 
-  // High/Low
-  const hl = $('hl').value;
-  if(hl && typeof hit==="number" && hit!==0){
-    if((hl==="LOW" && hit>=1 && hit<=18) || (hl==="HIGH" && hit>=19 && hit<=36)){ win += 1*stake; notes.push(`HL +1x`); }
-  }
+// Click handlers for board
+document.getElementById('grid').addEventListener('click', (e)=>{
+  const el=e.target.closest('.cell'); if(!el) return;
+  const key=el.dataset.val;
+  bumpBet('n', key, chip);
+});
+document.getElementById('outsides').addEventListener('click', (e)=>{
+  const el=e.target.closest('.cell'); if(!el) return;
+  const kind=el.dataset.kind, key=el.dataset.val;
+  bumpBet(kind, key, chip);
+});
+document.getElementById('clear').addEventListener('click', clearAllBets);
+document.getElementById('undo').addEventListener('click', undoLast);
 
+/* =========================
+   RNG & PAYOUTS
+========================= */
+const $ = id=>document.getElementById(id);
+const toastEl=document.getElementById('toast');
+function toast(t){ toastEl.textContent=t; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1400); }
+
+let spinning=false, round=0;
+function randUint32(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]>>>0; }
+// Unbiased uniform index via rejection sampling
+function pickIndex(){
+  const n=WHEEL.length;
+  const zone=Math.floor(0x100000000/n)*n;
+  let x; do{ x=randUint32(); }while(x>=zone);
+  return x % n;
+}
+
+function computeWin(hit){
+  let win=0, notes=[];
+  // straights
+  Object.entries(bets.n).forEach(([k,v])=>{
+    if(v>0 && String(hit)===k){ win += v*35; notes.push(\`Straight(\${k}) +35x\`); }
+  });
+  // RB
+  Object.entries(bets.rb).forEach(([k,v])=>{
+    if(v>0 && COLOR[hit] && COLOR[hit].toUpperCase()===k){ win += v*1; notes.push('RB +1x'); }
+  });
+  // EO
+  Object.entries(bets.eo).forEach(([k,v])=>{
+    if(v>0 && typeof hit==="number" && hit!==0){
+      if( (k==='EVEN' && hit%2===0) || (k==='ODD' && hit%2===1) ){ win += v*1; notes.push('EO +1x'); }
+    }
+  });
+  // HL
+  Object.entries(bets.hl).forEach(([k,v])=>{
+    if(v>0 && typeof hit==="number" && hit!==0){
+      if( (k==='LOW' && hit>=1 && hit<=18) || (k==='HIGH' && hit>=19 && hit<=36) ){ win += v*1; notes.push('HL +1x'); }
+    }
+  });
   // Dozen
-  const dz = $('dozen').value;
-  if(dz && typeof hit==="number" && hit!==0){
-    if((dz==="D1" && hit>=1 && hit<=12) || (dz==="D2" && hit>=13 && hit<=24) || (dz==="D3" && hit>=25 && hit<=36)){ win += 2*stake; notes.push(`Dozen +2x`); }
-  }
-
+  Object.entries(bets.dozen).forEach(([k,v])=>{
+    if(v>0 && typeof hit==="number" && hit!==0){
+      const ok = (k==='D1'&&hit>=1&&hit<=12)||(k==='D2'&&hit>=13&&hit<=24)||(k==='D3'&&hit>=25&&hit<=36);
+      if(ok){ win += v*2; notes.push('Dozen +2x'); }
+    }
+  });
   // Column
-  const col = $('col').value;
-  if(col && COLUMN[hit]===col){ win += 2*stake; notes.push(`Column +2x`); }
-
+  Object.entries(bets.col).forEach(([k,v])=>{
+    if(v>0 && COLUMN[hit]===k){ win += v*2; notes.push('Column +2x'); }
+  });
   return {win, notes};
 }
 
-/* ---------- SPIN ---------- */
-$('spin').onclick = ()=>{
+/* =========================
+   SPIN FLOW (+ SESSION)
+========================= */
+$('spin').addEventListener('click', async ()=>{
   if(spinning) return;
-  const stake = Math.max(1, +$('stake').value||1);
-  const token = formatTok();
+  const cost = totalStake();
+  if(!(cost>0)){ toast('Place a bet first'); return; }
 
-  // seed and index
-  const seed = randUint32();
-  const idx = pickIndex(seed);
-  const hit = WHEEL[idx];
+  // Spend from balance (live or demo) in *selected currency*
+  let costBag = cost;
+  const {bagUsd,xrpUsd} = PR();
+  if(currency==='XRP'){
+    if(!(bagUsd>0 && xrpUsd>0)){ toast('Live price required for XRP view'); }
+    costBag = cost * (xrpUsd>0 && bagUsd>0 ? (xrpUsd/bagUsd) : 0);
+  }
 
-  // animate
-  spinning = true; round++;
-  $('round').textContent = String(round);
-  $('seed').textContent = seed.toString(16).padStart(8,'0');
+  if(!inDemo()){
+    try{
+      if(!window.__bagSession || !__bagSession.spend || !__bagSession.spend(costBag)){ toast('Insufficient balance'); return; }
+    }catch{ toast('Session error'); return; }
+  }else{
+    const bal=getDemoBal(); if(bal<costBag){ toast('Insufficient balance'); return; } setDemoBal(bal-costBag);
+  }
+  renderBalance();
 
-  const revs = 6; // base revolutions
-  const targetDeg = 360*(revs) + (360 - idx*DEG); // align pocket at marker
-  ring.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
-  ring.style.transform = `rotate(${targetDeg}deg)`;
+  spinning=true; round++;
+  $('round').textContent=String(round);
+  $('seed').textContent='rng';
 
-  // ball counter-rotate
-  const ball = $('ball');
-  ball.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
-  ball.style.transform = `rotate(${-(targetDeg + 720)}deg) translate(170px)`; // extra 2 revs
+  const idx=pickIndex();
+  const hit=WHEEL[idx];
+
+  const revs=6;
+  const targetDeg=360*revs + (360 - idx*DEG);
+  ring.style.transition='transform 4.2s cubic-bezier(.15,.9,.15,1)';
+  ring.style.transform=\`rotate(\${targetDeg}deg)\`;
+  ballEl.style.transition='transform 4.2s cubic-bezier(.15,.9,.15,1)';
+  ballEl.style.transform=\`rotate(\${-(targetDeg+720)}deg) translate(var(--ball-r))\`;
 
   setTimeout(()=>{
-    // outcome
-    $('last').textContent = String(hit);
-    const {win, notes} = computePayout(hit, stake);
-    const gain = win - stake * selectedBetsCount();
-
+    $('last').textContent=String(hit);
+    const {win,notes} = computeWin(hit);
+    const gain = win - cost;
     const resEl = $('result');
-    if(gain >= 0){
-      resEl.innerHTML = `<span class="win">WIN +${gain} ${token}</span> on ${String(hit)} ${notes.length?'· '+notes.join(' · '):''}`;
+    if(gain>=0){
+      resEl.innerHTML = \`<span class="win">WIN +\${gain} \${currency}</span> on \${String(hit)} \${notes.length?'· '+notes.join(' · '):''}\`;
+      lastPill.textContent = 'WIN';
     }else{
-      resEl.innerHTML = `<span class="lose">LOSS ${gain} ${token}</span> on ${String(hit)}`;
+      resEl.innerHTML = \`<span class="lose">LOSS \${gain} \${currency}</span> on \${String(hit)}\`;
+      lastPill.textContent = 'LOSE';
     }
+    $('last').textContent=String(hit);
 
-    log(`Spin #${round} · Hit ${String(hit)} · Seed 0x${$('seed').textContent} · Net ${gain} ${token}`);
-    spinning = false;
+    // Credit winnings (convert back to BAG if needed)
+    let winBag = win;
+    if(currency==='XRP'){ winBag = win * (xrpUsd>0 && bagUsd>0 ? (xrpUsd/bagUsd) : 0); }
+
+    if(!inDemo()){
+      try{ if(winBag>0 && __bagSession.credit) __bagSession.credit(winBag); }catch{}
+    }else{
+      if(winBag>0) setDemoBal(getDemoBal()+winBag);
+    }
+    renderBalance();
+
+    log(\`#\${round} · Hit \${String(hit)} · Cost \${cost} \${currency} · Win \${win} \${currency} · Net \${gain} \${currency}\`);
+    spinning=false;
   }, 4300);
-};
+});
 
-$('clear').onclick = ()=>{
-  ['straight','rb','eo','hl','dozen','col'].forEach(id=>$(id).value = '');
-  $('result').textContent = '';
-};
+function log(s){ const el=$('log'); el.textContent = s + "\\n" + el.textContent; }
 
-function selectedBetsCount(){
-  let c = 0;
-  if($('straight').value.trim()) c++;
-  if($('rb').value) c++;
-  if($('eo').value) c++;
-  if($('hl').value) c++;
-  if($('dozen').value) c++;
-  if($('col').value) c++;
-  return c;
+/* =========================
+   INIT
+========================= */
+function init(){
+  renderMode(); renderBalance(); renderBetTotal();
+  stakeUnitLbl.textContent=currency;
+  log(\`Wheel loaded: \${WHEEL.join(', ')}\`);
 }
-
-function log(s){
-  const el = $('log');
-  el.textContent = s + "\n" + el.textContent;
-}
-
-// Quick init log
-log(`Wheel loaded with American double-zero sequence: ${WHEEL.join(', ')}`);
+init();
+addEventListener('bag:pricesUpdated', ()=>renderBalance(), {passive:true});
 </script>
 </body>
 </html>
