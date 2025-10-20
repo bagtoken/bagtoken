@@ -131,8 +131,8 @@
   .comp-rtp{padding:12px;border-radius:12px;background:var(--panel)}
   .badge-18{background:#e25b5b;color:#111;padding:2px 8px;border-radius:999px;font-weight:700}
   .comp-disclaimer{margin-top:8px;font-size:12px;color:var(--muted)}
-  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:saturate(120%) blur(2px);display:none;z-index:1000}
-  .modal{position:fixed;inset:0;display:grid;place-items:center;z-index:1001}
+  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:saturate(120%) blur(2px);display:none;z-index:2147483645}
+  .modal{position:fixed;inset:0;display:grid;place-items:center;z-index:2147483646}
   .card{width:min(560px,92vw);background:linear-gradient(180deg,var(--panel2),#0a1912);color:var(--fg);border:1px solid #173524;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:20px}
   .card h3{margin:0 0 6px 0}
   .card p{margin:0 0 12px 0;color:var(--muted)}
@@ -152,30 +152,13 @@
   #respBar{justify-content:center}
   #respBar .comp-links{margin-left:0 !important;justify-content:center}
 
-  /* Tiny non-blocking 21+ nudge (bottom-right) */
-  .age-nudge{
-    position:fixed;right:12px;bottom:12px;z-index:2147483646;
-    display:none; /* shown by JS if not acknowledged */
-    gap:10px;align-items:center;
-    padding:10px 12px;border-radius:12px;
-    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
-    border:1px solid var(--line);box-shadow:0 8px 24px var(--shadow);
-    color:var(--fg);font-size:14px;line-height:1.3;
+  /* Age popup specific */
+  .age-card .row{justify-content:flex-end}
+  .age-card .close-x{
+    position:absolute;top:8px;right:10px;border:0;background:transparent;color:#aeb7af;
+    font-size:18px;cursor:pointer
   }
-  .age-nudge .badge-18{margin-right:6px}
-  .age-nudge .nudge-actions{display:flex;gap:8px;margin-left:8px}
-  .age-nudge .nudge-btn{
-    cursor:pointer;border:0;border-radius:10px;padding:6px 10px;font-weight:800;
-    background:var(--gold);color:#111;
-  }
-  .age-nudge .nudge-btn.secondary{
-    background:#173524;color:var(--fg);border:1px solid #245a3b
-  }
-  .age-nudge .nudge-close{
-    margin-left:6px;cursor:pointer;opacity:.8;border:0;background:transparent;
-    color:var(--muted);font-size:16px;line-height:1
-  }
-  .age-nudge .nudge-close:hover{opacity:1}
+  .age-card .close-x:hover{color:#fff}
 </style>
 
 <script src="/js/bag-session.js" defer></script>
@@ -430,32 +413,41 @@
   </div>
 </div>
 
-<!-- 🔔 Tiny non-blocking 21+ nudge -->
-<div id="ageNudge" class="age-nudge" role="alert" aria-live="polite">
-  <span class="badge-18">21+</span>
-  <span>Are you 21 or older? (U.S.) / of legal age in your region.</span>
-  <div class="nudge-actions">
-    <button id="nudgeYes" class="nudge-btn">Yes</button>
-    <button id="nudgeNo" class="nudge-btn secondary">Not now</button>
+<!-- 🔔 Center-screen Age Notice (non-KYC, stored locally) -->
+<div id="ageMask" class="modal-mask"></div>
+<div id="ageModal" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="ageTitle">
+  <div class="card age-card" role="document" style="position:relative">
+    <button class="close-x" id="ageClose" aria-label="Dismiss">×</button>
+    <h3 id="ageTitle">21+ Notice</h3>
+    <p>Are you 21 or older in the U.S. (or of legal age in your region)?</p>
+    <div class="row">
+      <button class="btn comp" id="ageYes">Yes</button>
+      <button class="btn comp secondary" id="ageNotNow">Not now</button>
+    </div>
   </div>
-  <button id="nudgeClose" class="nudge-close" aria-label="Dismiss">×</button>
 </div>
 
 <script>
-/* Non-blocking 21+ nudge logic */
 (function(){
   const KEY = 'bag_age_ack_v1';
-  const EL  = document.getElementById('ageNudge');
-  const yes = document.getElementById('nudgeYes');
-  const no  = document.getElementById('nudgeNo');
-  const x   = document.getElementById('nudgeClose');
+  const mask  = document.getElementById('ageMask');
+  const modal = document.getElementById('ageModal');
+  const yes   = document.getElementById('ageYes');
+  const no    = document.getElementById('ageNotNow');
+  const close = document.getElementById('ageClose');
 
-  function show(){ EL.style.display = 'flex'; }
-  function hide(){ EL.style.display = 'none'; }
+  function show(){
+    mask.style.display = 'block';
+    modal.classList.remove('hide');
+  }
+  function hide(){
+    mask.style.display = 'none';
+    modal.classList.add('hide');
+  }
 
-  // Show only if not acknowledged
+  // Only show if not previously acknowledged
   if (localStorage.getItem(KEY) !== '1'){
-    // Defer to next frame so layout is stable
+    // small defer to avoid layout jank
     requestAnimationFrame(show);
   }
 
@@ -463,12 +455,11 @@
     localStorage.setItem(KEY,'1');
     hide();
   });
-
-  // "Not now" just hides for the session (no flag stored)
   no.addEventListener('click', hide);
+  close.addEventListener('click', hide);
 
-  // Dismiss (same as "Not now")
-  x.addEventListener('click', hide);
+  // Click outside card to close
+  mask.addEventListener('click', hide);
 })();
 </script>
 
