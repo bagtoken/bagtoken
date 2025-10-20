@@ -345,78 +345,64 @@
   const btn   = document.getElementById('soundToggle');
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
-
-  let playing = false;
-  let armed   = false;
+  let playing = false, armed = false;
 
   audio.setAttribute('playsinline','');
   audio.preload = 'auto';
   audio.loop = true;
 
-  function setIcon(){
-    btn.textContent = playing ? '🔊' : '🔇';
-    btn.setAttribute('aria-pressed', String(playing));
-  }
+  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
 
-  function playAudio(){
-    audio.volume = 0.35;
-    const p = audio.play();
-    if (p && p.then) p.catch(()=>{});           // swallow autoplay rejections
-    playing = true;
-    setIcon();
-    localStorage.setItem(KEY,'on');
-    removeGestureUnlock();
-  }
-
-  function pauseAudio(){
-    try { audio.pause(); } catch(e){}
-    playing = false;
-    setIcon();
-    localStorage.setItem(KEY,'off');
-    armGestureUnlock();
-  }
-
-  // Button = explicit toggle
-  btn.addEventListener('pointerdown', (ev)=>{
-    ev.preventDefault();
-    playing ? pauseAudio() : playAudio();
-  }, {passive:false});
-
-  // —— Autoplay unlock on first interaction (now includes scroll) ——
-  // wheel + touchstart count as user gestures in Chromium/iOS Safari.
-  const GESTURES = ['pointerdown','keydown','wheel','touchstart'];
-  function gestureHandler(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing){
-      playAudio();
+  async function playAudio(){
+    try{
+      audio.volume = 0.35;
+      await audio.play();
+      playing = true; setIcon();
+      localStorage.setItem(KEY,'on');
+      removeUnlock();
+    }catch(e){
+      // ignore, browser needs a stronger gesture — keep listeners armed
     }
   }
-  function armGestureUnlock(){
-    if (armed) return;
-    armed = true;
-    GESTURES.forEach(t =>
-      window.addEventListener(t, gestureHandler, {capture:true, once:true, passive:true})
-    );
-  }
-  function removeGestureUnlock(){ armed = false; /* once:true removes listeners */ }
+  function pauseAudio(){ try{ audio.pause(); }catch(_){} playing = false; setIcon(); localStorage.setItem(KEY,'off'); addUnlock(); }
 
-  // Soft resume when user returns to tab/app
-  function softResume(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing){
-      playAudio();
-    }
+  // Button toggle
+  btn.addEventListener('pointerdown', ev => { ev.preventDefault(); playing ? pauseAudio() : playAudio(); }, {passive:false});
+
+  // Unlock on first user interaction of many kinds, including scroll
+  const UNLOCK_EVENTS = [
+    'scroll','wheel','touchstart','touchmove','mousemove','pointerdown','mousedown','keydown'
+  ];
+  function unlockHandler(){
+    if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio();
   }
+  function addUnlock(){
+    if (armed) return; armed = true;
+    UNLOCK_EVENTS.forEach(t => {
+      // use capture to guarantee early fire, once to auto-remove after success
+      window.addEventListener(t, unlockHandler, {capture:true, passive:true});
+      document.addEventListener(t, unlockHandler, {capture:true, passive:true});
+    });
+  }
+  function removeUnlock(){
+    armed = false;
+    UNLOCK_EVENTS.forEach(t => {
+      window.removeEventListener(t, unlockHandler, {capture:true});
+      document.removeEventListener(t, unlockHandler, {capture:true});
+    });
+  }
+
+  // Soft resume when tab regains focus or becomes visible
+  function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
   window.addEventListener('focus', softResume);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) softResume(); });
 
   // Init
-  if (localStorage.getItem(KEY) === 'off'){
-    playing = false;
-  } else {
-    armGestureUnlock();          // will fire on first scroll/touch/wheel/keydown
-  }
-  setIcon();
+  if (localStorage.getItem(KEY) === 'off'){ playing = false; setIcon(); addUnlock(); }
+  else { setIcon(); addUnlock(); }
 })();
 </script>
+
 
 <!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub & Games) ===== -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
