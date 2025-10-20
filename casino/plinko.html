@@ -39,7 +39,6 @@
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
     border-top:1px solid #131313;border-bottom:1px solid #131313}
-  /* Original layout */
   .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
   @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
 
@@ -140,60 +139,6 @@
   .cele{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:42px;font-weight:900;color:#ffe28c;text-shadow:0 4px 14px rgba(0,0,0,.6)}
   .cele.show{display:flex;animation:pop .9s ease}
   @keyframes pop{0%{transform:scale(.7);opacity:0}50%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
-
-  /* --- PC-only niceties; mobile untouched --- */
-  @media (hover:hover) and (pointer:fine){
-    #boardWrap canvas{ cursor: crosshair; }
-    #boardWrap{ -webkit-user-select:none; user-select:none; }
-  }
-
-  /* ======= HARD CENTER THE BOARD ON DESKTOP ======= */
-  @media (min-width:1100px){
-    /* Turn off the grid so the rules don't shove the board */
-    .game-wrap{
-      display:block !important;
-      position:relative;
-      max-width:760px;   /* ~ board width */
-      margin:0 auto;     /* center the board container */
-    }
-    /* Ensure the board panel is centered */
-    #bagPlinko{
-      max-width:760px;
-      margin:0 auto;
-    }
-    #bagPlinko .stage,
-    #bagPlinko .canvas-wrap{
-      margin-left:auto;
-      margin-right:auto;
-    }
-    /* Park the rules panel to the right of the centered board */
-    .game-wrap > .panel:last-child{
-      position:absolute;
-      top:0;
-      left:100%;
-      margin-left:22px;
-      width:420px;
-    }
-  }
-  /* Stack naturally on tablets/phones */
-  @media (max-width:1099px){
-    .game-wrap{
-      display:block !important;
-      max-width:900px;
-      margin:0 auto;
-    }
-    .game-wrap > .panel:last-child{
-      position:static;
-      width:auto;
-      margin:16px 0 0 0;
-    }
-  }
-  /* Prevent stray horizontal scroll from the floated rules column */
-  html, body { overflow-x:hidden; }
-
-  /* Footer safety so it never garbles */
-  .footer{display:block;text-align:center;padding:12px 0;line-height:1.6;white-space:normal}
-  .footer a{color:#e0c66f;text-decoration:none;font-weight:700}
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -216,7 +161,7 @@
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
 
-    <!-- LEFT PANEL (BOARD) -->
+    <!-- LEFT PANEL -->
     <div class="panel mock" id="bagPlinko">
       <div id="demo-badge" style="display:none;position:relative;margin:6px 0 10px 0;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.3px;">
         <span style="padding:6px 10px;border:1px solid #aaa;border-radius:6px;opacity:.9;">PRACTICE MODE — No real bets or payouts</span>
@@ -1171,45 +1116,7 @@
 })();
 </script>
 
-<!-- === PC HiDPI scaler (keeps mobile untouched) === -->
-<script>
-(function(){
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const WORLD_W = 640, WORLD_H = 880;
-
-  function isDesktop(){ return matchMedia('(hover:hover) and (pointer:fine)').matches; }
-
-  function resizeHiDPI(){
-    if (!isDesktop()) {
-      // Mobile: original world space; no transforms
-      canvas.width  = WORLD_W;
-      canvas.height = WORLD_H;
-      ctx.setTransform(1,0,0,1,0,0);
-      return;
-    }
-    const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    // Backing store matches CSS*DPR for razor sharpness
-    canvas.width  = Math.max(1, Math.round(r.width  * dpr));
-    canvas.height = Math.max(1, Math.round(r.height * dpr));
-
-    // Scale the 640x880 world to the CSS box, then to device pixels
-    const sx = (r.width  / WORLD_W) * dpr;
-    const sy = (r.height / WORLD_H) * dpr;
-    ctx.setTransform(sx, 0, 0, sy, 0, 0);
-  }
-
-  const ro = new ResizeObserver(resizeHiDPI);
-  ro.observe(canvas);
-  window.addEventListener('orientationchange', resizeHiDPI);
-  window.addEventListener('load', resizeHiDPI);
-  resizeHiDPI();
-})();
-</script>
-
-<!-- === PLINKO GAME LOGIC (unchanged visuals; PC mapping fixed) === -->
+<!-- === PLINKO GAME LOGIC (unchanged visuals) === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1229,7 +1136,8 @@
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
-  const WALL_WIDEN = 6; // pixels per side (PC trap fix)
+  // widen the board walls outward a tiny bit so the coin doesn't get trapped at the sides
+  const WALL_WIDEN = 6; // pixels per side
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -1339,16 +1247,10 @@
   }
 
   function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
-
-  /* ✅ Accurate pointer → world mapping (PC or mobile) */
   function clientToCanvasX(clientX){
     const r = canvas.getBoundingClientRect();
-    // Map CSS pixels to world (640) regardless of DPR or transforms
-    const worldX = (clientX - r.left) * (640 / r.width);
-
-    const L = (24 - WALL_WIDEN) + 8;
-    const R = (640 - 24 + WALL_WIDEN) - 8;
-    return Math.min(R, Math.max(L, worldX));
+    const x = (clientX - r.left) * (canvas.width / r.width);
+    return clamp(x, (24 - WALL_WIDEN) + 8, (640 - 24 + WALL_WIDEN) - 8);
   }
 
   canvas.addEventListener('pointerdown', (e)=>{
@@ -1694,7 +1596,7 @@
         (bagUsd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>` : '');
     }
     if (startBtn) startBtn.style.display = 'inline-block';
-    if (topUpBtn) startUpBtn = null, topUpBtn.style.display = 'none';
+    if (topUpBtn) topUpBtn.style.display = 'none';
     if (endBtn)   endBtn.style.display   = 'none';
   }
 
@@ -1886,11 +1788,11 @@
 })();
 </script>
 
-<footer class="footer">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener">𝕏 @getthebag_io</a> |
-  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">Telegram @getthebag_io</a>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
 </body>
