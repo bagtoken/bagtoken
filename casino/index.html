@@ -249,7 +249,7 @@
     </article>
   </section>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
@@ -257,91 +257,74 @@
 </footer>
 </div>
 
-<!-- 🔊 Minimal-latency audio: play first, wire graph after -->
+<!-- 🔊 ZERO-friction audio toggle (no WebAudio; pointerdown = instant) -->
 <script>
 (function(){
   const btn   = document.getElementById('soundToggle');
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
-  const TARGET_GAIN = 0.10;
+  const TARGET_VOLUME = 0.10; // 0..1
 
   let playing = false;
-  let audioCtx = null, source = null, gainNode = null, graphReady = false;
 
-  // Icon
-  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
+  // Ensure inline playback + eager buffer
+  audio.setAttribute('playsinline','');
+  audio.preload = 'auto';
+  audio.volume = TARGET_VOLUME;
 
-  // Build graph AFTER audio has begun playing (avoids gesture timing issues)
-  function buildGraphIfNeeded(){
-    if (graphReady) return;
-    try{
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      audioCtx = audioCtx || new Ctx();
-      source   = source   || audioCtx.createMediaElementSource(audio);
-      gainNode = gainNode || audioCtx.createGain();
-      gainNode.gain.value = TARGET_GAIN;
-      source.connect(gainNode).connect(audioCtx.destination);
-      if (audioCtx.state === 'suspended') { audioCtx.resume(); }
-      graphReady = true;
-    }catch(e){ /* some browsers block createMediaElementSource twice; ignore */ }
+  function setIcon(){
+    btn.textContent = playing ? '🔊' : '🔇';
+    btn.setAttribute('aria-pressed', String(playing));
   }
 
-  function setGain(v){
-    if (!gainNode) return;
-    const val = Math.max(0, Math.min(2, v));
-    try{ gainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.05); }
-    catch{ gainNode.gain.value = val; }
-  }
-
-  // Start immediately – do NOT await anything inside the gesture
-  function playNow(){
+  function tryPlaySync(){
+    // On iOS, calling play() synchronously during a user gesture is key
     try{
-      // Kick playback first for fastest audible response
       const p = audio.play();
-      if (p && typeof p.then === 'function') p.catch(()=>{});
+      if (p && typeof p.then === 'function') p.catch(()=>{ /* ignore block; user can tap again */ });
       playing = true;
       setIcon();
       localStorage.setItem(KEY,'on');
-
-      // As soon as it's playing or canplay, wire the graph and set gain
-      if (audio.readyState >= 2){ buildGraphIfNeeded(); setGain(TARGET_GAIN); }
-      else {
-        const onReady = () => { buildGraphIfNeeded(); setGain(TARGET_GAIN); audio.removeEventListener('playing', onReady); audio.removeEventListener('canplay', onReady); };
-        audio.addEventListener('playing', onReady, {once:true});
-        audio.addEventListener('canplay', onReady, {once:true});
-        // Force eager buffering
-        try{ audio.load(); }catch(_){}
-      }
-    }catch(e){ /* if blocked, user can tap again */ }
+    }catch(e){
+      // ignored
+    }
   }
 
   function pauseNow(){
-    try{ audio.pause(); }catch(_){}
+    try { audio.pause(); } catch(e){}
     playing = false;
     setIcon();
     localStorage.setItem(KEY,'off');
   }
 
-  // Button toggle – pure sync path
-  btn.addEventListener('click', function(){ playing ? pauseNow() : playNow(); });
+  // Button: use pointerdown for fastest response (fires before click)
+  btn.addEventListener('pointerdown', function(ev){
+    ev.preventDefault();
+    playing ? pauseNow() : tryPlaySync();
+  }, {passive:false});
 
-  // One-time page-wide unlock (for users who tap the page before hitting the button)
+  // One-time page-wide unlock: if user taps anywhere first and pref was ON, start immediately
   function unlockOnce(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing){ playNow(); }
+    if (localStorage.getItem(KEY) !== 'off' && !playing){
+      tryPlaySync();
+    }
   }
-  window.addEventListener('pointerup', unlockOnce, {capture:true, once:true});
-  window.addEventListener('keydown',   unlockOnce, {capture:true, once:true});
+  window.addEventListener('pointerdown', unlockOnce, {capture:true, once:true});
 
-  // Soft resume if user left sound "on"
-  function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing){ playNow(); } }
+  // Resume quickly if user left it ON
+  function softResume(){
+    if (localStorage.getItem(KEY) !== 'off' && !playing){
+      tryPlaySync();
+    }
+  }
   window.addEventListener('focus', softResume);
-  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) softResume(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) softResume(); });
 
-  // Init icon
+  // Boost first-start reliability: if file isn’t buffered yet, kick a quick load on first interaction
+  document.addEventListener('pointerdown', () => { try { audio.load(); } catch(e){} }, {once:true, capture:true});
+
+  // Initial icon + honor saved pref without auto-starting
   setIcon();
-
-  // Optional console helper
-  window.__bagSetAmbienceGain = (v)=> setGain(v);
 })();
 </script>
 
