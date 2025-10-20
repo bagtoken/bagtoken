@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>$BAG Poker — 5-Card Draw (Demo)</title>
+<title>$BAG Poker — 5-Card Draw</title>
 
+<!-- Optional Xaman (parity with other games) -->
 <script src="https://xaman.app/assets/cdn/xumm.min.js" defer></script>
 
 <style>
@@ -22,8 +23,17 @@
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45}
   button{cursor:pointer;font:inherit}
   .wrap{max-width:1000px;margin:0 auto;padding:16px}
-  .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
   .pill{padding:6px 10px;border:1px solid #2b3f33;border-radius:999px;color:var(--muted);font-size:12px}
+  .tag{font-size:12px;border:1px solid var(--line);padding:2px 8px;border-radius:999px;color:var(--muted);background:#08120c}
+  .tag.demo{color:#16301f;background:#0a2215;border-color:#1c4729}
+
+  /* HUD */
+  .hud{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+  .hud .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;color:#cfe6d8}
+  .hud .pill b{color:#fff}
+  .hud select{background:#0a1e15;color:#e7efe9;border:1px solid #244330;border-radius:8px;padding:4px 8px;font:inherit}
+
   .table{
     position:relative;border-radius:18px;
     background:radial-gradient(120% 120% at 50% 10%, var(--felt) 0%, var(--felt2) 65%, #07190e 100%);
@@ -86,6 +96,7 @@
 
   /* Mobile tweaks */
   @media (max-width:780px){
+    .titlebar h1{font-size:18px}
     .hand-title{font-size:11px}
     .pot{font-size:12px}
     .panel{grid-template-columns:1fr}
@@ -94,6 +105,7 @@
   }
 </style>
 
+<!-- Session helper (shared across your games) -->
 <script src="/js/bag-session.js"></script>
 </head>
 <body>
@@ -101,6 +113,21 @@
   <div class="titlebar">
     <span class="pill">$BAG Casino</span>
     <h1 style="margin:0;font-size:20px;letter-spacing:.3px">$BAG Poker — 5-Card Draw</h1>
+    <span id="demoTag" class="tag demo" style="display:none">Demo</span>
+  </div>
+
+  <!-- HUD parity with Slots/Roulette/Blackjack -->
+  <div class="hud">
+    <span class="pill">Mode: <b id="modeLbl">DEMO</b></span>
+    <span class="pill">Balance: <b id="balLbl">—</b> <span id="balUnit">BAG</span></span>
+    <span class="pill">Last result: <b id="lastLbl">—</b></span>
+    <span class="pill">
+      Currency:
+      <select id="ccyHud">
+        <option value="BAG">BAG</option>
+        <option value="XRP">XRP</option>
+      </select>
+    </span>
   </div>
 
   <div class="table" id="table">
@@ -141,17 +168,53 @@
 
 <script>
 /* ---------------------------------------
-   $BAG Poker — 5-Card Draw (Demo, 1 CPU)
-   Responsive + mobile audio safe + DPR canvas
+   $BAG Poker — 5-Card Draw (Live/Demo)
+   • Desktop & Mobile polished
+   • Demo/live session HUD + balance
+   • USD/XRP/$BAG betting (price-aware)
+   • Autoplay-safe audio + DPR canvas
 --------------------------------------- */
 (() => {
-  // ====== Prices & currency ======
+  /* ===== Prices & HUD/session wiring ===== */
+  // Accept either window.__PRICES__ (preferred) or window.PRICES for compatibility
   const PRICES = Object.assign({ xrpUsd: 0.50, bagUsd: 0.0001 }, (window.__PRICES__||window.PRICES||{}));
+  const demoTag = document.getElementById('demoTag');
+  const modeLbl = document.getElementById('modeLbl');
+  const balLbl = document.getElementById('balLbl');
+  const balUnit = document.getElementById('balUnit');
+  const lastLbl = document.getElementById('lastLbl');
+  const ccyHud = document.getElementById('ccyHud');
+
   const currencyEl = document.getElementById('currency');
   const betEl = document.getElementById('bet');
   const statusEl = document.getElementById('status');
   const potEl = document.getElementById('potLabel');
+  const toastEl = document.getElementById('toast');
 
+  const DEMO_KEY='__bag_demo_poker_v1';
+  function inDemo(){ return window.__BAG_FORCE_DEMO===true || !window.__bagSession || !window.__bagSession.active || !window.__bagSession.active(); }
+  function sessionObj(){ try{ return (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null }catch{ return null } }
+  function getDemoBal(){ try{ const v=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(v)&&v>0?v:1000 }catch{ return 1000 } }
+  function setDemoBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0,Number(v)||0))); }catch{} }
+  if(localStorage.getItem(DEMO_KEY)==null) setDemoBal(1000);
+
+  function renderMode(){ const live=!inDemo(); modeLbl.textContent = live?'LIVE':'DEMO'; demoTag.style.display = live?'none':'inline-block'; }
+  function fmt(n, max=6){ return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:max}); }
+  function renderBalance(){
+    const s = sessionObj();
+    const bag = s && Number(s.bag)>0 ? Number(s.bag) : (inDemo()? getDemoBal() : 0);
+    if(ccyHud.value==='BAG'){ balLbl.textContent = fmt(bag); balUnit.textContent='BAG'; return; }
+    const {bagUsd,xrpUsd}=PRICES;
+    if(bagUsd>0 && xrpUsd>0){
+      const xrp = bag*(bagUsd/xrpUsd);
+      balLbl.textContent = fmt(xrp); balUnit.textContent='XRP';
+    }else{
+      balLbl.textContent='—'; balUnit.textContent=ccyHud.value;
+    }
+  }
+  ccyHud.addEventListener('change', renderBalance);
+
+  /* ===== Currency conversions for bet field ===== */
   function clampUsd(u){ if(!Number.isFinite(u)) return 0; if(u<1) return 1; if(u>2000) return 2000; return u; }
   function currentCurrency(){ return currencyEl.value; }
   function betToUsd(){
@@ -170,14 +233,14 @@
     if(currentCurrency()==='BAG') return PRICES.bagUsd>0 ? usd/PRICES.bagUsd : 0;
     return 0;
   }
-  function fmt(n){
+  function fmtBet(n){
     if(!Number.isFinite(n)) return '—';
     const c=currentCurrency();
     return (c==='USD'?'$':'')+((c==='USD')?n.toFixed(2):n.toFixed(6));
   }
   function updatePot(usd){ potEl.textContent = 'Pot: ' + (usd>0? '$'+usd.toFixed(2): '—'); }
 
-  // ====== Sounds (lazy AudioContext; no autoplay issues) ======
+  /* ===== Autoplay-safe audio ===== */
   let _ctx=null;
   function getAC(){
     if(_ctx && _ctx.state!=='closed') return _ctx;
@@ -186,46 +249,33 @@
     _ctx = new AC();
     return _ctx;
   }
-  async function resumeAudio(){
-    const ac = getAC();
-    if(!ac) return;
-    if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} }
-  }
-  function blip(freq=440,ms=70, type='triangle', gain=0.02){
+  async function resumeAudio(){ const ac=getAC(); if(ac && ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
+  function blip(freq=440,ms=70,type='triangle',gain=0.02){
     const ac=getAC(); if(!ac || ac.state!=='running') return;
     const o=ac.createOscillator(), g=ac.createGain();
-    o.type=type; o.frequency.value=freq; g.gain.value=gain;
-    o.connect(g); g.connect(ac.destination);
-    o.start();
-    setTimeout(()=>{ try{o.stop();o.disconnect();g.disconnect();}catch{} }, ms);
+    o.type=type; o.frequency.value=freq; g.gain.value=gain; o.connect(g); g.connect(ac.destination);
+    o.start(); setTimeout(()=>{ try{o.stop();o.disconnect();g.disconnect();}catch{} }, ms);
   }
   function shuffleSfx(){ [240,220,200,180,160].forEach((f,i)=>setTimeout(()=>blip(f,30,'square',0.015),i*30)); }
   function flipSfx(){ blip(550,45,'sawtooth',0.02); }
   function winSfx(){ [523,659,784].forEach((f,i)=>setTimeout(()=>blip(f,120,'sine',0.04), i*120)); }
   function loseSfx(){ [220,180,140].forEach((f,i)=>setTimeout(()=>blip(f,120,'sine',0.03), i*120)); }
   function chipSfx(){ blip(420,90,'square',0.03); }
+  ['click','touchstart','keydown'].forEach(ev=>addEventListener(ev, ()=>resumeAudio(), {passive:true, once:true}));
 
-  const toastEl = document.getElementById('toast');
-  function toast(msg){
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    setTimeout(()=>toastEl.classList.remove('show'), 1500);
-  }
+  function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), 1500); }
 
-  // ====== Cards & dealing ======
+  /* ===== Cards & ranking ===== */
   const SUITS = ['♠','♥','♦','♣'];
   const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
   const RVAL  = Object.fromEntries(RANKS.map((r,i)=>[r,i+2])); // 2..14
 
   function newDeck(){
-    const d=[];
-    for(const s of SUITS) for(const r of RANKS) d.push({r,s});
-    // Fisher-Yates with crypto randomness
+    const d=[]; for(const s of SUITS) for(const r of RANKS) d.push({r,s});
     for(let i=d.length-1;i>0;i--){
       const u32 = new Uint32Array(1);
       (window.crypto||{}).getRandomValues ? crypto.getRandomValues(u32) : (u32[0]=Math.floor(Math.random()*0xffffffff));
-      const j = u32[0] % (i+1);
-      [d[i], d[j]] = [d[j], d[i]];
+      const j = u32[0] % (i+1); [d[i], d[j]] = [d[j], d[i]];
     }
     return d;
   }
@@ -256,18 +306,17 @@
     else { cat=0; tiebreak=vals.slice().reverse(); }
     return {cat, tiebreak};
   }
-
   function cmpHands(a,b){
     if(a.cat!==b.cat) return a.cat-b.cat;
     const L=Math.max(a.tiebreak.length, b.tiebreak.length);
-    for(let i=0;i<L;i++){
-      const av=a.tiebreak[i]||0, bv=b.tiebreak[i]||0;
-      if(av!==bv) return av-bv;
-    }
+    for(let i=0;i<L;i++){ const av=a.tiebreak[i]||0, bv=b.tiebreak[i]||0; if(av!==bv) return av-bv; }
     return 0;
   }
+  function handName(cat){
+    return ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'][cat] || '—';
+  }
 
-  // ====== Table/Seats and persistent DOM refs ======
+  /* ===== DOM ===== */
   const aiRow = document.getElementById('aiRow');
   const playerRow = document.getElementById('playerRow');
   const btnDeal = document.getElementById('btnDeal');
@@ -301,8 +350,7 @@
       const red = (face.s==='♥'||face.s==='♦');
       rank.textContent = (face.r==='10') ? '10' : face.r;
       suit.textContent = face.s;
-      rank.classList.add(red?'red':'black');
-      suit.classList.add(red?'red':'black');
+      rank.classList.add(red?'red':'black'); suit.classList.add(red?'red':'black');
       el.appendChild(rank); el.appendChild(suit);
     }
     if(isPlayer){
@@ -316,6 +364,7 @@
   let deck = [];
   let player = { hand:[], nodes:[] };
   let bots = [{ name:'CPU', hand:[], nodes:[] }];
+
   let phase='IDLE'; // IDLE → DEALT → HOLD → DRAWN → SHOWDOWN
   let anteUsd=0;
 
@@ -330,8 +379,7 @@
       });
       seat.appendChild(row);
       const cap=document.createElement('div'); cap.className='hand-title'; cap.textContent=b.name;
-      seat.appendChild(cap);
-      aiRow.appendChild(seat);
+      seat.appendChild(cap); aiRow.appendChild(seat);
     });
 
     playerRow.innerHTML='';
@@ -340,27 +388,68 @@
     player.nodes=[]; player.hand.forEach((c,idx)=>{
       const el = mkCardEl(c, idx, true); row.appendChild(el); player.nodes.push(el);
     });
-    seat.appendChild(row);
-    playerRow.appendChild(seat);
+    seat.appendChild(row); playerRow.appendChild(seat);
   }
 
   function dealAnimation(targetNodeList, cb){
     let i=0;
     const tick=()=>{ if(i>=targetNodeList.length){ cb&&cb(); return; }
       const el=targetNodeList[i++]; el.style.transform='translateY(-8px)'; el.style.opacity='0';
-      requestAnimationFrame(()=>{
-        el.style.transform='translateY(0)'; el.style.opacity='1';
-        flipSfx();
-        setTimeout(tick, 55);
-      });
+      requestAnimationFrame(()=>{ el.style.transform='translateY(0)'; el.style.opacity='1'; flipSfx(); setTimeout(tick, 55); });
     };
     tick();
   }
 
+  /* ===== Simple CPU hold logic ===== */
+  function botHoldLogic(hand){
+    const holds = [false,false,false,false,false];
+    const vals = hand.map(c=>RVAL[c.r]);
+    const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+    const pairs = Object.entries(counts).filter(([v,c])=>c>=2).map(([v,c])=>+v);
+    if(pairs.length){ hand.forEach((c,i)=>{ if(pairs.includes(RVAL[c.r])) holds[i]=true; }); return holds; }
+    const idxs = vals.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,2).map(x=>x[1]);
+    idxs.forEach(i=>holds[i]=true);
+    return holds;
+  }
+
+  /* ===== Flow ===== */
+  function spendFromBalance(bagCost){
+    if(!inDemo()){
+      try{
+        if(!window.__bagSession || !__bagSession.spend) return false;
+        return !!__bagSession.spend(bagCost);
+      }catch{ return false; }
+    }else{
+      const bal=getDemoBal(); if(bal<bagCost) return false; setDemoBal(bal-bagCost); return true;
+    }
+  }
+  function creditToBalance(bagAmount){
+    if(bagAmount<=0) return;
+    if(!inDemo()){
+      try{ if(__bagSession.credit) __bagSession.credit(bagAmount); }catch{}
+    }else{
+      setDemoBal(getDemoBal()+bagAmount);
+    }
+  }
+
   function startDeal(){
     resumeAudio();
-    const usd = betToUsd();
+
+    // Convert entered bet to USD envelope (1..2000)
+    let usd = betToUsd();
     if(!(usd>=1)){ toast('Bet must be at least $1'); return; }
+    if(usd>2000){ usd = 2000; betEl.value = (currentCurrency()==='USD' ? '2000.00' : usdToCurrency(2000).toFixed(currentCurrency()==='USD'?2:6)); }
+
+    // Spend from balance in *BAG* equivalent, regardless of UI currency
+    const {bagUsd,xrpUsd} = PRICES;
+    let bagCost = 0;
+    if(currentCurrency()==='USD'){ bagCost = bagUsd>0 ? (usd/bagUsd) : 0; }
+    else if(currentCurrency()==='XRP'){ bagCost = (bagUsd>0 && xrpUsd>0) ? (usd/bagUsd) : 0; } // usd already computed
+    else if(currentCurrency()==='BAG'){ bagCost = PRICES.bagUsd>0 ? (usd/PRICES.bagUsd) : 0; }
+
+    if(!(bagCost>0) || !spendFromBalance(bagCost)){ toast('Insufficient balance'); return; }
+    renderMode(); renderBalance();
+
     anteUsd = usd;
     updatePot(anteUsd*2);
     statusEl.textContent = 'Dealing…';
@@ -369,55 +458,28 @@
 
     deck = newDeck();
     player.hand = []; bots.forEach(b=>b.hand=[]);
+    for(let r=0;r<5;r++){ player.hand.push(deck.pop()); bots.forEach(b=>b.hand.push(deck.pop())); }
 
-    for(let r=0;r<5;r++){
-      player.hand.push(deck.pop());
-      bots.forEach(b=>b.hand.push(deck.pop()));
-    }
-    phase='DEALT';
-    renderSeats();
-
-    const nodes = player.nodes;
-    nodes.forEach(n=>{ n.style.opacity='0'; });
+    phase='DEALT'; renderSeats();
+    const nodes = player.nodes; nodes.forEach(n=>{ n.style.opacity='0'; });
     dealAnimation(nodes, ()=>{
       phase='HOLD';
-      btnDraw.disabled=false;
-      btnReset.disabled=false;
+      btnDraw.disabled=false; btnReset.disabled=false;
       statusEl.textContent='Select cards to HOLD, then press Draw';
       chipSfx();
     });
   }
 
-  function botHoldLogic(hand){
-    const holds = [false,false,false,false,false];
-    const vals = hand.map(c=>RVAL[c.r]);
-    const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
-    const pairs = Object.entries(counts).filter(([v,c])=>c>=2).map(([v,c])=>+v);
-    if(pairs.length){
-      hand.forEach((c,i)=>{ if(pairs.includes(RVAL[c.r])) holds[i]=true; });
-      return holds;
-    }
-    const idxs = vals.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,2).map(x=>x[1]);
-    idxs.forEach(i=>holds[i]=true);
-    return holds;
-  }
-
   function drawPhase(){
     if(phase!=='HOLD') return;
-    statusEl.textContent = 'Drawing…';
-    btnDraw.disabled = true;
+    statusEl.textContent = 'Drawing…'; btnDraw.disabled = true;
 
     player.nodes.forEach((el, i)=>{ if(!el.classList.contains('hold')) player.hand[i] = deck.pop(); });
     bots.forEach(b=>{ const holds = botHoldLogic(b.hand); holds.forEach((h,i)=>{ if(!h) b.hand[i]=deck.pop(); }); });
 
-    phase='DRAWN';
-    renderSeats();
+    phase='DRAWN'; renderSeats();
     player.nodes.forEach((el)=>{ el.classList.add('winner-glow'); setTimeout(()=>el.classList.remove('winner-glow'), 280); });
     setTimeout(showdown, 320);
-  }
-
-  function handName(cat){
-    return ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'][cat] || '—';
   }
 
   function showdown(){
@@ -427,69 +489,58 @@
     const results = [];
     const pRank = rankHand(player.hand);
     results.push({ who:'You', rank:pRank, hand:player.hand });
-
-    bots.forEach(b=>{
-      const r=rankHand(b.hand);
-      results.push({ who:b.name, rank:r, hand:b.hand });
-    });
+    bots.forEach(b=>results.push({ who:b.name, rank:rankHand(b.hand), hand:b.hand }));
 
     let winner = 0;
-    for(let i=1;i<results.length;i++){
-      const cmp=cmpHands(results[i].rank, results[winner].rank);
-      if(cmp>0) winner=i;
-    }
+    for(let i=1;i<results.length;i++){ const cmp=cmpHands(results[i].rank, results[winner].rank); if(cmp>0) winner=i; }
     const top = results[winner];
     const ties = results.filter(r=>cmpHands(r.rank, top.rank)===0);
 
     let outcome='lose', msg='';
-    if(ties.length>1){
-      outcome='push';
-      msg='Push — '+handName(top.rank.cat)+' Refund issued';
-    }else if(results[winner].who==='You'){
-      outcome='win';
-      msg='You win — '+handName(top.rank.cat)+' 2× payout';
-    }else{
-      outcome='lose';
-      msg= top.who+' wins — '+handName(top.rank.cat);
-    }
+    if(ties.length>1){ outcome='push'; msg='Push — '+handName(top.rank.cat)+' Refund issued'; }
+    else if(results[winner].who==='You'){ outcome='win'; msg='You win — '+handName(top.rank.cat)+' 2× payout'; }
+    else{ outcome='lose'; msg= top.who+' wins — '+handName(top.rank.cat); }
 
     if(top.who==='You'){ player.nodes.forEach(n=>n.classList.add('winner-glow')); }
     else { aiRow.querySelectorAll('.card').forEach(n=>n.classList.add('winner-glow')); }
 
-    statusEl.textContent = msg;
+    statusEl.textContent = msg; lastLbl.textContent = (outcome==='win'?'WIN':outcome==='push'?'PUSH':'LOSE');
 
     const usd = anteUsd;
+    const {bagUsd,xrpUsd} = PRICES;
+
     if(outcome==='win'){
       winSfx(); confettiBurst(); chipFlash();
-      updatePot(usd*4);
-      setTimeout(()=>updatePot(0), 900);
-      toast('Payout: '+fmt(usdToCurrency(usd*2)));
+      updatePot(usd*4); setTimeout(()=>updatePot(0), 900);
+      toast('Payout: '+fmtBet(usdToCurrency(usd*2)));
+      // Credit 2× in BAG equivalent
+      const bagCredit = bagUsd>0 ? ((usd*2)/bagUsd) : 0;
+      creditToBalance(bagCredit);
     }else if(outcome==='push'){
       chipSfx(); updatePot(0);
-      toast('Refunded: '+fmt(usdToCurrency(usd)));
+      toast('Refunded: '+fmtBet(usdToCurrency(usd)));
+      const bagRefund = bagUsd>0 ? (usd/bagUsd) : 0;
+      creditToBalance(bagRefund);
     }else{
       loseSfx(); updatePot(0);
-      toast('Lost: '+fmt(usdToCurrency(usd)));
+      toast('Lost: '+fmtBet(usdToCurrency(usd)));
+      // No credit (stake already deducted on deal)
     }
 
+    renderBalance();
     phase='SHOWDOWN';
     btnReset.disabled=false; btnDeal.disabled=false;
   }
 
-  // ====== Celebrations (DPR-aware) ======
+  /* ===== Celebrations (DPR-aware) ===== */
   function confettiBurst(){
     const r=confetti.getBoundingClientRect();
     const W = r.width, H = r.height;
-    const bits=[];
-    for(let i=0;i<60;i++){
-      bits.push({ x: W/2, y:H/2, vx:(Math.random()*2-1)*3, vy:(Math.random()*-3-2), g:0.08+Math.random()*0.03, r:2+Math.random()*3 });
-    }
+    const bits=[]; for(let i=0;i<60;i++){ bits.push({ x: W/2, y:H/2, vx:(Math.random()*2-1)*3, vy:(Math.random()*-3-2), g:0.08+Math.random()*0.03, r:2+Math.random()*3 }); }
     let t=0, raf;
     function step(){
-      t++;
-      ctx2.clearRect(0,0,W,H);
-      bits.forEach(b=>{
-        b.vy+=b.g; b.x+=b.vx; b.y+=b.vy;
+      t++; ctx2.clearRect(0,0,W,H);
+      bits.forEach(b=>{ b.vy+=b.g; b.x+=b.vx; b.y+=b.vy;
         ctx2.globalAlpha = 0.9; ctx2.fillStyle = (t%10<5)?'#ffd700':'#2fbf6b';
         ctx2.beginPath(); ctx2.arc(b.x,b.y,b.r,0,Math.PI*2); ctx2.fill();
       });
@@ -506,10 +557,10 @@
     });
   }
 
-  // ====== Controls ======
+  /* ===== Controls ===== */
   btnDeal.addEventListener('click', ()=>{
     resumeAudio();
-    // Normalize bet to bounds in current currency
+    // Normalize to bounds in current currency
     let usd = betToUsd();
     if(usd < 1){ usd = 1; betEl.value = (currentCurrency()==='USD' ? '1.00' : usdToCurrency(1).toFixed(currentCurrency()==='USD'?2:6)); }
     if(usd > 2000){ usd = 2000; betEl.value = (currentCurrency()==='USD' ? '2000.00' : usdToCurrency(2000).toFixed(currentCurrency()==='USD'?2:6)); }
@@ -517,36 +568,33 @@
   });
   btnDraw.addEventListener('click', drawPhase);
   btnReset.addEventListener('click', ()=>{
-    phase='IDLE';
-    player.hand=[]; bots.forEach(b=>b.hand=[]);
-    renderSeats(); updatePot(0);
-    statusEl.textContent='Ready';
+    phase='IDLE'; player.hand=[]; bots.forEach(b=>b.hand=[]);
+    renderSeats(); updatePot(0); statusEl.textContent='Ready';
     btnDraw.disabled=true; btnReset.disabled=true; btnDeal.disabled=false;
   });
   currencyEl.addEventListener('change', ()=>{
-    // change input step for precision
     betEl.step = (currencyEl.value==='USD' ? '0.01' : '0.000001');
-    const usd = betToUsd();
-    if(usd>0){ betEl.value = usdToCurrency(usd).toFixed(currencyEl.value==='USD'?2:6); }
+    const usd = betToUsd(); if(usd>0){ betEl.value = usdToCurrency(usd).toFixed(currencyEl.value==='USD'?2:6); }
     document.getElementById('betHint').textContent = 'Min $1 — Max $2000';
   });
 
-  // Touch/keyboard: first interaction resumes audio
-  ['click','touchstart','keydown'].forEach(ev=>addEventListener(ev, ()=>resumeAudio(), {passive:true, once:true}));
-
-  // ====== Init ======
-  (function init(){
+  /* ===== Init ===== */
+  function init(){
+    renderMode(); renderBalance(); updatePot(0); sizeCanvas();
     statusEl.textContent = 'Ready';
-    updatePot(0);
-    player.hand = []; bots.forEach(b=>b.hand=[]);
-    renderSeats();
+    player.hand = []; bots.forEach(b=>b.hand=[]); renderSeats();
+
     // Friendly defaults for demo
     if(window.__BAG_FORCE_DEMO===true || typeof window.__BAG_FORCE_DEMO==='undefined'){
       currencyEl.value='USD'; betEl.value='5.00';
     }
     betEl.step = (currencyEl.value==='USD' ? '0.01' : '0.000001');
-  })();
+  }
+  init();
 
+  // If your pricing/session updates dynamically:
+  addEventListener('bag:pricesUpdated', ()=>{ renderBalance(); }, {passive:true});
+  addEventListener('bag:sessionUpdated', ()=>{ renderMode(); renderBalance(); }, {passive:true});
 })();
 </script>
 </body>
