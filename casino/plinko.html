@@ -1116,7 +1116,7 @@
 })();
 </script>
 
-<!-- === PLINKO GAME LOGIC (unchanged visuals) === -->
+<!-- === PLINKO GAME LOGIC — UPDATED: COIN SETTLES IN SLOT BEFORE RESULT === -->
 <script>
 (function(){
   const G = (window.__BAG_PLINKO = window.__BAG_PLINKO || {});
@@ -1136,8 +1136,10 @@
 
   const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
   const PEG_R = 6, BALL_R = 8, WALL_PAD = 24, TOP_OFFSET = 110, BOTTOM_OFFSET = 120;
-  // widen the board walls outward a tiny bit so the coin doesn't get trapped at the sides
-  const WALL_WIDEN = 6; // pixels per side
+  const WALL_WIDEN = 6; // keep coins away from outer pegs
+  const REST_SPEED = 0.06;       // speed threshold for "at rest" in slot
+  const REST_FRAMES = 10;        // consecutive frames under threshold
+  const SLOT_FLOOR_DEPTH = 54;   // visual floor below board line
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -1146,33 +1148,34 @@
   const pegLeft  = WALL_PAD;
   const pegRight = W - WALL_PAD;
 
-  const WALL_EXTRA = 10;
-  const wallLeft   = pegLeft  - WALL_EXTRA;
-  const wallRight  = pegRight + WALL_EXTRA;
+  const wallLeft  = pegLeft  - 10;
+  const wallRight = pegRight + 10;
 
   const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
 
   const SUBSTEPS = 2;
-  let dropX = (pegLeft + pegRight) / 2;
-  let lastAimX = dropX;
-  let aimVX = 0;
 
   const PEG_ROWS=15, PEG_COLS=13;
   const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
   const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
-  const pegs=[];
-  for(let r=0;r<PEG_ROWS;r++){
-    const off=(r%2===0)?0:pegSpacingX/2;
-    for(let c=0;c<PEG_COLS;c++){
-      const x=pegLeft+20+c*pegSpacingX+off;
-      if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
-      const y=topBoard+r*pegSpacingY;
-      pegs.push({x,y,r:PEG_R});
+  (function genPegs(){
+    const pegs=[];
+    for(let r=0;r<PEG_ROWS;r++){
+      const off=(r%2===0)?0:pegSpacingX/2;
+      for(let c=0;c<PEG_COLS;c++){
+        const x=pegLeft+20+c*pegSpacingX+off;
+        if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
+        const y=topBoard+r*pegSpacingY;
+        pegs.push({x,y,r:PEG_R});
+      }
     }
-  }
+    window.__PLINKO_PEGS__ = pegs;
+  })();
 
-  const slotWidth=(wallRight-wallLeft)/SLOTS;
-  const slotX=i=>wallLeft+i*slotWidth;
+  const slotCount = SLOTS;
+  const slotWallLeft  = 24 - WALL_WIDEN;
+  const slotWallRight = 640 - 24 + WALL_WIDEN;
+  const slotWidth=(slotWallRight-slotWallLeft)/slotCount;
 
   const $=id=>document.getElementById(id);
   const balLbl=$('balLbl'), betLbl=$('betLbl'), lastLbl=$('lastLbl'), modeLbl=$('modeLbl');
@@ -1230,11 +1233,11 @@
 
   async function pegSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.peg ? window.__bagSFX.peg() : window.__bagAudio?.peg?.()); }catch{} }
   async function wallSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.wall ? window.__bagSFX.wall() : window.__bagAudio?.wall?.()); }catch{} }
-  async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.loseThud ? window.__bagSFX.loseThud() : window.__bagAudio?.lose?.()); }catch{} }
+  async function loseSound(){ try{ await window.__bagAudio?.ensureInteractive?.(); (window.__bagSFX?.loseThud ? window.__bagSFX?.loseThud() : window.__bagAudio?.lose?.()); }catch{} }
   async function winSound(jp){ try{ await window.__bagAudio?.ensureInteractive?.(); (jp ? (window.__bagSFX?.winJackpot||window.__bagAudio?.win) : (window.__bagSFX?.winSmall||window.__bagAudio?.win))?.(!!jp); }catch{} }
 
   function weightedSlotIndex(){
-    const w=(window.__BAG_FORCE_DEMO === true)?[12,24,12,3,12,24,13]:[14,21,14,2,14,21,14];
+    const w=currentWeights();
     const total=w.reduce((a,b)=>a+b,0);
     let r=Math.random()*total;
     for(let i=0;i<w.length;i++){ r-=w[i]; if(r<=0) return i; }
@@ -1322,16 +1325,15 @@
   function startDrop(){
     dropping=true; dropBtn.disabled=true;
 
-    const wallLeft = 24 - WALL_WIDEN; // widened
-    const wallRight = 640 - 24 + WALL_WIDEN; // widened
-    const BALL_R = 8;
-    const startX = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, G.__dropX ?? 320));
+    const L = 24 - WALL_WIDEN;
+    const R = 640 - 24 + WALL_WIDEN;
+    const startX = Math.min(R - BALL_R, Math.max(L + BALL_R, G.__dropX ?? 320));
     const initVx = ((G.__aimVX|| (Math.random()-0.5)*0.8)) * 0.08;
 
     const id = ++G.lastBallId;
-    G.ball = { id, x:startX, y:110-30, vx:initVx, vy:0.3, r:8, alive:true };
+    G.ball = { id, x:startX, y:110-30, vx:initVx, vy:0.3, r:BALL_R, alive:true, inSlot:-1, restCount:0 };
 
-    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 9000);
+    safetyTimer=setTimeout(()=>{ if(dropping){ resolveByIndex(weightedSlotIndex()); } }, 12000);
   }
 
   function ensureLoop(){
@@ -1345,16 +1347,13 @@
   setInterval(()=>{ const b=G.ball; if(dropping && (!b || !b.alive)) clearRoundState(); }, 900);
 
   function stepBall(b){
-    const GRAVITY = 0.34, RESTITUTION = 0.78, FRICTION = 0.996;
-    const SUBSTEPS = 2, PEG_R = 6, BALL_R = 8;
-    const wallLeft = 24 - WALL_WIDEN;   // widened
-    const wallRight = 640 - 24 + WALL_WIDEN; // widened
-    const bottomBoard = 880-120;
-    const topBoard = 110;
     const fx = Math.pow(FRICTION, 1 / SUBSTEPS);
     const gy = GRAVITY / SUBSTEPS;
+    const leftWall = 24 - WALL_WIDEN;
+    const rightWall= 640 - 24 + WALL_WIDEN;
 
     for (let s = 0; s < SUBSTEPS; s++) {
+      // gravity & motion
       b.vy += gy;
       b.x  += b.vx / SUBSTEPS;
       b.y  += b.vy / SUBSTEPS;
@@ -1362,12 +1361,13 @@
       b.vy *= fx;
       b.vx += (Math.random() - 0.5) * 0.01;
 
-      if (b.x - BALL_R < wallLeft){  b.x = wallLeft + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
-      if (b.x + BALL_R > wallRight){ b.x = wallRight - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
-      if (b.y - BALL_R < 0){ b.y = BALL_R; b.vy = 0; }
+      // side walls
+      if (b.x - BALL_R < leftWall){  b.x = leftWall + BALL_R;  b.vx =  Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
+      if (b.x + BALL_R > rightWall){ b.x = rightWall - BALL_R; b.vx = -Math.abs(b.vx)*RESTITUTION; try{window.__bagAudio?.wall?.();}catch{} }
 
+      // peg collisions
+      const pegs = window.__PLINKO_PEGS__ || [];
       const now = performance.now();
-      const pegs = window.__PLINKO_PEGS__;
       for (const p of pegs){
         const dx = b.x - p.x, dy = b.y - p.y;
         const dist = Math.hypot(dx, dy) || 0.0001;
@@ -1384,44 +1384,61 @@
           if (!window.__PLINKO_LAST_PEG__ || now - window.__PLINKO_LAST_PEG__ > 55){ window.__PLINKO_LAST_PEG__ = now; try{window.__bagAudio?.peg?.();}catch{} }
         }
       }
-    }
 
-    const slowEnough = Math.abs(b.vy) < 0.22;
-    if (b.y >= bottomBoard + 56 && (slowEnough || b.y >= bottomBoard + 86)){
-      resolveByIndex(boundarySlotIndex(b.x));
-    }
-    if (b.y > 880 + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
-  }
+      // Enter slot "well" region
+      const slotTopY = bottomBoard;
+      if (b.inSlot < 0 && (b.y + BALL_R) >= slotTopY){
+        const idx = boundarySlotIndex(b.x);
+        b.inSlot = idx;
+      }
 
-  (function genPegs(){
-    const W=640, H=880;
-    const WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120, PEG_R=6, PEG_ROWS=15, PEG_COLS=13;
-    const wallLeft = (WALL_PAD) - 10 + 10;
-    const wallRight = (W - WALL_PAD) + 10 - 10;
-    const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
-    const pegLeft  = WALL_PAD;
-    const pegRight = W - WALL_PAD;
-    const pegSpacingX=(pegRight-pegLeft-40)/(PEG_COLS-1);
-    const pegSpacingY=(bottomBoard-topBoard-60)/(PEG_ROWS-1);
-    const pegs=[];
-    for(let r=0;r<PEG_ROWS;r++){
-      const off=(r%2===0)?0:pegSpacingX/2;
-      for(let c=0;c<PEG_COLS;c++){
-        const x=pegLeft+20+c*pegSpacingX+off;
-        if(x<=pegLeft+PEG_R || x>=pegRight-PEG_R) continue;
-        const y=topBoard+r*pegSpacingY;
-        pegs.push({x,y,r:PEG_R});
+      // If inside a slot, apply slot-well physics to settle
+      if (b.inSlot >= 0){
+        const left  = slotWallLeft + b.inSlot * slotWidth + BALL_R;
+        const right = slotWallLeft + (b.inSlot+1) * slotWidth - BALL_R;
+        const floorY = bottomBoard + SLOT_FLOOR_DEPTH - BALL_R;
+
+        // horizontal walls inside the slot
+        if (b.x < left){  b.x = left;  b.vx = Math.abs(b.vx) * 0.55; }
+        if (b.x > right){ b.x = right; b.vx = -Math.abs(b.vx) * 0.55; }
+
+        // floor bounce + friction
+        if (b.y > floorY){
+          b.y = floorY;
+          b.vy = -Math.abs(b.vy) * 0.35;
+          b.vx *= 0.985;
+        }
+
+        // gentle pull toward the slot center so it nests nicely
+        const center = slotWallLeft + b.inSlot * slotWidth + slotWidth/2;
+        b.vx += (center - b.x) * 0.01;
+
+        // extra damping while in well
+        b.vx *= 0.985;
+        b.vy *= 0.985;
+
+        const speed = Math.hypot(b.vx, b.vy);
+        const restingOnFloor = Math.abs(b.y - floorY) < 0.6;
+        if (speed < REST_SPEED && restingOnFloor){
+          b.restCount++;
+          if (b.restCount >= REST_FRAMES){
+            // coin is visibly settled — resolve final result
+            resolveByIndex(b.inSlot);
+            return;
+          }
+        } else {
+          b.restCount = 0;
+        }
       }
     }
-    window.__PLINKO_PEGS__ = pegs;
-  })();
+
+    // Failsafe: if somehow off-screen, resolve by position
+    if (b.y > H + 200){ resolveByIndex(boundarySlotIndex(b.x)); }
+  }
 
   function boundarySlotIndex(x){
-    const wallLeft = 24 - WALL_WIDEN, wallRight = 640 - 24 + WALL_WIDEN; // widened
-    const slotCount = 7;
-    const slotWidth=(wallRight-wallLeft)/slotCount;
-    const clamped = Math.min(wallRight-1, Math.max(wallLeft+1, x));
-    const idx = Math.floor((clamped - wallLeft) / slotWidth);
+    const clamped = Math.min(slotWallRight-1, Math.max(slotWallLeft+1, x));
+    const idx = Math.floor((clamped - slotWallLeft) / slotWidth);
     return Math.max(0, Math.min(slotCount-1, idx));
   }
 
@@ -1433,7 +1450,6 @@
 
     dropping=false; dropBtn.disabled=false;
 
-    const PAY_MAP = ['L', 1.25, 'L', 2, 'L', 1.25, 'L'];
     const rule = PAY_MAP[idx] ?? 'L';
 
     if (rule === 'L'){
@@ -1481,39 +1497,41 @@
   }
 
   function drawBoard(){
-    const W=640, H=880, WALL_PAD=24, TOP_OFFSET=110, BOTTOM_OFFSET=120;
-    const ctx = document.getElementById('game').getContext('2d');
-    const wallLeft   = (WALL_PAD) - WALL_WIDEN;            // widened
-    const wallRight  = (W - WALL_PAD) + WALL_WIDEN;        // widened
-    const topBoard=TOP_OFFSET, bottomBoard=H-BOTTOM_OFFSET;
+    const W=640, H=880;
+    const left   = (WALL_PAD) - WALL_WIDEN;
+    const right  = (W - WALL_PAD) + WALL_WIDEN;
 
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0b1b13'; ctx.fillRect(0,0,W,H);
 
+    // frame
     ctx.strokeStyle='#1c3b27'; ctx.lineWidth=4;
-    ctx.strokeRect(wallLeft-8, topBoard-40, (wallRight-wallLeft)+16, bottomBoard-topBoard+60);
+    ctx.strokeRect(left-8, topBoard-40, (right-left)+16, bottomBoard-topBoard+60);
 
-    ctx.fillStyle='#704d1d';
+    // pegs (golden)
     const pegs = window.__PLINKO_PEGS__ || [];
+    ctx.fillStyle='#b8933e';
     for(const p of pegs){ ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
 
+    // slot wall and dividers
     ctx.strokeStyle='#2a4d38'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(wallLeft, bottomBoard); ctx.lineTo(wallRight, bottomBoard); ctx.stroke();
-    const SLOTS=7, slotWidth=(wallRight-wallLeft)/SLOTS;
+    ctx.beginPath(); ctx.moveTo(left, bottomBoard); ctx.lineTo(right, bottomBoard); ctx.stroke();
+
     for(let i=1;i<SLOTS;i++){
-      const x = wallLeft + i*slotWidth;
+      const x = left + i*slotWidth;
       ctx.beginPath(); ctx.moveTo(x, bottomBoard); ctx.lineTo(x, bottomBoard+50); ctx.stroke();
     }
 
-    const centers=Array.from({length:SLOTS},(_,i)=>wallLeft+i*slotWidth+slotWidth/2);
+    // slot labels
+    const centers=Array.from({length:SLOTS},(_,i)=>left+i*slotWidth+slotWidth/2);
     ctx.font='14px system-ui, -apple-system, Segoe UI, Roboto, Arial'; ctx.textAlign='center';
     const labels=['Scratch','1.25×','Scratch','2×','Scratch','1.25×','Scratch'];
     const colors=['#e25b5b','#baf2cd','#e25b5b','#ffd700','#e25b5b','#baf2cd','#e25b5b'];
     for(let i=0;i<SLOTS;i++){ ctx.fillStyle=colors[i]; ctx.fillText(labels[i], centers[i], bottomBoard+72); }
 
+    // aim guide & ghost coin
     if (!dropping){
-      const BALL_R=8;
-      const gx = Math.min(wallRight - BALL_R, Math.max(wallLeft + BALL_R, G.__dropX ?? (wallLeft+wallRight)/2));
+      const gx = clamp(G.__dropX ?? (left+right)/2, left+BALL_R, right-BALL_R);
 
       ctx.save();
       ctx.setLineDash([6,6]);
@@ -1534,7 +1552,7 @@
 
       ctx.save();
       ctx.globalAlpha = 0.85;
-      const r=8;
+      const r=BALL_R;
       const g=ctx.createRadialGradient(gx-3,topBoard-33,2,gx,topBoard-30,r);
       g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
       ctx.fillStyle=g;
@@ -1545,8 +1563,7 @@
   }
 
   function drawBall(x,y){
-    const ctx = document.getElementById('game').getContext('2d');
-    const r=8;
+    const r=BALL_R;
     const g=ctx.createRadialGradient(x-3,y-3,2,x,y,r);
     g.addColorStop(0,'#fff2a6'); g.addColorStop(.55,'#d9a93e'); g.addColorStop(1,'#8b5e13');
     ctx.fillStyle=g;
@@ -1554,6 +1571,7 @@
     ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.stroke();
   }
 
+  // initial paint
   drawBoard();
 })();
 </script>
