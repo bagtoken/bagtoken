@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>$BAG Casino</title>
 
+<!-- Preload ambience to reduce first-tap latency -->
+<link rel="preload" href="/assets/sounds/casino-ambiance.mp3" as="audio" />
+
 <style>
   *{box-sizing:border-box}
   :root{
@@ -131,7 +134,7 @@
 
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
-<audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto"></audio>
+<audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto" playsinline></audio>
 
 <div class="wrap">
   <div class="top">
@@ -254,108 +257,93 @@
 </footer>
 </div>
 
-<!-- 🔊 Sound toggle with Web Audio gain (reliable volume control on iOS/Safari) -->
+<!-- 🔊 Minimal-latency audio: play first, wire graph after -->
 <script>
 (function(){
   const btn   = document.getElementById('soundToggle');
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
+  const TARGET_GAIN = 0.10;
 
-  const TARGET_GAIN = 0.10; // 0 = silent, 1 = original level
+  let playing = false;
+  let audioCtx = null, source = null, gainNode = null, graphReady = false;
 
-  let playing  = false;
-  let audioCtx = null, source = null, gainNode = null;
+  // Icon
+  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
 
-  function setIcon(){
-    btn.textContent = playing ? '🔊' : '🔇';
-    btn.setAttribute('aria-pressed', String(playing));
-  }
-
-  function buildGraph(){
-    if (!audioCtx){
+  // Build graph AFTER audio has begun playing (avoids gesture timing issues)
+  function buildGraphIfNeeded(){
+    if (graphReady) return;
+    try{
       const Ctx = window.AudioContext || window.webkitAudioContext;
-      audioCtx = new Ctx();
-      source   = audioCtx.createMediaElementSource(audio);
-      gainNode = audioCtx.createGain();
+      audioCtx = audioCtx || new Ctx();
+      source   = source   || audioCtx.createMediaElementSource(audio);
+      gainNode = gainNode || audioCtx.createGain();
       gainNode.gain.value = TARGET_GAIN;
       source.connect(gainNode).connect(audioCtx.destination);
-    }
-    // Call resume() inside the gesture without awaiting
-    if (audioCtx.state === 'suspended'){
-      try { audioCtx.resume(); } catch(e) {}
-    }
+      if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+      graphReady = true;
+    }catch(e){ /* some browsers block createMediaElementSource twice; ignore */ }
   }
 
   function setGain(v){
-    if (!gainNode || !audioCtx) return;
-    const clamped = Math.max(0, Math.min(2, v));
-    try {
-      const t = audioCtx.currentTime || 0;
-      gainNode.gain.setTargetAtTime(clamped, t, 0.05);
-    } catch(e) {
-      gainNode.gain.value = clamped;
-    }
+    if (!gainNode) return;
+    const val = Math.max(0, Math.min(2, v));
+    try{ gainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.05); }
+    catch{ gainNode.gain.value = val; }
   }
 
+  // Start immediately – do NOT await anything inside the gesture
   function playNow(){
-    buildGraph();
-    audio.loop = true;
-    audio.volume = 1.0; // control loudness via GainNode only
-    try {
-      const p = audio.play();           // do NOT await
+    try{
+      // Kick playback first for fastest audible response
+      const p = audio.play();
       if (p && typeof p.then === 'function') p.catch(()=>{});
       playing = true;
       setIcon();
       localStorage.setItem(KEY,'on');
-      setGain(TARGET_GAIN);
-    } catch(e){
-      // If blocked, user can tap the 🔊 button next
-    }
+
+      // As soon as it's playing or canplay, wire the graph and set gain
+      if (audio.readyState >= 2){ buildGraphIfNeeded(); setGain(TARGET_GAIN); }
+      else {
+        const onReady = () => { buildGraphIfNeeded(); setGain(TARGET_GAIN); audio.removeEventListener('playing', onReady); audio.removeEventListener('canplay', onReady); };
+        audio.addEventListener('playing', onReady, {once:true});
+        audio.addEventListener('canplay', onReady, {once:true});
+        // Force eager buffering
+        try{ audio.load(); }catch(_){}
+      }
+    }catch(e){ /* if blocked, user can tap again */ }
   }
 
   function pauseNow(){
-    try { audio.pause(); } catch(e){}
+    try{ audio.pause(); }catch(_){}
     playing = false;
     setIcon();
     localStorage.setItem(KEY,'off');
   }
 
-  // 🔘 Button toggle (synchronous)
-  btn.addEventListener('click', function(){
-    playing ? pauseNow() : playNow();
-  });
+  // Button toggle – pure sync path
+  btn.addEventListener('click', function(){ playing ? pauseNow() : playNow(); });
 
-  // 🧩 One-time “gesture unlock” anywhere on the page
+  // One-time page-wide unlock (for users who tap the page before hitting the button)
   function unlockOnce(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing){
-      playNow();
-    }
+    if (localStorage.getItem(KEY) !== 'off' && !playing){ playNow(); }
   }
   window.addEventListener('pointerup', unlockOnce, {capture:true, once:true});
   window.addEventListener('keydown',   unlockOnce, {capture:true, once:true});
 
-  // ♻️ Resume if user previously left sound ON
-  function softResume(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing){
-      playNow();
-    }
-  }
+  // Soft resume if user left sound "on"
+  function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing){ playNow(); } }
   window.addEventListener('focus', softResume);
-  document.addEventListener('visibilitychange', function(){
-    if (!document.hidden) softResume();
-  });
+  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) softResume(); });
 
-  // Init icon and honor saved pref
-  if (localStorage.getItem(KEY) === 'off'){
-    playing = false;
-  }
+  // Init icon
   setIcon();
 
-  // Optional: console helper to tweak gain live
-  window.__bagSetAmbienceGain = (val)=> setGain(val);
+  // Optional console helper
+  window.__bagSetAmbienceGain = (v)=> setGain(v);
 })();
 </script>
-
 
 <!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub) ===== -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
