@@ -152,16 +152,36 @@
   #respBar{justify-content:center}
   #respBar .comp-links{margin-left:0 !important;justify-content:center}
 
-  /* Toast for 'Not now' notice mode */
-  .toast {
-    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-    background: rgba(14, 32, 23, .95); color: #f5f7f4; border:1px solid #245a3b;
-    border-radius: 12px; padding: 10px 14px; font-size: 13px; line-height: 1.35;
-    box-shadow: 0 8px 22px rgba(0,0,0,.35); z-index: 2147483647; display:none;
+  /* ===== Age / Warning modal sizing and theme overrides ===== */
+  /* Larger Age modal */
+  .age-card{
+    width:min(680px,94vw);
+    padding:26px 22px;
   }
-  .toast a { color: #ffd700; text-decoration: none; font-weight: 700; }
-  .toast.show { display: block; animation: toastIn .2s ease-out; }
-  @keyframes toastIn { from { transform: translate(-50%, 8px); opacity: .0 } to { transform: translate(-50%, 0); opacity: 1 } }
+  .age-card h3{font-size:1.25rem}
+  .age-card p{font-size:1rem}
+  .age-card .row{justify-content:flex-end}
+  .age-card .btn.comp,
+  .age-card .btn.comp.secondary{
+    padding:14px 18px;
+    font-size:16px;
+    border-radius:12px;
+  }
+
+  /* Even slightly larger Warning modal */
+  .age-warn-card{
+    width:min(720px,96vw);
+    padding:28px 24px;
+  }
+  .age-warn-card h3{font-size:1.3rem}
+  .age-warn-card p{font-size:1rem}
+  .age-warn-card .row{justify-content:flex-end}
+  .age-warn-card .btn.comp,
+  .age-warn-card .btn.comp.secondary{
+    padding:14px 18px;
+    font-size:16px;
+    border-radius:12px;
+  }
 </style>
 
 <script src="/js/bag-session.js" defer></script>
@@ -429,72 +449,74 @@
   </div>
 </div>
 
-<!-- Toast (for soft warning mode) -->
-<div id="ageToast" class="toast" role="status" aria-live="polite"></div>
+<!-- ⚠️ Center-screen Not-Now Warning (slightly larger) -->
+<div id="ageWarnMask" class="modal-mask"></div>
+<div id="ageWarnModal" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="ageWarnTitle">
+  <div class="card age-warn-card" role="document" style="position:relative">
+    <h3 id="ageWarnTitle">Heads up</h3>
+    <p>
+      Online gaming may be restricted where you live. You’re responsible for complying with your local laws.
+      If you need help or resources:
+      <a href="https://www.ncpgambling.org/help-treatment/" target="_blank" rel="noopener" style="color:var(--gold);font-weight:700;">NCPG</a> ·
+      <a href="https://www.begambleaware.org" target="_blank" rel="noopener" style="color:var(--gold);font-weight:700;">BeGambleAware</a>
+    </p>
+    <div class="row">
+      <button class="btn comp" id="ageWarnOk">OK</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function(){
-  // User must choose Yes or Not now; no close button and no backdrop-dismiss.
-  const NOT_NOW_MODE = 'notice'; // keep as 'notice' (shows toast); switch to 'redirect' to send elsewhere
-  const REDIRECT_URL = '/';      // used only if NOT_NOW_MODE === 'redirect'
-
+  // Require choice; no backdrop or ESC to dismiss.
   const KEY_OK = 'bag_age_ack_v1';
 
   const mask  = document.getElementById('ageMask');
   const modal = document.getElementById('ageModal');
   const yes   = document.getElementById('ageYes');
   const no    = document.getElementById('ageNotNow');
-  const toast = document.getElementById('ageToast');
 
-  function show(){ mask.style.display='block'; modal.classList.remove('hide'); }
-  function hide(){ mask.style.display='none';  modal.classList.add('hide');  }
+  const wmask  = document.getElementById('ageWarnMask');
+  const wmodal = document.getElementById('ageWarnModal');
+  const wok    = document.getElementById('ageWarnOk');
 
-  function showToast(msg, ms=5500){
-    if(!toast) return;
-    toast.innerHTML = msg;
-    toast.classList.add('show');
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(()=> toast.classList.remove('show'), ms);
-  }
+  function show(m, mk){ mk.style.display='block'; m.classList.remove('hide'); }
+  function hide(m, mk){ mk.style.display='none';  m.classList.add('hide');  }
 
   // Show unless previously acknowledged with "Yes"
   if (localStorage.getItem(KEY_OK) !== '1'){
-    requestAnimationFrame(show);
+    requestAnimationFrame(()=> show(modal, mask));
   }
 
   yes.addEventListener('click', ()=>{
     localStorage.setItem(KEY_OK,'1'); // persist so it won't appear next visits
-    hide();
+    hide(modal, mask);
   });
 
   function handleNotNow(){
-    if (NOT_NOW_MODE === 'redirect'){
-      window.location.href = REDIRECT_URL;
-      return;
-    }
-    // notice mode: do NOT persist; hide for this view and show soft warning
-    hide();
-    showToast(
-      'Heads up: Online gaming may be restricted where you live. You are responsible for complying with local laws. Need help? ' +
-      '<a href="https://www.ncpgambling.org/help-treatment/" target="_blank" rel="noopener">NCPG</a> · ' +
-      '<a href="https://www.begambleaware.org" target="_blank" rel="noopener">BeGambleAware</a>'
-    );
+    // Do NOT persist; show center warning (slightly larger)
+    hide(modal, mask);
+    show(wmodal, wmask);
   }
 
   no.addEventListener('click', handleNotNow);
 
-  // Disable click-outside to dismiss (intentionally do nothing on mask clicks)
-  mask.addEventListener('click', function(e){
-    // Block pointer events from closing; keep focus on choices
-    e.stopPropagation();
-  });
+  // Warning modal close
+  wok.addEventListener('click', ()=> hide(wmodal, wmask));
 
-  // Optional: trap Tab key focus inside the modal while it’s open
+  // Disable click-outside and ESC for both modals
+  [mask, wmask].forEach(mk => mk.addEventListener('click', e => e.stopPropagation()));
   document.addEventListener('keydown', function(e){
-    if (modal.classList.contains('hide')) return;
-    if (e.key === 'Escape'){ e.preventDefault(); } // no ESC close
+    if (e.key === 'Escape'){
+      if (!modal.classList.contains('hide') || !wmodal.classList.contains('hide')){
+        e.preventDefault(); // no ESC close
+      }
+    }
+    // Trap Tab focus to current open modal
+    const activeModal = !modal.classList.contains('hide') ? modal : (!wmodal.classList.contains('hide') ? wmodal : null);
+    if (!activeModal) return;
     if (e.key === 'Tab'){
-      const focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      const focusables = activeModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       if (!focusables.length) return;
       const first = focusables[0], last = focusables[focusables.length - 1];
       if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
