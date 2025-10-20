@@ -605,6 +605,44 @@
 })();
 </script>
 
+<!-- ===== DEMO SAFETY SHIM (ensures demo wallet + default $1 stake) ===== -->
+<script>
+(function(){
+  const KEY='__bag_demo_blackjack_v1';
+  function seed(){ try{ if(localStorage.getItem(KEY)==null) localStorage.setItem(KEY,'1000'); }catch{} }
+  function demoSession(){
+    return {
+      active:()=>true,
+      get:()=>({bag:Number(localStorage.getItem(KEY))||1000, ts:Date.now()}),
+      spend:(n)=>{ const b=Number(localStorage.getItem(KEY))||1000; if(!(n>0)) return true; if(b<n) return false; localStorage.setItem(KEY,String(b-n)); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+      credit:(n)=>{ const b=Number(localStorage.getItem(KEY))||1000; if(!(n>0)) return true; localStorage.setItem(KEY,String(b+n)); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
+    };
+  }
+  seed();
+
+  // Default to DEMO unless explicitly forced live (?live=1)
+  const qs = new URLSearchParams(location.search);
+  const forceLive = qs.get('live')==='1';
+  if (!forceLive) {
+    window.__BAG_FORCE_DEMO = true;
+    if (!window.__bagSession || !window.__bagSession.active || !window.__bagSession.active()){
+      window.__bagSession = demoSession();
+    }
+  }
+
+  // Prefer a USD stake so it doesn't depend on price timing
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const usd = document.getElementById('usdBet');
+    if (usd && !usd.value){
+      usd.value='1.00';
+      usd.dataset.userTyped='1';
+      usd.dispatchEvent(new Event('input',{bubbles:true}));
+      usd.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  });
+})();
+</script>
+
 <!-- USD autofill + payouts + limits + PRESETS (same UX as Dice) -->
 <script>
 (function(){
@@ -686,7 +724,6 @@
   }
 
   function updatePayouts(){
-    const {bagUsd}=PR();
     const bagStake = bagFromInputs();
     const usdStake = (function(){
       const direct = parseFloat(usdBetEl?.value||'');
@@ -828,9 +865,15 @@
     });
   }
 
-  // ===== Session (like Dice) =====
-  function sess(){ return window.__bagSession && window.__bagSession.get && window.__bagSession.get() || {bag:0}; }
-  function spendBAG(n){ if(!(n>0)) return true; if(window.__BAG_FORCE_DEMO){ return __bagSession.spend(n); } try{ return !!(__bagSession && __bagSession.spend && __bagSession.spend(n)); }catch{ return false; } }
+  // ===== Session (like Dice) with tolerant demo spend =====
+  function spendBAG(amount){
+    if(!(amount>0)) return true;
+    if(window.__BAG_FORCE_DEMO===true){
+      if (window.__bagSession && __bagSession.spend) return !!__bagSession.spend(amount);
+      return true; // optimistic allow in demo
+    }
+    try{ return !!(window.__bagSession && __bagSession.spend && __bagSession.spend(amount)); }catch{ return false; }
+  }
   function creditBAG(n){ if(!(n>0)) return; try{ __bagSession && __bagSession.credit && __bagSession.credit(n); }catch{} }
 
   // ===== Round State =====
@@ -859,7 +902,7 @@
   }
 
   function setText(t){ roundText.textContent=t; }
-  function flashWin(note, gainBag, baseUsd, mult){
+  function flashWin(gainBag, baseUsd, mult){
     showWin({message: (mult>=2?'BLACKJACK':'WIN'), subtext:`+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(baseUsd)} → ${fmtUsd(baseUsd*mult)}`, duration: (mult>=2?5200:3800)});
   }
 
@@ -915,7 +958,6 @@
   }
 
   function revealDealerHole(){
-    // swap first facedown on dealer to real card
     const cards = elDealerHand.querySelectorAll('.card');
     for(let i=cards.length-1;i>=0;i--){
       if(cards[i].classList.contains('back')){ cards[i].remove(); break; }
@@ -1019,7 +1061,6 @@
       }
 
       if (pv>21){
-        // lost: stake already spent
         roundText.className='t lose'; roundText.textContent='Busted — dealer wins';
         setLast('Scratch');
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
@@ -1066,7 +1107,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (same logic pattern as Dice) -->
+<!-- Practice Mode Wrapper (parity with Dice; kept minimal since shim handles defaults) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1079,13 +1120,6 @@
   const endBtn    = $('#endSessionBtn');
   const connectEl = $('#connectBtn');
 
-  const DEMO_KEY = '__bag_demo_blackjack_v1';
-  const START_BAG = 1000;
-
-  function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
-  if(localStorage.getItem(DEMO_KEY)==null) setBal(START_BAG);
-
   function fmt(n){
     if(!Number.isFinite(n)) return '—';
     if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
@@ -1096,7 +1130,7 @@
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   function renderDemo(){
-    const bag=getBal();
+    const bag=(window.__bagSession?.get?.().bag)||0;
     const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
     if(statusEl){
       statusEl.innerHTML='Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
@@ -1107,31 +1141,11 @@
     if(endBtn)   endBtn.style.display='none';
   }
 
-  // Demo session (compatible with Dice APIs)
-  const demoSession={
-    active:()=>true,
-    get:()=>({addr:'demo',bag:getBal(),ts:Date.now()}),
-    set:()=>{},
-    spend(bag){ const b=getBal(); if(!(bag>0)||b<bag) return false; setBal(b-bag); renderDemo(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemo(); return true; }
-  };
-
   function enableDemo(){
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
-    window.__bagSession = demoSession;
     renderDemo();
-
-    // Default: XRP 1 unit for parity with Dice quick-start
-    const bet  = document.getElementById('betQty');
-    const unit = document.querySelector('.unit');
-    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked=true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
-    if (unit) unit.textContent='XRP';
-    if (bet){ bet.value='1'; bet.dispatchEvent(new Event('input',{bubbles:true})); bet.dispatchEvent(new Event('change',{bubbles:true})); }
-
     if (connectEl) connectEl.style.opacity='0.9';
   }
-
   function enableLive(){ window.__BAG_FORCE_DEMO=false; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); }
 
   if (forceLive) enableLive(); else enableDemo();
