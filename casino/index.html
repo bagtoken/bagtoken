@@ -261,19 +261,17 @@
   const audio = document.getElementById('casinoAmbience');
   const KEY   = 'bag_sound_pref';
 
-  const TARGET_GAIN = 0.10;
+  const TARGET_GAIN = 0.10; // 0 = silent, 1 = original level
 
-  let playing   = false;
-  let audioCtx  = null;
-  let source    = null;
-  let gainNode  = null;
+  let playing  = false;
+  let audioCtx = null, source = null, gainNode = null;
 
   function setIcon(){
     btn.textContent = playing ? '🔊' : '🔇';
-    btn.setAttribute('aria-pressed', playing);
+    btn.setAttribute('aria-pressed', String(playing));
   }
 
-  async function ensureGraph(){
+  function buildGraph(){
     if (!audioCtx){
       const Ctx = window.AudioContext || window.webkitAudioContext;
       audioCtx = new Ctx();
@@ -282,87 +280,82 @@
       gainNode.gain.value = TARGET_GAIN;
       source.connect(gainNode).connect(audioCtx.destination);
     }
-    if (audioCtx.state !== 'running'){
-      await audioCtx.resume();
+    // Call resume() inside the gesture without awaiting
+    if (audioCtx.state === 'suspended'){
+      try { audioCtx.resume(); } catch(e) {}
     }
   }
 
   function setGain(v){
     if (!gainNode || !audioCtx) return;
     const clamped = Math.max(0, Math.min(2, v));
-    gainNode.gain.setTargetAtTime(clamped, audioCtx.currentTime, 0.05);
+    try {
+      const t = audioCtx.currentTime || 0;
+      gainNode.gain.setTargetAtTime(clamped, t, 0.05);
+    } catch(e) {
+      gainNode.gain.value = clamped;
+    }
   }
 
-  async function playAudio(){
-    try{
-      await ensureGraph();
-      setGain(TARGET_GAIN);
-      audio.loop = true;
-      audio.volume = 1.0;
-      await audio.play();
+  function playNow(){
+    buildGraph();
+    audio.loop = true;
+    audio.volume = 1.0; // control loudness via GainNode only
+    try {
+      const p = audio.play();           // do NOT await
+      if (p && typeof p.then === 'function') p.catch(()=>{});
       playing = true;
       setIcon();
       localStorage.setItem(KEY,'on');
-      removeGestureUnlock();
-    }catch(e){
-      playing = false;
-      setIcon();
-      return Promise.reject(e);
+      setGain(TARGET_GAIN);
+    } catch(e){
+      // If blocked, user can tap the 🔊 button next
     }
   }
 
-  function pauseAudio(){
-    audio.pause();
+  function pauseNow(){
+    try { audio.pause(); } catch(e){}
     playing = false;
     setIcon();
     localStorage.setItem(KEY,'off');
-    armGestureUnlock();
   }
 
-  btn.addEventListener('click',()=> playing ? pauseAudio() : playAudio().catch(()=>{}));
-
-  const GESTURES = ['pointerdown','touchstart','mousedown','keydown'];
-  let armed = false;
-
-  function gestureHandler(){
-    const pref = localStorage.getItem(KEY);
-    if (pref !== 'off' && !playing){
-      playAudio().catch(()=>{});
-    }
-  }
-  function armGestureUnlock(){
-    if (armed) return;
-    armed = true;
-    GESTURES.forEach(t => document.addEventListener(t, gestureHandler, {capture:true, passive:true}));
-  }
-  function removeGestureUnlock(){
-    if (!armed) return;
-    armed = false;
-    GESTURES.forEach(t => document.removeEventListener(t, gestureHandler, {capture:true}));
-  }
-
-  window.addEventListener('focus', () => {
-    const pref = localStorage.getItem(KEY);
-    if (pref !== 'off' && !playing) playAudio().catch(()=>{});
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden){
-      const pref = localStorage.getItem(KEY);
-      if (pref !== 'off' && !playing) playAudio().catch(()=>{});
-    }
+  // 🔘 Button toggle (synchronous)
+  btn.addEventListener('click', function(){
+    playing ? pauseNow() : playNow();
   });
 
-  const pref = localStorage.getItem(KEY);
-  if (pref === 'off'){
+  // 🧩 One-time “gesture unlock” anywhere on the page
+  function unlockOnce(){
+    if (localStorage.getItem(KEY) !== 'off' && !playing){
+      playNow();
+    }
+  }
+  window.addEventListener('pointerup', unlockOnce, {capture:true, once:true});
+  window.addEventListener('keydown',   unlockOnce, {capture:true, once:true});
+
+  // ♻️ Resume if user previously left sound ON
+  function softResume(){
+    if (localStorage.getItem(KEY) !== 'off' && !playing){
+      playNow();
+    }
+  }
+  window.addEventListener('focus', softResume);
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) softResume();
+  });
+
+  // Init icon and honor saved pref
+  if (localStorage.getItem(KEY) === 'off'){
     playing = false;
-  } else {
-    armGestureUnlock();
   }
   setIcon();
 
+  // Optional: console helper to tweak gain live
   window.__bagSetAmbienceGain = (val)=> setGain(val);
 })();
 </script>
+
 
 <!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub) ===== -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
