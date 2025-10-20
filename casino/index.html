@@ -152,13 +152,16 @@
   #respBar{justify-content:center}
   #respBar .comp-links{margin-left:0 !important;justify-content:center}
 
-  /* Age popup specific */
-  .age-card .row{justify-content:flex-end}
-  .age-card .close-x{
-    position:absolute;top:8px;right:10px;border:0;background:transparent;color:#aeb7af;
-    font-size:18px;cursor:pointer
+  /* Toast for 'Not now' notice mode */
+  .toast {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(14, 32, 23, .95); color: #f5f7f4; border:1px solid #245a3b;
+    border-radius: 12px; padding: 10px 14px; font-size: 13px; line-height: 1.35;
+    box-shadow: 0 8px 22px rgba(0,0,0,.35); z-index: 2147483647; display:none;
   }
-  .age-card .close-x:hover{color:#fff}
+  .toast a { color: #ffd700; text-decoration: none; font-weight: 700; }
+  .toast.show { display: block; animation: toastIn .2s ease-out; }
+  @keyframes toastIn { from { transform: translate(-50%, 8px); opacity: .0 } to { transform: translate(-50%, 0); opacity: 1 } }
 </style>
 
 <script src="/js/bag-session.js" defer></script>
@@ -289,7 +292,7 @@
     </article>
   </section>
 
-  <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+  <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
     © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
     <br>
     <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
@@ -417,7 +420,6 @@
 <div id="ageMask" class="modal-mask"></div>
 <div id="ageModal" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="ageTitle">
   <div class="card age-card" role="document" style="position:relative">
-    <button class="close-x" id="ageClose" aria-label="Dismiss">×</button>
     <h3 id="ageTitle">21+ Notice</h3>
     <p>Are you 21 or older in the U.S. (or of legal age in your region)?</p>
     <div class="row">
@@ -427,39 +429,78 @@
   </div>
 </div>
 
+<!-- Toast (for soft warning mode) -->
+<div id="ageToast" class="toast" role="status" aria-live="polite"></div>
+
 <script>
 (function(){
-  const KEY = 'bag_age_ack_v1';
+  // User must choose Yes or Not now; no close button and no backdrop-dismiss.
+  const NOT_NOW_MODE = 'notice'; // keep as 'notice' (shows toast); switch to 'redirect' to send elsewhere
+  const REDIRECT_URL = '/';      // used only if NOT_NOW_MODE === 'redirect'
+
+  const KEY_OK = 'bag_age_ack_v1';
+
   const mask  = document.getElementById('ageMask');
   const modal = document.getElementById('ageModal');
   const yes   = document.getElementById('ageYes');
   const no    = document.getElementById('ageNotNow');
-  const close = document.getElementById('ageClose');
+  const toast = document.getElementById('ageToast');
 
-  function show(){
-    mask.style.display = 'block';
-    modal.classList.remove('hide');
-  }
-  function hide(){
-    mask.style.display = 'none';
-    modal.classList.add('hide');
+  function show(){ mask.style.display='block'; modal.classList.remove('hide'); }
+  function hide(){ mask.style.display='none';  modal.classList.add('hide');  }
+
+  function showToast(msg, ms=5500){
+    if(!toast) return;
+    toast.innerHTML = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=> toast.classList.remove('show'), ms);
   }
 
-  // Only show if not previously acknowledged
-  if (localStorage.getItem(KEY) !== '1'){
-    // small defer to avoid layout jank
+  // Show unless previously acknowledged with "Yes"
+  if (localStorage.getItem(KEY_OK) !== '1'){
     requestAnimationFrame(show);
   }
 
   yes.addEventListener('click', ()=>{
-    localStorage.setItem(KEY,'1');
+    localStorage.setItem(KEY_OK,'1'); // persist so it won't appear next visits
     hide();
   });
-  no.addEventListener('click', hide);
-  close.addEventListener('click', hide);
 
-  // Click outside card to close
-  mask.addEventListener('click', hide);
+  function handleNotNow(){
+    if (NOT_NOW_MODE === 'redirect'){
+      window.location.href = REDIRECT_URL;
+      return;
+    }
+    // notice mode: do NOT persist; hide for this view and show soft warning
+    hide();
+    showToast(
+      'Heads up: Online gaming may be restricted where you live. You are responsible for complying with local laws. Need help? ' +
+      '<a href="https://www.ncpgambling.org/help-treatment/" target="_blank" rel="noopener">NCPG</a> · ' +
+      '<a href="https://www.begambleaware.org" target="_blank" rel="noopener">BeGambleAware</a>'
+    );
+  }
+
+  no.addEventListener('click', handleNotNow);
+
+  // Disable click-outside to dismiss (intentionally do nothing on mask clicks)
+  mask.addEventListener('click', function(e){
+    // Block pointer events from closing; keep focus on choices
+    e.stopPropagation();
+  });
+
+  // Optional: trap Tab key focus inside the modal while it’s open
+  document.addEventListener('keydown', function(e){
+    if (modal.classList.contains('hide')) return;
+    if (e.key === 'Escape'){ e.preventDefault(); } // no ESC close
+    if (e.key === 'Tab'){
+      const focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+    }
+  });
 })();
 </script>
 
