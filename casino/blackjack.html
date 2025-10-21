@@ -82,10 +82,7 @@
     transform:translateY(14px);opacity:0;animation:in .16s ease-out forwards
   }
   @keyframes in{to{transform:translateY(0);opacity:1}}
-  .card.back{
-    background:repeating-linear-gradient(45deg,#0b1b13 0px,#0b1b13 6px,#0e2217 6px,#0e2217 12px);
-    border-color:#193d2b
-  }
+  .card.back{ border-color:#193d2b }
   .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:#fff}
 
   .btnbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
@@ -237,10 +234,11 @@
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let ac, master, primed=false;
 
-  const shuffle = new Audio('/assets/sounds/card_shuffle.mp3');
+  const shuffle = new Audio('/assets/sounds/card_shuffle.mp3'); // your file
   shuffle.preload = 'auto';
   shuffle.volume = 0.6;
 
+  // optional click asset; falls back to webaudio click if missing
   const clickFile = new Audio('/assets/sounds/card_place.mp3');
   clickFile.preload = 'auto';
   clickFile.volume = 0.45;
@@ -261,7 +259,7 @@
   function prime(){
     if (primed) return; primed=true; resume();
     for (const a of [shuffle, clickFile]){
-      a.muted = true; a.play().catch(()=>{}).finally(()=>{ a.pause(); a.currentTime=0; a.muted=false; });
+      a.muted = true; a.play().catch(()=>{}).finally(()=>{ a.pause(); a.currentTime=0; a.muted=false; a.removeAttribute('muted'); });
     }
   }
   addEventListener('pointerdown', prime, {passive:true});
@@ -428,22 +426,22 @@ window.addEventListener('storage', (e)=>{ if(e.key===VIEW_CACHE_KEY||e.key===XRP
 })();
 </script>
 
-<!-- CARD LOADER: uses /assets/cards with your exact names -->
+<!-- CARD LOADER: /assets/cards (SVG only, fast) -->
 <script>
 (function(){
   const CARD_ROOT = '/assets/cards';
 
-  // Canonical suit words for gameplay → file variants we should try
+  // Gameplay suit → filename suit
   const SUIT_CANON = { '♠':'spades', '♥':'hearts', '♦':'diamonds', '♣':'clubs' };
-  // You standardized to "diamonds" (plural). Your clubs files use "clovers".
+  // Your clubs are "clovers". Keep both to be safe.
   const SUIT_VARIANTS = {
     spades:   ['spades'],
     hearts:   ['hearts'],
-    diamonds: ['diamonds'],                 // tidy: only plural
-    clubs:    ['clovers','clubs','clover']  // prefer your files, still support "clubs"
+    diamonds: ['diamonds'],
+    clubs:    ['clovers','clubs'] // tries clovers first
   };
   const RANK_WORD = { 'A':'ace', 'J':'jack', 'Q':'queen', 'K':'king' };
-  const EXT = ['.svg', '.png', '.webp'];
+  const EXT = ['.svg']; // SVG only
 
   function candidatesFor(rank, suitChar){
     const suitCanon = SUIT_CANON[suitChar] || 'spades';
@@ -459,38 +457,60 @@ window.addEventListener('storage', (e)=>{ if(e.key===VIEW_CACHE_KEY||e.key===XRP
   }
 
   function makeFrontEl(c){
-    const el=document.createElement('div'); el.className='card';
-    const img=new Image(); img.alt=`${c.r}${c.s}`; img.loading='eager'; img.decoding='async';
-    const tries=candidatesFor(c.r,c.s); let i=0;
-    img.onerror = ()=>{ if(++i<tries.length) img.src=tries[i]; else {
-      // Last-resort text fallback (so gameplay never breaks)
-      el.style.background='#fff'; el.style.display='grid'; el.style.placeItems='center';
-      el.style.font='900 22px/1.1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial';
-      el.style.color=(c.s==='♥'||c.s==='♦')?'#b10d19':'#101010'; el.textContent=c.r+c.s;
-    }};
-    img.src=tries[i];
-
+    const el = document.createElement('div');
+    el.className = 'card';
+    const img = new Image();
+    img.alt = `${c.r}${c.s}`;
+    img.decoding = 'async';
+    img.loading = 'lazy';
     img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain';
     img.style.display='block'; img.style.padding='2%'; img.style.background='#fff';
 
-    el.appendChild(img); return el;
+    const tries = candidatesFor(c.r,c.s);
+    let i = 0;
+    img.onerror = ()=> {
+      if (++i < tries.length) { img.src = tries[i]; return; }
+      // Text fallback
+      el.style.background='#fff';
+      el.style.display='grid';
+      el.style.placeItems='center';
+      el.style.font='900 22px/1.1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial';
+      el.style.color=(c.s==='♥'||c.s==='♦')?'#b10d19':'#101010';
+      el.textContent=c.r+c.s;
+    };
+    img.src = tries[i];
+    el.appendChild(img);
+    return el;
   }
 
   function makeBackEl(){
-    const el=document.createElement('div'); el.className='card';
-    const order=[`${CARD_ROOT}/back-red.svg`, `${CARD_ROOT}/back-red.png`, `${CARD_ROOT}/back-black.svg`, `${CARD_ROOT}/back-black.png`];
-    const img=new Image(); img.alt='Back'; img.loading='eager'; img.decoding='async';
-    let i=0; img.onerror=()=>{ if(++i<order.length) img.src=order[i]; else el.classList.add('back'); };
-    img.onload=()=>{ el.appendChild(img); };
-    img.src=order[i];
-
+    const el = document.createElement('div');
+    el.className = 'card back';
+    el.dataset.back = '1';                   // marker for reveal
+    const order = [
+      `${CARD_ROOT}/back-red.svg`,
+      `${CARD_ROOT}/back-black.svg`
+    ];
+    const img = new Image();
+    img.alt = 'Back';
+    img.decoding = 'async';
+    img.loading = 'lazy';
     img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain';
     img.style.display='block'; img.style.padding='2%'; img.style.background='#fff';
+    let i = 0;
+    img.onerror = ()=> { if (++i < order.length) img.src = order[i]; /* else leave plain */ };
+    img.onload  = ()=> { if (!el.firstChild) el.appendChild(img); };
+    img.src = order[i];
     return el;
   }
 
   window.__CARD_FACTORY__ = {
-    makeCardEl(c, back=false){ return back ? makeBackEl() : makeFrontEl(c); }
+    makeCardEl(c, back=false){
+      try { return back ? makeBackEl() : makeFrontEl(c); }
+      catch(_) {
+        const el=document.createElement('div'); el.className='card'; el.textContent = back ? '🂠' : (c.r+c.s); return el;
+      }
+    }
   };
 })();
 </script>
@@ -716,15 +736,21 @@ function lockStake(){
 }
 
 function dealOneTo(node, arr, faceUp=true){
-  const c=draw(); arr.push(c);
-  node.appendChild(window.__CARD_FACTORY__.makeCardEl(c,!faceUp));
-  if(faceUp) playDeal();
+  const c = draw(); arr.push(c);
+  const maker = (window.__CARD_FACTORY__ && window.__CARD_FACTORY__.makeCardEl) ? window.__CARD_FACTORY__.makeCardEl : null;
+  const cardEl = maker ? maker(c, !faceUp) : (function(){
+    const el=document.createElement('div'); el.className='card'; el.textContent = faceUp ? (c.r+c.s) : '🂠'; return el;
+  })();
+  node.appendChild(cardEl);
+  if (faceUp) { try{ window.__bagSfx && __bagSfx.click(); }catch{} }
   updateTotals();
 }
 function revealHole(){
-  const dc=D('dealerCards');
-  const backs=[...dc.children].filter(n=>n.classList.contains('card') && (n.querySelector('img[alt="Back"]') || n.classList.contains('back')));
-  if(backs[0]) backs[0].replaceWith(window.__CARD_FACTORY__.makeCardEl(STATE.dealer[1],false));
+  const dc = D('dealerCards');
+  const backNode = dc.querySelector('.card.back,[data-back="1"]');
+  if (backNode){
+    backNode.replaceWith(window.__CARD_FACTORY__.makeCardEl(STATE.dealer[1], false));
+  }
   updateTotals();
 }
 
