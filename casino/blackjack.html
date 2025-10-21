@@ -274,7 +274,17 @@
   function hide(){ overlay.style.display='none'; stop(); }
   closeBtn?.addEventListener('click', hide);
   overlay?.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts; title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180); try{ sound && window.__bagSfx && __bagSfx.win(); }catch{} cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim); clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration)); };
+  window.showWin=function(opts={}){
+    const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts;
+    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+    // 🔊 Use Dice’s chime if present; otherwise fall back to local win SFX
+    if (sound){
+      try{ window.__bagAudio && __bagAudio.chime && __bagAudio.chime(); }catch{}
+      try{ (!window.__bagAudio || !__bagAudio.chime) && window.__bagSfx && __bagSfx.win(); }catch{}
+    }
+    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
+    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
+  };
 })();
 </script>
 
@@ -357,11 +367,24 @@
     push(){ tryPlay(push, ()=>{ beep(700,.08,.12); setTimeout(()=>beep(700,.06,.10),90); }); },
   };
 
-  // Button tap sound (includes HIT) — but skip the Deal button to avoid overlap with shuffle
+  // 🔗 Compatibility bridge with Dice audio API (chime/thud)
+  (function ensureDiceApi(){
+    try{
+      if(!window.__bagAudio) window.__bagAudio = {};
+      if(typeof window.__bagAudio.chime !== 'function'){
+        window.__bagAudio.chime = function(){ try{ window.__bagSfx && __bagSfx.win(); }catch{} };
+      }
+      if(typeof window.__bagAudio.thud !== 'function'){
+        window.__bagAudio.thud = function(){ try{ window.__bagSfx && __bagSfx.lose(); }catch{} };
+      }
+    }catch{}
+  })();
+
+  // Button tap sound — skip Deal so shuffle owns that moment
   addEventListener('click', (e)=>{
     const b=e.target.closest('button');
     if(!b) return;
-    if(b.id === 'deal') return; // 🚫 no tap on Deal (shuffle owns that moment)
+    if(b.id === 'deal') return; // no tap on Deal
     try{ __bagSfx.tap(); }catch{}
     b.classList.add('pulse'); setTimeout(()=>b.classList.remove('pulse'), 80);
   }, {capture:true});
@@ -818,20 +841,22 @@ function settle(override){
     const doubled = h._dbl===true; const stake = base*(doubled?2:1);
     if(override==='blackjack'){
       credit += stake*CFG.mBJ; last('Blackjack 2×'); flash('win');
-      try{ window.__bagSfx.blackjack(); }catch{} showWin({message:'BLACKJACK', subtext:`Paid ${CFG.mBJ.toFixed(2)}×`, duration:5200, sound:true}); return;
+      try{ window.__bagAudio && __bagAudio.chime ? __bagAudio.chime() : (window.__bagSfx && __bagSfx.blackjack()); }catch{}
+      showWin({message:'BLACKJACK', subtext:`Paid ${CFG.mBJ.toFixed(2)}×`, duration:5200, sound:false}); return;
     }
     if(override==='push-bj'){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx.push(); }catch{} return;
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx && __bagSfx.push(); }catch{} return;
     }
-    if(pv>21){ last('Scratch'); flash('lose'); try{ window.__bagSfx.lose(); }catch{} return; }
+    if(pv>21){ last('Scratch'); flash('lose'); try{ window.__bagAudio && __bagAudio.thud ? __bagAudio.thud() : (window.__bagSfx && __bagSfx.lose()); }catch{} return; }
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
       credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
-      try{ mult===CFG.mBJ ? window.__bagSfx.blackjack() : window.__bagSfx.win(); }catch{}
-      showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext:`Paid ${mult.toFixed(2)}×`, duration:(mult===CFG.mBJ?5200:3800), sound:true });
+      // WIN overlay + Dice chime
+      try{ window.__bagAudio && __bagAudio.chime ? __bagAudio.chime() : (window.__bagSfx && __bagSfx.win()); }catch{}
+      showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext:`Paid ${mult.toFixed(2)}×`, duration:(mult===CFG.mBJ?5200:3800), sound:false });
     } else if(pv===dv){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx.push(); }catch{}
-    } else { last('Scratch'); flash('lose'); try{ window.__bagSfx.lose(); }catch{} }
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx && __bagSfx.push(); }catch{}
+    } else { last('Scratch'); flash('lose'); try{ window.__bagAudio && __bagAudio.thud ? __bagAudio.thud() : (window.__bagSfx && __bagSfx.lose()); }catch{} }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
   if(credit>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(credit);
