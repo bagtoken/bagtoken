@@ -35,7 +35,7 @@
   .game-header{text-align:center;padding:36px 10px 14px;max-width:var(--content);margin:0 auto}
   .game-header img.hero-img{
     margin:0 auto 10px;
-    width:min(680px,92vw); /* larger banner */
+    width:min(680px,92vw);
     filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))
   }
   .game-header h2{font-size:clamp(1.6rem,5vw,2.6rem);margin:6px 0 0}
@@ -62,7 +62,6 @@
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
 
-  /* Preset chips (green w/ white text) */
   .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .preset-chip{
     appearance:none; border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
@@ -82,7 +81,6 @@
   .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
   .cards{display:flex;gap:10px;flex-wrap:nowrap}
 
-  /* --- Cards (crisp SVG; no emoji) --- */
   .card{
     width:var(--cardW);height:var(--cardH);
     border-radius:12px;border:2px solid #e6e6e6;
@@ -102,7 +100,6 @@
   .btn.alt{color:#e9efe9;background:#15261c;box-shadow:none;border:1px solid #2b6a48}
   .btn:disabled{opacity:.55;cursor:not-allowed}
 
-  /* HUD pills (parity with Dice) */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:8px 2px 0; justify-content:center;}
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
   .hudbar .pill b{ font-weight:800 }
@@ -129,10 +126,12 @@
 
     <!-- LEFT: Controls + Stake -->
     <div class="panel pad">
-      <!-- CONNECT / SESSION (UI parity with Dice; wired by demo wrapper below) -->
+      <!-- CONNECT / SESSION -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
+          <!-- Shown only in ?live=1 -->
+          <button id="connectBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none">Connect</button>
           <button id="startSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px">Start Session</button>
           <button id="topUpBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none">Top Up</button>
           <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none">End</button>
@@ -236,7 +235,7 @@
   </div>
 </section>
 
-<!-- Celebration overlay (re-usable; same as Dice) -->
+<!-- Celebration overlay -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;position:fixed;inset:0;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70); z-index:2147483647;">
   <div id="win-card" style="position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);">
@@ -249,7 +248,6 @@
   </div>
 </div>
 
-<!-- WIN overlay logic -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -301,7 +299,7 @@
 })();
 </script>
 
-<!-- AUDIO: global chime + card-deal swish -->
+<!-- AUDIO -->
 <script>
 /* ===== Tiny master + chime ===== */
 (function(){
@@ -310,6 +308,7 @@
   function getAC(){ if (AC && AC.state!=='closed') return AC; if(!AudioCtx) return null; AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC; }
   async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
   addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
+  addEventListener('scroll', ()=>{ lastTap=Date.now(); resume(); }, {passive:true}); /* NEW: prime on first scroll */
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
   if(!watchdog){ watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); }, 1500); }
   function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
@@ -320,7 +319,7 @@
   window.__bagAudio = { chime, resume };
 })();
 
-/* ===== Card Audio (swish + flick) ===== */
+/* ===== Card Audio ===== */
 (function(){
   const Ctx = window.AudioContext || window.webkitAudioContext;
   let ac=null, master=null, primed=false;
@@ -328,13 +327,13 @@
   async function resume(){ try{ const a=getAC(); if(a && a.state==='suspended') await a.resume(); }catch{} }
   function prime(){ if(primed) return; primed=true; resume(); }
   addEventListener('pointerdown', prime, {passive:true});
+  addEventListener('scroll', prime, {passive:true}); /* NEW: prime on first scroll */
   addEventListener('keydown', prime);
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
 
   function deal(){
     const a=getAC(); if(!a || a.state!=='running') return;
     const t=a.currentTime;
-    // swish (bandpass noise)
     const dur=.11;
     const buf=a.createBuffer(1, a.sampleRate*dur, a.sampleRate);
     const ch=buf.getChannelData(0);
@@ -343,7 +342,6 @@
     const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=1.1;
     const ng=a.createGain(); ng.gain.setValueAtTime(.0001,t); ng.gain.linearRampToValueAtTime(.34,t+.02); ng.gain.exponentialRampToValueAtTime(.0001,t+dur);
     nsrc.connect(bp).connect(ng).connect(master); nsrc.start(t); nsrc.stop(t+dur);
-    // flick
     const o=a.createOscillator(), g=a.createGain();
     o.type='triangle'; o.frequency.setValueAtTime(2600,t+.03);
     g.gain.setValueAtTime(.0001,t+.03); g.gain.linearRampToValueAtTime(.18,t+.045); g.gain.exponentialRampToValueAtTime(.0001,t+.10);
@@ -353,7 +351,7 @@
 })();
 </script>
 
-<!-- PRICES (parity with Dice) -->
+<!-- PRICES (unchanged behavior) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -560,11 +558,8 @@
     if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${uv.toFixed(2)}${warn}`;
   }
 
-  // Manual USD input
   usdBetEl?.addEventListener('input', ()=>{
-    // mark manual
     usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0';
-    // back-solve units from USD
     const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
     const px = priceForCurrent();
     if (px>0 && u>0){
@@ -574,7 +569,6 @@
     renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
 
-  // Units input → autofill USD unless overridden by manual USD
   function autoFillUsd(){
     if (!usdBetEl || usdBetEl.dataset.userTyped==='1') return;
     const px=priceForCurrent(), q=qty();
@@ -584,11 +578,9 @@
   }
   betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); renderLimits(); });
 
-  // Currency toggles
   curToggle?.addEventListener('change', ()=>{
     if(unitSpan) unitSpan.textContent=currentCurrency();
     if (usdBetEl?.dataset.userTyped==='1'){
-      // recompute units from manually-typed USD
       const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
       const px = priceForCurrent();
       if (px>0 && u>0){
@@ -602,10 +594,8 @@
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
 
-  // Live price changes
   window.addEventListener('bag:pricesUpdated', ()=>{
     if (usdBetEl?.dataset.userTyped==='1'){
-      // respect manual USD
       const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
       const px = priceForCurrent();
       betQtyEl.value = (px>0 && u>0) ? (Math.floor((u/px)*1e6)/1e6) : '';
@@ -615,30 +605,26 @@
     renderLimits();
   });
 
-  // Presets
   function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
   presets?.addEventListener('click', (e)=>{
     const b = e.target.closest('.preset-chip'); if(!b) return;
     clearPresetActive(); b.classList.add('active');
     const d=b.dataset.usd; const val=(d==='max')?2000:Math.max(0,Number(d)||0);
-    // set USD from preset (marks userTyped=1 so it sticks)
     usdBetEl.value = val.toFixed(2);
     usdBetEl.dataset.userTyped='1';
-    // back-solve units
     const px = priceForCurrent();
     betQtyEl.value = (px>0 && val>0) ? (Math.floor((val/px)*1e6)/1e6) : '';
     renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
 
   if(unitSpan) unitSpan.textContent=currentCurrency();
-  // Default: auto-fill USD from 1 XRP when prices arrive
   usdBetEl.dataset.userTyped='0';
   window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   renderLimits();
 })();
 </script>
 
-<!-- Cards: pro SVG renderer (no emoji) -->
+<!-- Card SVG helpers -->
 <script>
 const SUIT_DATA = {
   spade:  {fill:'#101114', path:'M50 14C40 0 16 0 10 14c-6 14 8 26 19 32-9-3-21 6-21 16 0 9 7 14 15 14 7 0 11-4 13-9v11h18V67c2 5 6 9 13 9 8 0 15-5 15-14 0-10-12-19-21-16 11-6 25-18 19-32C84 0 60 0 50 14Z'},
@@ -666,15 +652,11 @@ function cornerMarkup(rank,suitName,red){
   return `
     <g font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial" font-weight="800" fill="${red?'#b10d19':'#101010'}">
       <text x="8" y="18" font-size="16">${rank}</text>
-      <g transform="translate(8,26) scale(0.14)">
-        <path d="${SUIT_DATA[suitName].path}" fill="${SUIT_DATA[suitName].fill}"/>
-      </g>
+      <g transform="translate(8,26) scale(0.14)"><path d="${SUIT_DATA[suitName].path}" fill="${SUIT_DATA[suitName].fill}"/></g>
     </g>
     <g transform="rotate(180 50 71)" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial" font-weight="800" fill="${red?'#b10d19':'#101010'}">
       <text x="8" y="18" font-size="16">${rank}</text>
-      <g transform="translate(8,26) scale(0.14)">
-        <path d="${SUIT_DATA[suitName].path}" fill="${SUIT_DATA[suitName].fill}"/>
-      </g>
+      <g transform="translate(8,26) scale(0.14)"><path d="${SUIT_DATA[suitName].path}" fill="${SUIT_DATA[suitName].fill}"/></g>
     </g>`;
 }
 function cardSVG(rank, suitChar){
@@ -689,9 +671,7 @@ function cardSVG(rank, suitChar){
       <g font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial" font-weight="900" fill="${red?'#b10d19':'#101010'}">
         <text x="50" y="82" font-size="62" text-anchor="middle">${rank}</text>
       </g>
-      <g transform="translate(50,110) scale(0.34) translate(-50,-71)">
-        <path d="${suit.path}" fill="${suit.fill}"/>
-      </g>
+      <g transform="translate(50,110) scale(0.34) translate(-50,-71)"><path d="${suit.path}" fill="${suit.fill}"/></g>
     `);
   } else {
     for (const [x,y] of pipPositions(rank)){
@@ -717,7 +697,6 @@ function makeCardEl(c,back=false){
 
 <!-- Blackjack game -->
 <script>
-/* ===== Shoe & rules ===== */
 const CONFIG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 let shoe=[];
 function buildShoe(){ const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣']; const t=[]; for(let d=0;d<CONFIG.decks;d++) for(const r of R) for(const s of S) t.push({r,s}); for(let i=t.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [t[i],t[j]]=[t[j],t[i]]; } shoe=t; }
@@ -726,7 +705,6 @@ function val(hand){ let t=0,a=0; for(const c of hand){ if(c.r==='A'){t+=11;a++;}
 function isBJ(h){ if(h.length!==2) return false; const v=h.map(c=>c.r); return v.includes('A') && ['10','J','Q','K'].some(x=>v.includes(x)); }
 function canSplit(h){ if(!CONFIG.allowSplit || STATE.split) return false; if(h.length!==2) return false; const fv=(x)=>x.r==='A'?11:(['K','Q','J','10'].includes(x.r)?10:parseInt(x.r,10)); return fv(h[0])===fv(h[1]); }
 
-/* ===== Elements ===== */
 const D = (id)=>document.getElementById(id);
 const btnDeal=D('deal'), btnHit=D('hit'), btnStand=D('stand'), btnDouble=D('double'), btnSplit=D('split'), btnAgain=D('again');
 function setStatus(txt,cls){ const el=D('status'); el.className='result'+(cls?(' t '+cls):''); el.textContent=txt; }
@@ -735,31 +713,42 @@ function last(s){ D('lastLbl').textContent=s; }
 /* ===== Prices helper ===== */
 const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 function currentCurrency(){ const el = document.querySelector('#curToggle input[name="betCur"]:checked'); return el ? String(el.value).toUpperCase() : 'XRP'; }
+
+/* ----- FIX: robust demo stake conversion even if prices missing ----- */
 function stakeBag(){
   const q = parseFloat(D('betQty')?.value||0) || 0;
   if (!q) return 0;
+
+  // DEMO: always let play happen, assume 1 XRP == 1 BAG if either price is missing
+  if (window.__BAG_FORCE_DEMO === true) {
+    return currentCurrency()==='BAG' ? q : q; // treat XRP units as BAG units in demo
+  }
+
+  // LIVE: require real prices
   const {bagUsd,xrpUsd}=PR();
   if (currentCurrency()==='BAG') return q;
   if (bagUsd>0 && xrpUsd>0) return q*(xrpUsd/bagUsd);
-  // --- DEMO fallback: if BAG price missing but we're in Demo, assume 1 BAG ≈ 1 XRP to allow play
-  if (window.__BAG_FORCE_DEMO === true && xrpUsd>0) return q;
   return 0;
 }
 function stakeUsd(){
   const direct = parseFloat(D('usdBet')?.value||'');
   if (Number.isFinite(direct) && direct>0) return direct;
+
   const q = parseFloat(D('betQty')?.value||0) || 0;
   const {bagUsd,xrpUsd} = PR();
-  if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : (window.__BAG_FORCE_DEMO===true && xrpUsd>0 ? q*xrpUsd : 0);
+
+  if (window.__BAG_FORCE_DEMO === true) {
+    // Demo: compute something sensible for display; assume 1 XRP ~ $xrpUsd, fallback $1 each
+    const px = (currentCurrency()==='BAG') ? (bagUsd||xrpUsd||1) : (xrpUsd||1);
+    return q * px;
+  }
+
+  if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
   return xrpUsd>0 ? q*xrpUsd : 0;
-}
-function fmt(n, max=6){
-  const x=Number(n); if(!Number.isFinite(x)) return '—';
-  return x.toLocaleString(undefined,{maximumFractionDigits:max});
 }
 function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-/* ===== Demo / Live session wrapper (parity with Dice) ===== */
+/* ===== Demo / Live session wrapper ===== */
 (function demoWrap(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
@@ -768,6 +757,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
   const startBtn  = document.getElementById('startSessionBtn');
   const topUpBtn  = document.getElementById('topUpBtn');
   const endBtn    = document.getElementById('endSessionBtn');
+  const connectBtn= document.getElementById('connectBtn');
 
   const DEMO_KEY = '__bag_demo_bag_v1';
   const START_BAG = 1000;
@@ -794,6 +784,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
     if(startBtn) startBtn.style.display='inline-block';
     if(topUpBtn) topUpBtn.style.display='none';
     if(endBtn)   endBtn.style.display='none';
+    if(connectBtn) connectBtn.style.display='none';
   }
 
   const demoSession={
@@ -828,6 +819,18 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
 
+  // Optional Connect for Live runs (parity with Dice if needed)
+  function wireConnect(){
+    if(!connectBtn) return;
+    connectBtn.addEventListener('click', ()=>{
+      if (typeof window.bagConnect === 'function') {
+        window.bagConnect();
+      } else {
+        alert('Open via Casino Cage to connect, or expose window.bagConnect() in bag-session.js');
+      }
+    });
+  }
+
   function enableDemo(){
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
@@ -837,7 +840,12 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
     const once = ()=>{ forceBetXRP1(); window.removeEventListener('bag:pricesUpdated', once); };
     window.addEventListener('bag:pricesUpdated', once);
   }
-  function enableLive(){ window.__BAG_FORCE_DEMO=false; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); }
+  function enableLive(){
+    window.__BAG_FORCE_DEMO=false;
+    if(connectBtn) connectBtn.style.display='inline-block';
+    wireConnect();
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
 
   if (forceLive) enableLive(); else enableDemo();
 
@@ -846,7 +854,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
 </script>
 
 <script>
-/* ===== HUD (Mode / Balance / Bet / Last) ===== */
+/* ===== HUD ===== */
 (function(){
   const curToggle = document.getElementById('curToggle');
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
@@ -873,7 +881,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
     if (!(xrp > 0)) {
       const { bagUsd, xrpUsd } = PR();
       if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
-      else xrp = 0;
+      else xrp = bag; // demo fallback aligns with 1 XRP ≈ 1 BAG
     }
     return { bag, xrp };
   }
@@ -891,7 +899,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
       const { bag, xrp } = getBalances();
       if (modeLbl) modeLbl.textContent = mode;
       if (betLbl)  betLbl.textContent  = String(currentBet());
-      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—'); // reuse key label
+      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
       if (balLbl && ccyLbl){
         if (ccy === 'XRP'){ balLbl.textContent = fmt(xrp, 6); ccyLbl.textContent='XRP'; }
         else { balLbl.textContent = fmt(bag, 6); ccyLbl.textContent='BAG'; }
@@ -965,7 +973,6 @@ function startRound(){
   const pc=D('playerCards'), dc=D('dealerCards');
   dealOneTo(pc, STATE.hands[0], true);
   dealOneTo(dc, STATE.dealer, true);
-  // hole:
   const hole=draw(); STATE.dealer.push(hole); dc.appendChild(makeCardEl(hole,true)); updateTotals();
   dealOneTo(pc, STATE.hands[0], true);
 
@@ -1057,28 +1064,23 @@ btnSplit.addEventListener('click', ()=>{
   STATE.split=true;
   const a=h[0], b=h[1];
   STATE.hands=[ [a], [b] ];
-  // rebuild rows
   D('playerCards').innerHTML=''; D('playerTotal').textContent='0';
   addSplitRow(1);
   D('playerCards').appendChild(makeCardEl(a)); playDeal();
   D('pC_1').appendChild(makeCardEl(b)); playDeal();
-  // deal one to each
   hitHand(0); hitHand(1);
   updateTotals();
   STATE.active=0; btnSplit.disabled=true; btnDouble.disabled=false;
 });
 btnAgain.addEventListener('click', ()=>{ clearCards(); btnDeal.disabled=false; btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnAgain.style.display='none'; setStatus('Place a stake, then Deal'); last('—'); });
 
-/* ===== Boot ===== */
 function boot(){
   buildShoe();
-  // Default 1 XRP stake, USD autofill will update after prices arrive (and once now)
   const usd = document.getElementById('usdBet'); usd.dataset.userTyped='0';
   window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   setStatus('Place a stake, then Deal');
 }
 boot();
-// Auto-reshuffle
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 </script>
 
