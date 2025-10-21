@@ -143,21 +143,6 @@
   /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
-
-  /* ================= PC-only crisp reels & interaction ================ */
-  @media (hover:hover) and (pointer:fine){
-    .reels, .reel, .strip, .cell{
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
-    }
-    .reels{ user-select:none; }
-    .strip{
-      backface-visibility:hidden;
-      transform:translateZ(0); /* GPU hint to avoid blur */
-    }
-    .reel{ will-change:transform; }
-    #spinBtn{ cursor:pointer; }
-  }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -169,7 +154,7 @@
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
-  <img src="/assets/bag-slots.jpeg" alt="BAG Slots" class="hero-img" loading="lazy" decoding="async">
+  <img src="/assets/bag-slots.png" alt="BAG Slots" class="hero-img" loading="lazy" decoding="async">
   <h2>🎰 $BAG SLOTS</h2>
   <p class="micro" style="margin-top:4px;opacity:.9;">
     💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
@@ -860,58 +845,24 @@
     return { outcome:'lose', mult:0.00 };
   }
 
-  /* ================= PC-only smoother fast spin loop ================== */
-  function isDesktop(){ return matchMedia('(hover:hover) and (pointer:fine)').matches; }
-
   function startFastSpin(durationMs, finalRows){
-    const useRAF = isDesktop();          // desktop only
-    const stepMs = useRAF ? 50 : 60;     // slightly tighter cadence on PC
-    const transMs = useRAF ? 70 : 80;    // shorter transition to match step
-
     const loopers = strips.map((strip, idx) => {
       fillStrip(strip, Array.from({length:3},()=>randomSym()));
-      strip.style.transition = `transform ${transMs}ms linear`;
-      let spinning = true, timer = null, rafId = null, lastTick = performance.now();
+      strip.style.transition = 'transform 80ms linear';
+      let spinning = true, tickTimer = null;
 
-      function doStep(){
-        if(!spinning) return;
-        strip.style.transform = `translateY(-${CELL_H}px)`;
-        strip.addEventListener('transitionend', onEnd, {once:true});
-      }
+      function tick(){ if(!spinning) return; strip.style.transform = `translateY(-${CELL_H}px)`; strip.addEventListener('transitionend', onEnd, {once:true}); }
       function onEnd(){
         const children = [...strip.children];
         if(children.length){ strip.removeChild(children[0]); strip.appendChild(cell(randomSym())); }
-        strip.style.transition='none';
-        strip.style.transform='translateY(0)';
-        strip.getBoundingClientRect();
-        strip.style.transition=`transform ${transMs}ms linear`;
-        if(spinning){
-          if(useRAF){
-            lastTick = performance.now();
-            rafId = requestAnimationFrame(rafLoop);
-          }else{
-            timer = setTimeout(doStep, stepMs);
-          }
-        }
+        strip.style.transition='none'; strip.style.transform='translateY(0)'; strip.getBoundingClientRect();
+        strip.style.transition='transform 80ms linear';
+        if(spinning) tickTimer=setTimeout(tick,60);
       }
-
-      function rafLoop(now){
-        if(!spinning) return;
-        if(now - lastTick >= stepMs){
-          doStep();
-        } else {
-          rafId = requestAnimationFrame(rafLoop);
-        }
-      }
-
-      // kick
-      if(useRAF){ rafId = requestAnimationFrame(rafLoop); }
-      else{ timer = setTimeout(doStep, 0); }
+      tick();
 
       return { stopAbrupt(){
-        spinning=false;
-        if(timer) clearTimeout(timer);
-        if(rafId) cancelAnimationFrame(rafId);
+        spinning=false; if(tickTimer) clearTimeout(tickTimer);
         strip.style.transition='none';
         const col=[ finalRows[0][idx], finalRows[1][idx], finalRows[2][idx] ];
         fillStrip(strip,col); strip.style.transform='translateY(0)';
@@ -920,7 +871,6 @@
 
     return new Promise(resolve=>{ setTimeout(()=>{ loopers.forEach(l=>l.stopAbrupt()); resolve(); }, durationMs); });
   }
-  /* ==================================================================== */
 
   function playSpin(){ try{ if(window.__bagAudio){ __bagAudio.resume && __bagAudio.resume(); window.__spinHandle=__bagAudio.spinLoop(); } }catch{} }
   function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
@@ -1112,7 +1062,7 @@
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
       statusEl.innerHTML =
-        'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
