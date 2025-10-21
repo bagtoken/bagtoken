@@ -16,7 +16,6 @@
     --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
     --lose:#e25b5b; --warn:#e8a85c; --ok:#2fbf6b;
     --felt:#0e2f21; --table:#091a13; --edge:#1a5136;
-
     --card-w:clamp(64px,16vw,90px);
     --card-h:calc(var(--card-w)*1.42);
   }
@@ -54,7 +53,6 @@
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
 
-  /* Inputs */
   input[type=number]{width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px}
 
   /* Quick chips — green like other games */
@@ -85,14 +83,19 @@
   .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
   .cards{display:flex;gap:14px;flex-wrap:nowrap}
 
-  /* Cards: pro look with SVG faces */
-  .card{width:var(--card-w);height:var(--card-h);border-radius:14px;border:2px solid #e6ece8;background:#fff;
-    box-shadow:0 12px 28px rgba(0,0,0,.35);position:relative;overflow:hidden;transform:translateY(18px);opacity:0;animation:in .18s ease-out forwards}
+  /* Cards (no duplicate faces) */
+  .card{
+    width:var(--card-w);height:var(--card-h);border-radius:14px;border:2px solid #e6ece8;background:#fff;
+    box-shadow:0 12px 28px rgba(0,0,0,.35);position:relative;overflow:hidden;
+    transform:translateY(18px);opacity:0;animation:in .18s ease-out forwards
+  }
   @keyframes in{to{transform:translateY(0);opacity:1}}
   .card.red{color:#c1121f}.card.black{color:#0b0b0b}
   .corner{position:absolute;font-size:clamp(12px,2.2vw,14px);line-height:1.05;font-weight:900}
   .tl{top:8px;left:9px}.br{bottom:8px;right:9px;transform:rotate(180deg)}
-  .pip{display:none}
+  .pip{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;
+       font-size:clamp(28px,3.8vw,36px)}
+  .pip svg{width:70%;max-width:72px;height:auto}
   .back{
     background:
       linear-gradient(135deg, rgba(255,255,255,.08), rgba(0,0,0,.10)),
@@ -100,19 +103,17 @@
     border-color:#194733;
   }
 
-  /* Buttons */
   .btnbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
   .btn{min-width:120px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175, #f5c94c);box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18)}
   .btn.alt{color:#e9efe9;background:#15261c;box-shadow:none;border:1px solid #2b6a48}
   .btn:disabled{opacity:.55;cursor:not-allowed}
 
-  /* HUD pills */
   .hud{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
   .result{margin-top:10px;padding:10px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;color:#dfece7}
   .t.win{color:#2fbf6b}.t.push{color:#e8a85c}.t.lose{color:#e25b5b}
 
-  /* Footer (fix wrapping) */
+  /* Footer */
   footer.footer{
     display:flex; flex-direction:column; gap:6px;
     text-align:center; padding:16px 10px; line-height:1.5;
@@ -148,7 +149,6 @@
               <span class="micro" aria-hidden="true">USD</span>
             </div>
           </div>
-          <!-- Quick chips (green) -->
           <div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet">
             <button type="button" class="preset-chip" data-usd="1">$1</button>
             <button type="button" class="preset-chip" data-usd="2">$2</button>
@@ -234,10 +234,6 @@
   </div>
 </section>
 
-<!-- Celebration overlay (reuses Dice win overlay if you include it site-wide) -->
-<canvas id="win-canvas" style="display:none"></canvas>
-<div id="win-overlay" style="display:none"></div>
-
 <!-- AUDIO (shared + card slide/shuffle) -->
 <script>
 (function(){
@@ -266,11 +262,6 @@
     }, 1500);
   }
 
-  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
-  }
   function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
     const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
     const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
@@ -278,7 +269,7 @@
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27);
   }
 
-  // Card slide / shuffle (noise bursts)
+  // Card slide / shuffle
   function noise(duration=0.12, vol=.18, freq=1800){
     const ac=getAC(); if(!ac||ac.state!=='running') return;
     const src = ac.createBufferSource();
@@ -297,11 +288,11 @@
   function slide(){ try{ noise(.10,.16,1700); }catch{} }
   function shuffle(){ noise(.08,.14,1600); setTimeout(()=>noise(.08,.14,1600), 90); setTimeout(()=>noise(.08,.14,1600), 180); }
 
-  window.__bagAudio = Object.assign({}, window.__bagAudio||{}, { chime, thud, slide, shuffle, resume });
+  window.__bagAudio = Object.assign({}, window.__bagAudio||{}, { thud, slide, shuffle, resume });
 })();
 </script>
 
-<!-- PRICES (same logic as Dice) -->
+<!-- PRICES (same engine as Dice) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -465,7 +456,7 @@
 })();
 </script>
 
-<!-- Stake wiring (USD autofill from units; presets; limits) -->
+<!-- Stake wiring -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -492,10 +483,7 @@
     const q=qty();
     return px>0 ? q*px : 0;
   }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
   function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
-
   function setFromUsd(value){
     const u = Math.max(0, Math.min(MAX_USD, Number(value)||0));
     if (usdBetEl){
@@ -514,20 +502,13 @@
     renderLimits();
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
-
   function autoFillUsd(){
     if (!usdBetEl) return;
-    if (usdBetEl.dataset.userTyped==='1') return; // keep manual/preset
+    if (usdBetEl.dataset.userTyped==='1') return;
     const v = derivedUsd();
-    if (v>0){
-      usdBetEl.value = (Math.round(v*100)/100).toFixed(2);
-      usdBetEl.dataset.autofill='1';
-    }else{
-      usdBetEl.value = '';
-      usdBetEl.dataset.autofill='0';
-    }
+    usdBetEl.value = v>0 ? (Math.round(v*100)/100).toFixed(2) : '';
+    usdBetEl.dataset.autofill = v>0 ? '1' : '0';
   }
-
   function renderLimits(){
     const direct = parseFloat(usdBetEl?.value||'');
     const uv = (Number.isFinite(direct) && direct>0) ? direct : derivedUsd();
@@ -536,7 +517,6 @@
     if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${uv.toFixed(2)}${warn}`;
   }
 
-  // Inputs
   usdBetEl?.addEventListener('input', ()=>{ clearPresetActive(); usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; renderLimits(); });
   betQtyEl?.addEventListener('input', ()=>{ clearPresetActive(); autoFillUsd(); renderLimits(); });
   curToggle?.addEventListener('change', ()=>{
@@ -559,7 +539,6 @@
     }
   });
 
-  // Preset chips
   presets?.addEventListener('click', (e)=>{
     const b = e.target.closest('.preset-chip'); if(!b) return;
     clearPresetActive(); b.classList.add('active');
@@ -574,10 +553,9 @@
 })();
 </script>
 
-<!-- Blackjack game logic -->
+<!-- Blackjack logic -->
 <script>
 (function(){
-  // ====== Cards & shoe ======
   const CONFIG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
   let shoe=[];
   function buildShoe(){
@@ -588,69 +566,45 @@
     try{ __bagAudio && __bagAudio.shuffle(); }catch{}
   }
   function draw(){ if(!shoe.length) buildShoe(); return shoe.pop(); }
-  function val(hand){ let t=0,a=0; for(const c of hand){ if(c.r==='A'){t+=11;a++;} else if(['K','Q','J','10'].includes(c.r)) t+=10; else t+=parseInt(c.r,10); } while(t>21 && a>0){ t-=10; a--; } return {total:t, soft:(a>0 && t<=21)}; }
+
+  function val(hand){
+    let t=0,a=0; for(const c of hand){ if(c.r==='A'){t+=11;a++;} else if(['K','Q','J','10'].includes(c.r)) t+=10; else t+=parseInt(c.r,10); }
+    while(t>21 && a>0){ t-=10; a--; } return {total:t, soft:(a>0 && t<=21)};
+  }
   function isBJ(h){ if(h.length!==2) return false; const v=h.map(c=>c.r); return v.includes('A') && ['10','J','Q','K'].some(x=>v.includes(x)); }
   function faceVal(x){ return x.r==='A'?11:(['K','Q','J','10'].includes(x.r)?10:parseInt(x.r,10)); }
   function canSplit(h){ return CONFIG.allowSplit && !STATE.split && h.length===2 && faceVal(h[0])===faceVal(h[1]); }
 
-  // ====== Pro card SVG faces ======
-  function svgForCard(rank, suit){
-    const red = (suit==='♥' || suit==='♦'); const col = red ? '#C1121F' : '#0B0B0B';
-    const PIPS = {
-      '2': [[0,-32],[0,32]],
-      '3': [[0,-36],[0,0],[0,36]],
-      '4': [[-18,-28],[18,-28],[-18,28],[18,28]],
-      '5': [[-18,-28],[18,-28],[0,0],[-18,28],[18,28]],
-      '6': [[-18,-32],[18,-32],[-18,0],[18,0],[-18,32],[18,32]],
-      '7': [[-18,-34],[18,-34],[-18,-10],[18,-10],[0,10],[-18,32],[18,32]],
-      '8': [[-18,-34],[18,-34],[-18,-10],[18,-10],[-18,10],[18,10],[-18,34],[18,34]],
-      '9': [[-18,-36],[18,-36],[0,-20],[-18,-2],[18,-2],[-18,20],[18,20],[0,36],[0,0]],
-      '10': [[-18,-36],[18,-36],[0,-26],[-18,-12],[18,-12],[-18,12],[18,12],[0,26],[-18,36],[18,36]]
-    };
-    const SUIT_SVG = {
+  // SVG for a single suit glyph
+  function suitSVG(s, color){
+    const base = {
       '♠': `<path d="M0-20c-16,12-24,26-24,36c0,8,6,14,14,14c6,0,10-3,10-8c0,5,4,8,10,8c8,0,14-6,14-14c0-10-8-24-24-36z" />`,
       '♥': `<path d="M0,36C-28,18-32,0-23,-10c7-8,19-5,23,4c4-9,16-12,23-4C32,0,28,18,0,36z"/>`,
       '♦': `<path d="M0,-38L26,0L0,38L-26,0Z"/>`,
       '♣': `<path d="M0-16a14,14 0 1 1 0,28a14,14 0 1 1 -9-25a14,14 0 1 1 9-3zM-6,16h12v14h-12z"/>`
-    }[suit];
-    const FACE = (rank==='J'||rank==='Q'||rank==='K') ? `
-      <g transform="translate(0,4)" opacity=".95">
-        <circle cx="0" cy="0" r="20" fill="${col}" opacity=".12"/>
-        <circle cx="0" cy="0" r="16" fill="none" stroke="${col}" stroke-width="2"/>
-        <text x="0" y="6" font-family="ui-sans-serif,system-ui,Segoe UI,Roboto,Arial" font-weight="900" font-size="18" text-anchor="middle" fill="${col}">${rank}</text>
-      </g>` : '';
-    const center = (rank==='A')
-      ? `<g transform="translate(0,0)" fill="${col}" stroke="none">${SUIT_SVG}</g>`
-      : (PIPS[rank] ? PIPS[rank].map(([x,y]) =>
-          `<g transform="translate(${x},${y})" fill="${col}" stroke="none">${SUIT_SVG}</g>`
-        ).join('') : FACE);
-    const corner = (x,y)=>`
-      <g transform="translate(${x},${y})">
-        <text x="0" y="0" font-family="ui-sans-serif,system-ui,Segoe UI,Roboto,Arial" font-weight="900" font-size="18" text-anchor="start" fill="${col}">${rank}</text>
-        <text x="0" y="16" font-family="ui-sans-serif,system-ui,Segoe UI,Roboto,Arial" font-weight="900" font-size="18" text-anchor="start" fill="${col}">${suit}</text>
-      </g>`;
-    return `data:image/svg+xml,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="-45 -70 90 140" shape-rendering="geometricPrecision">
-        <rect x="-44" y="-69" width="88" height="138" rx="10" fill="#ffffff"/>
-        ${corner(-36,-48)}
-        <g transform="rotate(180)">${corner(-36,-48)}</g>
-        ${center}
-      </svg>
-    `)}`;
+    }[s] || '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-45 -70 90 140" aria-hidden="true">
+      <g fill="${color}" stroke="none" transform="translate(0,2)">${base}</g>
+    </svg>`;
   }
+
   function cardEl(c, back=false){
     const el=document.createElement('div');
     el.className = back ? 'card back' : 'card '+(['♥','♦'].includes(c.s)?'red':'black');
     if(!back){
-      el.style.background = `#fff center/cover no-repeat url("${svgForCard(c.r, c.s)}")`;
-      el.innerHTML = `<div class="corner tl">${c.r}<br>${c.s}</div><div class="corner br">${c.r}<br>${c.s}</div>`;
+      const color = (c.s==='♥'||c.s==='♦') ? '#C1121F' : '#0B0B0B';
+      el.innerHTML = `
+        <div class="corner tl">${c.r}<br>${c.s}</div>
+        <div class="pip">${suitSVG(c.s, color)}</div>
+        <div class="corner br">${c.r}<br>${c.s}</div>
+      `;
     }
-    el.animate([{transform:'translateY(18px)',opacity:0},{transform:'translateY(0)',opacity:1}],{duration:180,easing:'cubic-bezier(.2,.9,.2,1)',fill:'forwards'});
+    // play slide on each card creation
     try{ __bagAudio && __bagAudio.slide(); }catch{}
     return el;
   }
 
-  // ====== Session & stake helpers ======
+  // Stake helpers
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
@@ -672,12 +626,10 @@
     if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
     return xrpUsd>0 ? q*xrpUsd : 0;
   }
-
   function spendBAG(n){ if(!(n>0)) return true; try{ return !!(__bagSession && __bagSession.spend && __bagSession.spend(n)); }catch{ return false; } }
   function creditBAG(n){ if(!(n>0)) return; try{ __bagSession && __bagSession.credit && __bagSession.credit(n);}catch{} }
 
-  // ====== Rendering helpers ======
-  const D = (id)=>document.getElementById(id);
+  const D=(id)=>document.getElementById(id);
   function clearCards(){
     D('dealerCards').innerHTML=''; D('playerCards').innerHTML='';
     D('dealerTotal').textContent='0'; D('playerTotal').textContent='0';
@@ -699,7 +651,6 @@
   function setStatus(txt,cls){ const el=D('status'); el.className='result'+(cls?(' t '+cls):''); el.textContent=txt; }
   function last(s){ D('lastLbl').textContent=s; }
 
-  // ====== State & controls ======
   const STATE = { dealer:[], hands:[], active:0, split:false, locked:0, live:false };
   const btnDeal=D('deal'), btnHit=D('hit'), btnStand=D('stand'), btnDouble=D('double'), btnSplit=D('split'), btnAgain=D('again');
 
@@ -775,10 +726,12 @@
   }
 
   function startRound(){
+    // ensure audio is live before first slide
+    try{ __bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
     const [ok,err]=lockStake(); if(!ok) return alert(err);
     clearCards(); STATE.dealer=[]; STATE.hands=[[]]; STATE.active=0; STATE.split=false; STATE.live=true;
 
-    // initial deal: P, D, P, D(hole)
+    // P, D, P, D(hole)
     const pc=D('playerCards'), dc=D('dealerCards');
     const c1=draw(), c2=draw(), c3=draw(), c4=draw();
     STATE.hands[0].push(c1); pc.appendChild(cardEl(c1));
@@ -826,7 +779,7 @@
   });
   btnAgain.addEventListener('click', ()=>{ clearCards(); btnDeal.disabled=false; btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnAgain.style.display='none'; setStatus('Place a stake, then Deal'); last('—'); });
 
-  // HUD (mode/balance/bet/last)
+  // HUD (same as Dice style)
   (function(){
     const curToggle = document.getElementById('curToggle');
     function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
@@ -844,7 +797,7 @@
       return { bag, xrp };
     }
     function currentBet(){
-      const v = parseFloat(betQtyEl?.value || '0');
+      const v = parseFloat(document.getElementById('betQty')?.value || '0');
       if (!Number.isFinite(v) || v < 0) return 0;
       return Math.max(0, Math.floor(v));
     }
@@ -874,7 +827,7 @@
     renderHud(); let tries = 0; const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
   })();
 
-  // Boot
+  // Boot: shoe + force 1 XRP (USD auto-fills from live price)
   function forceBetXRP1(){
     const usd  = document.getElementById('usdBet');
     const unit = document.querySelector('.unit');
@@ -892,8 +845,7 @@
       bet.dispatchEvent(new Event('change', {bubbles:true}));
     }
     if (usd){
-      // IMPORTANT: don’t mark as userTyped so live price auto-fills $ for 1 XRP
-      usd.dataset.userTyped = '0';
+      usd.dataset.userTyped = '0'; // allow auto-fill from price
       usd.dispatchEvent(new Event('input', {bubbles:true}));
       usd.dispatchEvent(new Event('change', {bubbles:true}));
     }
@@ -906,7 +858,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (Demo by default; Live only with ?live=1) -->
+<!-- Practice Mode wrapper (Demo default; Live only via ?live=1) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -925,7 +877,7 @@
     const statusEl=document.getElementById('status');
     if(statusEl){
       statusEl.innerHTML='Practice: <span style="color:#2fbf6b)">'+(Number(bag).toLocaleString())+' BAG</span>' +
-        (bagUsd?` <span class="micro" style="opacity:.75">($${bagUsd.toFixed(2)})</span>`:'');
+        (bagUsd?` <span class="micro" style="opacity:.75)">$${bagUsd.toFixed(2)}</span>`:'');
     }
   }
 
@@ -942,10 +894,6 @@
     window.__bagSession = demoSession;
     renderDemo();
 
-    // Force the bet UI to 1 XRP immediately + next tick + after prices land (so USD shows XRP price, not 1.00)
-    (function forceBet(){
-      const apply=()=>{ try{ const f=window.forceBetXRP1 || null; }catch{} };
-    })();
     const apply = function(){ try{
       const bet  = document.getElementById('betQty');
       const usd  = document.getElementById('usdBet');
@@ -968,7 +916,6 @@
   }
 
   if (forceLive) enableLive(); else enableDemo();
-
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 })();
 </script>
