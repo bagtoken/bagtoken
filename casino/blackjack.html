@@ -13,7 +13,7 @@
   *{box-sizing:border-box}
   :root{
     --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
     --lose:#e25b5b; --warn:#e8a85c;
     --cardW:clamp(64px,16vw,96px); --cardH:calc(var(--cardW)*1.42);
   }
@@ -33,7 +33,7 @@
     .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
   }
 
-  .game-teaser{padding:10px 16px 60px;background:
+  .game-teaser{padding:10px 16px 28px;background:
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
     border-top:1px solid #131313;border-bottom:1px solid #131313}
@@ -77,6 +77,35 @@
 
   .hudbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 2px 0;justify-content:center}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+
+  /* ✅ Quick Amount buttons: green w/ white text */
+  .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .preset-chip{
+    appearance:none;
+    border:1px solid var(--green-600);
+    background:var(--green);
+    color:#ffffff;
+    border-radius:999px;
+    padding:8px 12px;
+    font-weight:900;
+    letter-spacing:.2px;
+    cursor:pointer;
+    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .preset-chip:hover{filter:brightness(1.03)}
+  .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
+  .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
+  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
+
+  /* ✅ Keep celebration canvas out of layout */
+  #win-canvas{
+    position:fixed;
+    inset:0;
+    display:none;
+    pointer-events:none;
+    z-index:2147483646;
+  }
 </style>
 </head>
 <body>
@@ -120,7 +149,7 @@
               <span class="micro unit">USD</span>
             </div>
           </div>
-          <div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet">
             <button type="button" class="preset-chip" data-usd="1">$1</button>
             <button type="button" class="preset-chip" data-usd="2">$2</button>
             <button type="button" class="preset-chip" data-usd="5">$5</button>
@@ -244,15 +273,40 @@
 })();
 </script>
 
-<!-- AUDIO (shuffle + card place; primed on first tap) -->
+<!-- AUDIO (shuffle + card place; ✅ prime also on first scroll/wheel/touch/keydown) -->
 <script>
 (function(){
   try{
     const shuffle = new Audio('/assets/sounds/card_shuffle.mp3'); shuffle.preload='auto'; shuffle.volume=.6;
     const click   = new Audio('/assets/sounds/card_place.mp3');  click.preload='auto';  click.volume=.5;
-    function prime(a){ a.muted=true; a.play().catch(()=>{}).finally(()=>{ a.pause(); a.currentTime=0; a.muted=false; }); }
-    function primeAll(){ [shuffle,click].forEach(prime); removeEventListener('pointerdown', primeAll); }
-    addEventListener('pointerdown', primeAll, {passive:true});
+
+    function prime(a){
+      a.muted = true;
+      const p = a.play();
+      if (p && p.then) {
+        p.then(()=>{ a.pause(); a.currentTime=0; a.muted=false; }).catch(()=>{ a.pause(); a.currentTime=0; a.muted=false; });
+      } else {
+        a.pause(); a.currentTime=0; a.muted=false;
+      }
+    }
+    function primeAll(){
+      [shuffle,click].forEach(prime);
+      off(); // remove all listeners after first gesture
+      // mark globally
+      window.__bagAudioPrimed__ = true;
+    }
+    function on(){ addEventListener('pointerdown', primeAll, {passive:true, once:true});
+                  addEventListener('scroll',      primeAll, {passive:true, once:true});
+                  addEventListener('wheel',       primeAll, {passive:true, once:true});
+                  addEventListener('touchmove',   primeAll, {passive:true, once:true});
+                  addEventListener('keydown',     primeAll, {passive:true, once:true}); }
+    function off(){ removeEventListener('pointerdown', primeAll);
+                    removeEventListener('scroll', primeAll);
+                    removeEventListener('wheel', primeAll);
+                    removeEventListener('touchmove', primeAll);
+                    removeEventListener('keydown', primeAll); }
+    on();
+
     window.__bagSfx = {
       shuffle(){ try{ shuffle.currentTime=0; shuffle.play().catch(()=>{});}catch{} },
       click(){ try{ click.currentTime=0; click.play().catch(()=>{});}catch{} }
@@ -290,7 +344,7 @@
 })();
 </script>
 
-<!-- PRICES (same engine as Dice) -->
+<!-- PRICES -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -378,7 +432,7 @@
 })();
 </script>
 
-<!-- USD autofill + limits + presets (shared with Dice pattern) -->
+<!-- USD autofill + limits + presets -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -697,7 +751,7 @@ function settle(override){
   function resolve(h){
     const pv=val(h).total, dv=val(STATE.dealer).total;
     const doubled = h._dbl===true; const stake = base*(doubled?2:1);
-    if(override==='blackjack'){ credit += stake*CFG.mBJ; last('Blackjack 2×'); return; }
+    if(override==='blackjack'){ credit += stake*CFG.mBJ; last('Blackjack 2×'); showWin({message:'BLACKJACK',subtext:`Paid ${CFG.mBJ.toFixed(2)}×`}); return; }
     if(override==='push-bj'){ credit += stake*CFG.mPUSH; last('Push'); return; }
     if(pv>21){ last('Scratch'); return; }
     if(dv>21 || pv>dv){
@@ -738,10 +792,11 @@ setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a>
+  &nbsp;|&nbsp;
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
