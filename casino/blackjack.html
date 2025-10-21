@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>$BAG Blackjack</title>
 
-<!-- Demo by default; Live only via ?live=1 (Dice parity) -->
 <script>window.__BAG_FORCE_DEMO=false;</script>
 
 <style>
@@ -14,7 +13,7 @@
     --gold:#ffe175;--bg:#030905;--fg:#eef3ed;
     --panel:#0b1b13;--panel2:#0d2217;--line:#173524;--muted:#aeb7af;
     --ok:#2fbf6b;--lose:#e25b5b;--warn:#e8a85c;
-    --cardW:clamp(68px,17vw,98px);--cardH:calc(var(--cardW)*1.42);
+    --cardW:clamp(70px,17.5vw,108px);--cardH:calc(var(--cardW)*1.42);
     --shadow:rgba(0,0,0,.35);
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -30,15 +29,15 @@
   .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
   .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
-  /* Header */
-  .game-header{text-align:center;padding:56px 10px 14px;max-width:1200px;margin:0 auto}
+  /* Header (BIGGER banner) */
+  .game-header{ text-align:center; padding:52px 0 16px; max-width:1600px; margin:0 auto }
   .game-header img.hero{
-    margin:0 auto 10px;
+    display:block; margin:0 auto 10px;
+    width:min(95vw,1280px);  /* << bigger */
+    max-width:1280px; height:auto;
     filter:drop-shadow(0 10px 24px rgba(46,191,107,.18));
-    width:min(720px,64vw); /* BIGGER banner */
-    height:auto;
   }
-  .game-header h1{font-size:clamp(1.8rem,5.6vw,2.6rem);margin:6px 0 0}
+  .game-header h1{font-size:clamp(1.9rem,6vw,2.8rem);margin:6px 12px 0}
   .micro{font-size:.9rem;color:#cbd7cd}
   .mono{font-variant-numeric:tabular-nums}
 
@@ -201,15 +200,22 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">Telegram @getthebag_io</a>
 </footer>
 
-<!-- ========= Audio (stronger, guaranteed after first tap) ========= -->
+<!-- ========= Card Audio (file first; synth fallback) ========= -->
 <script>
 (function(){
   const AC = {ctx:null, master:null};
+  const SOURCES = [
+    '/assets/sounds/card-deal.mp3',
+    '/assets/sounds/card-deal.wav',
+    '/assets/sounds/card-flick.mp3'
+  ];
+  let buf=null, tag=null;
+
   function getAC(){
     if (AC.ctx && AC.ctx.state!=='closed') return AC.ctx;
     const C = window.AudioContext||window.webkitAudioContext; if(!C) return null;
     AC.ctx = new C();
-    AC.master = AC.ctx.createGain(); AC.master.gain.value = .35; /* louder */
+    AC.master = AC.ctx.createGain(); AC.master.gain.value = .28;
     AC.master.connect(AC.ctx.destination);
     return AC.ctx;
   }
@@ -217,62 +223,102 @@
   addEventListener('pointerdown', resume, {passive:true});
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
 
-  function dealFX(){
-    const a=getAC(); if(!a || a.state!=='running') return;
-    // two crisp flicks
-    [700, 920].forEach((f,i)=>{
-      const o=a.createOscillator(), g=a.createGain();
-      o.type='triangle'; o.frequency.value=f;
-      const t=a.currentTime+i*0.02;
-      g.gain.setValueAtTime(0.0001,t);
-      g.gain.linearRampToValueAtTime(.22,t+.04);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+.16);
-      o.connect(g).connect(AC.master); o.start(t); o.stop(t+.18);
-    });
-    // soft whoosh
-    const b=a.createBuffer(1, a.sampleRate*0.14, a.sampleRate);
-    const d=b.getChannelData(0); for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2); }
-    const src=a.createBufferSource(); src.buffer=b;
-    const g=a.createGain(); g.gain.setValueAtTime(.22,a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+.14);
-    src.connect(g).connect(AC.master); src.start(); src.stop(a.currentTime+.14);
+  async function loadFile(){
+    const ac=getAC(); if(!ac) return false;
+    for (const url of SOURCES){
+      try{
+        const r = await fetch(url, {cache:'force-cache'});
+        if(!r.ok) continue;
+        const arr = await r.arrayBuffer();
+        buf = await ac.decodeAudioData(arr);
+        return true;
+      }catch{}
+    }
+    try{ // html <audio> fallback
+      tag = new Audio(SOURCES[0]); tag.preload='auto'; tag.crossOrigin='anonymous'; tag.setAttribute('playsinline',''); tag.volume=.85;
+    }catch{}
+    return !!tag;
   }
 
-  window.__bagSound = { deal:dealFX, resume };
+  function synthDeal(){
+    const ac=getAC(); if(!ac) return;
+    // swish noise
+    const dur=.12;
+    const noise=ac.createBuffer(1, ac.sampleRate*dur, ac.sampleRate);
+    const ch=noise.getChannelData(0);
+    for(let i=0;i<ch.length;i++){ const t=i/ch.length; ch[i]=(Math.random()*2-1)*Math.pow(1-t,2); }
+    const src=ac.createBufferSource(); src.buffer=noise;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=1.2;
+    const g=ac.createGain(); const t=ac.currentTime; g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.32,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    src.connect(bp).connect(g).connect(AC.master); src.start(t); src.stop(t+dur);
+
+    // little “flick” click
+    const o=ac.createOscillator(), cg=ac.createGain();
+    o.type='square'; o.frequency.value=2200 + Math.random()*200;
+    cg.gain.setValueAtTime(.0001,t); cg.gain.linearRampToValueAtTime(.18,t+.015); cg.gain.exponentialRampToValueAtTime(.0001,t+.07);
+    o.connect(cg).connect(AC.master); o.start(t+.015); o.stop(t+.09);
+  }
+
+  function playFile(){
+    const ac=getAC(); if(ac && buf && ac.state==='running'){
+      try{
+        const s=ac.createBufferSource();
+        s.buffer=buf;
+        s.playbackRate.value=0.96 + Math.random()*0.08; // tiny variation
+        const g=ac.createGain(); g.gain.value=.95;
+        s.connect(g).connect(AC.master);
+        s.start();
+        return true;
+      }catch{}
+    }
+    if(tag){
+      try{
+        tag.pause(); tag.currentTime=0;
+        tag.play().catch(()=>{});
+        return true;
+      }catch{}
+    }
+    return false;
+  }
+
+  async function ensureLoaded(){ if(buf || tag) return; try{ await resume(); await loadFile(); }catch{} }
+
+  async function deal(){
+    await ensureLoaded();
+    if(!playFile()) synthDeal();
+  }
+
+  window.__bagCardSound = { deal, resume };
 })();
 </script>
 
-<!-- ========= Demo Session (NEVER spend/credit in demo) ========= -->
+<!-- ========= Demo Session (never spends/credits in demo) ========= -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
 
-  const KEY='__bag_demo_blackjack_parity_v2';
+  const KEY='__bag_demo_blackjack_parity_v3';
   const START=1000;
   if(localStorage.getItem(KEY)==null){ try{ localStorage.setItem(KEY, String(START)); }catch{} }
 
-  function getBal(){ const n=Number(localStorage.getItem(KEY)); return Number.isFinite(n)&&n>0?n:START; }
-  function setBal(v){ try{ localStorage.setItem(KEY, String(Math.max(0, Number(v)||0))); }catch{} }
-
   const demoSession={
     active:()=>true,
-    get:()=>({addr:'demo', bag:getBal(), ts:Date.now()}),
-    spend(n){ /* demo: no spending */ return true; },
-    credit(n){ /* demo: no credits */ return true; }
+    get:()=>({addr:'demo', bag:Number(localStorage.getItem(KEY))||START, ts:Date.now()}),
+    spend(){ return true; }, credit(){ return true; } // demo never blocks
   };
 
-  function enableDemo(){
+  if (forceLive){
+    window.__BAG_FORCE_DEMO=false;
+    window.__bagSession = { active:()=>false };
+  } else {
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:false}); }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
-    dispatchEvent(new CustomEvent('hud'));
   }
-  function enableLive(){ window.__BAG_FORCE_DEMO=false; window.__bagSession = { active:()=>false }; }
-
-  if(forceLive) enableLive(); else enableDemo();
 })();
 </script>
 
-<!-- ========= Prices (XRP live; BAG default placeholder) ========= -->
+<!-- ========= Prices ========= -->
 <script>
 const PRICES = { bagUsd: 0.0001, xrpUsd: 0.50, source:'default' };
 (async function fetchLive(){
@@ -291,21 +337,18 @@ function renderPrices(){
 }
 </script>
 
-<!-- ========= Controls, USD↔Units, limits & payouts ========= -->
+<!-- ========= Inputs & payouts ========= -->
 <script>
 const elUSD = document.getElementById('usd');
 const elQty = document.getElementById('qty');
 const elUnit= document.getElementById('unit');
 const elLimits=document.getElementById('limits');
-const curRadios = document.querySelectorAll('input[name="cur"]');
-
 document.getElementById('usdPresets').addEventListener('click', (e)=>{
   const b=e.target.closest('button'); if(!b) return;
   [...e.currentTarget.children].forEach(x=>x.classList.remove('active')); b.classList.add('active');
   const v=Number(b.dataset.u)||0; elUSD.value=v.toFixed(2); elUSD.dataset.user='1'; syncFromUSD();
 });
-
-curRadios.forEach(r=>r.addEventListener('change',()=>{
+document.querySelectorAll('input[name="cur"]').forEach(r=>r.addEventListener('change',()=>{
   elUnit.textContent = currentCur();
   if(elUSD.dataset.user==='1'){ syncFromUSD(); } else { syncFromUnits(); }
   dispatchEvent(new CustomEvent('hud'));
@@ -346,7 +389,7 @@ function fmt(n,max=6){ return Number(n||0).toLocaleString(undefined,{maximumFrac
 function setText(id,txt){ document.getElementById(id).textContent = txt; }
 </script>
 
-<!-- ========= Cards (SVG; no emoji) ========= -->
+<!-- ========= SVG Cards (no emoji) ========= -->
 <script>
 const SUITS = {
   '♠': {fill:'#111', path:'M50 12 C40 0,20 0,12 12 C4 24,16 34,26 40 C18 36,8 44,8 52 C8 60,14 66,22 66 C30 66,34 62,36 58 L36 68 L64 68 L64 58 C66 62,70 66,78 66 C86 66,92 60,92 52 C92 44,82 36,74 40 C84 34,96 24,88 12 C80 0,60 0,50 12 Z' },
@@ -359,7 +402,7 @@ function cardSVG(rank, suit){
   const red = (suit==='♥'||suit==='♦');
   const textFill = red ? '#b10d19' : '#101010';
   return `
-  <svg viewBox="0 0 100 142" class="svg-card" xmlns="http://www.w3.org/2000/svg">
+  <svg viewBox="0 0 100 142" class="svg-card" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <rect x="2" y="2" width="96" height="138" rx="12" fill="url(#g)" stroke="#e6e6e6" stroke-width="2"/>
     <defs>
       <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
@@ -385,7 +428,7 @@ function makeCardEl(card, back=false){
 }
 </script>
 
-<!-- ========= Game logic ========= -->
+<!-- ========= Blackjack Logic ========= -->
 <script>
 const CONFIG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 
@@ -420,9 +463,9 @@ function updateTotals(){
 }
 
 /* Audio hook */
-function playDeal(){ try{ window.__bagSound && __bagSound.deal(); }catch{} }
+function playDeal(){ try{ window.__bagCardSound && __bagCardSound.deal(); }catch{} }
 
-/* Only spend/credit in LIVE mode (demo parity with Dice) */
+/* Only spend/credit in LIVE mode */
 function spendBAG(n){ if(!(n>0)) return true; if(window.__BAG_FORCE_DEMO) return true; try{ return !!(__bagSession && __bagSession.spend && __bagSession.spend(n)); }catch{ return false; } }
 function creditBAG(n){ if(!(n>0)) return; if(window.__BAG_FORCE_DEMO) return; try{ __bagSession && __bagSession.credit && __bagSession.credit(n);}catch{} }
 
@@ -439,8 +482,7 @@ function lockStake(){
     if(!(bag>0)) return [false,'Enter a stake first'];
     if(!spendBAG(bag)) return [false,'Insufficient balance'];
   } else {
-    // demo: allow play regardless of balance and limits (like Dice), but still require some stake
-    if(!(usd>0)) return [false,'Enter a stake first'];
+    if(!(usd>0)) return [false,'Enter a stake first']; // demo never blocks for balance
   }
   STATE.locked=bag; return [true,''];
 }
@@ -526,14 +568,14 @@ function settleAll(override){
   }
 
   if(STATE.hands.length===1) doHand(STATE.hands[0]); else STATE.hands.forEach(doHand);
-  if(credit>0) creditBAG(credit); /* LIVE only (demo guarded in creditBAG) */
+  if(credit>0) creditBAG(credit);
 
   btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnDeal.disabled=true; btnAgain.style.display='inline-block';
   STATE.live=false;
 }
 
 /* Controls */
-btnDeal.addEventListener('click', ()=>{ try{ window.__bagSound && __bagSound.resume(); }catch{} startRound(); });
+btnDeal.addEventListener('click', ()=>{ try{ window.__bagCardSound && __bagCardSound.resume(); }catch{} startRound(); });
 btnHit.addEventListener('click', ()=>{
   btnDouble.disabled=true;
   hitHand(STATE.active);
@@ -552,7 +594,10 @@ btnSplit.addEventListener('click', ()=>{
   const a=h[0], b=h[1];
   STATE.hands=[ [a], [b] ];
   D('playerCards').innerHTML=''; D('playerTotal').textContent='0';
-  addSplitRow(1);
+  const rowIndex=1; // show second row
+  const row=document.createElement('div'); row.className='hand splitRow';
+  row.innerHTML = `<div class="label">You (Hand ${rowIndex+1})</div><div class="total" id="pT_${rowIndex}">0</div><div class="cards" id="pC_${rowIndex}"></div>`;
+  D('player').after(row);
   D('playerCards').appendChild(makeCardEl(a)); playDeal();
   D('pC_1').appendChild(makeCardEl(b)); playDeal();
   hitHand(0); hitHand(1);
@@ -571,10 +616,7 @@ function HUD(){
   D('betLbl').textContent  = String(parseFloat(elQty.value||0)||0);
 }
 addEventListener('hud', HUD);
-addEventListener('prices', ()=>{ // keep 1 XRP default but show correct USD
-  if(!elUSD.value || elUSD.dataset.user!=='1'){ elUSD.dataset.user='0'; syncFromUnits(); }
-  HUD();
-});
+addEventListener('prices', ()=>{ if(!elUSD.value || elUSD.dataset.user!=='1'){ elUSD.dataset.user='0'; syncFromUnits(); } HUD(); });
 ['input','change'].forEach(ev=>{
   elQty.addEventListener(ev, ()=>dispatchEvent(new CustomEvent('hud')));
   document.querySelectorAll('input[name="cur"]').forEach(r=>r.addEventListener(ev, ()=>dispatchEvent(new CustomEvent('hud'))));
@@ -583,13 +625,21 @@ addEventListener('prices', ()=>{ // keep 1 XRP default but show correct USD
 /* Boot */
 function boot(){
   buildShoe();
-  // Default bet: 1 XRP (USD autofills after price fetch)
+  // Default bet: 1 XRP; USD autofills after price fetch
   elQty.value='1'; elUnit.textContent='XRP'; elUSD.value=''; elUSD.dataset.user='0';
   syncFromUnits(); HUD(); setStatus('Place a stake, then Deal');
 }
 boot();
-// reshuffle when low
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
+
+/* Helpers from inputs scope */
+function stakeUSD(){ const v=parseFloat(elUSD.value||''); if(Number.isFinite(v)&&v>0) return v; const q=parseFloat(elQty.value||'')||0; const px=(document.querySelector('input[name="cur"]:checked')?.value||'XRP').toUpperCase()==='BAG'?PRICES.bagUsd:PRICES.xrpUsd; return px>0?q*px:0; }
+function stakeBAG(){
+  const q=parseFloat(elQty.value||'')||0;
+  const cur=(document.querySelector('input[name="cur"]:checked')?.value||'XRP').toUpperCase();
+  if(cur==='BAG') return q;
+  const {bagUsd,xrpUsd}=PRICES; return (bagUsd>0 && xrpUsd>0) ? q*(xrpUsd/bagUsd) : 0;
+}
 </script>
 
 <script>
