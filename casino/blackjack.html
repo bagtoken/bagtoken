@@ -79,7 +79,7 @@
   .hudbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 2px 0;justify-content:center}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
 
-  /* Quick Amount buttons: green w/ white text */
+  /* ✅ Quick Amount buttons: green w/ white text */
   .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .preset-chip{
     appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
@@ -95,7 +95,7 @@
   /* Celebration canvas kept out of layout */
   #win-canvas{ position:fixed; inset:0; display:none; pointer-events:none; z-index:2147483646; }
 
-  /* Feedback effects */
+  /* ✅ Felt flashes + shake */
   #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
   #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
   #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
@@ -254,7 +254,7 @@
   </div>
 </div>
 
-<!-- Celebration overlay logic -->
+<!-- Overlay + confetti engine -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -278,67 +278,29 @@
 })();
 </script>
 
-<!-- 🔗 DICE-style feedback adapter (WIN/LOSE/BLACKJACK overlays exactly like Dice; PUSH = no overlay) -->
+<!-- ✅ DICE-MATCHED FEEDBACK (no reliance on unknown Dice globals) -->
 <script>
 (function(){
-  const diceOverlay = {
-    win:  (title, sub) => {
-      if (typeof window.showDiceJackpot === 'function') return window.showDiceJackpot('win', title, sub);
-      if (typeof window.showDiceOutcome === 'function')  return window.showDiceOutcome('win', { message:title, subtext:sub });
-      if (typeof window.showWin === 'function')          return window.showWin({ message:title, subtext:sub, duration:3800, sound:false });
-    },
-    lose: (title, sub) => {
-      if (typeof window.showDiceJackpot === 'function') return window.showDiceJackpot('lose', title, sub);
-      if (typeof window.showDiceOutcome === 'function')  return window.showDiceOutcome('lose', { message:title, subtext:sub });
-      if (typeof window.showWin === 'function')          return window.showWin({ message:title, subtext:sub, duration:1600, sound:false });
-    },
-    push: ()=>{} // Dice shows no overlay on push
-  };
-
-  function playOutcomeAudio(kind){
-    try{
-      if (kind==='win' || kind==='blackjack') {
-        if (window.__bagAudio?.chime) return window.__bagAudio.chime();  // Dice chime
-        return window.__bagSfx?.win ? window.__bagSfx.win() : void 0;
-      }
-      if (kind==='lose') {
-        if (window.__bagAudio?.thud)  return window.__bagAudio.thud();   // Dice thud
-        return window.__bagSfx?.lose ? window.__bagSfx.lose() : void 0;
-      }
-      if (kind==='push') {
-        return window.__bagSfx?.push ? window.__bagSfx.push() : void 0;
-      }
-    }catch{}
-  }
-
-  window.__diceFeedback = {
-    show(kind, {title, sub}={}){
-      if (kind==='push'){
-        diceOverlay.push();
-        playOutcomeAudio('push');
-        return;
-      }
-      if (kind==='blackjack'){
-        diceOverlay.win(title || 'BLACKJACK', sub || 'Paid 2.00×');
-        playOutcomeAudio('blackjack');
-        return;
-      }
-      if (kind==='win'){
-        diceOverlay.win(title || 'WIN', sub || 'Paid out');
-        playOutcomeAudio('win');
-        return;
-      }
-      if (kind==='lose'){
-        diceOverlay.lose(title || 'LOSE', sub || 'Try again');
-        playOutcomeAudio('lose');
-        return;
-      }
+  function overlayWin(title='WIN', sub='Paid out', blackjack=false){
+    try{ if(blackjack && window.__bagSfx?.blackjack) __bagSfx.blackjack(); else window.__bagSfx?.win && __bagSfx.win(); }catch{}
+    if(typeof window.showWin === 'function'){
+      return window.showWin({ message: title, subtext: sub, duration: blackjack?5200:3800, sound:false });
     }
-  };
+  }
+  function overlayLose(title='LOSE', sub='Try again'){
+    try{ window.__bagSfx?.lose && __bagSfx.lose(); }catch{}
+    if(typeof window.showWin === 'function'){
+      return window.showWin({ message: title, subtext: sub, duration: 1600, sound:false });
+    }
+  }
+  function pushOnly(){
+    try{ window.__bagSfx?.push && __bagSfx.push(); }catch{}
+  }
+  window.__BJ_FEEDBACK__ = { overlayWin, overlayLose, pushOnly };
 })();
 </script>
 
-<!-- AUDIO: full SFX suite (with file fallback & WebAudio synth), + prime on first scroll/wheel/touch/key/pointer -->
+<!-- AUDIO: suite + prime on first interaction/scroll -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -379,7 +341,7 @@
     }catch{}
   }
 
-  // Audio tags (optional files)
+  // Files
   const tap     = mkTag('/assets/sounds/ui_tap.mp3', .9);
   const place   = mkTag('/assets/sounds/card_place.mp3', .65);
   const shuffle = mkTag('/assets/sounds/card_shuffle.mp3', .6);
@@ -387,7 +349,7 @@
   const lose    = mkTag('/assets/sounds/lose_thud.mp3', .9);
   const push    = mkTag('/assets/sounds/push_soft.mp3', .75);
 
-  // WebAudio synth fallbacks
+  // WebAudio fallbacks
   function beep(freq=880, dur=0.15, gain=.14){ const ac=getAC(); if(!ac) return;
     const o=ac.createOscillator(), g=ac.createGain(); o.type='triangle'; o.frequency.value=freq;
     g.gain.setValueAtTime(.0001,ac.currentTime); g.gain.linearRampToValueAtTime(gain,ac.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime+dur);
@@ -399,13 +361,12 @@
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.12,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.28);
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.30);
   }
-
   function tryPlay(tag, fallback){
     if(tag){ try{ tag.currentTime=0; tag.play().catch(()=>fallback&&fallback()); return; }catch(e){ fallback&&fallback(); return; } }
     fallback && fallback();
   }
 
-  // Public SFX API
+  // Public SFX
   window.__bagSfx = {
     resume,
     tap(){ tryPlay(tap, ()=>beep(700,.08,.12)); },
@@ -456,7 +417,7 @@
 })();
 </script>
 
-<!-- PRICES (unchanged core from earlier release) -->
+<!-- PRICES -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -597,7 +558,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (Demo default) -->
+<!-- Practice Mode (Demo default) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -775,7 +736,7 @@ function stakeUsd(){
   return xrpUsd>0 ? q*xrpUsd : 0;
 }
 
-/* 👇 changed: optional sound flag to suppress click during initial deal */
+/* 🚫 avoid click overlap with shuffle: silent initial deals */
 function dealOne(toNode, arr, faceUp=true, sound=true){
   const c=draw(); arr.push(c);
   const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
@@ -807,7 +768,6 @@ function startRound(){
 
   clearBoard(); STATE.dealer=[]; STATE.player=[]; STATE.split=null; STATE.activeHandIdx=0; STATE.live=true;
   try{ window.__bagSfx && __bagSfx.shuffle(); }catch{}
-  /* initial four deals are silent (no click) to avoid overlapping the shuffle */
   dealOne(D('playerCards'), STATE.player, true, /*sound*/false);
   dealOne(D('dealerCards'), STATE.dealer, true, /*sound*/false);
   const hole=draw(); STATE.dealer.push(hole); D('dealerCards').appendChild(window.__CARD_FACTORY__.makeCardEl(hole,true));
@@ -824,7 +784,7 @@ function startRound(){
 }
 
 function hit(){
-  try{ window.__bagSfx && __bagSfx.tap(); }catch{} // explicit tap on HIT press
+  try{ window.__bagSfx && __bagSfx.tap(); }catch{}
   if(STATE.split){
     const i=STATE.activeHandIdx;
     dealOne(i===0?D('playerCards'):D('pC_1'), STATE.player[i], true, /*sound*/true);
@@ -871,7 +831,7 @@ function dealerTurn(){
   settle();
 }
 
-/* 🔁 REPLACED settle(): routes visuals & audio through Dice adapter, preserves your flashes & payouts */
+/* ✅ settle routes feedback via BJ_FEEDBACK and guarantees sounds */
 function settle(override){
   let credit=0; const base=STATE.lockedBag;
   function resolve(h){
@@ -879,20 +839,21 @@ function settle(override){
     const doubled = h._dbl===true; const stake = base*(doubled?2:1);
     if(override==='blackjack'){
       credit += stake*CFG.mBJ; last('Blackjack 2×'); flash('win');
-      window.__diceFeedback?.show('blackjack', { title:'BLACKJACK', sub:`Paid ${CFG.mBJ.toFixed(2)}×` });
+      window.__BJ_FEEDBACK__?.overlayWin('BLACKJACK', `Paid ${CFG.mBJ.toFixed(2)}×`, true);
       return;
     }
     if(override==='push-bj'){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__diceFeedback?.show('push'); return;
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__BJ_FEEDBACK__?.pushOnly(); return;
     }
-    if(pv>21){ last('Scratch'); flash('lose'); window.__diceFeedback?.show('lose',{title:'LOSE',sub:'Try again'}); return; }
+    if(pv>21){ last('Scratch'); flash('lose'); window.__BJ_FEEDBACK__?.overlayLose('LOSE','Try again'); return; }
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
       credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
-      window.__diceFeedback?.show(mult===CFG.mBJ?'blackjack':'win', { title:(mult===CFG.mBJ?'BLACKJACK':'WIN'), sub:`Paid ${mult.toFixed(2)}×` });
+      if(mult===CFG.mBJ){ window.__BJ_FEEDBACK__?.overlayWin('BLACKJACK', `Paid ${CFG.mBJ.toFixed(2)}×`, true); }
+      else { window.__BJ_FEEDBACK__?.overlayWin('WIN', `Paid ${CFG.mWIN.toFixed(2)}×`, false); }
     } else if(pv===dv){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__diceFeedback?.show('push');
-    } else { last('Scratch'); flash('lose'); window.__diceFeedback?.show('lose',{title:'LOSE',sub:'Try again'}); }
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__BJ_FEEDBACK__?.pushOnly();
+    } else { last('Scratch'); flash('lose'); window.__BJ_FEEDBACK__?.overlayLose('LOSE','Try again'); }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
   if(credit>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(credit);
