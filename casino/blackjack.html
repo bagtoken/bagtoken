@@ -79,7 +79,7 @@
   .hudbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 2px 0;justify-content:center}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
 
-  /* ✅ Quick Amount buttons: green w/ white text */
+  /* Quick Amount buttons: green w/ white text */
   .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .preset-chip{
     appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
@@ -92,10 +92,10 @@
   .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
   .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
 
-  /* Confetti canvas kept out of layout */
-  #jackpot-canvas{ position:fixed; inset:0; display:none; pointer-events:none; z-index:2147483646; }
+  /* Celebration canvas kept out of layout */
+  #win-canvas{ position:fixed; inset:0; display:none; pointer-events:none; z-index:2147483646; }
 
-  /* ✅ Felt feedback (Dice-consistent) */
+  /* Feedback effects */
   #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
   #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
   #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
@@ -111,6 +111,10 @@
   @keyframes glowGreen{ from{ box-shadow:0 0 0 0 rgba(47,191,107,.0) inset } to{ box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset } }
   @keyframes glowRed  { from{ box-shadow:0 0 0 0 rgba(226,91,91,.0) inset } to{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset } }
   @keyframes glowGold { from{ box-shadow:0 0 0 0 rgba(255,225,117,.0) inset } to{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset } }
+
+  /* WIN overlay */
+  @keyframes win-pop{to{transform:scale(1);opacity:1}}
+  @keyframes win-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 </style>
 </head>
 <body>
@@ -240,76 +244,101 @@
   </div>
 </section>
 
-<!-- Dice-style Jackpot / Outcome overlay (CENTERED) -->
-<canvas id="jackpot-canvas"></canvas>
-<div id="jackpot-overlay" style="display:none;position:fixed;inset:0;z-index:2147483647;pointer-events:auto;">
-  <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.65));"></div>
-  <div id="jackpot-center" style="position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;">
-    <div id="jackpot-card" style="display:inline-block;max-width:min(92vw,820px);width:fit-content;padding:22px 28px;border-radius:18px;background:rgba(6,10,9,.45);backdrop-filter:blur(6px);box-shadow:0 8px 48px rgba(0,0,0,.45);">
-      <div id="jackpot-text" style="font:900 clamp(44px,11vw,92px)/1.02 system-ui,-apple-system,Segoe UI,Roboto,Arial;letter-spacing:.04em;
-        color:#ffffff;text-shadow:0 2px 0 rgba(0,0,0,.25), 0 10px 30px rgba(0,0,0,.35);">WIN</div>
-      <div id="jackpot-sub" class="micro" style="margin-top:8px;color:#e9f7ef;opacity:.95;font-weight:700;font-size:clamp(14px,3.4vw,18px);">Paid 1.25×</div>
-    </div>
+<!-- Celebration overlay -->
+<canvas id="win-canvas"></canvas>
+<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;position:fixed;inset:0;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70); z-index:2147483647;">
+  <div id="win-card" style="position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite;">
+    <button id="win-close" aria-label="Close" style="position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7;">×</button>
+    <div id="win-text" style="font:900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;letter-spacing:.06em;background:linear-gradient(90deg,#fff,#00ffb2,#fff);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow:0 0 18px rgba(0,255,178,.35),0 0 48px rgba(0,255,178,.25);white-space:nowrap;animation:shine 1.6s linear infinite;">WIN</div>
+    <div id="win-sub" style="margin-top:8px;color:#e7f6ff;opacity:.9;font:600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial;">Nice hand</div>
   </div>
 </div>
 
-<!-- Overlay logic (Dice-consistent) -->
+<!-- Celebration overlay logic -->
 <script>
 (function(){
-  const overlay = document.getElementById('jackpot-overlay');
-  const canvas  = document.getElementById('jackpot-canvas');
-  const ctx     = canvas.getContext('2d');
-  const txt     = document.getElementById('jackpot-text');
-  const sub     = document.getElementById('jackpot-sub');
-  const card    = document.getElementById('jackpot-card');
+  const overlay=document.getElementById('win-overlay');
+  const canvas=document.getElementById('win-canvas');
+  const ctx=canvas.getContext('2d');
+  const closeBtn=document.getElementById('win-close');
+  const sub=document.getElementById('win-sub');
+  const title=document.getElementById('win-text');
   let rafId=null, particles=[], start=0, dur=2000;
-
   function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
-
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#ffe175','#18a0fb']; for(let i=0;i<n;i++){ particles.push({x:innerWidth*.5,y:innerHeight*.38,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.45?'circle':(Math.random()<.5?'square':'tri')}); } }
+  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++){ particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); } }
   function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz; if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore();}); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim);} else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function open(){ overlay.style.display='block'; }
-  function close(){ overlay.style.display='none'; stop(); }
+  function show(){ overlay.style.display='grid'; }
+  function hide(){ overlay.style.display='none'; stop(); }
+  closeBtn?.addEventListener('click', hide);
+  overlay?.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts; title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180); try{ sound && window.__bagSfx && __bagSfx.win(); }catch{} cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim); clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration)); };
+})();
+</script>
 
-  // Public: Dice-like function
-  window.showJackpot = function(kind='win', message='WIN', subtext=''){
-    // Style per kind
-    const isWin  = kind==='win';
-    const isLose = kind==='lose';
-
-    // Centered text
-    txt.textContent = message;
-    sub.textContent = subtext || (isWin ? 'Paid out' : isLose ? 'Try again' : '');
-
-    // color accents like Dice (green win, red lose; push has no overlay)
-    card.style.boxShadow = isWin
-      ? '0 8px 48px rgba(0,0,0,.45), 0 0 0 2px rgba(47,191,107,.85) inset'
-      : '0 8px 48px rgba(0,0,0,.45), 0 0 0 2px rgba(226,91,91,.85) inset';
-
-    // Show
-    canvas.style.display='none';
-    open();
-    // Confetti only for WIN/BLACKJACK
-    if(isWin){ canvas.style.display='block'; fire(180); cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim); }
-
-    // Auto close
-    clearTimeout(window.__jackpotTimer);
-    window.__jackpotTimer=setTimeout(close, isWin? 3600 : 1400);
+<!-- 🔗 DICE-style feedback adapter (WIN/LOSE/BLACKJACK overlays exactly like Dice; PUSH = no overlay) -->
+<script>
+(function(){
+  const diceOverlay = {
+    win:  (title, sub) => {
+      if (typeof window.showDiceJackpot === 'function') return window.showDiceJackpot('win', title, sub);
+      if (typeof window.showDiceOutcome === 'function')  return window.showDiceOutcome('win', { message:title, subtext:sub });
+      if (typeof window.showWin === 'function')          return window.showWin({ message:title, subtext:sub, duration:3800, sound:false });
+    },
+    lose: (title, sub) => {
+      if (typeof window.showDiceJackpot === 'function') return window.showDiceJackpot('lose', title, sub);
+      if (typeof window.showDiceOutcome === 'function')  return window.showDiceOutcome('lose', { message:title, subtext:sub });
+      if (typeof window.showWin === 'function')          return window.showWin({ message:title, subtext:sub, duration:1600, sound:false });
+    },
+    push: ()=>{} // Dice shows no overlay on push
   };
 
-  // Back-compat alias used below
-  window.showOutcome = (type,opts={}) => {
-    const msg = opts.message || (type==='win'?'WIN':'LOSE');
-    const sub = opts.subtext || (type==='win'?'Paid out':'Try again');
-    showJackpot(type==='win'?'win':'lose', msg, sub);
+  function playOutcomeAudio(kind){
+    try{
+      if (kind==='win' || kind==='blackjack') {
+        if (window.__bagAudio?.chime) return window.__bagAudio.chime();  // Dice chime
+        return window.__bagSfx?.win ? window.__bagSfx.win() : void 0;
+      }
+      if (kind==='lose') {
+        if (window.__bagAudio?.thud)  return window.__bagAudio.thud();   // Dice thud
+        return window.__bagSfx?.lose ? window.__bagSfx.lose() : void 0;
+      }
+      if (kind==='push') {
+        return window.__bagSfx?.push ? window.__bagSfx.push() : void 0;
+      }
+    }catch{}
+  }
+
+  window.__diceFeedback = {
+    show(kind, {title, sub}={}){
+      if (kind==='push'){
+        diceOverlay.push();
+        playOutcomeAudio('push');
+        return;
+      }
+      if (kind==='blackjack'){
+        diceOverlay.win(title || 'BLACKJACK', sub || 'Paid 2.00×');
+        playOutcomeAudio('blackjack');
+        return;
+      }
+      if (kind==='win'){
+        diceOverlay.win(title || 'WIN', sub || 'Paid out');
+        playOutcomeAudio('win');
+        return;
+      }
+      if (kind==='lose'){
+        diceOverlay.lose(title || 'LOSE', sub || 'Try again');
+        playOutcomeAudio('lose');
+        return;
+      }
+    }
   };
 })();
 </script>
 
-<!-- AUDIO (includes Dice API shim) -->
+<!-- AUDIO: full SFX suite (with file fallback & WebAudio synth), + prime on first scroll/wheel/touch/key/pointer -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -317,7 +346,7 @@
   function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null; AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC; }
   async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
 
-  // Prime on first user gesture (scroll allowed)
+  // Prime on first user gesture (including scroll)
   function primeAll(){
     resume();
     [tap,place,shuffle,win,lose,push].forEach(a=>a && prime(a));
@@ -350,7 +379,7 @@
     }catch{}
   }
 
-  // Files
+  // Audio tags (optional files)
   const tap     = mkTag('/assets/sounds/ui_tap.mp3', .9);
   const place   = mkTag('/assets/sounds/card_place.mp3', .65);
   const shuffle = mkTag('/assets/sounds/card_shuffle.mp3', .6);
@@ -358,7 +387,7 @@
   const lose    = mkTag('/assets/sounds/lose_thud.mp3', .9);
   const push    = mkTag('/assets/sounds/push_soft.mp3', .75);
 
-  // Fallback synths
+  // WebAudio synth fallbacks
   function beep(freq=880, dur=0.15, gain=.14){ const ac=getAC(); if(!ac) return;
     const o=ac.createOscillator(), g=ac.createGain(); o.type='triangle'; o.frequency.value=freq;
     g.gain.setValueAtTime(.0001,ac.currentTime); g.gain.linearRampToValueAtTime(gain,ac.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime+dur);
@@ -370,6 +399,7 @@
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.12,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.28);
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.30);
   }
+
   function tryPlay(tag, fallback){
     if(tag){ try{ tag.currentTime=0; tag.play().catch(()=>fallback&&fallback()); return; }catch(e){ fallback&&fallback(); return; } }
     fallback && fallback();
@@ -387,20 +417,10 @@
     push(){ tryPlay(push, ()=>{ beep(700,.08,.12); setTimeout(()=>beep(700,.06,.10),90); }); },
   };
 
-  // Dice API shim
-  (function ensureDiceApi(){
-    try{
-      if(!window.__bagAudio) window.__bagAudio = {};
-      if(typeof window.__bagAudio.chime !== 'function'){ window.__bagAudio.chime = function(){ try{ window.__bagSfx.win(); }catch{} }; }
-      if(typeof window.__bagAudio.thud !== 'function'){  window.__bagAudio.thud  = function(){ try{ window.__bagSfx.lose(); }catch{} }; }
-    }catch{}
-  })();
-
-  // Button tap sound — skip Deal so shuffle owns that moment
+  // Button tap sound (includes HIT)
   addEventListener('click', (e)=>{
     const b=e.target.closest('button');
     if(!b) return;
-    if(b.id === 'deal') return;
     try{ __bagSfx.tap(); }catch{}
     b.classList.add('pulse'); setTimeout(()=>b.classList.remove('pulse'), 80);
   }, {capture:true});
@@ -436,7 +456,7 @@
 })();
 </script>
 
-<!-- PRICES (unchanged) -->
+<!-- PRICES (unchanged core from earlier release) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -519,7 +539,7 @@
 })();
 </script>
 
-<!-- USD autofill + limits + presets (unchanged) -->
+<!-- USD autofill + limits + presets -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -577,7 +597,7 @@
 })();
 </script>
 
-<!-- Practice Mode (unchanged) -->
+<!-- Practice Mode Wrapper (Demo default) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -644,7 +664,7 @@
 })();
 </script>
 
-<!-- HUD updater (unchanged) -->
+<!-- HUD updater -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -688,7 +708,7 @@
 })();
 </script>
 
-<!-- GAME CORE (only feedback calls updated) -->
+<!-- GAME CORE -->
 <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 
@@ -755,11 +775,12 @@ function stakeUsd(){
   return xrpUsd>0 ? q*xrpUsd : 0;
 }
 
-function dealOne(toNode, arr, faceUp=true, withSound=true){
+/* 👇 changed: optional sound flag to suppress click during initial deal */
+function dealOne(toNode, arr, faceUp=true, sound=true){
   const c=draw(); arr.push(c);
   const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
   toNode.appendChild(el);
-  if (withSound) { try{ window.__bagSfx && __bagSfx.click(); }catch{} }
+  if(sound){ try{ window.__bagSfx && __bagSfx.click(); }catch{} }
   updTotals();
 }
 function revealHole(){
@@ -786,11 +807,11 @@ function startRound(){
 
   clearBoard(); STATE.dealer=[]; STATE.player=[]; STATE.split=null; STATE.activeHandIdx=0; STATE.live=true;
   try{ window.__bagSfx && __bagSfx.shuffle(); }catch{}
-  // ⬇️ Initial four cards: no click/place sounds (keep only shuffle)
-  dealOne(D('playerCards'), STATE.player, true, false);
-  dealOne(D('dealerCards'), STATE.dealer, true, false);
+  /* initial four deals are silent (no click) to avoid overlapping the shuffle */
+  dealOne(D('playerCards'), STATE.player, true, /*sound*/false);
+  dealOne(D('dealerCards'), STATE.dealer, true, /*sound*/false);
   const hole=draw(); STATE.dealer.push(hole); D('dealerCards').appendChild(window.__CARD_FACTORY__.makeCardEl(hole,true));
-  dealOne(D('playerCards'), STATE.player, true, false);
+  dealOne(D('playerCards'), STATE.player, true, /*sound*/false);
 
   btnDeal.disabled=true; btnHit.disabled=false; btnStand.disabled=false; btnDouble.disabled=false; btnSplit.disabled=(STATE.player.length!==2 || !eqVal(STATE.player[0],STATE.player[1])); btnAgain.style.display='none';
   setStatus('Play your hand'); last('Dealt');
@@ -803,13 +824,13 @@ function startRound(){
 }
 
 function hit(){
-  try{ window.__bagSfx && __bagSfx.tap(); }catch{} // tap on HIT press
+  try{ window.__bagSfx && __bagSfx.tap(); }catch{} // explicit tap on HIT press
   if(STATE.split){
     const i=STATE.activeHandIdx;
-    dealOne(i===0?D('playerCards'):D('pC_1'), STATE.player[i], true);
+    dealOne(i===0?D('playerCards'):D('pC_1'), STATE.player[i], true, /*sound*/true);
     if(val(STATE.player[i]).total>=21){ stand(); }
   }else{
-    dealOne(D('playerCards'), STATE.player, true);
+    dealOne(D('playerCards'), STATE.player, true, /*sound*/true);
     if(val(STATE.player).total>=21){ stand(); }
   }
 }
@@ -824,7 +845,7 @@ function dbl(){
   if(STATE.split){ return; }
   if(STATE.player.length!==2) return alert('Double only on first turn');
   if(!window.__BAG_FORCE_DEMO){ if(!__bagSession.spend(STATE.lockedBag)) return alert('Insufficient balance'); }
-  STATE.player._dbl=true; dealOne(D('playerCards'), STATE.player, true); stand();
+  STATE.player._dbl=true; dealOne(D('playerCards'), STATE.player, true, /*sound*/true); stand();
 }
 function split(){
   if(STATE.player.length!==2 || !eqVal(STATE.player[0],STATE.player[1])) return;
@@ -844,51 +865,40 @@ function dealerTurn(){
   revealHole();
   let dv=val(STATE.dealer);
   while(dv.total<17 || (dv.total===17 && dv.soft && CFG.hitSoft17)){
-    dealOne(D('dealerCards'), STATE.dealer, true);
+    dealOne(D('dealerCards'), STATE.dealer, true, /*sound*/true);
     dv=val(STATE.dealer);
   }
   settle();
 }
 
+/* 🔁 REPLACED settle(): routes visuals & audio through Dice adapter, preserves your flashes & payouts */
 function settle(override){
   let credit=0; const base=STATE.lockedBag;
   function resolve(h){
     const pv=val(h).total, dv=val(STATE.dealer).total;
     const doubled = h._dbl===true; const stake = base*(doubled?2:1);
-
     if(override==='blackjack'){
       credit += stake*CFG.mBJ; last('Blackjack 2×'); flash('win');
-      try{ window.__bagAudio?.chime ? __bagAudio.chime() : window.__bagSfx?.blackjack(); }catch{}
-      // Dice-style centered overlay
-      showJackpot('win','BLACKJACK',`Paid ${CFG.mBJ.toFixed(2)}×`);
+      window.__diceFeedback?.show('blackjack', { title:'BLACKJACK', sub:`Paid ${CFG.mBJ.toFixed(2)}×` });
       return;
     }
     if(override==='push-bj'){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx?.push(); }catch{}; return;
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__diceFeedback?.show('push'); return;
     }
-
-    if(pv>21){
-      last('Scratch'); flash('lose'); try{ window.__bagAudio?.thud ? __bagAudio.thud() : window.__bagSfx?.lose(); }catch{};
-      showJackpot('lose','LOSE','Try again'); return;
-    }
+    if(pv>21){ last('Scratch'); flash('lose'); window.__diceFeedback?.show('lose',{title:'LOSE',sub:'Try again'}); return; }
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
       credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
-      try{ window.__bagAudio?.chime ? __bagAudio.chime() : window.__bagSfx?.win(); }catch{};
-      showJackpot('win', mult===CFG.mBJ?'BLACKJACK':'WIN', `Paid ${mult.toFixed(2)}×`);
+      window.__diceFeedback?.show(mult===CFG.mBJ?'blackjack':'win', { title:(mult===CFG.mBJ?'BLACKJACK':'WIN'), sub:`Paid ${mult.toFixed(2)}×` });
     } else if(pv===dv){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); try{ window.__bagSfx?.push(); }catch{};
-      // Dice push = no overlay
-    } else {
-      last('Scratch'); flash('lose'); try{ window.__bagAudio?.thud ? __bagAudio.thud() : window.__bagSfx?.lose(); }catch{};
-      showJackpot('lose','LOSE','Try again');
-    }
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); window.__diceFeedback?.show('push');
+    } else { last('Scratch'); flash('lose'); window.__diceFeedback?.show('lose',{title:'LOSE',sub:'Try again'}); }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
   if(credit>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(credit);
 
   btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnDeal.disabled=true; btnAgain.style.display='inline-block';
-  STATE.live=false; try{ window.refreshBal && window.refreshBal(); }catch{};
+  STATE.live=false; try{ window.refreshBal && window.refreshBal(); }catch{}
 
   const dv=val(STATE.dealer).total;
   const pv = STATE.split ? `${val(STATE.player[0]).total}/${val(STATE.player[1]).total}` : val(STATE.player).total;
