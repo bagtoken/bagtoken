@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
-<!-- Keep demo on while we debug; set to false for Live -->
+<!-- Keep demo on while testing; set to false for Live -->
 <script>window.__BAG_FORCE_DEMO = true;</script>
 
 <style>
@@ -31,10 +31,12 @@
     color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
     box-shadow:0 4px 0 #b08a19;transition:all .15s ease
   }
+  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
   .game-header{text-align:center;padding:36px 10px 14px;max-width:var(--content);margin:0 auto}
   .game-header img.hero-img{margin:0 auto 10px;width:min(680px,92vw);filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
-
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.6rem);margin:6px 0 0}
   .game-teaser{padding:10px 16px 60px;background:
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
@@ -75,6 +77,8 @@
   }
   @keyframes in{to{transform:translateY(0);opacity:1}}
   .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:#fff}
+  .card.back img{filter:none}
+
   .btnbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
   .btn{min-width:120px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);box-shadow:0 6px 0 #b08a19,0 16px 32px rgba(255,225,117,.18)}
   .btn.alt{color:#e9efe9;background:#15261c;box-shadow:none;border:1px solid #2b6a48}
@@ -243,7 +247,7 @@
 })();
 </script>
 
-<!-- Prices (same as before) -->
+<!-- Prices -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
@@ -282,7 +286,7 @@
 })();
 </script>
 
-<!-- Stake / USD autofill + limits (unchanged) -->
+<!-- Stake / USD autofill + limits -->
 <script>
 (function(){
   const usdBetEl=D('usdBet'), betQtyEl=D('betQty'), curToggle=D('curToggle'), unitSpan=document.querySelector('.unit');
@@ -332,13 +336,10 @@
 })();
 </script>
 
-<!-- ==== DECK PRELOADER & RASTER CACHE ==== -->
+<!-- ==== DECK PRELOADER (RAW SVG CLONE) ==== -->
 <script>
 (function(){
   const CARD_ROOT='/assets/cards';
-  const RASTERIZE = true;  // ← set false to keep raw SVGs
-  const SCALE = 2;         // raster scale (2x card CSS size for crispness)
-
   const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   const SUITS=[['♠','spades'],['♥','hearts'],['♦','diamonds'],['♣','clubs']];
 
@@ -348,8 +349,8 @@
   const BTN_DEAL=document.getElementById('deal');
   const STATUS=document.getElementById('status');
 
-  const IMG_CACHE=new Map();  // src -> HTMLImageElement (loaded)
-  const FACE_MAP=new Map();   // "rank|suitChar" -> <img> (clonable)
+  const IMG_CACHE=new Map();  // src -> loaded <img>
+  const FACE_MAP=new Map();   // "rank|suitChar" -> loaded <img>
   let BACK_IMG=null;
 
   function progress(done,total){
@@ -361,32 +362,15 @@
   function loadImage(src){
     return new Promise((resolve,reject)=>{
       const im=new Image();
-      im.decoding='sync';
+      im.decoding='async';
       im.loading='eager';
-      im.crossOrigin=''; // same-origin; harmless
-      im.onload=()=>resolve(im);
-      im.onerror=()=>reject(new Error('img404 '+src));
+      im.addEventListener('load', ()=>{
+        if (im.naturalWidth>0 && im.naturalHeight>0) resolve(im);
+        else reject(new Error('empty image '+src));
+      }, {once:true});
+      im.addEventListener('error', ()=>reject(new Error('img404 '+src)), {once:true});
       im.src=src+(src.includes('?')?'&':'?')+'v=1';
     });
-  }
-
-  function rasterizeToImg(svgImg){
-    // Draw the SVG into a canvas to produce a bitmap dataURL
-    const w=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cardW'))||100;
-    const h=Math.round(w*1.42);
-    const canvas=document.createElement('canvas');
-    canvas.width=w*SCALE; canvas.height=h*SCALE;
-    const ctx=canvas.getContext('2d', {alpha:true});
-    // White card background
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    // Draw the SVG scaled to fit
-    ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
-    const url=canvas.toDataURL('image/png'); // raster PNG
-    const out=new Image();
-    out.decoding='sync';
-    out.loading='eager';
-    out.src=url;
-    return out;
   }
 
   async function ensureImg(src){
@@ -396,44 +380,9 @@
     return img;
   }
 
-  async function buildDeck(){
-    const tasks=[];
-    // backs first
-    const backs=[`${CARD_ROOT}/back-red.svg`, `${CARD_ROOT}/back-black.svg`, `${CARD_ROOT}/back.svg`];
-    let backSrc=null;
-    for(const b of backs){
-      try{ await ensureImg(b); backSrc=b; break; }catch{}
-    }
-    if(!backSrc) throw new Error('No back image found');
-    // faces
-    for(const [sChar, sWord] of SUITS){
-      for(const r of RANKS){
-        const name = `${(r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r)}-${sWord}.svg`;
-        const src  = `${CARD_ROOT}/${name}`;
-        tasks.push({key:`${r}|${sChar}`, src});
-      }
-    }
-    const total = tasks.length + 1;
-    let done = 0;
-
-    // back
-    const backSvg = await ensureImg(backSrc);
-    BACK_IMG = RASTERIZE ? rasterizeToImg(backSvg) : backSvg;
-    progress(++done,total);
-
-    // faces
-    for(const t of tasks){
-      const svg = await ensureImg(t.src);
-      const img = RASTERIZE ? rasterizeToImg(svg) : svg;
-      FACE_MAP.set(t.key, img);
-      progress(++done,total);
-      await Promise.resolve(); // yield
-    }
-  }
-
-  function makeCardNode(imgEl){
+  function makeCardNode(imgEl, isBack=false){
     const wrap=document.createElement('div');
-    wrap.className='card';
+    wrap.className='card'+(isBack?' back':'');
     const img=imgEl.cloneNode(true);
     img.style.width='100%';
     img.style.height='100%';
@@ -445,13 +394,45 @@
     return wrap;
   }
 
+  async function buildDeck(){
+    const tasks=[];
+    // back(s)
+    const backs=[`${CARD_ROOT}/back-red.svg`, `${CARD_ROOT}/back-black.svg`, `${CARD_ROOT}/back.svg`];
+    let backSrc=null;
+    for(const b of backs){
+      try{ await ensureImg(b); backSrc=b; break; }catch{}
+    }
+    if(!backSrc) throw new Error('No back image found');
+
+    // faces
+    for(const [sChar, sWord] of SUITS){
+      for(const r of RANKS){
+        const name = `${(r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r)}-${sWord}.svg`;
+        const src  = `${CARD_ROOT}/${name}`;
+        tasks.push({key:`${r}|${sChar}`, src});
+      }
+    }
+    const total=tasks.length+1; let done=0;
+
+    const backSvg=await ensureImg(backSrc);
+    BACK_IMG=backSvg; progress(++done,total);
+
+    for(const t of tasks){
+      const svg=await ensureImg(t.src);
+      FACE_MAP.set(t.key, svg);
+      progress(++done,total);
+      await Promise.resolve(); // yield to UI
+    }
+
+    if(FACE_MAP.size!==52) throw new Error('Deck faces missing: '+FACE_MAP.size+'/52');
+  }
+
   window.__CARD_FACTORY__ = {
     makeCardEl(card, back=false){
-      if(back) return makeCardNode(BACK_IMG);
+      if(back) return makeCardNode(BACK_IMG, true);
       const key=`${card.r}|${card.s}`;
       const img=FACE_MAP.get(key);
       if(!img){
-        // never happens if deck built; placeholder fallback
         const el=document.createElement('div');
         el.className='card';
         el.style.display='grid'; el.style.placeItems='center'; el.style.background='#fff';
@@ -459,7 +440,7 @@
         el.textContent=card.r+card.s;
         return el;
       }
-      return makeCardNode(img);
+      return makeCardNode(img, false);
     }
   };
 
@@ -477,7 +458,7 @@
 })();
 </script>
 
-<!-- Blackjack core (unchanged, but uses __CARD_FACTORY__) -->
+<!-- Blackjack core -->
 <script>
 /* ===== Shoe & rules ===== */
 const CONFIG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
@@ -533,7 +514,7 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
 })();
 </script>
 
-<!-- HUD (same as earlier) -->
+<!-- HUD -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -645,7 +626,8 @@ function dealOneTo(node, arr, faceUp=true){
   updateTotals();
 }
 function revealHole(){
-  const dc = D('dealerCards'); const backNode = dc.querySelector('.card');
+  const dc = D('dealerCards');
+  const backNode = dc.querySelector('.card.back'); // specifically flip the back card
   if (backNode) {
     const el = window.__CARD_FACTORY__.makeCardEl(STATE.dealer[1], false);
     backNode.replaceWith(el);
@@ -765,7 +747,7 @@ btnAgain.addEventListener('click', ()=>{ clearCards(); btnDeal.disabled=false; b
 
 /* Boot */
 function boot(){
-  buildShoe(); // deck images are preloaded in the DECK PRELOADER script; Deal enables when ready
+  buildShoe(); // images preloaded in deck script; Deal enables when ready
   const usd = document.getElementById('usdBet'); usd.dataset.userTyped='0';
   window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
 }
@@ -773,7 +755,7 @@ boot();
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 </script>
 
-<!-- WIN overlay logic (unchanged) -->
+<!-- WIN overlay logic -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
