@@ -341,11 +341,10 @@
 })();
 </script>
 
-<!-- CARD LOADER with AUTO-DETECT + DIAGNOSTICS -->
+<!-- CARD LOADER with AUTO-DETECT + DIAGNOSTICS (FIXED: no replaceWith) -->
 <script>
 (function(){
   const CARD_ROOT='/assets/cards';
-  // Accept both singular/plural and legacy "clovers"
   const SUIT_ALIASES={
     '♠':['spades','spade'],
     '♥':['hearts','heart'],
@@ -353,44 +352,49 @@
     '♣':['clubs','club','clovers','clover']
   };
   const RANK_ALIASES={
-    'A':['ace'], 'J':['jack'], 'Q':['queen'], 'K':['king'],
+    'A':['ace'],'K':['king'],'Q':['queen'],'J':['jack'],
     '10':['10'],'9':['9'],'8':['8'],'7':['7'],'6':['6'],'5':['5'],'4':['4'],'3':['3'],'2':['2']
   };
   const BACK_CANDIDATES=['back-red.svg','back-black.svg','back.svg'];
 
-  const IMG_CACHE=new Map();            // src -> Promise<HTMLImageElement>
-  const PATH_CACHE=new Map();           // key "rank|suit" -> resolved path
-  const MISS_CACHE=new Map();           // key -> tried files (for diagnostics)
+  const IMG_CACHE=new Map();     // src -> Promise<HTMLImageElement>
+  const PATH_CACHE=new Map();    // "rank|suit" -> resolved path or null
+  const MISS_CACHE=new Map();    // diagnostics: key -> tried filenames
 
-  function keyOf(rank,suit){return rank+'|'+suit;}
+  const keyOf=(r,s)=>r+'|'+s;
+
   function loadImage(src){
     if(IMG_CACHE.has(src)) return IMG_CACHE.get(src);
     const p=new Promise((resolve,reject)=>{
       const im=new Image();
       im.decoding='async';
       im.loading='eager';
-      im.style.width='100%'; im.style.height='100%'; im.style.objectFit='contain'; im.style.display='block'; im.style.padding='2%'; im.style.background='#fff';
+      im.style.width='100%';
+      im.style.height='100%';
+      im.style.objectFit='contain';
+      im.style.display='block';
+      im.style.padding='2%';
+      im.style.background='#fff';
       im.onload=()=>resolve(im);
       im.onerror=()=>reject(new Error('img404 '+src));
-      // Add small version to bypass stale cached 404s
       im.src=src+(src.includes('?')?'&':'?')+'v=1';
     });
-    IMG_CACHE.set(src,p); return p;
+    IMG_CACHE.set(src,p);
+    return p;
   }
 
   async function resolveCardPath(rank,suitChar){
-    const k=keyOf(rank,suitChar); if(PATH_CACHE.has(k)) return PATH_CACHE.get(k);
+    const k=keyOf(rank,suitChar);
+    if(PATH_CACHE.has(k)) return PATH_CACHE.get(k);
     const tried=[];
     const rlist=RANK_ALIASES[rank]||[rank];
     const slist=SUIT_ALIASES[suitChar]||['spades'];
-
     for(const r of rlist){
       for(const s of slist){
-        const filename=`${r}-${s}.svg`;
-        const candidate=`${CARD_ROOT}/${filename}`;
-        tried.push(filename);
-        try{ await loadImage(candidate); PATH_CACHE.set(k,candidate); return candidate; }
-        catch(_){} // try next
+        const file=`${r}-${s}.svg`;
+        const candidate=`${CARD_ROOT}/${file}`;
+        tried.push(file);
+        try{ await loadImage(candidate); PATH_CACHE.set(k,candidate); return candidate; }catch{}
       }
     }
     MISS_CACHE.set(k,tried);
@@ -400,60 +404,65 @@
 
   async function resolveBack(){
     for(const f of BACK_CANDIDATES){
-      try{ await loadImage(`${CARD_ROOT}/${f}`); return `${CARD_ROOT}/${f}`; }catch(_){}
+      const p=`${CARD_ROOT}/${f}`;
+      try{ await loadImage(p); return p; }catch{}
     }
     return null;
   }
 
-  function placeholder(rank,suitChar){
+  function makeShellCard(isBack=false, text=''){
     const el=document.createElement('div');
-    el.className='card';
-    el.style.display='grid'; el.style.placeItems='center'; el.style.background='#fff';
+    el.className='card'+(isBack?' back':'');
+    el.style.display='grid';
+    el.style.placeItems='center';
+    el.style.background='#fff';
     el.style.font='900 22px/1.1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial';
-    el.style.color=(suitChar==='♥'||suitChar==='♦')?'#b10d19':'#101010';
-    el.textContent=`${rank}${suitChar}`;
+    el.style.color='#101010';
+    el.textContent=text||'';
     return el;
   }
 
-  async function makeFront(rank,suitChar){
-    const shell=placeholder(rank,suitChar);
-    const path=await resolveCardPath(rank,suitChar);
-    if(!path) return shell; // keep placeholder if we failed to resolve
-    try{ const img=await loadImage(path); shell.innerHTML=''; shell.appendChild(img); }
-    catch(_){ /* keep placeholder */ }
-    return shell;
+  function setFrontPlaceholder(el, rank, suitChar){
+    el.textContent = `${rank}${suitChar}`;
+    if(suitChar==='♥' || suitChar==='♦') el.style.color='#b10d19'; else el.style.color='#101010';
   }
 
-  async function makeBack(){
-    const el=document.createElement('div'); el.className='card back'; el.dataset.back='1';
-    const path=await resolveBack();
-    if(!path){ el.textContent='🂠'; el.style.display='grid'; el.style.placeItems='center'; return el; }
-    try{ const img=await loadImage(path); el.appendChild(img); }catch{ el.textContent='🂠'; }
-    return el;
-  }
-
-  // Public factory (async-aware wrapper)
+  // Public factory — IMPORTANT: mutate the same node; never replaceWith
   window.__CARD_FACTORY__ = {
     makeCardEl(card, back=false){
-      // we return a shell immediately, then swap if/when img loads — to avoid jank
-      const shell = back ? document.createElement('div') : placeholder(card.r, card.s);
-      shell.className = 'card' + (back ? ' back' : '');
-      (async()=>{
-        try{
-          const node = back ? await makeBack() : await makeFront(card.r, card.s);
-          shell.replaceWith(node);
-        }catch{
-          /* keep shell */
-        }
-      })();
-      return shell;
+      const el = makeShellCard(back, back ? '🂠' : '');
+      if(!back){
+        setFrontPlaceholder(el, card.r, card.s);
+        (async ()=>{
+          try{
+            const path = await resolveCardPath(card.r, card.s);
+            if(!path) return; // keep placeholder
+            const img = await loadImage(path);
+            // swap content inside the SAME node
+            el.innerHTML='';
+            el.style.display='block';
+            el.appendChild(img);
+          }catch{/* keep placeholder */}
+        })();
+      } else {
+        (async ()=>{
+          try{
+            const path = await resolveBack();
+            if(!path) return;
+            const img = await loadImage(path);
+            el.innerHTML='';
+            el.style.display='block';
+            el.appendChild(img);
+          }catch{/* keep 🂠 */}
+        })();
+      }
+      return el;
     },
-    // diagnostics:
     __resolveCardPath: resolveCardPath,
     __misses: ()=>MISS_CACHE
   };
 
-  // Diagnostics UI
+  // Diagnostics UI (unchanged)
   const runBtn=document.getElementById('runDiag');
   const panel=document.getElementById('diagPanel');
   const sum=document.getElementById('diagSummary');
@@ -461,36 +470,26 @@
   runBtn?.addEventListener('click', async ()=>{
     panel.style.display = panel.style.display==='none' ? 'block' : 'none';
     if(panel.style.display==='none') return;
-
     sum.textContent='Checking 52 faces + backs…';
     list.textContent='(working…)';
-
-    const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const S=['♠','♥','♦','♣'];
-
+    const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣'];
     const found=[], missing=[];
-    // probe backs
     const back = await resolveBack();
-    if(back) found.push('back: '+back.replace(CARD_ROOT+'/',''));
-    else missing.push('back: ' + BACK_CANDIDATES.join(' | '));
-
-    // probe faces
-    for(const r of R){
-      for(const s of S){
-        const p = await resolveCardPath(r,s);
-        if(p) found.push(`${r}${s} → ${p.replace(CARD_ROOT+'/','')}`);
-        else {
-          const tryList = (window.__CARD_FACTORY__.__misses().get(keyOf(r,s))||[]).join(', ');
-          missing.push(`${r}${s} ✗ tried: ${tryList}`);
-        }
+    found.push('back: ' + (back ? back.replace(CARD_ROOT+'/','') : '(missing)'));
+    for(const r of R) for(const s of S){
+      const p = await resolveCardPath(r,s);
+      if(p) found.push(`${r}${s} → ${p.replace(CARD_ROOT+'/','')}`);
+      else {
+        const tries=(window.__CARD_FACTORY__.__misses().get(r+'|'+s)||[]).join(', ');
+        missing.push(`${r}${s} ✗ tried: ${tries}`);
       }
     }
-
     sum.innerHTML = `<span class="${missing.length?'err':'ok'}">${52-missing.length}/52 faces found</span> · back: <span class="${back?'ok':'err'}">${back? 'ok':'missing'}</span>`;
     list.textContent = (missing.length?('Missing:\n- '+missing.join('\n- ')+'\n\n'):'') + 'Found:\n- ' + found.slice(0,60).join('\n- ') + (found.length>60?`\n… +${found.length-60} more`:'');
   });
 })();
 </script>
+
 
 <!-- GAME LOGIC (unchanged except using __CARD_FACTORY__) -->
 <script>
