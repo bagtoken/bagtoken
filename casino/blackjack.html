@@ -11,10 +11,6 @@
 <!-- Keep demo on while we debug; set to false for Live -->
 <script>window.__BAG_FORCE_DEMO = true;</script>
 
-<!-- A couple of useful preloads -->
-<link rel="preload" as="image" href="/assets/cards/back-red.svg">
-<link rel="preload" as="image" href="/assets/cards/ace-spades.svg">
-
 <style>
   *{box-sizing:border-box}
   :root{
@@ -35,10 +31,9 @@
     color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
     box-shadow:0 4px 0 #b08a19;transition:all .15s ease
   }
-  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+
   .game-header{text-align:center;padding:36px 10px 14px;max-width:var(--content);margin:0 auto}
   .game-header img.hero-img{margin:0 auto 10px;width:min(680px,92vw);filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
-  .game-header h2{font-size:clamp(1.6rem,5vw,2.6rem);margin:6px 0 0}
 
   .game-teaser{padding:10px 16px 60px;background:
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
@@ -79,9 +74,7 @@
     transform:translateY(14px);opacity:0;animation:in .16s ease-out forwards
   }
   @keyframes in{to{transform:translateY(0);opacity:1}}
-  .card.back{ border-color:#193d2b }
   .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:#fff}
-
   .btnbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
   .btn{min-width:120px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);box-shadow:0 6px 0 #b08a19,0 16px 32px rgba(255,225,117,.18)}
   .btn.alt{color:#e9efe9;background:#15261c;box-shadow:none;border:1px solid #2b6a48}
@@ -90,13 +83,10 @@
   .hudbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 2px 0;justify-content:center}
   .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
 
-  /* Small diagnostics toggle/panel */
-  .diag-toggle{position:fixed;right:14px;top:14px;z-index:9999}
-  .diag-panel{position:fixed;right:14px;top:50px;width:min(420px,94vw);max-height:60vh;overflow:auto;z-index:9999;
-    background:#0a1711;border:1px solid #29543d;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.45);padding:12px;font-size:12px}
-  .diag-panel h4{margin:0 0 8px;font-size:13px}
-  .diag-panel .ok{color:#2fbf6b}
-  .diag-panel .err{color:#e25b5b}
+  /* Loader */
+  .deck-loader{display:flex;align-items:center;gap:10px;margin:8px 0 12px}
+  .bar{flex:1;height:8px;border-radius:999px;background:#0b2217;border:1px solid #1b4a2f;overflow:hidden}
+  .bar > span{display:block;height:100%;width:0;background:linear-gradient(90deg,#2fbf6b,#ffe175)}
 </style>
 
 <script src="/js/bag-session.js"></script>
@@ -104,12 +94,6 @@
 <body>
 
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
-<button class="btn alt diag-toggle" id="runDiag" title="Check card files">Run Card Diagnostic</button>
-<div class="diag-panel" id="diagPanel" style="display:none">
-  <h4>Card Asset Diagnostics</h4>
-  <div id="diagSummary" class="micro muted">—</div>
-  <div id="diagList" style="margin-top:8px;white-space:pre-line"></div>
-</div>
 
 <section class="game-header">
   <img src="/assets/bag-blackjack.png" alt="$BAG Blackjack" class="hero-img" loading="lazy" decoding="async">
@@ -132,6 +116,13 @@
       </div>
 
       <div class="section-title">Stake & Prices</div>
+
+      <!-- Deck loader -->
+      <div class="deck-loader" id="deckLoader">
+        <div class="micro">Loading deck… <span id="deckPct">0%</span></div>
+        <div class="bar"><span id="deckBar"></span></div>
+      </div>
+
       <div class="stack">
         <div>
           <div class="micro">Amount</div>
@@ -201,7 +192,7 @@
           </div>
 
           <div class="btnbar">
-            <button id="deal" class="btn">Deal</button>
+            <button id="deal" class="btn" disabled>Deal</button>
             <button id="hit"  class="btn" disabled>Hit</button>
             <button id="stand"class="btn" disabled>Stand</button>
             <button id="double"class="btn alt" disabled>Double</button>
@@ -216,7 +207,7 @@
             <span class="pill">Last: <b id="lastLbl">—</b></span>
           </div>
 
-          <div id="status" class="result">Place a stake, then Deal</div>
+          <div id="status" class="result">Loading deck…</div>
         </div>
       </div>
     </div>
@@ -224,7 +215,7 @@
   </div>
 </section>
 
-<!-- Celebration overlay (unchanged) -->
+<!-- Celebration overlay -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;position:fixed;inset:0;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70); z-index:2147483647;">
   <div id="win-card" style="position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);">
@@ -234,7 +225,7 @@
   </div>
 </div>
 
-<!-- SFX -->
+<!-- SFX: file-based -->
 <script>
 (function(){
   try{
@@ -291,7 +282,7 @@
 })();
 </script>
 
-<!-- Stake / USD autofill + limits -->
+<!-- Stake / USD autofill + limits (unchanged) -->
 <script>
 (function(){
   const usdBetEl=D('usdBet'), betQtyEl=D('betQty'), curToggle=D('curToggle'), unitSpan=document.querySelector('.unit');
@@ -341,171 +332,169 @@
 })();
 </script>
 
-<!-- CARD LOADER with AUTO-DETECT + DIAGNOSTICS (FIXED: no replaceWith) -->
+<!-- ==== DECK PRELOADER & RASTER CACHE ==== -->
 <script>
 (function(){
   const CARD_ROOT='/assets/cards';
-  const SUIT_ALIASES={
-    '♠':['spades','spade'],
-    '♥':['hearts','heart'],
-    '♦':['diamonds','diamond'],
-    '♣':['clubs','club','clovers','clover']
-  };
-  const RANK_ALIASES={
-    'A':['ace'],'K':['king'],'Q':['queen'],'J':['jack'],
-    '10':['10'],'9':['9'],'8':['8'],'7':['7'],'6':['6'],'5':['5'],'4':['4'],'3':['3'],'2':['2']
-  };
-  const BACK_CANDIDATES=['back-red.svg','back-black.svg','back.svg'];
+  const RASTERIZE = true;  // ← set false to keep raw SVGs
+  const SCALE = 2;         // raster scale (2x card CSS size for crispness)
 
-  const IMG_CACHE=new Map();     // src -> Promise<HTMLImageElement>
-  const PATH_CACHE=new Map();    // "rank|suit" -> resolved path or null
-  const MISS_CACHE=new Map();    // diagnostics: key -> tried filenames
+  const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const SUITS=[['♠','spades'],['♥','hearts'],['♦','diamonds'],['♣','clubs']];
 
-  const keyOf=(r,s)=>r+'|'+s;
+  const BAR=document.getElementById('deckBar');
+  const PCT=document.getElementById('deckPct');
+  const LOADER=document.getElementById('deckLoader');
+  const BTN_DEAL=document.getElementById('deal');
+  const STATUS=document.getElementById('status');
+
+  const IMG_CACHE=new Map();  // src -> HTMLImageElement (loaded)
+  const FACE_MAP=new Map();   // "rank|suitChar" -> <img> (clonable)
+  let BACK_IMG=null;
+
+  function progress(done,total){
+    const pct=Math.round((done/total)*100);
+    BAR.style.width=pct+'%';
+    PCT.textContent=pct+'%';
+  }
 
   function loadImage(src){
-    if(IMG_CACHE.has(src)) return IMG_CACHE.get(src);
-    const p=new Promise((resolve,reject)=>{
+    return new Promise((resolve,reject)=>{
       const im=new Image();
-      im.decoding='async';
+      im.decoding='sync';
       im.loading='eager';
-      im.style.width='100%';
-      im.style.height='100%';
-      im.style.objectFit='contain';
-      im.style.display='block';
-      im.style.padding='2%';
-      im.style.background='#fff';
+      im.crossOrigin=''; // same-origin; harmless
       im.onload=()=>resolve(im);
       im.onerror=()=>reject(new Error('img404 '+src));
       im.src=src+(src.includes('?')?'&':'?')+'v=1';
     });
-    IMG_CACHE.set(src,p);
-    return p;
   }
 
-  async function resolveCardPath(rank,suitChar){
-    const k=keyOf(rank,suitChar);
-    if(PATH_CACHE.has(k)) return PATH_CACHE.get(k);
-    const tried=[];
-    const rlist=RANK_ALIASES[rank]||[rank];
-    const slist=SUIT_ALIASES[suitChar]||['spades'];
-    for(const r of rlist){
-      for(const s of slist){
-        const file=`${r}-${s}.svg`;
-        const candidate=`${CARD_ROOT}/${file}`;
-        tried.push(file);
-        try{ await loadImage(candidate); PATH_CACHE.set(k,candidate); return candidate; }catch{}
+  function rasterizeToImg(svgImg){
+    // Draw the SVG into a canvas to produce a bitmap dataURL
+    const w=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cardW'))||100;
+    const h=Math.round(w*1.42);
+    const canvas=document.createElement('canvas');
+    canvas.width=w*SCALE; canvas.height=h*SCALE;
+    const ctx=canvas.getContext('2d', {alpha:true});
+    // White card background
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    // Draw the SVG scaled to fit
+    ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
+    const url=canvas.toDataURL('image/png'); // raster PNG
+    const out=new Image();
+    out.decoding='sync';
+    out.loading='eager';
+    out.src=url;
+    return out;
+  }
+
+  async function ensureImg(src){
+    if(IMG_CACHE.has(src)) return IMG_CACHE.get(src);
+    const img=await loadImage(src);
+    IMG_CACHE.set(src,img);
+    return img;
+  }
+
+  async function buildDeck(){
+    const tasks=[];
+    // backs first
+    const backs=[`${CARD_ROOT}/back-red.svg`, `${CARD_ROOT}/back-black.svg`, `${CARD_ROOT}/back.svg`];
+    let backSrc=null;
+    for(const b of backs){
+      try{ await ensureImg(b); backSrc=b; break; }catch{}
+    }
+    if(!backSrc) throw new Error('No back image found');
+    // faces
+    for(const [sChar, sWord] of SUITS){
+      for(const r of RANKS){
+        const name = `${(r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r)}-${sWord}.svg`;
+        const src  = `${CARD_ROOT}/${name}`;
+        tasks.push({key:`${r}|${sChar}`, src});
       }
     }
-    MISS_CACHE.set(k,tried);
-    PATH_CACHE.set(k,null);
-    return null;
-  }
+    const total = tasks.length + 1;
+    let done = 0;
 
-  async function resolveBack(){
-    for(const f of BACK_CANDIDATES){
-      const p=`${CARD_ROOT}/${f}`;
-      try{ await loadImage(p); return p; }catch{}
+    // back
+    const backSvg = await ensureImg(backSrc);
+    BACK_IMG = RASTERIZE ? rasterizeToImg(backSvg) : backSvg;
+    progress(++done,total);
+
+    // faces
+    for(const t of tasks){
+      const svg = await ensureImg(t.src);
+      const img = RASTERIZE ? rasterizeToImg(svg) : svg;
+      FACE_MAP.set(t.key, img);
+      progress(++done,total);
+      await Promise.resolve(); // yield
     }
-    return null;
   }
 
-  function makeShellCard(isBack=false, text=''){
-    const el=document.createElement('div');
-    el.className='card'+(isBack?' back':'');
-    el.style.display='grid';
-    el.style.placeItems='center';
-    el.style.background='#fff';
-    el.style.font='900 22px/1.1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial';
-    el.style.color='#101010';
-    el.textContent=text||'';
-    return el;
+  function makeCardNode(imgEl){
+    const wrap=document.createElement('div');
+    wrap.className='card';
+    const img=imgEl.cloneNode(true);
+    img.style.width='100%';
+    img.style.height='100%';
+    img.style.objectFit='contain';
+    img.style.display='block';
+    img.style.padding='2%';
+    img.style.background='#fff';
+    wrap.appendChild(img);
+    return wrap;
   }
 
-  function setFrontPlaceholder(el, rank, suitChar){
-    el.textContent = `${rank}${suitChar}`;
-    if(suitChar==='♥' || suitChar==='♦') el.style.color='#b10d19'; else el.style.color='#101010';
-  }
-
-  // Public factory — IMPORTANT: mutate the same node; never replaceWith
   window.__CARD_FACTORY__ = {
     makeCardEl(card, back=false){
-      const el = makeShellCard(back, back ? '🂠' : '');
-      if(!back){
-        setFrontPlaceholder(el, card.r, card.s);
-        (async ()=>{
-          try{
-            const path = await resolveCardPath(card.r, card.s);
-            if(!path) return; // keep placeholder
-            const img = await loadImage(path);
-            // swap content inside the SAME node
-            el.innerHTML='';
-            el.style.display='block';
-            el.appendChild(img);
-          }catch{/* keep placeholder */}
-        })();
-      } else {
-        (async ()=>{
-          try{
-            const path = await resolveBack();
-            if(!path) return;
-            const img = await loadImage(path);
-            el.innerHTML='';
-            el.style.display='block';
-            el.appendChild(img);
-          }catch{/* keep 🂠 */}
-        })();
+      if(back) return makeCardNode(BACK_IMG);
+      const key=`${card.r}|${card.s}`;
+      const img=FACE_MAP.get(key);
+      if(!img){
+        // never happens if deck built; placeholder fallback
+        const el=document.createElement('div');
+        el.className='card';
+        el.style.display='grid'; el.style.placeItems='center'; el.style.background='#fff';
+        el.style.font='900 22px/1.1 system-ui'; el.style.color=(card.s==='♥'||card.s==='♦')?'#b10d19':'#101010';
+        el.textContent=card.r+card.s;
+        return el;
       }
-      return el;
-    },
-    __resolveCardPath: resolveCardPath,
-    __misses: ()=>MISS_CACHE
+      return makeCardNode(img);
+    }
   };
 
-  // Diagnostics UI (unchanged)
-  const runBtn=document.getElementById('runDiag');
-  const panel=document.getElementById('diagPanel');
-  const sum=document.getElementById('diagSummary');
-  const list=document.getElementById('diagList');
-  runBtn?.addEventListener('click', async ()=>{
-    panel.style.display = panel.style.display==='none' ? 'block' : 'none';
-    if(panel.style.display==='none') return;
-    sum.textContent='Checking 52 faces + backs…';
-    list.textContent='(working…)';
-    const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣'];
-    const found=[], missing=[];
-    const back = await resolveBack();
-    found.push('back: ' + (back ? back.replace(CARD_ROOT+'/','') : '(missing)'));
-    for(const r of R) for(const s of S){
-      const p = await resolveCardPath(r,s);
-      if(p) found.push(`${r}${s} → ${p.replace(CARD_ROOT+'/','')}`);
-      else {
-        const tries=(window.__CARD_FACTORY__.__misses().get(r+'|'+s)||[]).join(', ');
-        missing.push(`${r}${s} ✗ tried: ${tries}`);
-      }
+  (async ()=>{
+    try{
+      await buildDeck();
+      LOADER.style.display='none';
+      STATUS.textContent='Place a stake, then Deal';
+      BTN_DEAL.disabled=false;
+    }catch(e){
+      STATUS.textContent='Error loading deck. Check /assets/cards/';
+      console.error(e);
     }
-    sum.innerHTML = `<span class="${missing.length?'err':'ok'}">${52-missing.length}/52 faces found</span> · back: <span class="${back?'ok':'err'}">${back? 'ok':'missing'}</span>`;
-    list.textContent = (missing.length?('Missing:\n- '+missing.join('\n- ')+'\n\n'):'') + 'Found:\n- ' + found.slice(0,60).join('\n- ') + (found.length>60?`\n… +${found.length-60} more`:'');
-  });
+  })();
 })();
 </script>
 
-
-<!-- GAME LOGIC (unchanged except using __CARD_FACTORY__) -->
+<!-- Blackjack core (unchanged, but uses __CARD_FACTORY__) -->
 <script>
-/* Helpers */
+/* ===== Shoe & rules ===== */
 const CONFIG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 let shoe=[];
-const D=(id)=>document.getElementById(id);
 function buildShoe(){ const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣']; const t=[]; for(let d=0;d<CONFIG.decks;d++) for(const r of R) for(const s of S) t.push({r,s}); for(let i=t.length-1;i>0;i++){ const j=(Math.random()*(i+1))|0; [t[i],t[j]]=[t[j],t[i]]; } shoe=t; }
 function draw(){ if(!shoe.length) buildShoe(); return shoe.pop(); }
 function val(hand){ let t=0,a=0; for(const c of hand){ if(c.r==='A'){t+=11;a++;} else if(['K','Q','J','10'].includes(c.r)) t+=10; else t+=parseInt(c.r,10); } while(t>21 && a>0){ t-=10; a--; } return {total:t, soft:(a>0 && t<=21)}; }
 function isBJ(h){ if(h.length!==2) return false; const v=h.map(c=>c.r); return v.includes('A') && ['10','J','Q','K'].some(x=>v.includes(x)); }
 function canSplit(h){ if(!CONFIG.allowSplit || STATE.split) return false; if(h.length!==2) return false; const fv=(x)=>x.r==='A'?11:(['K','Q','J','10'].includes(x.r)?10:parseInt(x.r,10)); return fv(h[0])===fv(h[1]); }
+
+/* ===== Elements ===== */
+const D = (id)=>document.getElementById(id);
+const btnDeal=D('deal'), btnHit=D('hit'), btnStand=D('stand'), btnDouble=D('double'), btnSplit=D('split'), btnAgain=D('again');
 function setStatus(txt,cls){ const el=D('status'); el.className='result'+(cls?(' t '+cls):''); el.textContent=txt; }
 function last(s){ D('lastLbl').textContent=s; }
 
-/* Prices & stake */
+/* ===== Prices helper ===== */
 const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 function currentCurrency(){ const el = document.querySelector('#curToggle input[name="betCur"]:checked'); return el ? String(el.value).toUpperCase() : 'XRP'; }
 function stakeBag(){
@@ -531,7 +520,7 @@ function stakeUsd(){
 }
 function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-/* Demo balance */
+/* ===== Demo session ===== */
 (function(){
   const DEMO_KEY='__bag_demo_bag_v1', START_BAG=1000;
   function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
@@ -542,47 +531,107 @@ function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumF
     credit(b){ if(!(b>0)) return false; setBal(getBal()+b); dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; } };
   window.__bagSession = demoSession;
 })();
-(function HUD(){
+</script>
+
+<!-- HUD (same as earlier) -->
+<script>
+(function(){
   const curToggle = document.getElementById('curToggle');
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
   function els(){ 
-    return { balLbl:D('balLbl'), ccyLbl:D('ccyLbl'), betLbl:D('betLbl'), modeLbl:D('modeLbl'), lastLbl:D('lastLbl'), betQtyEl:D('betQty') };
+    return { 
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betLbl'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
+    }; 
   }
   function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
   function getBalances(){
-    const sess=(window.__bagSession && window.__bagSession.get && window.__bagSession.get())||{};
-    const bag=Number(sess.bag)||0;
-    let xrp=Number(sess.xrp);
-    if(!(xrp>0)){ const {bagUsd,xrpUsd}=PR(); if(bagUsd>0&&xrpUsd>0)xrp=bag*(bagUsd/xrpUsd); else xrp=0; }
-    return { bag,xrp };
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
+    }
+    return { bag, xrp };
   }
-  function currentBet(){ const {betQtyEl}=els(); const v=parseFloat(betQtyEl?.value||'0'); if(!Number.isFinite(v)||v<0) return 0; return Math.max(0, Math.floor(v)); }
-  function render(){
-    const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-    const ccy=(curToggle?.querySelector('input[name="betCur"]:checked')?.value||'XRP').toUpperCase();
-    const {bag,xrp}=getBalances();
-    if(modeLbl) modeLbl.textContent=selectedMode();
-    if(betLbl)  betLbl.textContent=String(currentBet());
-    if(lastLbl) lastLbl.textContent=String(window.__DICE_LAST__||'—');
-    if(balLbl&&ccyLbl){ if(ccy==='XRP'){ balLbl.textContent=fmt(xrp,6); ccyLbl.textContent='XRP'; } else { balLbl.textContent=fmt(bag,6); ccyLbl.textContent='BAG'; } }
+  function currentBet(){
+    const { betQtyEl } = els();
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return Math.max(0, Math.floor(v));
   }
-  ['bag:pricesUpdated','bag:hudRefresh'].forEach(ev=>addEventListener(ev,render));
-  document.getElementById('betQty')?.addEventListener('input', render);
-  curToggle?.addEventListener('change', render);
-  render(); let tries=0; const iv=setInterval(()=>{render(); if(++tries>40) clearInterval(iv);},500);
+  function renderHud(){
+    try{
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      const mode = selectedMode();
+      const ccy  = currentCurrency();
+      const { bag, xrp } = getBalances();
+      if (modeLbl) modeLbl.textContent = mode;
+      if (betLbl)  betLbl.textContent  = String(currentBet());
+      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
+      if (balLbl && ccyLbl){
+        if (ccy === 'XRP'){ balLbl.textContent = fmt(xrp, 6); ccyLbl.textContent='XRP'; }
+        else { balLbl.textContent = fmt(bag, 6); ccyLbl.textContent='BAG'; }
+      }
+    }catch(e){}
+  }
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+   'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+   'bag:hudRefresh'].forEach(ev => addEventListener(ev, renderHud));
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
+  renderHud();
+  let tries = 0; const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
+</script>
 
-/* Game state & flow */
-const STATE={ dealer:[], hands:[], active:0, split:false, locked:0, live:false };
-function clearCards(){ D('dealerCards').innerHTML=''; D('playerCards').innerHTML=''; D('dealerTotal').textContent='0'; D('playerTotal').textContent='0'; document.querySelectorAll('.splitRow').forEach(n=>n.remove()); }
-function addSplitRow(i){ const row=document.createElement('div'); row.className='hand splitRow'; row.innerHTML=`<div class="label">You (Hand ${i+1})</div><div class="total" id="pT_${i}">0</div><div class="cards" id="pC_${i}"></div>`; D('player').after(row); }
-function updateTotals(){ D('dealerTotal').textContent=val(STATE.dealer).total; if(STATE.hands.length===1){ D('playerTotal').textContent=val(STATE.hands[0]).total; } else { STATE.hands.forEach((h,i)=>{ (i===0?D('playerTotal'):D('pT_'+i)).textContent=val(h).total; }); } }
+<!-- STATE + Flow -->
+<script>
+const STATE = { dealer:[], hands:[], active:0, split:false, locked:0, live:false };
+
+function clearCards(){
+  D('dealerCards').innerHTML=''; D('playerCards').innerHTML='';
+  D('dealerTotal').textContent='0'; D('playerTotal').textContent='0';
+  document.querySelectorAll('.splitRow').forEach(n=>n.remove());
+}
+function addSplitRow(i){
+  const row=document.createElement('div'); row.className='hand splitRow';
+  row.innerHTML = `<div class="label">You (Hand ${i+1})</div><div class="total" id="pT_${i}">0</div><div class="cards" id="pC_${i}"></div>`;
+  D('player').after(row);
+}
+function updateTotals(){
+  D('dealerTotal').textContent = val(STATE.dealer).total;
+  if(STATE.hands.length===1){
+    D('playerTotal').textContent = val(STATE.hands[0]).total;
+  }else{
+    STATE.hands.forEach((h,i)=>{
+      const t = val(h).total;
+      (i===0?D('playerTotal'):D('pT_'+i)).textContent = t;
+    });
+  }
+}
+function playDeal(){ try{ window.__bagSfx && __bagSfx.click(); }catch{} }
+
 function spendBAG(n){ if(!(n>0)) return true; try{ return !!(__bagSession && __bagSession.spend && __bagSession.spend(n)); }catch{ return false; } }
 function creditBAG(n){ if(!(n>0)) return; try{ __bagSession && __bagSession.credit && __bagSession.credit(n);}catch{} }
 
 function lockStake(){
   const bag=stakeBag(), usd=stakeUsd();
-  if(!window.__BAG_FORCE_DEMO){ if(!(usd>=1) || usd>2000) return [false,'Stake must be $1–$2000']; }
+  if(!window.__BAG_FORCE_DEMO){
+    if(!(usd>=1) || usd>2000) return [false,'Stake must be $1–$2000'];
+  }
   if(!(bag>0)) return [false,'Enter a stake first (or wait for prices)'];
   if(!spendBAG(bag)) return [false,'Insufficient balance'];
   STATE.locked=bag; return [true,''];
@@ -590,18 +639,16 @@ function lockStake(){
 
 function dealOneTo(node, arr, faceUp=true){
   const c=draw(); arr.push(c);
-  const maker=window.__CARD_FACTORY__;
-  const cardEl = maker ? maker.makeCardEl(c, !faceUp) : (function(){ const el=document.createElement('div'); el.className='card'; el.textContent=faceUp?(c.r+c.s):'🂠'; return el; })();
-  node.appendChild(cardEl);
-  if(faceUp) try{ window.__bagSfx && __bagSfx.click(); }catch{}
+  const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
+  node.appendChild(el);
+  if (faceUp) playDeal();
   updateTotals();
 }
-async function revealHole(){
-  const dc=D('dealerCards'); const backNode=dc.querySelector('.card.back,[data-back="1"]');
-  if(backNode){
-    const c=STATE.dealer[1];
-    const node=window.__CARD_FACTORY__.makeCardEl(c,false);
-    backNode.replaceWith(node);
+function revealHole(){
+  const dc = D('dealerCards'); const backNode = dc.querySelector('.card');
+  if (backNode) {
+    const el = window.__CARD_FACTORY__.makeCardEl(STATE.dealer[1], false);
+    backNode.replaceWith(el);
   }
   updateTotals();
 }
@@ -609,66 +656,124 @@ async function revealHole(){
 function startRound(){
   const [ok,err]=lockStake(); if(!ok) return alert(err);
   clearCards(); STATE.dealer=[]; STATE.hands=[[]]; STATE.active=0; STATE.split=false; STATE.live=true;
-  try{ window.__bagSfx && __bagSfx.shuffle(); }catch{}
+
+  try{ window.__bagSfx && __bagSfx.shuffle(); }catch{} // shuffle SFX
+
   const pc=D('playerCards'), dc=D('dealerCards');
   dealOneTo(pc, STATE.hands[0], true);
   dealOneTo(dc, STATE.dealer, true);
   const hole=draw(); STATE.dealer.push(hole); dc.appendChild(window.__CARD_FACTORY__.makeCardEl(hole,true)); updateTotals();
   dealOneTo(pc, STATE.hands[0], true);
 
-  D('deal').disabled=true; D('hit').disabled=false; D('stand').disabled=false; D('double').disabled=false; D('split').disabled=!canSplit(STATE.hands[0]); D('again').style.display='none';
+  btnDeal.disabled=true; btnHit.disabled=false; btnStand.disabled=false; btnDouble.disabled=false; btnSplit.disabled=!canSplit(STATE.hands[0]); btnAgain.style.display='none';
   setStatus('Play your hand'); last('Dealt');
 
-  if(isBJ(STATE.hands[0])){ revealHole(); const dBJ=isBJ(STATE.dealer); settleAll(dBJ?'push-bj':'blackjack'); }
+  if(isBJ(STATE.hands[0])){
+    revealHole();
+    const dBJ=isBJ(STATE.dealer);
+    settleAll(dBJ?'push-bj':'blackjack');
+  }
 }
-function hitHand(i){ const node=(STATE.hands.length===1)?D('playerCards'):(i===0?D('playerCards'):D('pC_'+i)); dealOneTo(node, STATE.hands[i], true); }
+
+function hitHand(i){
+  const node = (STATE.hands.length===1) ? D('playerCards') : (i===0?D('playerCards'):D('pC_'+i));
+  dealOneTo(node, STATE.hands[i], true);
+}
 function nextHandOrDealer(){
-  if(STATE.hands.length>1){ STATE.active++; if(STATE.active<STATE.hands.length){ D('double').disabled = !(STATE.hands[STATE.active].length===2); D('hit').disabled=false; D('stand').disabled=false; setStatus(`Hand ${STATE.active+1}: your move`); return; } }
+  if(STATE.hands.length>1){
+    STATE.active++;
+    if(STATE.active<STATE.hands.length){
+      btnDouble.disabled = !(STATE.hands[STATE.active].length===2);
+      btnHit.disabled=false; btnStand.disabled=false;
+      setStatus(`Hand ${STATE.active+1}: your move`);
+      return;
+    }
+  }
   dealerPhase();
 }
 function dealerPhase(){
   revealHole();
   let dv=val(STATE.dealer);
-  while(dv.total<17 || (dv.total===17 && dv.soft && CONFIG.hitSoft17)){ dealOneTo(D('dealerCards'), STATE.dealer, true); dv=val(STATE.dealer); }
-  updateTotals(); settleAll();
+  while(dv.total<17 || (dv.total===17 && dv.soft && CONFIG.hitSoft17)){
+    dealOneTo(D('dealerCards'), STATE.dealer, true);
+    dv=val(STATE.dealer);
+  }
+  updateTotals();
+  settleAll();
 }
+
 function settleAll(override){
   let credit=0, usd=stakeUsd(); const base=STATE.locked;
-  function doHand(h){
+
+  function doHand(h,idx){
     const pv=val(h).total, dv=val(STATE.dealer).total;
-    const doubled=h._dbl===true; const stake=base*(doubled?2:1);
-    if(override==='blackjack'){ credit+=stake*CONFIG.mBJ; setStatus('Blackjack — paid 2.00×','win'); last('Blackjack 2×'); return; }
-    if(override==='push-bj'){ credit+=stake*CONFIG.mPUSH; setStatus('Push (both Blackjack) — stake returned','push'); last('Push'); return; }
+    const doubled = h._dbl===true; const stake = base*(doubled?2:1);
+
+    if(override==='blackjack'){
+      credit += stake*CONFIG.mBJ; setStatus('Blackjack — paid 2.00×','win'); last('Blackjack 2×'); return;
+    }
+    if(override==='push-bj'){ credit += stake*CONFIG.mPUSH; setStatus('Push (both Blackjack) — stake returned','push'); last('Push'); return; }
+
     if(pv>21){ setStatus('Busted — dealer wins','lose'); last('Scratch'); return; }
     if(dv>21 || pv>dv){
-      const mult=(isBJ(h)&&!doubled&&!STATE.split)?CONFIG.mBJ:CONFIG.mWIN;
-      credit+=stake*mult; const gainBag=stake*(mult-1);
+      const mult = (isBJ(h)&&!doubled&&!STATE.split) ? CONFIG.mBJ : CONFIG.mWIN;
+      credit += stake*mult;
+      const gainBag = stake*(mult-1);
       showWin({message:(mult===CONFIG.mBJ?'BLACKJACK':'WIN'), subtext:`+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(usd)} → ${fmtUsd(usd*mult)}`, duration:(mult===CONFIG.mBJ?5200:3800), sound:true});
       setStatus(mult===CONFIG.mBJ?'Blackjack — 2.00×':`You win ${CONFIG.mWIN.toFixed(2)}×`,'win'); last(mult===CONFIG.mBJ?'Blackjack 2×':'Win 1.25×');
-    } else if(pv<dv){ setStatus('Dealer wins','lose'); last('Scratch'); }
-    else { credit+=stake*CONFIG.mPUSH; setStatus('Push — stake returned','push'); last('Push'); }
+    } else if(pv<dv){
+      setStatus('Dealer wins','lose'); last('Scratch');
+    } else {
+      credit += stake*CONFIG.mPUSH; setStatus('Push — stake returned','push'); last('Push');
+    }
   }
-  if(STATE.hands.length===1) doHand(STATE.hands[0]); else STATE.hands.forEach(doHand);
+
+  if(STATE.hands.length===1) doHand(STATE.hands[STATE.active]); else STATE.hands.forEach(doHand);
   if(credit>0) creditBAG(credit);
-  D('hit').disabled=true; D('stand').disabled=true; D('double').disabled=true; D('split').disabled=true; D('deal').disabled=true; D('again').style.display='inline-block';
+
+  btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnDeal.disabled=true; btnAgain.style.display='inline-block';
   STATE.live=false;
 }
 
 /* Buttons */
-D('deal').addEventListener('click', ()=>startRound());
-D('hit').addEventListener('click', ()=>{ D('double').disabled=true; hitHand(STATE.active); if(val(STATE.hands[STATE.active]).total>21){ setStatus(`Hand ${STATE.hands.length>1?STATE.active+1:''} busts`,'lose'); nextHandOrDealer(); }});
-D('stand').addEventListener('click', ()=>{ setStatus(`Hand ${STATE.hands.length>1?STATE.active+1:''} stands`); nextHandOrDealer(); });
-D('double').addEventListener('click', ()=>{ const h=STATE.hands[STATE.active]; if(h.length!==2) return alert('Double only on first turn'); if(!spendBAG(STATE.locked)) return alert('Insufficient balance'); h._dbl=true; hitHand(STATE.active); nextHandOrDealer(); });
-D('split').addEventListener('click', ()=>{ const h=STATE.hands[0]; if(!canSplit(h)) return; if(!spendBAG(STATE.locked)) return alert('Insufficient balance'); STATE.split=true; const a=h[0], b=h[1]; STATE.hands=[[a],[b]]; D('playerCards').innerHTML=''; D('playerTotal').textContent='0'; addSplitRow(1); D('playerCards').appendChild(window.__CARD_FACTORY__.makeCardEl(a)); D('pC_1').appendChild(window.__CARD_FACTORY__.makeCardEl(b)); hitHand(0); hitHand(1); updateTotals(); STATE.active=0; D('split').disabled=true; D('double').disabled=false; });
-D('again').addEventListener('click', ()=>{ clearCards(); D('deal').disabled=false; D('hit').disabled=true; D('stand').disabled=true; D('double').disabled=true; D('split').disabled=true; D('again').style.display='none'; setStatus('Place a stake, then Deal'); last('—'); });
+btnDeal.addEventListener('click', ()=>{ startRound(); });
+btnHit.addEventListener('click', ()=>{
+  btnDouble.disabled=true; hitHand(STATE.active);
+  if(val(STATE.hands[STATE.active]).total>21){ setStatus(`Hand ${STATE.hands.length>1?STATE.active+1:''} busts`,'lose'); nextHandOrDealer(); }
+});
+btnStand.addEventListener('click', ()=>{ setStatus(`Hand ${STATE.hands.length>1?STATE.active+1:''} stands`); nextHandOrDealer(); });
+btnDouble.addEventListener('click', ()=>{
+  const h=STATE.hands[STATE.active]; if(h.length!==2) return alert('Double only on first turn');
+  if(!spendBAG(STATE.locked)) return alert('Insufficient balance');
+  h._dbl=true; hitHand(STATE.active); nextHandOrDealer();
+});
+btnSplit.addEventListener('click', ()=>{
+  const h=STATE.hands[0]; if(!canSplit(h)) return;
+  if(!spendBAG(STATE.locked)) return alert('Insufficient balance');
+  STATE.split=true;
+  const a=h[0], b=h[1];
+  STATE.hands=[ [a], [b] ];
+  D('playerCards').innerHTML=''; D('playerTotal').textContent='0';
+  addSplitRow(1);
+  D('playerCards').appendChild(window.__CARD_FACTORY__.makeCardEl(a)); playDeal();
+  D('pC_1').appendChild(window.__CARD_FACTORY__.makeCardEl(b)); playDeal();
+  hitHand(0); hitHand(1);
+  updateTotals();
+  STATE.active=0; btnSplit.disabled=true; btnDouble.disabled=false;
+});
+btnAgain.addEventListener('click', ()=>{ clearCards(); btnDeal.disabled=false; btnHit.disabled=true; btnStand.disabled=true; btnDouble.disabled=true; btnSplit.disabled=true; btnAgain.style.display='none'; setStatus('Place a stake, then Deal'); last('—'); });
 
 /* Boot */
-function boot(){ buildShoe(); const usd=D('usdBet'); usd.dataset.userTyped='0'; dispatchEvent(new CustomEvent('bag:pricesUpdated')); setStatus('Place a stake, then Deal'); }
+function boot(){
+  buildShoe(); // deck images are preloaded in the DECK PRELOADER script; Deal enables when ready
+  const usd = document.getElementById('usdBet'); usd.dataset.userTyped='0';
+  window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+}
 boot();
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 </script>
 
-<!-- Simple WIN overlay logic (unchanged) -->
+<!-- WIN overlay logic (unchanged) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
