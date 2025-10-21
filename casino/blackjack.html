@@ -82,7 +82,7 @@
 
   @keyframes dealPop{ from{ transform:scale(.98); opacity:.0 } to{ transform:scale(1); opacity:1 } }
 
-  /* Felt flashes + table shake for quick feedback */
+  /* Felt flashes + table shake (unchanged) */
   #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
   #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
   #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
@@ -117,6 +117,19 @@
   #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
+
+  /* ✅ Quick Amount buttons: green w/ white text */
+  .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .preset-chip{
+    appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
+    padding:8px 12px;font-weight:900;letter-spacing:.2px;cursor:pointer;
+    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .preset-chip:hover{filter:brightness(1.03)}
+  .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
+  .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
+  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
 </style>
 </head>
 <body>
@@ -244,7 +257,7 @@
   </div>
 </section>
 
-<!-- === Dice Celebration Overlay (same element IDs) === -->
+<!-- === Dice Celebration Overlay (same IDs) === -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
   <div id="win-card">
@@ -254,7 +267,7 @@
   </div>
 </div>
 
-<!-- === Dice celebration logic (unchanged) === -->
+<!-- Celebration overlay logic (Dice) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -297,7 +310,6 @@
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
   addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
 
-  // Exactly the same API Dice uses:
   window.showWin=function(opts={}){ 
     const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
@@ -308,7 +320,7 @@
 })();
 </script>
 
-<!-- === Audio: same chime/thud primitives as Dice + shuffle tag === -->
+<!-- AUDIO (Dice primitives) + robust shuffle (hyphen → underscore fallback) -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -331,19 +343,40 @@
   }
   window.__bagAudio = { chime, thud, resume };
 
-  // Deal shuffle as explicit HTMLAudio tag (per your request)
-  const shuffleTag = new Audio('/assets/sounds/card-shuffle.mp3');
+  // ✅ Shuffle tag with automatic src fallback
+  const SHUFFLE_CANDS = ['/assets/sounds/card-shuffle.mp3','/assets/sounds/card_shuffle.mp3'];
+  let shuffleIdx = 0;
+  const shuffleTag = new Audio();
   shuffleTag.preload='auto'; shuffleTag.crossOrigin='anonymous'; shuffleTag.setAttribute('playsinline',''); shuffleTag.volume=.85;
+  shuffleTag.src = SHUFFLE_CANDS[shuffleIdx];
+  shuffleTag.addEventListener('error', ()=>{
+    // try underscore variant once
+    if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; }
+  }, {once:true});
+
   function primeShuffle(){
     try{
       shuffleTag.muted = true;
       const p = shuffleTag.play();
-      if (p && p.then) p.then(()=>{ shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false; }).catch(()=>{});
-      else { shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false; }
+      if (p && p.then){
+        p.then(()=>{ shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false; }).catch(()=>{
+          // if we failed on hyphen, try underscore immediately
+          if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; }
+        });
+      }else{
+        shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false;
+      }
     }catch{}
   }
   window.__playShuffle = function(){
-    try{ shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.play().catch(()=>{}); }catch{}
+    try{
+      shuffleTag.pause();
+      shuffleTag.currentTime = 0;
+      shuffleTag.play().catch(()=>{
+        // last-ditch: flip src and try once
+        if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; shuffleTag.play().catch(()=>{}); }
+      });
+    }catch{}
   };
 })();
 </script>
@@ -377,7 +410,7 @@
 })();
 </script>
 
-<!-- PRICES (unchanged) -->
+<!-- PRICES -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -460,7 +493,7 @@
 })();
 </script>
 
-<!-- USD autofill + limits + presets (unchanged except events) -->
+<!-- USD autofill + limits + presets -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -471,6 +504,7 @@
   const presets   = document.getElementById('usdPresets');
 
   const MIN_USD = 1, MAX_USD = 2000;
+
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 
   function currentCurrency(){ const el=curToggle?.querySelector('input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
@@ -478,6 +512,7 @@
   function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:1; }
   function derivedUsd(){ const px=priceForCurrent(); const q=qty(); return px>0?q*px:0; }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
   function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
 
   function setFromUsd(value){
@@ -487,6 +522,7 @@
     if (betQtyEl){ betQtyEl.value = (px>0 && u>0) ? (Math.floor((u/px)*1e6)/1e6) : ''; }
     renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
+
   function autoFillUsd(){
     if(!usdBetEl) return;
     if(usdBetEl.dataset.userTyped==='1') return;
@@ -494,6 +530,7 @@
     if(v>0){ usdBetEl.value=(Math.round(v*100)/100).toFixed(2); usdBetEl.dataset.autofill='1'; }
     else { usdBetEl.value=''; usdBetEl.dataset.autofill='0'; }
   }
+
   function renderLimits(){
     const direct = parseFloat(usdBetEl?.value||'');
     const uv = Number.isFinite(direct)&&direct>0 ? direct : derivedUsd();
@@ -601,6 +638,7 @@
     return {bag,xrp};
   }
   function currentBet(){ const v=parseFloat(betQtyEl?.value||'0'); if(!Number.isFinite(v)||v<0) return 0; return Math.max(0, Math.floor(v)); }
+
   function renderHud(){
     try{
       if(modeLbl) modeLbl.textContent = selectedMode();
@@ -611,16 +649,18 @@
       else { if(balLbl) balLbl.textContent=fmt(bag,6); if(ccyLbl) ccyLbl.textContent='BAG'; }
     }catch(e){}
   }
+
   ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:hudRefresh']
     .forEach(ev=>addEventListener(ev, renderHud));
   betQtyEl?.addEventListener('input', renderHud);
   curToggle?.addEventListener('change', renderHud);
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
+
   renderHud(); let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
-<!-- === GAME CORE (feedback identical to Dice) === -->
+<!-- GAME CORE -->
 <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 
@@ -686,12 +726,12 @@ function stakeUsd(){
   return xrpUsd>0 ? q*xrpUsd : 0;
 }
 
-/* Deal card DOM + optional sound */
+/* Deal card DOM */
 function dealOne(toNode, arr, faceUp=true, sound=true){
   const c=draw(); arr.push(c);
   const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
   toNode.appendChild(el);
-  if(sound){ /* quiet click removed to avoid masking shuffle */ }
+  // no click sound here (kept clean around shuffle)
   updTotals();
 }
 function revealHole(){
@@ -700,7 +740,6 @@ function revealHole(){
   updTotals();
 }
 
-/* === START ROUND === */
 function startRound(){
   const MIN_USD=1, MAX_USD=2000;
   const sBagNow = stakeBag();
@@ -719,11 +758,10 @@ function startRound(){
 
   clearBoard(); STATE.dealer=[]; STATE.player=[]; STATE.split=null; STATE.activeHandIdx=0; STATE.live=true;
 
-  /* === EXACT DICE parity: play card-shuffle.mp3 on every Deal === */
+  /* 🔊 Shuffle once per Deal (hyphen → underscore fallback handled in __playShuffle) */
   try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
   try{ window.__playShuffle && window.__playShuffle(); }catch{}
 
-  /* Silent initial placements to let shuffle breathe */
   dealOne(D('playerCards'), STATE.player, true, false);
   dealOne(D('dealerCards'), STATE.dealer, true, false);
   const hole=draw(); STATE.dealer.push(hole); D('dealerCards').appendChild(window.__CARD_FACTORY__.makeCardEl(hole,true));
@@ -786,7 +824,6 @@ function dealerTurn(){
   settle();
 }
 
-/* Helper: Dice-style subtext line */
 function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function winSubtext(mult){
   const gainBag = STATE.lockedBag*(mult-1);
@@ -795,10 +832,6 @@ function winSubtext(mult){
   return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(fromUsd)} → ${fmtUsd(toUsd)}`;
 }
 
-/* === EXACT Dice feedback:
-   - WIN/BLACKJACK: showWin(...) overlay + chime
-   - LOSE: no overlay, thud
-   - PUSH: no overlay (felt flash only) */
 function settle(override){
   let credit=0; const base=STATE.lockedBag;
   function resolve(h){
@@ -811,27 +844,19 @@ function settle(override){
       return;
     }
     if(override==='push-bj'){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push');
-      // (Dice has no Push overlay; keep it silent)
-      return;
+      credit += stake*CFG.mPUSH; last('Push'); flash('push'); return;
     }
     if(pv>21){
-      last('Scratch'); flash('lose');
-      try{ window.__bagAudio && __bagAudio.thud(); }catch{}
-      return;
+      last('Scratch'); flash('lose'); try{ window.__bagAudio && __bagAudio.thud(); }catch{}; return;
     }
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
       credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
-      try{
-        showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext: winSubtext(mult), duration:(mult===CFG.mBJ?5600:4200), sound:true });
-      }catch{}
+      try{ showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext: winSubtext(mult), duration:(mult===CFG.mBJ?5600:4200), sound:true }); }catch{}
     } else if(pv===dv){
       credit += stake*CFG.mPUSH; last('Push'); flash('push');
-      // silent (Dice has no Push)
     } else {
-      last('Scratch'); flash('lose');
-      try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+      last('Scratch'); flash('lose'); try{ window.__bagAudio && __bagAudio.thud(); }catch{}
     }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
