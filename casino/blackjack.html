@@ -35,10 +35,10 @@
   .game-header{text-align:center;padding:36px 10px 14px;max-width:var(--content);margin:0 auto}
   .game-header img.hero-img{
     margin:0 auto 10px;
-    width:min(560px,88vw); /* bigger banner */
+    width:min(680px,92vw); /* larger banner */
     filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))
   }
-  .game-header h2{font-size:clamp(1.6rem,5vw,2.4rem);margin:6px 0 0}
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.6rem);margin:6px 0 0}
   .game-teaser{padding:10px 16px 60px;background:
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
@@ -70,7 +70,7 @@
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
   }
   .preset-chip.active{ background:#173c28; border-color:#3fa86a; box-shadow:0 0 0 2px rgba(63,168,106,.25) inset; }
-  .preset-chip:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+  .preset-chip:focus-visible{ outline:2px solid --gold; outline-offset:2px; }
 
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
   .felt{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px}
@@ -301,9 +301,9 @@
 })();
 </script>
 
-<!-- AUDIO: global chime/thud (for overlay), plus CARD DEAL (swish+flick) -->
+<!-- AUDIO: global chime + card-deal swish -->
 <script>
-/* ===== Tiny master + chime/thud (same feel as Dice) ===== */
+/* ===== Tiny master + chime ===== */
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
@@ -353,7 +353,7 @@
 })();
 </script>
 
-<!-- PRICES (exact parity with Dice) -->
+<!-- PRICES (parity with Dice) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -517,7 +517,7 @@
 })();
 </script>
 
-<!-- Stake / USD autofill + payouts preview (parity with Dice) -->
+<!-- Stake / USD autofill + limits -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');
@@ -548,36 +548,6 @@
     const q=qty();
     return px>0 ? q*px : 0;
   }
-  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
-  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
-
-  function setFromUsd(value){
-    const u = Math.max(0, Math.min(MAX_USD, Number(value)||0));
-    if (usdBetEl){ usdBetEl.value = u ? u.toFixed(2) : ''; usdBetEl.dataset.userTyped = u ? '1' : '0'; }
-    const px = priceForCurrent();
-    if (betQtyEl){
-      if (px>0 && u>0){
-        const units = Math.floor((u/px)*1e6)/1e6;
-        betQtyEl.value = units || '';
-      } else { betQtyEl.value = ''; }
-    }
-    renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
-
-  function autoFillUsd(){
-    if (!usdBetEl) return;
-    if (usdBetEl.dataset.userTyped==='1') return;
-    const v = derivedUsd();
-    if (v>0){
-      usdBetEl.value = (Math.round(v*100)/100).toFixed(2);
-      usdBetEl.dataset.autofill='1';
-    }else{
-      usdBetEl.value = '';
-      usdBetEl.dataset.autofill='0';
-    }
-  }
 
   function renderLimits(){
     const uv = (function(){
@@ -590,36 +560,81 @@
     if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${uv.toFixed(2)}${warn}`;
   }
 
-  usdBetEl?.addEventListener('input', ()=>{ clearPresetActive(); usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0'; renderLimits(); });
-  betQtyEl?.addEventListener('input', ()=>{ clearPresetActive(); autoFillUsd(); renderLimits(); });
+  // Manual USD input
+  usdBetEl?.addEventListener('input', ()=>{
+    // mark manual
+    usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0';
+    // back-solve units from USD
+    const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
+    const px = priceForCurrent();
+    if (px>0 && u>0){
+      const units = Math.floor((u/px)*1e6)/1e6;
+      betQtyEl.value = units || '';
+    } else { betQtyEl.value = ''; }
+    renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  });
+
+  // Units input → autofill USD unless overridden by manual USD
+  function autoFillUsd(){
+    if (!usdBetEl || usdBetEl.dataset.userTyped==='1') return;
+    const px=priceForCurrent(), q=qty();
+    const v = (px>0 && q>0) ? q*px : 0;
+    usdBetEl.value = v ? (Math.round(v*100)/100).toFixed(2) : '';
+    usdBetEl.dataset.autofill = v ? '1':'0';
+  }
+  betQtyEl?.addEventListener('input', ()=>{ autoFillUsd(); renderLimits(); });
+
+  // Currency toggles
   curToggle?.addEventListener('change', ()=>{
     if(unitSpan) unitSpan.textContent=currentCurrency();
     if (usdBetEl?.dataset.userTyped==='1'){
-      const val = parseFloat(usdBetEl.value)||0;
-      setFromUsd(val);
+      // recompute units from manually-typed USD
+      const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
+      const px = priceForCurrent();
+      if (px>0 && u>0){
+        const units = Math.floor((u/px)*1e6)/1e6;
+        betQtyEl.value = units || '';
+      } else { betQtyEl.value = ''; }
     } else {
-      autoFillUsd(); renderLimits();
+      autoFillUsd();
     }
+    renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
-  window.addEventListener('bag:pricesUpdated', ()=>{ 
+
+  // Live price changes
+  window.addEventListener('bag:pricesUpdated', ()=>{
     if (usdBetEl?.dataset.userTyped==='1'){
-      const val = parseFloat(usdBetEl.value)||0;
-      setFromUsd(val);
+      // respect manual USD
+      const u = Math.max(0, Math.min(MAX_USD, Number(usdBetEl.value)||0));
+      const px = priceForCurrent();
+      betQtyEl.value = (px>0 && u>0) ? (Math.floor((u/px)*1e6)/1e6) : '';
     } else {
-      autoFillUsd(); renderLimits(); 
+      autoFillUsd();
     }
+    renderLimits();
   });
 
   // Presets
+  function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
   presets?.addEventListener('click', (e)=>{
     const b = e.target.closest('.preset-chip'); if(!b) return;
     clearPresetActive(); b.classList.add('active');
     const d=b.dataset.usd; const val=(d==='max')?2000:Math.max(0,Number(d)||0);
-    setFromUsd(val);
+    // set USD from preset (marks userTyped=1 so it sticks)
+    usdBetEl.value = val.toFixed(2);
+    usdBetEl.dataset.userTyped='1';
+    // back-solve units
+    const px = priceForCurrent();
+    betQtyEl.value = (px>0 && val>0) ? (Math.floor((val/px)*1e6)/1e6) : '';
+    renderLimits(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
 
   if(unitSpan) unitSpan.textContent=currentCurrency();
-  autoFillUsd(); renderLimits();
+  // Default: auto-fill USD from 1 XRP when prices arrive
+  usdBetEl.dataset.userTyped='0';
+  window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  renderLimits();
 })();
 </script>
 
@@ -726,7 +741,8 @@ function stakeBag(){
   const {bagUsd,xrpUsd}=PR();
   if (currentCurrency()==='BAG') return q;
   if (bagUsd>0 && xrpUsd>0) return q*(xrpUsd/bagUsd);
-  // Fallback: if BAG price missing, assume no conversion possible -> block start
+  // --- DEMO fallback: if BAG price missing but we're in Demo, assume 1 BAG ≈ 1 XRP to allow play
+  if (window.__BAG_FORCE_DEMO === true && xrpUsd>0) return q;
   return 0;
 }
 function stakeUsd(){
@@ -734,7 +750,7 @@ function stakeUsd(){
   if (Number.isFinite(direct) && direct>0) return direct;
   const q = parseFloat(D('betQty')?.value||0) || 0;
   const {bagUsd,xrpUsd} = PR();
-  if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+  if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : (window.__BAG_FORCE_DEMO===true && xrpUsd>0 ? q*xrpUsd : 0);
   return xrpUsd>0 ? q*xrpUsd : 0;
 }
 function fmt(n, max=6){
