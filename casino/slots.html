@@ -97,12 +97,13 @@
   .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
   .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
 
-  /* Status dot colors (used by JS) */
+  /* Status dot colors */
   #liveDot{margin-right:6px}
   .ok{color:#2fbf6b}
   .warn{color:#e8a85c}
   .err{color:#e25b5b}
 
+  /* WIN overlay */
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
   #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
@@ -113,7 +114,11 @@
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
   @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
 
-  /* ===== BAG "pill" tile — small and perfectly centered ===== */
+  /* WIN overlay art */
+  .win-art{ width:128px; margin:0 auto 10px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
+  @media (max-width:599px){ .win-art{ width:110px; } }
+
+  /* BAG "pill" */
   .tile{
     display:inline-block;
     line-height:1;
@@ -139,13 +144,8 @@
   }
   .cell > .tile--bar{ justify-self:center; align-self:center; }
 
-  /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
-
-  /* WIN overlay image */
-  #win-img{ display:none; width:110px; height:auto; margin:0 auto 10px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
-  @media (min-width:600px){ #win-img{ width:128px; } }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -187,7 +187,6 @@
         </button>
       </div>
 
-      <!-- UPDATED: margin fix 0% -> 0 -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -317,7 +316,13 @@
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" aria-modal="true">
   <div id="win-card">
     <button id="win-close" aria-label="Close">×</button>
-    <img id="win-img" alt="" decoding="async" loading="eager">
+
+    <!-- Image always present inside overlay -->
+    <picture aria-hidden="true">
+      <source srcset="/assets/bag-received.webp" type="image/webp">
+      <img class="win-art" src="/assets/bag-received.png" alt="" decoding="async" loading="eager" width="128" height="128">
+    </picture>
+
     <div id="win-text">WIN</div>
     <div id="win-sub">Nice spin</div>
   </div>
@@ -357,7 +362,7 @@
       o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
   function scratch(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const s=noise(ac,.06), g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
     const t=ac.currentTime; g.gain.linearRampToValueAtTime(.08,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.09); s.start(t); s.stop(t+.1); }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.getOutputTimestamp?ac.createOscillator():ac.createOscillator(), g=ac.createGain(); o.type='sine';
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=getAC().createGain(); o.type='sine';
     const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
@@ -366,7 +371,7 @@
 })();
 </script>
 
-<!-- WIN overlay (single-chime + image with webp→png fallback) -->
+<!-- WIN overlay (sound stays off here to avoid double chime) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -375,38 +380,13 @@
   const closeBtn=document.getElementById('win-close');
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
-  const imgEl=document.getElementById('win-img');
-
   let rafId=null, particles=[], start=0, dur=2000, lastFocus=null;
 
-  function size(){
-    const dpr=Math.min(devicePixelRatio||1,2);
-    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
+  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
 
-  function fire(n){
-    particles.length=0;
-    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++) particles.push({
-      x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),
-      g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,
-      col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')
-    });
-  }
-  function draw(){
-    ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{
-      p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
+  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
+  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz; if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
   function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; try{ closeBtn.focus({preventScroll:true}); }catch{} }
@@ -415,45 +395,9 @@
   addEventListener('keydown', (e)=>{ if(e.key==='Escape' && overlay.style.display==='grid') hide(); });
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  function resolveImage({ image, imgUrl }){
-    if (imgUrl) return imgUrl;
-    if (!image) return null;
-    return `/assets/${image}.webp`;
-  }
-  function loadWithPngFallback(url){
-    return new Promise(res=>{
-      if(!url) return res(null);
-      const i=new Image();
-      i.decoding='async'; i.onload=()=>res(i); i.onerror=()=>{
-        if(url.toLowerCase().endsWith('.webp')){
-          const png=url.replace(/\.webp$/i,'.png');
-          const j=new Image(); j.decoding='async'; j.onload=()=>res(j); j.onerror=()=>res(null); j.src=png;
-        } else res(null);
-      };
-      i.src=url;
-    });
-  }
-
-  // DEFAULT sound=false => avoids double-chime (audio handled by sWin()/sScratch()).
-  window.showWin = async function(opts={}){
-    const { message='WIN', subtext='Nice spin', sound=false, duration=4000, image=null, imgUrl=null } = opts;
-
-    title.textContent = message;
-    sub.textContent = subtext;
-
-    const url = resolveImage({ image, imgUrl });
-    const im = await loadWithPngFallback(url);
-    if (im){
-      imgEl.src = im.src;
-      imgEl.style.display = 'block';
-      imgEl.alt = message;
-    } else {
-      imgEl.removeAttribute('src');
-      imgEl.style.display = 'none';
-      imgEl.alt = '';
-    }
-
-    show(); canvas.style.display='block'; fire(180);
+  // NOTE: sound defaults to false to prevent double chime.
+  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice spin', sound=false, duration=4000 }=opts;
+    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
     if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
     cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
     clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
@@ -545,7 +489,7 @@
   async function fetchBagViaAMMLive(){
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket('wss://s1.ripple.com');
+      const ws = new WebSocket(XRPL_WSS);
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
@@ -720,13 +664,12 @@
     }
   }
 
-  /* ===== USD PRESETS: $1 $2 $5 $10 $20 $50 $100 MAX (layout-safe injection) ===== */
+  /* ===== USD PRESETS: $1 $2 $5 $10 $20 $50 $100 MAX ===== */
   function installUsdPresets(){
     if(!usdBetEl) return;
     const flexRow = usdBetEl.closest('div')?.parentElement;
     const hostBlock = flexRow?.parentElement;
     if(!flexRow || !hostBlock) return;
-
     if(hostBlock.querySelector('#usdPresets')) return;
 
     const presets = [1,2,5,10,20,50,100,'MAX'];
@@ -751,7 +694,6 @@
 
     hostBlock.appendChild(wrap);
   }
-  /* ============================================================================ */
 
   usdBetEl?.addEventListener('input', updateBetFromUsd);
   betQtyEl?.addEventListener('input', updateUsdFromBet);
@@ -763,7 +705,6 @@
     if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
   });
 
-  // Keyboard: Space/Enter trigger SPIN
   addEventListener('keydown', (e)=>{
     if ((e.code==='Space' || e.key==='Enter') && document.activeElement === document.body){
       e.preventDefault();
@@ -990,17 +931,17 @@
         sScratch();
         credit(sBag*1.00);
         spinText.className='t scratch'; spinText.textContent='SCRATCH — 1.00×';
-        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false, image:'bag-received' });
+        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false });
       } else if(mult===1.25){
         sWin();
         credit(sBag*1.25);
         spinText.className='t win'; spinText.textContent='WIN — 1.25×';
-        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, image:'bag-received' });
+        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, sound:false });
       } else {
         sWin();
         credit(sBag*2.00);
         spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
-        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, image:'bag-received' });
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, sound:false });
       }
     } else {
       sLose();
@@ -1139,7 +1080,7 @@
       const bag = Number(s.bag)||0;
       const usd = (window.__PRICES__?.bagUsd||0) * bag;
       statusEl.innerHTML =
-        'Session: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
       startBtn.style.display = 'none';
       if (topUpBtn) topUpBtn.style.display = 'inline-block';
@@ -1364,7 +1305,6 @@ if ('serviceWorker' in navigator) {
   const hudbar = document.querySelector('.hudbar');
   if(!hudbar) return;
 
-  // Ensure pills exist in correct order: Mode, Balance(existing), Bet, Last
   function ensurePill(id, label, beforeEl=null){
     let el = document.getElementById(id);
     if(!el){
@@ -1383,7 +1323,6 @@ if ('serviceWorker' in navigator) {
   const betPill     = ensurePill('hudBet','Bet');
   const lastPill    = ensurePill('hudLast','Last');
 
-  // Helpers
   const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
   const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
   const sessionObj = () => (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null;
@@ -1457,7 +1396,6 @@ if ('serviceWorker' in navigator) {
   let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
 })();
 </script>
-
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
