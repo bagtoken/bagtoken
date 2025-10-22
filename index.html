@@ -333,127 +333,132 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* ===== $BAG index: one-time money SFX, first-scroll switch, no-zoom ===== */
+/* ===== $BAG index: play on scroll-into-view, first-scroll unlock, no-zoom ===== */
 (function(){
-  /* --- Config --- */
-  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3'; // corrected filename
-  const IMG_MATCH = /\/assets\/bag-casino\.(png|PNG)$/i;
-  const VISIT_KEY = 'bag_money_once_v1';        // plays once per tab
-  const AUDIO_SWITCH_KEY = 'bag_audio_switch';  // 'on' after first scroll
+  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3';  // exact filename
+  const IMG_MATCH = /\/assets\/bag-casino\.(png|PNG)$/i;       // target image
+  const THRESHOLD = 0.6;                                       // % visible to count as "in view"
+  const MIN_GAP_MS = 1500;                                     // cooldown between plays
 
-  /* --- Create audio without touching layout --- */
-  const moneyAudio = new Audio(MONEY_SRC);
-  moneyAudio.preload = 'auto';
-  moneyAudio.playsInline = true;
+  // Create audio (no DOM changes)
+  const sfx = new Audio(MONEY_SRC);
+  sfx.preload = 'auto';
+  sfx.playsInline = true;
 
-  /* --- Preload when the image nears viewport --- */
-  let preloaded = false;
-  const io = new IntersectionObserver((entries)=>{
+  // --- Audio unlock on first user interaction (scroll counts) ---
+  let unlocked = false;
+  const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','keydown','mousedown'];
+  async function tryUnlock() {
+    if (unlocked) return;
+    try {
+      // Attempt a tiny play-pause to satisfy mobile policies
+      sfx.muted = true;
+      await sfx.play();
+      sfx.pause();
+      sfx.currentTime = 0;
+      sfx.muted = false;
+      unlocked = true;
+      UNLOCK_EVENTS.forEach(t => {
+        window.removeEventListener(t, tryUnlock, unlockOpts);
+        document.removeEventListener(t, tryUnlock, unlockOpts);
+      });
+    } catch(_) { /* ignore; will retry on next interaction */ }
+  }
+  const unlockOpts = { passive:true, capture:true };
+  UNLOCK_EVENTS.forEach(t => {
+    window.addEventListener(t, tryUnlock, unlockOpts);
+    document.addEventListener(t, tryUnlock, unlockOpts);
+  });
+
+  // --- Observe the specific image coming into view ---
+  let lastPlay = 0;
+  const visibleSet = new WeakSet(); // track current visibility to require leave-before-next-play
+
+  async function playIfReady() {
+    const now = performance.now();
+    if (!unlocked) return;                   // wait until audio is unlocked by user interaction
+    if (now - lastPlay < MIN_GAP_MS) return; // cooldown
+    try {
+      sfx.currentTime = 0;
+      await sfx.play();
+      lastPlay = now;
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch(_) {
+      // If still blocked, user hasn’t granted gesture yet; next scroll or tap will unlock
+    }
+  }
+
+  const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
-      if (!e.isIntersecting) continue;
       const img = e.target;
       const src = img.currentSrc || img.src || '';
-      if (IMG_MATCH.test(src) && !preloaded) {
-        moneyAudio.load();
-        preloaded = true;
-        io.unobserve(img);
+      if (!IMG_MATCH.test(src)) continue;
+
+      if (e.isIntersecting && e.intersectionRatio >= THRESHOLD) {
+        if (!visibleSet.has(img)) {
+          visibleSet.add(img);     // became visible
+          playIfReady();           // fire once per enter
+        }
+      } else {
+        visibleSet.delete(img);    // mark as not visible to allow re-trigger on next enter
       }
     }
-  }, { rootMargin: '300px' });
+  }, { threshold: THRESHOLD });
 
-  function observeExisting(){
-    document.querySelectorAll('img').forEach(img=>{
+  function watchTargets(root=document) {
+    root.querySelectorAll('img').forEach(img => {
       const src = img.currentSrc || img.src || '';
       if (IMG_MATCH.test(src)) io.observe(img);
     });
   }
-  observeExisting();
+  watchTargets();
 
-  /* Watch for the image being added later */
-  const mo = new MutationObserver((muts)=>{
+  // If the image is injected later, observe it without touching layout
+  const mo = new MutationObserver(muts => {
     for (const m of muts) {
-      m.addedNodes && m.addedNodes.forEach(n=>{
+      m.addedNodes && m.addedNodes.forEach(n => {
         if (n.nodeType !== 1) return;
         if (n.tagName === 'IMG') {
           const s = n.currentSrc || n.src || '';
           if (IMG_MATCH.test(s)) io.observe(n);
         } else if (n.querySelectorAll) {
-          n.querySelectorAll('img').forEach(img=>{
-            const s = img.currentSrc || img.src || '';
-            if (IMG_MATCH.test(s)) io.observe(img);
-          });
+          watchTargets(n);
         }
       });
     }
   });
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  /* --- One-time play helper --- */
-  let armed = (sessionStorage.getItem(VISIT_KEY) !== '1');
-  async function playOnce(){
-    if (!armed) return;
-    try{
-      moneyAudio.currentTime = 0;
-      await moneyAudio.play();
-      armed = false;
-      sessionStorage.setItem(VISIT_KEY, '1'); // lock for this visit
-      if (navigator.vibrate) navigator.vibrate(12);
-      removePointerListeners();
-    }catch(e){
-      // If blocked, a direct tap should succeed; stay armed.
+  // --- Preload when near viewport for snappy start ---
+  const preIO = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) {
+      sfx.load();
+      preIO.disconnect();
     }
-  }
+  }, { rootMargin: '400px' });
+  // Preload off the first matching image we find
+  const firstImg = Array.from(document.images).find(i => IMG_MATCH.test(i.currentSrc || i.src || ''));
+  if (firstImg) preIO.observe(firstImg);
 
-  /* --- Tap/click handler (event delegation) --- */
-  function onPointer(e){
-    const img = e.target && e.target.closest ? e.target.closest('img') : null;
-    if (!img) return;
-    const src = img.currentSrc || img.src || '';
-    if (IMG_MATCH.test(src)) playOnce();
-  }
-  function addPointerListeners(){
-    document.addEventListener('pointerdown', onPointer, { passive:true });
-    document.addEventListener('click', onPointer, { passive:true });
-    document.addEventListener('touchend', onPointer, { passive:true });
-  }
-  function removePointerListeners(){
-    document.removeEventListener('pointerdown', onPointer, { passive:true });
-    document.removeEventListener('click', onPointer, { passive:true });
-    document.removeEventListener('touchend', onPointer, { passive:true });
-  }
-  if (armed) addPointerListeners();
-
-  /* --- First scroll = audio switch ON for other pages --- */
-  function firstScrollOn(){
-    if (sessionStorage.getItem(AUDIO_SWITCH_KEY) === 'on') return;
-    sessionStorage.setItem(AUDIO_SWITCH_KEY, 'on');
-    window.removeEventListener('scroll', firstScrollOn, passiveOpt);
-  }
-  const passiveOpt = { passive:true, capture:false };
-  window.addEventListener('scroll', firstScrollOn, passiveOpt);
-
-  /* --- Prevent zoom (pinch, ctrl+wheel, double-tap) without touching layout --- */
-  window.addEventListener('wheel', function(e){
-    if (e.ctrlKey) e.preventDefault();
-  }, { passive:false });
-
-  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
-    window.addEventListener(ev, function(e){ e.preventDefault(); }, { passive:false });
+  // --- Prevent zoom (pinch, Ctrl+wheel, double-tap) ---
+  window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive:false });
+  ['gesturestart','gesturechange','gestureend'].forEach(ev => {
+    window.addEventListener(ev, (e) => e.preventDefault(), { passive:false });
   });
-
   let lastTouchEnd = 0;
-  document.addEventListener('touchend', function(e){
+  document.addEventListener('touchend', (e) => {
     const now = Date.now();
-    if (now - lastTouchEnd <= 300) e.preventDefault();
+    if (now - lastTouchEnd <= 300) e.preventDefault(); // block double-tap zoom
     lastTouchEnd = now;
   }, { passive:false });
-
 })();
 </script>
+
 
  
  
 </body>
 </html>
+
 
 
