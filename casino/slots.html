@@ -113,10 +113,6 @@
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
   @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
 
-  /* NEW: overlay image (centered above title) */
-  #win-img{ display:none; width:100px; height:auto; margin:0 auto 10px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
-  @media (min-width:600px){ #win-img{ width:120px; } }
-
   /* ===== BAG "pill" tile — small and perfectly centered ===== */
   .tile{
     display:inline-block;
@@ -146,6 +142,10 @@
   /* Minimal off-board HUD chip for Balance (for the live-balance tweak) */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+  /* WIN overlay image */
+  #win-img{ display:none; width:110px; height:auto; margin:0 auto 10px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
+  @media (min-width:600px){ #win-img{ width:128px; } }
 </style>
 
  <script src="/js/bag-session.js"></script>
@@ -317,7 +317,6 @@
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" aria-modal="true">
   <div id="win-card">
     <button id="win-close" aria-label="Close">×</button>
-    <!-- NEW: overlay image element -->
     <img id="win-img" alt="" decoding="async" loading="eager">
     <div id="win-text">WIN</div>
     <div id="win-sub">Nice spin</div>
@@ -358,7 +357,7 @@
       o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
   function scratch(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const s=noise(ac,.06), g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
     const t=ac.currentTime; g.gain.linearRampToValueAtTime(.08,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.09); s.start(t); s.stop(t+.1); }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.getOutputTimestamp?ac.createOscillator():ac.createOscillator(), g=ac.createGain(); o.type='sine';
     const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
@@ -367,7 +366,7 @@
 })();
 </script>
 
-<!-- WIN overlay (with image support like Blackjack) -->
+<!-- WIN overlay (single-chime + image with webp→png fallback) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -379,59 +378,79 @@
   const imgEl=document.getElementById('win-img');
 
   let rafId=null, particles=[], start=0, dur=2000, lastFocus=null;
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+
+  function size(){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
+    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
   size(); addEventListener('resize', size);
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-    if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
+
+  function fire(n){
+    particles.length=0;
+    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++) particles.push({
+      x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),
+      g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,
+      col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')
+    });
+  }
+  function draw(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+  }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; closeBtn.focus?.({preventScroll:true}); }
+  function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; try{ closeBtn.focus({preventScroll:true}); }catch{} }
   function hide(){ overlay.style.display='none'; stop(); if(lastFocus && lastFocus.focus) lastFocus.focus({preventScroll:true}); }
   closeBtn.addEventListener('click', hide);
   addEventListener('keydown', (e)=>{ if(e.key==='Escape' && overlay.style.display==='grid') hide(); });
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  // Resolve 'bag-received' → /assets/bag-received.webp (then .png fallback)
   function resolveImage({ image, imgUrl }){
     if (imgUrl) return imgUrl;
     if (!image) return null;
     return `/assets/${image}.webp`;
   }
-  async function loadImage(url){
-    if(!url) return null;
-    const tryLoad = (src)=>new Promise(res=>{
-      const i=new Image(); i.onload=()=>res(i); i.onerror=()=>res(null); i.decoding='async'; i.src=src;
+  function loadWithPngFallback(url){
+    return new Promise(res=>{
+      if(!url) return res(null);
+      const i=new Image();
+      i.decoding='async'; i.onload=()=>res(i); i.onerror=()=>{
+        if(url.toLowerCase().endsWith('.webp')){
+          const png=url.replace(/\.webp$/i,'.png');
+          const j=new Image(); j.decoding='async'; j.onload=()=>res(j); j.onerror=()=>res(null); j.src=png;
+        } else res(null);
+      };
+      i.src=url;
     });
-    let img = await tryLoad(url);
-    if (!img && url.endsWith('.webp')) img = await tryLoad(url.replace(/\.webp$/i,'.png'));
-    return img;
   }
 
-  // Public API
+  // DEFAULT sound=false => avoids double-chime (audio handled by sWin()/sScratch()).
   window.showWin = async function(opts={}){
-    const { message='WIN', subtext='Nice spin', sound=true, duration=4000, image=null, imgUrl=null } = opts;
+    const { message='WIN', subtext='Nice spin', sound=false, duration=4000, image=null, imgUrl=null } = opts;
 
     title.textContent = message;
     sub.textContent = subtext;
 
-    const targetUrl = resolveImage({ image, imgUrl });
-    let showImg = false;
-    if (targetUrl){
-      try{
-        const im = await loadImage(targetUrl);
-        if (im){
-          imgEl.src = im.src;
-          imgEl.style.display = 'block';
-          imgEl.setAttribute('alt', message);
-          showImg = true;
-        }
-      }catch{}
-    }
-    if (!showImg){
+    const url = resolveImage({ image, imgUrl });
+    const im = await loadWithPngFallback(url);
+    if (im){
+      imgEl.src = im.src;
+      imgEl.style.display = 'block';
+      imgEl.alt = message;
+    } else {
       imgEl.removeAttribute('src');
       imgEl.style.display = 'none';
-      imgEl.setAttribute('alt','');
+      imgEl.alt = '';
     }
 
     show(); canvas.style.display='block'; fire(180);
@@ -526,7 +545,7 @@
   async function fetchBagViaAMMLive(){
     const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
     const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket(XRPL_WSS);
+      const ws = new WebSocket('wss://s1.ripple.com');
       const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
       ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
@@ -704,11 +723,10 @@
   /* ===== USD PRESETS: $1 $2 $5 $10 $20 $50 $100 MAX (layout-safe injection) ===== */
   function installUsdPresets(){
     if(!usdBetEl) return;
-    const flexRow = usdBetEl.closest('div')?.parentElement; // the flex container wrapping the input
-    const hostBlock = flexRow?.parentElement; // the "Amount" block container
+    const flexRow = usdBetEl.closest('div')?.parentElement;
+    const hostBlock = flexRow?.parentElement;
     if(!flexRow || !hostBlock) return;
 
-    // Avoid duplicates
     if(hostBlock.querySelector('#usdPresets')) return;
 
     const presets = [1,2,5,10,20,50,100,'MAX'];
@@ -1356,12 +1374,12 @@ if ('serviceWorker' in navigator) {
       if(beforeEl) hudbar.insertBefore(el, beforeEl);
       else hudbar.appendChild(el);
     }
-    el.dataset.label = label; // (not used for UI; just a marker)
+    el.dataset.label = label;
     return el;
   }
 
   const balancePill = hudbar.querySelector('#balLbl')?.closest('.pill') || ensurePill('balancePill','Balance');
-  const modePill    = ensurePill('hudMode','Mode', balancePill); // insert before Balance
+  const modePill    = ensurePill('hudMode','Mode', balancePill);
   const betPill     = ensurePill('hudBet','Bet');
   const lastPill    = ensurePill('hudLast','Last');
 
@@ -1377,7 +1395,6 @@ if ('serviceWorker' in navigator) {
     modePill.innerHTML = `Mode: <b>${live?'LIVE':'DEMO'}</b>`;
   }
 
-  /* ======== UPDATED to follow currency toggle and convert balance ======== */
   function renderBalance(){
     const s = sessionObj();
     const bagBal = s && Number(s.bag) > 0 ? Number(s.bag) : 0;
@@ -1385,7 +1402,6 @@ if ('serviceWorker' in navigator) {
     const ccyLbl = document.getElementById('ccyLbl');
     if (!balLbl || !ccyLbl) return;
 
-    // read current currency from toggle
     const curEl = document.querySelector('#curToggle input[name="betCur"]:checked');
     const cur = curEl ? String(curEl.value).toUpperCase() : 'XRP';
 
@@ -1395,13 +1411,11 @@ if ('serviceWorker' in navigator) {
       balLbl.textContent = bagBal ? fmtBag(bagBal) : '—';
       ccyLbl.textContent = 'BAG';
     } else {
-      // convert BAG session balance to XRP for display
       const xrpBal = (bagBal && bagUsd>0 && xrpUsd>0) ? bagBal * (bagUsd/xrpUsd) : NaN;
       balLbl.textContent = Number.isFinite(xrpBal) ? fmtBag(xrpBal) : '—';
       ccyLbl.textContent = 'XRP';
     }
   }
-  /* ===================================================================== */
 
   function renderBet(){
     const b = stakeBag();
@@ -1412,7 +1426,6 @@ if ('serviceWorker' in navigator) {
   function renderLast(ev){
     const d = ev && ev.detail ? ev.detail : null;
     if(!d){
-      // SHOW LABEL IMMEDIATELY EVEN BEFORE FIRST SPIN
       lastPill.innerHTML = `Last: <b>—</b>`;
       return;
     }
@@ -1425,27 +1438,22 @@ if ('serviceWorker' in navigator) {
 
   function paint(){ renderMode(); renderBalance(); renderBet(); }
 
-  // Events
   ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:walletConnected','bag:walletDisconnected','bag:pricesUpdated']
     .forEach(ev=>addEventListener(ev, paint));
 
   addEventListener('bag:slotsResult', (e)=>{ paint(); renderLast(e); });
 
-  // Update Bet pill as user edits stake
   ['input','change'].forEach(t=>{
     document.getElementById('usdBet')?.addEventListener(t, renderBet);
     document.getElementById('betQty')?.addEventListener(t, renderBet);
     document.getElementById('curToggle')?.addEventListener(t, renderBet);
   });
 
-  // ALSO repaint Balance immediately when currency toggles
   document.getElementById('curToggle')?.addEventListener('change', renderBalance);
 
-  // INITIALIZE ALL FOUR PILLS RIGHT AWAY
   paint();
   renderLast(null);
 
-  // Short watchdog for late mounts
   let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
 })();
 </script>
