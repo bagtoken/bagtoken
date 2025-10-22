@@ -333,12 +333,14 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* ===== $BAG index: play on scroll-into-view, first-scroll unlock, no-zoom ===== */
+/* ===== $BAG index: play on scroll-into-view (two targets), first-scroll unlock, no-zoom ===== */
 (function(){
-  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3';  // exact filename
-  const IMG_MATCH = /\/assets\/bag-casino\.(png|PNG)$/i;       // target image
-  const THRESHOLD = 0.6;                                       // % visible to count as "in view"
-  const MIN_GAP_MS = 1500;                                     // cooldown between plays
+  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3';
+  // Match either /assets/bag-casino.PNG or /assets/bag-casino-poster.png (case-insensitive)
+  const IMG_MATCH = /\/assets\/bag-casino(?:-poster)?\.png$/i;
+
+  const THRESHOLD = 0.6;       // % visible to count as "in view"
+  const MIN_GAP_MS = 1500;     // cooldown between plays
 
   // Create audio (no DOM changes)
   const sfx = new Audio(MONEY_SRC);
@@ -351,7 +353,6 @@ if ('serviceWorker' in navigator) {
   async function tryUnlock() {
     if (unlocked) return;
     try {
-      // Attempt a tiny play-pause to satisfy mobile policies
       sfx.muted = true;
       await sfx.play();
       sfx.pause();
@@ -362,7 +363,7 @@ if ('serviceWorker' in navigator) {
         window.removeEventListener(t, tryUnlock, unlockOpts);
         document.removeEventListener(t, tryUnlock, unlockOpts);
       });
-    } catch(_) { /* ignore; will retry on next interaction */ }
+    } catch(_) { /* will retry on next interaction */ }
   }
   const unlockOpts = { passive:true, capture:true };
   UNLOCK_EVENTS.forEach(t => {
@@ -370,22 +371,20 @@ if ('serviceWorker' in navigator) {
     document.addEventListener(t, tryUnlock, unlockOpts);
   });
 
-  // --- Observe the specific image coming into view ---
+  // --- Observe the specific images coming into view ---
   let lastPlay = 0;
-  const visibleSet = new WeakSet(); // track current visibility to require leave-before-next-play
+  const visibleSet = new WeakSet(); // require leave-before-next-play
 
   async function playIfReady() {
     const now = performance.now();
-    if (!unlocked) return;                   // wait until audio is unlocked by user interaction
-    if (now - lastPlay < MIN_GAP_MS) return; // cooldown
+    if (!unlocked) return;
+    if (now - lastPlay < MIN_GAP_MS) return;
     try {
       sfx.currentTime = 0;
       await sfx.play();
       lastPlay = now;
       if (navigator.vibrate) navigator.vibrate(10);
-    } catch(_) {
-      // If still blocked, user hasn’t granted gesture yet; next scroll or tap will unlock
-    }
+    } catch(_) { /* still locked; next interaction will unlock */ }
   }
 
   const io = new IntersectionObserver((entries) => {
@@ -396,11 +395,11 @@ if ('serviceWorker' in navigator) {
 
       if (e.isIntersecting && e.intersectionRatio >= THRESHOLD) {
         if (!visibleSet.has(img)) {
-          visibleSet.add(img);     // became visible
+          visibleSet.add(img);     // entered view
           playIfReady();           // fire once per enter
         }
       } else {
-        visibleSet.delete(img);    // mark as not visible to allow re-trigger on next enter
+        visibleSet.delete(img);    // left view; allow retrigger next time
       }
     }
   }, { threshold: THRESHOLD });
@@ -413,7 +412,7 @@ if ('serviceWorker' in navigator) {
   }
   watchTargets();
 
-  // If the image is injected later, observe it without touching layout
+  // If images are injected later, observe them (no layout changes)
   const mo = new MutationObserver(muts => {
     for (const m of muts) {
       m.addedNodes && m.addedNodes.forEach(n => {
@@ -429,16 +428,16 @@ if ('serviceWorker' in navigator) {
   });
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  // --- Preload when near viewport for snappy start ---
+  // --- Preload when near viewport for snappy start (observe all matches) ---
   const preIO = new IntersectionObserver((entries) => {
     if (entries.some(e => e.isIntersecting)) {
       sfx.load();
       preIO.disconnect();
     }
   }, { rootMargin: '400px' });
-  // Preload off the first matching image we find
-  const firstImg = Array.from(document.images).find(i => IMG_MATCH.test(i.currentSrc || i.src || ''));
-  if (firstImg) preIO.observe(firstImg);
+  Array.from(document.images)
+    .filter(i => IMG_MATCH.test(i.currentSrc || i.src || ''))
+    .forEach(i => preIO.observe(i));
 
   // --- Prevent zoom (pinch, Ctrl+wheel, double-tap) ---
   window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive:false });
@@ -448,17 +447,19 @@ if ('serviceWorker' in navigator) {
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
-    if (now - lastTouchEnd <= 300) e.preventDefault(); // block double-tap zoom
+    if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
   }, { passive:false });
 })();
 </script>
 
 
+
  
  
 </body>
 </html>
+
 
 
 
