@@ -332,5 +332,132 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
+<script>
+/* ===== $BAG index: one-time money SFX, first-scroll switch, no-zoom ===== */
+(function(){
+  /* --- Config --- */
+  const MONEY_SRC = '/assets/sounds/here-comes-the-money.mp3';
+  const IMG_MATCH = /\/assets\/bag-casino\.(png|PNG)$/i;
+  const VISIT_KEY = 'bag_money_once_v1';   // plays once per tab
+  const AUDIO_SWITCH_KEY = 'bag_audio_switch'; // 'on' after first scroll
+
+  /* --- Create audio without adding DOM elements --- */
+  const moneyAudio = new Audio(MONEY_SRC);
+  moneyAudio.preload = 'auto';
+  // inline hint for iOS
+  // NOTE: playsInline is a property on <video>, but iOS tolerates it here
+  moneyAudio.playsInline = true;
+
+  /* --- Preload when the image nears viewport --- */
+  let preloaded = false;
+  const io = new IntersectionObserver((entries)=>{
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const img = e.target;
+      const src = img.currentSrc || img.src || '';
+      if (IMG_MATCH.test(src) && !preloaded) {
+        moneyAudio.load();
+        preloaded = true;
+        io.unobserve(img);
+      }
+    }
+  }, { rootMargin: '300px' });
+
+  function observeExisting(){
+    document.querySelectorAll('img').forEach(img=>{
+      const src = img.currentSrc || img.src || '';
+      if (IMG_MATCH.test(src)) io.observe(img);
+    });
+  }
+  observeExisting();
+
+  /* Watch for the casino image appearing later (no layout changes) */
+  const mo = new MutationObserver((muts)=>{
+    for (const m of muts) {
+      m.addedNodes && m.addedNodes.forEach(n=>{
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'IMG') {
+          const s = n.currentSrc || n.src || '';
+          if (IMG_MATCH.test(s)) io.observe(n);
+        } else if (n.querySelectorAll) {
+          n.querySelectorAll('img').forEach(img=>{
+            const s = img.currentSrc || img.src || '';
+            if (IMG_MATCH.test(s)) io.observe(img);
+          });
+        }
+      });
+    }
+  });
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+
+  /* --- One-time play helper --- */
+  let armed = (sessionStorage.getItem(VISIT_KEY) !== '1');
+  async function playOnce(){
+    if (!armed) return;
+    try{
+      moneyAudio.currentTime = 0;
+      await moneyAudio.play();
+      armed = false;
+      sessionStorage.setItem(VISIT_KEY, '1');
+      if (navigator.vibrate) navigator.vibrate(12);
+      // After success, no need to keep these listeners
+      removePointerListeners();
+    }catch(e){
+      // If blocked, a direct tap usually succeeds. Stay armed.
+    }
+  }
+
+  /* --- Tap/click handler (event delegation) --- */
+  function onPointer(e){
+    const img = e.target && e.target.closest ? e.target.closest('img') : null;
+    if (!img) return;
+    const src = img.currentSrc || img.src || '';
+    if (IMG_MATCH.test(src)) playOnce();
+  }
+  function addPointerListeners(){
+    document.addEventListener('pointerdown', onPointer, { passive:true });
+    document.addEventListener('click', onPointer, { passive:true });
+    document.addEventListener('touchend', onPointer, { passive:true });
+  }
+  function removePointerListeners(){
+    document.removeEventListener('pointerdown', onPointer, { passive:true });
+    document.removeEventListener('click', onPointer, { passive:true });
+    document.removeEventListener('touchend', onPointer, { passive:true });
+  }
+  if (armed) addPointerListeners();
+
+  /* --- First scroll = audio switch ON (readable by other pages) --- */
+  function firstScrollOn(){
+    if (sessionStorage.getItem(AUDIO_SWITCH_KEY) === 'on') return;
+    sessionStorage.setItem(AUDIO_SWITCH_KEY, 'on');
+    window.removeEventListener('scroll', firstScrollOn, passiveOpt);
+  }
+  const passiveOpt = { passive:true, capture:false };
+  window.addEventListener('scroll', firstScrollOn, passiveOpt);
+
+  /* --- Prevent zoom (pinch, ctrl+wheel, double-tap) without touching layout --- */
+  // Block Cmd/Ctrl + wheel zoom
+  window.addEventListener('wheel', function(e){
+    if (e.ctrlKey) { e.preventDefault(); }
+  }, { passive:false });
+
+  // iOS Safari pinch gestures
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+    window.addEventListener(ev, function(e){ e.preventDefault(); }, { passive:false });
+  });
+
+  // Double-tap zoom
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function(e){
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) { e.preventDefault(); }
+    lastTouchEnd = now;
+  }, { passive:false });
+
+})();
+</script>
+ 
+ 
 </body>
 </html>
+
