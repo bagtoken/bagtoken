@@ -171,7 +171,7 @@
   .age-warn-card h3{font-size:1.3rem}
   .age-warn-card p{font-size:1rem}
   .age-warn-card .row{justify-content:flex-end}
-  .age-warn-card .btn.comp,.age-warn-card .btn.comp.secondary{padding:14px 18px;font-size:16px;border-radius:12px}
+  .age-warn-card .btn.comp,.age-card .btn.comp.secondary{padding:14px 18px;font-size:16px;border-radius:12px}
 </style>
 
 <!-- ===== Desktop layout cap so tiles never run off-screen ===== -->
@@ -214,6 +214,9 @@
 <!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
 <audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto" playsinline></audio>
+
+<!-- 💸 MONEY SFX (plays when touching bag-casino.png) -->
+<audio id="moneySfx" src="/assets/sounds/here-comes-the-money.mp3" preload="auto" playsinline></audio>
 
 <div class="wrap">
   <div class="top">
@@ -379,7 +382,6 @@
   function addUnlock(){
     if (armed) return; armed = true;
     UNLOCK_EVENTS.forEach(t => {
-      // use capture to guarantee early fire, once to auto-remove after success
       window.addEventListener(t, unlockHandler, {capture:true, passive:true});
       document.addEventListener(t, unlockHandler, {capture:true, passive:true});
     });
@@ -403,6 +405,82 @@
 })();
 </script>
 
+<!-- 💸 PLAY “here-comes-the-money.mp3” when touching bag-casino.png -->
+<script>
+(function(){
+  // Only target this exact artwork; no layout changes needed.
+  const MONEY_IMG_MATCH = /\/assets\/bag-casino\.png$/i;
+  const moneyAudio = document.getElementById('moneySfx');
+  let preloaded = false;
+  let lastTap = 0;
+
+  // Preload when the image comes near the viewport
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting && MONEY_IMG_MATCH.test(e.target.currentSrc || e.target.src)) {
+        if (!preloaded) {
+          moneyAudio.load();
+          preloaded = true;
+        }
+        io.unobserve(e.target);
+      }
+    }
+  }, { rootMargin: '300px' });
+
+  // Observe any existing matching images at startup
+  function observeExisting(){
+    document.querySelectorAll('img').forEach(img => {
+      const src = img.currentSrc || img.src || '';
+      if (MONEY_IMG_MATCH.test(src)) io.observe(img);
+    });
+  }
+  observeExisting();
+
+  // If the image is injected later, watch for it without touching layout
+  const mo = new MutationObserver((muts)=>{
+    for (const m of muts) {
+      m.addedNodes && m.addedNodes.forEach(n=>{
+        if (n.nodeType===1){
+          if (n.tagName==='IMG'){
+            const src = n.currentSrc || n.src || '';
+            if (MONEY_IMG_MATCH.test(src)) io.observe(n);
+          }
+          n.querySelectorAll && n.querySelectorAll('img').forEach(img=>{
+            const src = img.currentSrc || img.src || '';
+            if (MONEY_IMG_MATCH.test(src)) io.observe(img);
+          });
+        }
+      });
+    }
+  });
+  mo.observe(document.documentElement, {childList:true, subtree:true});
+
+  // Fast tap-to-play handler (covers touch, pen, mouse)
+  async function playMoney(){
+    try{
+      // debounce double fires
+      const now = performance.now();
+      if (now - lastTap < 150) return;
+      lastTap = now;
+
+      moneyAudio.currentTime = 0;
+      await moneyAudio.play();
+      if (navigator.vibrate) navigator.vibrate(12);
+    }catch(e){
+      // If blocked, the user gesture wasn’t strong enough; a direct tap will work.
+      // Silently ignore to avoid UI changes.
+    }
+  }
+
+  // Event delegation: only fires when the specific image is tapped/clicked
+  document.addEventListener('pointerdown', (e)=>{
+    const img = e.target.closest && e.target.closest('img');
+    if (!img) return;
+    const src = (img.currentSrc || img.src || '');
+    if (MONEY_IMG_MATCH.test(src)) playMoney();
+  }, {passive:true});
+})();
+</script>
 
 <!-- ===== COMPLIANCE BLOCK :: $BAG Casino (Hub & Games) ===== -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
