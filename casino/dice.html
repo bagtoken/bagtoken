@@ -7,25 +7,23 @@
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<!-- Removed hard demo force. You can still use /demo path or ?demo=1 to force practice. -->
 <script>window.__BAG_FORCE_DEMO = false;</script>
 
-<!-- Robust Three.js loader (opt-in via ?three=1) -->
+<!-- Optional Three.js (enable with ?three=1) -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
-  if (qs.get('three') !== '1') return; // only load if ?three=1
+  if (qs.get('three') !== '1') return;
   function load(src, done, fail){
     var s=document.createElement('script');
     s.src=src; s.async=true; s.onload=done; s.onerror=fail; document.head.appendChild(s);
   }
   load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-    function(){ window.__THREE_READY__=true; },
-    function(){
-      console.warn('[bag-dice] jsDelivr failed, trying unpkg');
+    ()=>{ window.__THREE_READY__=true; },
+    ()=>{
       load('https://unpkg.com/three@0.158.0/build/three.min.js',
-        function(){ window.__THREE_READY__=true; },
-        function(){ console.error('[bag-dice] three.js failed to load'); window.__THREE_FAILED__=true; }
+        ()=>{ window.__THREE_READY__=true; },
+        ()=>{ window.__THREE_FAILED__=true; console.error('[bag-dice] three.js failed to load'); }
       );
     }
   );
@@ -119,7 +117,7 @@
   .t.win{color:#2fbf6b}.t.scratch{color:#e8a85c}.t.lose{color:var(--lose)}
 
   /* CSS fallback dice */
-  .css-dice-wrap{ position:absolute; inset:0; display:none; place-items:center; gap:48px; }
+  .css-dice-wrap{ position:absolute; inset:0; display:grid; place-items:center; gap:48px; }
   .css-die{ position:relative; width:96px; height:96px; transform-style:preserve-3d; }
   .css-face{
     position:absolute; inset:0; transform-style:preserve-3d;
@@ -132,7 +130,6 @@
   .css-face.f4{ transform: rotateY(-90deg) translateZ(48px); }
   .css-face.f2{ transform: rotateX(-90deg) translateZ(48px); }
   .css-face.f5{ transform: rotateX(90deg) translateZ(48px); }
-  .css-dice-wrap.active{ display:grid; }
   .css-die{ transition: transform .65s cubic-bezier(.2,.9,.2,1); }
   .settle{ animation:settle .35s ease-out; }
   @keyframes settle{
@@ -166,12 +163,10 @@
     #win-text{ animation:none; }
   }
 
-  /* --- Tiny HUD --- */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
   .hudbar .pill b{ font-weight:800 }
 
-  /* --- NEW: preset chips row --- */
   .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .preset-chip{
     appearance:none; border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
@@ -183,7 +178,6 @@
 </style>
 
 <script src="/js/bag-session.js"></script>
-  
 </head>
 <body>
 
@@ -239,7 +233,7 @@
                 <span class="micro" aria-hidden="true">USD</span>
               </div>
             </div>
-            <!-- NEW: preset chips -->
+            <!-- PRESETS -->
             <div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet">
               <button type="button" class="preset-chip" data-usd="1">$1</button>
               <button type="button" class="preset-chip" data-usd="2">$2</button>
@@ -305,13 +299,23 @@
         <div class="table">
           <div class="felt">
             <div id="dice3d" class="stage3d" aria-label="3D dice area">
-              <div id="cssDice" class="css-dice-wrap"></div>
+              <!-- CSS fallback always visible; 3D will draw a canvas over it if enabled -->
+              <div id="cssDice" class="css-dice-wrap">
+                <div class="css-die" id="d1">
+                  <div class="css-face f1"></div><div class="css-face f2"></div><div class="css-face f3"></div>
+                  <div class="css-face f4"></div><div class="css-face f5"></div><div class="css-face f6"></div>
+                </div>
+                <div class="css-die" id="d2">
+                  <div class="css-face f1"></div><div class="css-face f2"></div><div class="css-face f3"></div>
+                  <div class="css-face f4"></div><div class="css-face f5"></div><div class="css-face f6"></div>
+                </div>
+              </div>
             </div>
             <div class="roll-row">
               <button id="rollBtn" class="btn-roll">ROLL</button>
             </div>
 
-            <!-- Tiny HUD (Plinko-style pills) -->
+            <!-- HUD -->
             <div class="hudbar" aria-live="polite" id="diceHud">
               <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
               <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
@@ -363,7 +367,7 @@
   </div>
 </section>
 
-<!-- Celebration overlay (single instance; identical to Slots) -->
+<!-- Celebration overlay -->
 <canvas id="win-canvas"></canvas>
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
   <div id="win-card">
@@ -373,41 +377,441 @@
   </div>
 </div>
 
-<!-- Celebration overlay logic -->
-<script>
-/* unchanged ... */
-</script>
-
 <!-- AUDIO -->
-<script>
-/* unchanged ... */
-</script>
+<audio id="sndRoll" preload="auto">
+  <source src="/assets/sounds/dice-roll.mp3" type="audio/mpeg">
+</audio>
+<audio id="sndWin" preload="auto">
+  <source src="/assets/sounds/win-chime.mp3" type="audio/mpeg">
+</audio>
 
 <!-- PRICES -->
 <script>
-/* unchanged ... */
+(() => {
+  const liveDot = document.getElementById('liveDot');
+  const elBAG = document.getElementById('liveBAG');
+  const elXRP = document.getElementById('liveXRP');
+  const elConv = document.getElementById('liveConv');
+  const elNote = document.getElementById('liveNote');
+
+  let price = {
+    BAG_USD: null,
+    XRP_USD: null
+  };
+
+  async function fetchXRP() {
+    try{
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd',{cache:'no-store'});
+      const j = await r.json();
+      price.XRP_USD = Number(j?.ripple?.usd) || null;
+    }catch(e){ price.XRP_USD = null; }
+  }
+
+  // BAG pricing: prefer a global from your session layer (locked config), else omit
+  function readBagFromSession(){
+    // Accept any of these if your /js/bag-session.js defines them
+    if (typeof window.BAG_PRICE_USD === 'number') return window.BAG_PRICE_USD;
+    if (window.BAG && typeof window.BAG.price_usd === 'number') return window.BAG.price_usd;
+    if (window.__BAG__ && typeof window.__BAG__.price_usd === 'number') return window.__BAG__.price_usd;
+    return null;
+  }
+
+  function updateUI(){
+    const bag = price.BAG_USD;
+    const xrp = price.XRP_USD;
+    if (bag) elBAG.textContent = bag.toFixed(Math.max(4, bag<0.01?6:4));
+    else elBAG.textContent = '—';
+    if (xrp) elXRP.textContent = xrp.toFixed(4);
+
+    if (bag && xrp){
+      const bag_per_xrp = xrp / bag;  // 1 XRP in BAG
+      const xrp_per_bag = bag / xrp;  // 1 BAG in XRP
+      elConv.textContent = `1 BAG ≈ ${xrp_per_bag.toFixed(6)} XRP · 1 XRP ≈ ${bag_per_xrp.toFixed(2)} BAG`;
+      liveDot.className = 'ok';
+      elNote.textContent = '';
+      document.dispatchEvent(new CustomEvent('bag:prices', {detail:{...price, bag_per_xrp, xrp_per_bag}}));
+    } else {
+      liveDot.className = 'warn';
+      elNote.textContent = '  BAG price pending';
+    }
+  }
+
+  async function refresh(){
+    price.BAG_USD = readBagFromSession();
+    await fetchXRP();
+    updateUI();
+  }
+
+  refresh();
+  setInterval(refresh, 30000);
+})();
 </script>
 
-<!-- USD autofill + payouts + limits + PRESETS -->
+<!-- USD presets, bet limits, payout preview -->
 <script>
-/* unchanged ... */
+(() => {
+  const usdInput = document.getElementById('usdBet');
+  const presets = document.getElementById('usdPresets');
+  const betQty = document.getElementById('betQty');
+  const unitSpan = document.querySelector('.unit');
+  const curToggle = document.getElementById('curToggle');
+  const betLimits = document.getElementById('betLimits');
+
+  const payCO = document.getElementById('payWinComeOut');
+  const payPT = document.getElementById('payWinPoint');
+  const payJP = document.getElementById('payJackpot');
+
+  let state = {
+    betCurrency: 'XRP',
+    bag_per_xrp: null,
+    xrp_per_bag: null,
+    BAG_USD: null,
+    XRP_USD: null
+  };
+
+  function calcFromUSD(usd){
+    // return {xrp, bag}
+    if (state.XRP_USD) var xrp = usd / state.XRP_USD;
+    if (state.BAG_USD) var bag = usd / state.BAG_USD;
+    return { xrp: xrp||0, bag: bag||0 };
+  }
+
+  function refreshPayoutPreview(){
+    const qty = Number(betQty.value)||0;
+    const cur = state.betCurrency;
+
+    // Convert stake to BAG for display and USD equivalence
+    let stake_bag = 0, stake_usd = 0;
+    if (cur === 'XRP'){
+      if (state.bag_per_xrp) stake_bag = qty * state.bag_per_xrp;
+      if (state.XRP_USD)      stake_usd = qty * state.XRP_USD;
+    } else {
+      stake_bag = qty;
+      if (state.BAG_USD) stake_usd = qty * state.BAG_USD;
+    }
+
+    function fmt(bag, usd){
+      const b = isFinite(bag)? bag : 0;
+      const u = isFinite(usd)? usd : 0;
+      return `${b.toFixed(2)} BAG ($${u.toFixed(2)})`;
+    }
+
+    const co_mult = 1.25;
+    const pt_mult = 1.00;
+    const jp_mult = 2.00;
+
+    payCO.textContent = fmt(stake_bag*co_mult, stake_usd*co_mult);
+    payPT.textContent = fmt(stake_bag*pt_mult, stake_usd*pt_mult);
+    payJP.textContent = fmt(stake_bag*jp_mult, stake_usd*jp_mult);
+  }
+
+  // Limits
+  function refreshLimits(){
+    // Demo: loose guide
+    betLimits.textContent = state.betCurrency==='XRP'
+      ? 'Min 0.1 XRP · Max 100 XRP'
+      : 'Min 100 BAG · Max 100000 BAG';
+  }
+
+  presets.addEventListener('click', (e)=>{
+    const b = e.target.closest('button[data-usd]');
+    if(!b) return;
+    const v = b.dataset.usd;
+    if (v === 'max'){ usdInput.value = 100; }
+    else usdInput.value = Number(v).toFixed(2);
+
+    // Auto-fill betQty based on chosen currency using prices
+    const usd = Number(usdInput.value)||0;
+    if (state.betCurrency === 'XRP' && state.XRP_USD){
+      betQty.value = (usd / state.XRP_USD).toFixed(4);
+    } else if (state.betCurrency === 'BAG' && state.BAG_USD){
+      betQty.value = Math.max(1, Math.floor(usd / state.BAG_USD));
+    }
+    refreshPayoutPreview();
+  });
+
+  curToggle.addEventListener('change', (e)=>{
+    const val = (new FormData(curToggle)).get('betCur');
+    state.betCurrency = val;
+    unitSpan.textContent = val;
+    document.getElementById('ccyLbl').textContent = val;
+    refreshLimits();
+    refreshPayoutPreview();
+  });
+
+  betQty.addEventListener('input', refreshPayoutPreview);
+  usdInput.addEventListener('input', ()=>{
+    // keep USD as a helper; user can still edit betQty directly
+  });
+
+  document.addEventListener('bag:prices', (e)=>{
+    const d = e.detail||{};
+    state.BAG_USD = d.BAG_USD;
+    state.XRP_USD = d.XRP_USD;
+    state.bag_per_xrp = d.bag_per_xrp;
+    state.xrp_per_bag = d.xrp_per_bag;
+    refreshPayoutPreview();
+  });
+
+  refreshLimits();
+})();
 </script>
 
-<!-- Game logic (with locked stake across the round) -->
+<!-- Celebration overlay logic -->
 <script>
-/* unchanged ... */
+(() => {
+  const overlay = document.getElementById('win-overlay');
+  const closeBtn = document.getElementById('win-close');
+  const winCanvas = document.getElementById('win-canvas');
+
+  function showWin(text='WIN', sub='Nice roll'){
+    document.getElementById('win-text').textContent = text;
+    document.getElementById('win-sub').textContent = sub;
+    overlay.style.display = 'grid';
+    winCanvas.style.display = 'block';
+    // simple confetti dots
+    const ctx = winCanvas.getContext('2d');
+    let w,h,parts=[];
+    function resize(){ w=winCanvas.width=innerWidth; h=winCanvas.height=innerHeight; }
+    resize(); let t=0;
+    for(let i=0;i<120;i++) parts.push({x:Math.random()*w,y:-20-Math.random()*h,r:2+Math.random()*3,vy:1+Math.random()*3});
+    let anim=true;
+    (function loop(){
+      if(!anim) return;
+      ctx.clearRect(0,0,w,h);
+      ctx.globalAlpha=0.9;
+      for(const p of parts){
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle='white'; ctx.fill();
+        p.y+=p.vy;
+        if(p.y>h+10) { p.y=-10; p.x=Math.random()*w; }
+      }
+      t++; requestAnimationFrame(loop);
+    })();
+    function end(){ anim=false; overlay.style.display='none'; winCanvas.style.display='none'; }
+    closeBtn.onclick=end;
+    overlay.onclick=(e)=>{ if(e.target===overlay) end(); };
+    setTimeout(end, 2500);
+  }
+
+  window.__bagShowWin = showWin;
+})();
 </script>
 
-<!-- Practice Mode Wrapper (force DEMO by default; Live only with ?live=1) -->
+<!-- Game logic + CSS dice fallback + audio -->
 <script>
-/* unchanged ... */
-</script>
+(() => {
+  // --- ELEMENTS ---
+  const btnRoll = document.getElementById('rollBtn');
+  const rollText = document.getElementById('rollText');
+  const modeLbl = document.getElementById('modeLbl');
+  const balLbl  = document.getElementById('balLbl');
+  const betLbl  = document.getElementById('betLbl');
+  const lastLbl = document.getElementById('lastLbl');
+  const ccyLbl  = document.getElementById('ccyLbl');
+  const betQty  = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
 
-<!-- HUD updater (Mode / Balance / Bet / Last) with currency-aware Balance -->
-<script>
-/* unchanged ... */
-</script>
+  const sndRoll = document.getElementById('sndRoll');
+  const sndWin  = document.getElementById('sndWin');
 
+  // --- STATE ---
+  const qs = new URLSearchParams(location.search);
+  const LIVE = qs.get('live')==='1' && window.__BAG_FORCE_DEMO!==true;
+  modeLbl.textContent = LIVE ? 'Live' : 'Demo';
+
+  let state = {
+    balance_bag: 100000,          // demo credit in BAG
+    comeOut: true,
+    point: null,
+    rolling: false,
+    lockedStake: 0,               // BAG units locked for the round
+    betCurrency: 'XRP'
+  };
+
+  // HUD init
+  function refreshHUD(){
+    balLbl.textContent = Math.max(0, state.balance_bag).toFixed(2);
+    betLbl.textContent = document.getElementById('betQty').value || '0';
+    ccyLbl.textContent = state.betCurrency;
+  }
+
+  function currencyFromUI(){
+    const val = (new FormData(curToggle)).get('betCur');
+    state.betCurrency = val;
+    refreshHUD();
+  }
+  curToggle.addEventListener('change', currencyFromUI);
+  currencyFromUI();
+
+  // map die face -> rotation (CSS cube)
+  const faceRot = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    2: 'rotateX(90deg) rotateY(0deg)',
+    3: 'rotateY(90deg)',
+    4: 'rotateY(-90deg)',
+    5: 'rotateX(-90deg)',
+    6: 'rotateX(180deg)'
+  };
+  const d1 = document.getElementById('d1');
+  const d2 = document.getElementById('d2');
+
+  function randFace(){ return 1 + Math.floor(Math.random()*6); }
+
+  let audioPrimed = false;
+  function primeAudio(){
+    if (audioPrimed) return;
+    // must be called from a user gesture
+    try{ sndRoll.play().then(()=>{ sndRoll.pause(); sndRoll.currentTime=0; audioPrimed=true; }).catch(()=>{}); }catch(e){}
+    try{ sndWin.play().then(()=>{ sndWin.pause(); sndWin.currentTime=0; audioPrimed=true; }).catch(()=>{}); }catch(e){}
+  }
+
+  function playRoll(){ try{ sndRoll.currentTime=0; sndRoll.play().catch(()=>{}); }catch(e){} }
+  function playWin(){ try{ sndWin.currentTime=0; sndWin.play().catch(()=>{}); }catch(e){} }
+
+  function lockStake(){
+    // Convert current bet to BAG and lock it (demo only)
+    const qty = Number(betQty.value)||0;
+    const cur = state.betCurrency;
+    // read pricing snapshot from last event
+    let rate = window.__lastPriceSnapshot;
+    let stake_bag = 0;
+    if (cur==='XRP'){
+      if (rate?.bag_per_xrp) stake_bag = qty * rate.bag_per_xrp;
+    } else {
+      stake_bag = qty;
+    }
+    stake_bag = Math.max(0, stake_bag);
+    state.lockedStake = stake_bag;
+  }
+
+  // listen to price events for conversions
+  window.__lastPriceSnapshot = null;
+  document.addEventListener('bag:prices', (e)=>{ window.__lastPriceSnapshot = e.detail; });
+
+  function settleWin(mult, label){
+    const won = state.lockedStake * mult;
+    state.balance_bag += won;
+    rollText.className='t win';
+    rollText.textContent = `${label} — +${won.toFixed(2)} BAG`;
+    window.__bagShowWin('WIN', label);
+    playWin();
+    // New round
+    state.comeOut = true;
+    state.point = null;
+    state.lockedStake = 0;
+  }
+
+  function settleLose(label){
+    rollText.className='t lose';
+    rollText.textContent = `${label} — You lose`;
+    // New round
+    state.comeOut = true;
+    state.point = null;
+    state.lockedStake = 0;
+  }
+
+  function doRoll(){
+    if (state.rolling) return;
+    primeAudio();
+    // On first come-out, lock the stake and deduct it from demo balance
+    if (state.comeOut){
+      lockStake();
+      if (state.lockedStake <= 0){
+        rollText.className='t scratch';
+        rollText.textContent = 'Set a valid stake';
+        return;
+      }
+      state.balance_bag -= state.lockedStake;
+      if (state.balance_bag < 0) state.balance_bag = 0;
+    }
+
+    state.rolling = true;
+    btnRoll.disabled = true;
+    playRoll();
+
+    // Animate dice
+    const f1 = randFace();
+    const f2 = randFace();
+    d1.classList.remove('settle'); d2.classList.remove('settle');
+    // add some spin noise then land
+    d1.style.transform = `rotateX(${Math.random()*720-360}deg) rotateY(${Math.random()*720-360}deg)`;
+    d2.style.transform = `rotateX(${Math.random()*720-360}deg) rotateY(${Math.random()*720-360}deg)`;
+
+    setTimeout(()=>{
+      d1.style.transform = faceRot[f1];
+      d2.style.transform = faceRot[f2];
+      d1.classList.add('settle'); d2.classList.add('settle');
+
+      const total = f1+f2;
+      lastLbl.textContent = total;
+      resolveOutcome(total);
+      refreshHUD();
+      state.rolling = false;
+      btnRoll.disabled = false;
+    }, 650);
+  }
+
+  function resolveOutcome(total){
+    if (state.comeOut){
+      if (total===7 || total===11){
+        // 1.25x
+        // Jackpot 10% chance → 2.0x instead
+        const jp = Math.random() < 0.10;
+        settleWin(jp ? 2.00 : 1.25, jp ? 'JACKPOT — Come-out WIN' : 'Come-out WIN');
+        return;
+      }
+      if (total===2 || total===3 || total===12){
+        settleLose('CRAPS');
+        return;
+      }
+      // set point
+      state.point = total;
+      state.comeOut = false;
+      rollText.className='t scratch';
+      rollText.textContent = `Point is ${state.point} — roll point to WIN 1.00× · 7 is SEVEN OUT`;
+      return;
+    }
+    // Point phase
+    if (total === state.point){
+      const jp = Math.random() < 0.08; // slightly lower JP during point
+      settleWin(jp ? 2.00 : 1.00, jp ? 'JACKPOT — Point WIN' : 'Point WIN');
+      return;
+    }
+    if (total === 7){
+      settleLose('SEVEN OUT');
+      return;
+    }
+    // neutral
+    rollText.className='t scratch';
+    rollText.textContent = `Rolled ${total} — still need ${state.point} before 7`;
+  }
+
+  btnRoll.addEventListener('click', doRoll);
+
+  // Simple session buttons (demo placeholders)
+  document.getElementById('startSessionBtn').addEventListener('click', ()=>{
+    document.getElementById('sessionStatus').innerHTML = 'Session: <span style="color:#2fbf6b">active</span>';
+    document.getElementById('topUpBtn').style.display='inline-block';
+    document.getElementById('endSessionBtn').style.display='inline-block';
+  });
+  document.getElementById('endSessionBtn').addEventListener('click', ()=>{
+    document.getElementById('sessionStatus').innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+    document.getElementById('topUpBtn').style.display='none';
+    document.getElementById('endSessionBtn').style.display='none';
+  });
+  document.getElementById('topUpBtn').addEventListener('click', ()=>{
+    state.balance_bag += 50000;
+    refreshHUD();
+  });
+
+  // Connect button placeholder
+  document.getElementById('connectBtn').addEventListener('click', ()=>{
+    document.getElementById('connectStatus').innerHTML = 'Wallet: <span style="color:#2fbf6b">connected</span>';
+  });
+
+  refreshHUD();
+})();
+</script>
 
 <script>
 if ('serviceWorker' in navigator) {
@@ -415,7 +819,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
