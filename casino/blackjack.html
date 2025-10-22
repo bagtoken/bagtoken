@@ -137,6 +137,27 @@
   .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
   .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
   .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
+
+  /* ===== Rules FAB + Modal (isolated, no collisions) ===== */
+  .rules-fab{
+    position:fixed; right:16px; bottom:16px; z-index:1001;
+    background:linear-gradient(180deg,#1a2a21,#0f1f17);
+    border:1px solid #2b6a48; color:#e9efe9; font-weight:800;
+    padding:10px 14px; border-radius:12px; box-shadow:0 8px 22px rgba(0,0,0,.35);
+    cursor:pointer
+  }
+  .rules-overlay{ position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.6); z-index:1002; backdrop-filter:blur(2px) }
+  .rules-modal{
+    width:min(680px,92vw); max-height:80vh; overflow:auto;
+    background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line); border-radius:16px; box-shadow:0 14px 44px rgba(0,0,0,.55);
+    padding:18px 18px 14px
+  }
+  .rules-modal h3{ margin:0 0 8px; font-size:1.2rem; color:var(--gold) }
+  .rules-modal ul{ margin:8px 0 0 18px; padding:0 }
+  .rules-modal li{ margin:6px 0; color:#e4efe7 }
+  .rules-close{ float:right; border:0; background:transparent; color:#cfe6d8; font:700 18px/1 system-ui; cursor:pointer }
+  .rules-note{ margin-top:10px; font-size:.85rem; color:#a8b5ab }
 </style>
 </head>
 <body>
@@ -283,6 +304,27 @@
   </div>
 </div>
 
+<!-- ===== Rules FAB + Modal Markup ===== -->
+<button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
+<div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+  <div class="rules-modal" role="document">
+    <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
+    <h3 id="rulesTitle">🃏 Blackjack — Quick Rules</h3>
+    <ul>
+      <li><b>Goal:</b> Beat the dealer by getting as close to 21 as possible without going over</li>
+      <li><b>Card Values:</b> Numbers = face value; J/Q/K = 10; A = 1 or 11</li>
+      <li><b>Blackjack:</b> Ace + 10-value card pays <b>3:2</b></li>
+      <li><b>Hit:</b> Take another card</li>
+      <li><b>Stand:</b> Keep your total</li>
+      <li><b>Double Down:</b> Double your bet, take exactly one final card</li>
+      <li><b>Split:</b> If your first two cards are a pair, you may split <b>on the first hand only</b> to create two hands</li>
+      <li><b>Bust:</b> Over 21 is an automatic loss</li>
+      <li><b>Dealer:</b> Hits until 17 or higher</li>
+    </ul>
+    <div class="rules-note">House visuals and payouts shown on this page apply. Push returns stake.</div>
+  </div>
+</div>
+
 <!-- Celebration overlay logic -->
 <script>
 (function(){
@@ -306,7 +348,7 @@
 
   function fire(n){
     particles.length=0;
-    n = isMobile ? Math.min(n, 90) : n; // cap on mobile
+    n = isMobile ? Math.min(n, 90) : n;
     const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
     for(let i=0;i<n;i++){
       particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
@@ -333,7 +375,6 @@
   window.showWin=function(opts={}){ 
     const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts;
     title.textContent=message; sub.textContent=subtext; show();
-    // Show $BAG image on any WIN/BLACKJACK message
     bagImg.style.display = /win|blackjack/i.test(message) ? 'block' : 'none';
     canvas.style.display='block'; fire(180);
     if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
@@ -378,7 +419,6 @@
     loadShuffleBuffer();
     primePools();
   }
-  // Prime also on first scroll
   window.addEventListener('pointerdown', primeAll, {once:true,passive:true});
   window.addEventListener('wheel',       primeAll, {once:true,passive:true});
   window.addEventListener('keydown',     primeAll, {once:true,passive:true});
@@ -388,13 +428,11 @@
   window.addEventListener('scroll',      primeAll, {once:true,passive:true});
   document.addEventListener('scroll',    primeAll, {once:true,passive:true,capture:true});
 
-  /* Files */
   const SHUFFLE_CANDS = ['/assets/sounds/card_shuffle.mp3','/assets/sounds/card-shuffle.mp3'];
   const HIT_CANDS     = ['/assets/sounds/card_snap.mp3','/assets/sounds/card_smack.mp3','/assets/sounds/card_place.mp3'];
   const STAND_CANDS   = ['/assets/sounds/stand_thud.mp3','/assets/sounds/card_thud.mp3','/assets/sounds/table_tock.mp3'];
   const LOSE_CANDS    = ['/assets/sounds/lose_thud.mp3'];
 
-  /* Optional HTMLAudio pools */
   async function probeUrl(u){ try{ const r=await fetch(u,{method:'GET',cache:'force-cache'}); return r.ok; }catch{ return false; } }
   function mkPool(src, n=2){
     const a=[]; for(let i=0;i<n;i++){ const t=new Audio(src); t.preload='auto'; t.crossOrigin='anonymous'; t.setAttribute('playsinline',''); a.push(t); }
@@ -408,7 +446,6 @@
     for(const u of LOSE_CANDS){ if(await probeUrl(u)){ poolLose = mkPool(u,2); break; } }
   }
 
-  /* WebAudio helpers */
   function playBuffer(buf, gain=1){
     const ac=getAC(); if(!ac||!buf||ac.state!=='running') return false;
     const src=ac.createBufferSource(); src.buffer=buf;
@@ -426,7 +463,6 @@
     }catch{ return null; }
   }
 
-  /* Shuffle (buffer-first) */
   let shuffleBuf=null;
   async function loadShuffleBuffer(){
     if (shuffleBuf) return shuffleBuf;
@@ -445,7 +481,6 @@
     }
   };
 
-  /* Synth effects */
   function snap(){
     const ac=getAC(); if(!ac||ac.state!=='running') return;
     const t=ac.currentTime;
@@ -484,7 +519,6 @@
     o.start(t); o.stop(t+0.52); n.start(t); n.stop(t+0.22);
   }
 
-  /* Public API */
   window.__bagAudio = {
     chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
       [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
@@ -508,7 +542,6 @@
   const WORD = {'♠':'spades','♥':'hearts','♦':'diamonds','♣':'clubs'};
   const R2B  = r => (r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r);
 
-  // Pre-warm the back (helps the very first render)
   (new Image()).src = BACK;
 
   function faceUrl(card){ return `${ROOT}/${R2B(card.r)}-${(WORD[card.s]||'spades')}.webp`; }
@@ -529,7 +562,6 @@
     wrap.className = 'card' + (isBack ? ' back' : '');
     const img = document.createElement('img');
 
-    // Show something immediately; browser will swap pixels once loaded
     img.decoding = 'async';
     img.loading  = isBack ? 'eager' : 'lazy';
     if (!isBack) img.fetchPriority = 'low';
@@ -541,7 +573,6 @@
       if (!triedBack && !isBack) {
         triedBack = true;
         img.onerror = () => {
-          // If the back image is also missing, swap to SVG fallback
           const fb = svgFallback(label);
           wrap.replaceWith(fb);
         };
@@ -571,7 +602,7 @@
 <!-- PRICES -->
 <script>
 (function(){
-  const PRICE_REFRESH_MS = 30000; /* was 15000 */
+  const PRICE_REFRESH_MS = 30000;
   const FETCH_TIMEOUT_MS = 8000;
   const LIVE_CACHE_TTL_MS = 24*60*60*1000;
   const VIEW_CACHE_TTL_MS = 6*60*60*1000;
@@ -702,7 +733,6 @@
   curToggle?.addEventListener('change', ()=>{ unitSpans.forEach(s=>s.textContent=currentCurrency()); if(usdBetEl?.dataset.userTyped==='1'){ setFromUsd(parseFloat(usdBetEl.value)||0); } else { autoFillUsd(); renderLimits(); } });
   addEventListener('bag:pricesUpdated', ()=>{ if(usdBetEl?.dataset.userTyped==='1'){ setFromUsd(parseFloat(usdBetEl.value)||0); } else { autoFillUsd(); renderLimits(); } });
 
-  /* Wire the Quick Amount buttons */
   presets?.addEventListener('click', (e)=>{
     const b = e.target.closest('.preset-chip');
     if(!b) return;
@@ -901,7 +931,6 @@ function dealOne(toNode, arr, faceUp=true, sound=true){
   const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
   toNode.appendChild(el);
   if (sound){ try{ window.__playHit && window.__playHit(); }catch{} }
-  // Defer totals to coalesce multiple card appends
   queueMicrotask(updTotals);
 }
 function revealHole(){
@@ -928,11 +957,9 @@ function startRound(){
 
   clearBoard(); STATE.dealer=[]; STATE.player=[]; STATE.split=null; STATE.activeHandIdx=0; STATE.live=true;
 
-  /* Shuffle once per Deal */
   try{ window.__bagAudio && window.__bagAudio.resume && window.__bagAudio.resume(); }catch{}
   try{ window.__playShuffle && window.__playShuffle(); }catch{}
 
-  // Batch the first four cards in one paint
   const pFrag = document.createDocumentFragment();
   const dFrag = document.createDocumentFragment();
 
@@ -1075,6 +1102,21 @@ setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
   document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
   document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
   window.addEventListener('wheel', (e)=>{ if(e.ctrlKey){ e.preventDefault(); } }, {passive:false});
+</script>
+
+<!-- Rules modal logic (no conflicts) -->
+<script>
+(function(){
+  const fab = document.getElementById('rulesFab');
+  const ov  = document.getElementById('rulesOverlay');
+  const x   = document.getElementById('rulesClose');
+  function open(){ ov.style.display='grid'; }
+  function close(){ ov.style.display='none'; }
+  fab?.addEventListener('click', open);
+  x?.addEventListener('click', close);
+  ov?.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
+  addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
+})();
 </script>
 
 <script>
