@@ -82,7 +82,7 @@
 
   @keyframes dealPop{ from{ transform:scale(.98); opacity:.0 } to{ transform:scale(1); opacity:1 } }
 
-  /* Felt flashes + table shake (unchanged) */
+  /* Felt flashes + table shake */
   #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
   #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
   #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
@@ -320,16 +320,28 @@
 })();
 </script>
 
-<!-- AUDIO (Dice primitives) + robust shuffle (hyphen → underscore fallback) -->
+<!-- AUDIO (Dice primitives) + shuffle + HIT snap + STAND tock/thud -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  let AC=null, MASTER=null, lastTap=0;
+  let AC=null, MASTER=null, primed=false;
   function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null; AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC; }
   async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); primeShuffle(); }, {passive:true});
-  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
 
+  function primeAll(){ if(primed) return; primed=true; resume(); primeTag(shuffleTag); primeTag(hitTag); primeTag(standTag); }
+  /* 🔊 Prime on first user gesture — includes FIRST SCROLL anywhere */
+  window.addEventListener('pointerdown', primeAll, {once:true,passive:true});
+  window.addEventListener('wheel',       primeAll, {once:true,passive:true});
+  window.addEventListener('keydown',     primeAll, {once:true,passive:true});
+  window.addEventListener('touchmove',   primeAll, {once:true,passive:true});
+  window.addEventListener('touchstart',  primeAll, {once:true,passive:true});
+  window.addEventListener('mousemove',   primeAll, {once:true,passive:true});
+  // Page scroll
+  window.addEventListener('scroll',      primeAll, {once:true,passive:true});
+  // Element scroll (capture to catch non-bubbling scroll on any scrollable)
+  document.addEventListener('scroll',    primeAll, {once:true,passive:true, capture:true});
+
+  /* Dice-style WIN/LOSE tones */
   function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
     [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
       const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
@@ -343,40 +355,91 @@
   }
   window.__bagAudio = { chime, thud, resume };
 
-  // ✅ Shuffle tag with automatic src fallback
+  /* DEAL: Shuffle with hyphen/underscore fallback */
   const SHUFFLE_CANDS = ['/assets/sounds/card-shuffle.mp3','/assets/sounds/card_shuffle.mp3'];
   let shuffleIdx = 0;
   const shuffleTag = new Audio();
   shuffleTag.preload='auto'; shuffleTag.crossOrigin='anonymous'; shuffleTag.setAttribute('playsinline',''); shuffleTag.volume=.85;
   shuffleTag.src = SHUFFLE_CANDS[shuffleIdx];
-  shuffleTag.addEventListener('error', ()=>{
-    // try underscore variant once
-    if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; }
-  }, {once:true});
+  shuffleTag.addEventListener('error', ()=>{ if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; } }, {once:true});
 
-  function primeShuffle(){
+  function primeTag(tag){
     try{
-      shuffleTag.muted = true;
-      const p = shuffleTag.play();
+      tag.muted = true;
+      const p = tag.play();
       if (p && p.then){
-        p.then(()=>{ shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false; }).catch(()=>{
-          // if we failed on hyphen, try underscore immediately
-          if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; }
-        });
-      }else{
-        shuffleTag.pause(); shuffleTag.currentTime=0; shuffleTag.muted=false;
+        p.then(()=>{ tag.pause(); tag.currentTime=0; tag.muted=false; }).catch(()=>{ tag.pause(); tag.currentTime=0; tag.muted=false; });
+      } else {
+        tag.pause(); tag.currentTime=0; tag.muted=false;
       }
     }catch{}
   }
   window.__playShuffle = function(){
     try{
-      shuffleTag.pause();
-      shuffleTag.currentTime = 0;
+      shuffleTag.pause(); shuffleTag.currentTime = 0;
       shuffleTag.play().catch(()=>{
-        // last-ditch: flip src and try once
         if (shuffleIdx===0){ shuffleIdx=1; shuffleTag.src = SHUFFLE_CANDS[shuffleIdx]; shuffleTag.play().catch(()=>{}); }
       });
     }catch{}
+  };
+
+  /* HIT: smack/snap (with WebAudio fallback) */
+  const HIT_CANDS = ['/assets/sounds/card_snap.mp3','/assets/sounds/card_smack.mp3','/assets/sounds/card_place.mp3'];
+  let hitIdx = 0;
+  const hitTag = new Audio();
+  hitTag.preload='auto'; hitTag.crossOrigin='anonymous'; hitTag.setAttribute('playsinline',''); hitTag.volume=.9;
+  hitTag.src = HIT_CANDS[hitIdx];
+  hitTag.addEventListener('error', ()=>{ if (hitIdx < HIT_CANDS.length-1){ hitIdx++; hitTag.src = HIT_CANDS[hitIdx]; } });
+
+  function snapWebAudio(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return;
+    const len = Math.floor(ac.sampleRate*0.06);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++){ d[i] = (Math.random()*2-1) * (1 - i/len); }
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const hpf = ac.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value = 1200;
+    const g = ac.createGain(); g.gain.value=.25;
+    src.connect(hpf).connect(g).connect(MASTER);
+    src.start();
+  }
+  window.__playHit = async function(){
+    try{ await resume(); }catch{}
+    try{
+      hitTag.pause(); hitTag.currentTime=0;
+      await hitTag.play();
+    }catch{
+      snapWebAudio();
+    }
+  };
+
+  /* STAND: softer/different tock/thud than LOSE */
+  const STAND_CANDS = ['/assets/sounds/stand_thud.mp3','/assets/sounds/card_thud.mp3','/assets/sounds/table_tock.mp3'];
+  let standIdx = 0;
+  const standTag = new Audio();
+  standTag.preload='auto'; standTag.crossOrigin='anonymous'; standTag.setAttribute('playsinline',''); standTag.volume=.75;
+  standTag.src = STAND_CANDS[standIdx];
+  standTag.addEventListener('error', ()=>{ if (standIdx < STAND_CANDS.length-1){ standIdx++; standTag.src = STAND_CANDS[standIdx]; } });
+
+  function standTock(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return;
+    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+    const t=ac.currentTime;
+    o.frequency.setValueAtTime(420,t);
+    o.frequency.exponentialRampToValueAtTime(260,t+.12);
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(.06,t+.02);
+    g.gain.exponentialRampToValueAtTime(.0001,t+.16);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.18);
+  }
+  window.__playStand = async function(){
+    try{ await resume(); }catch{}
+    try{
+      standTag.pause(); standTag.currentTime=0;
+      await standTag.play();
+    }catch{
+      standTock();
+    }
   };
 })();
 </script>
@@ -731,7 +794,7 @@ function dealOne(toNode, arr, faceUp=true, sound=true){
   const c=draw(); arr.push(c);
   const el = window.__CARD_FACTORY__.makeCardEl(c, !faceUp);
   toNode.appendChild(el);
-  // no click sound here (kept clean around shuffle)
+  if (sound){ try{ window.__playHit && window.__playHit(); }catch{} }
   updTotals();
 }
 function revealHole(){
@@ -758,8 +821,8 @@ function startRound(){
 
   clearBoard(); STATE.dealer=[]; STATE.player=[]; STATE.split=null; STATE.activeHandIdx=0; STATE.live=true;
 
-  /* 🔊 Shuffle once per Deal (hyphen → underscore fallback handled in __playShuffle) */
-  try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
+  /* 🔊 Shuffle once per Deal */
+  try{ window.__bagAudio && window.__bagAudio.resume && window.__bagAudio.resume(); }catch{}
   try{ window.__playShuffle && window.__playShuffle(); }catch{}
 
   dealOne(D('playerCards'), STATE.player, true, false);
@@ -787,7 +850,8 @@ function hit(){
     if(val(STATE.player).total>=21){ stand(); }
   }
 }
-function stand(){
+function stand(silent=false){
+  if(!silent){ try{ window.__playStand && window.__playStand(); }catch{} }
   if(STATE.split && STATE.activeHandIdx===0){
     STATE.activeHandIdx=1; setStatus('Hand 2: your move'); btnDouble.disabled = !(STATE.player[1].length===2);
   } else {
@@ -798,7 +862,7 @@ function dbl(){
   if(STATE.split){ return; }
   if(STATE.player.length!==2) return alert('Double only on first turn');
   if(!window.__BAG_FORCE_DEMO){ if(!__bagSession.spend(STATE.lockedBag)) return alert('Insufficient balance'); }
-  STATE.player._dbl=true; dealOne(D('playerCards'), STATE.player, true, true); stand();
+  STATE.player._dbl=true; dealOne(D('playerCards'), STATE.player, true, true); stand(true);
 }
 function split(){
   if(STATE.player.length!==2 || !eqVal(STATE.player[0],STATE.player[1])) return;
@@ -856,7 +920,7 @@ function settle(override){
     } else if(pv===dv){
       credit += stake*CFG.mPUSH; last('Push'); flash('push');
     } else {
-      last('Scratch'); flash('lose'); try{ window.__bagAudio && __bagAudio.thud(); }catch{}
+      last('Scratch'); flash('lose'); try{ window.__bagAudio && window.__bagAudio.thud(); }catch{}
     }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
@@ -872,7 +936,7 @@ function settle(override){
 
 btnDeal.addEventListener('click', startRound);
 btnHit.addEventListener('click', hit);
-btnStand.addEventListener('click', stand);
+btnStand.addEventListener('click', ()=>stand(false));
 btnDouble.addEventListener('click', dbl);
 btnSplit.addEventListener('click', split);
 btnAgain.addEventListener('click', ()=>{
