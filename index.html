@@ -35,6 +35,7 @@
 
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<link rel="preload" href="/assets/sounds/here-comes-the-money.mp3" as="audio" />
 
 <style>
   *{box-sizing:border-box}
@@ -241,6 +242,89 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
+<!-- Audio element for the one-time "here comes the money" stinger -->
+<audio id="bagMoneySfx" src="/assets/sounds/here-comes-the-money.mp3" preload="auto" playsinline></audio>
+
+<!-- One-time-per-visit money SFX on tapping the casino banner image -->
+<script>
+(function(){
+  // Play only once per visit (tab/session)
+  const KEY = 'bag_money_once_v1';
+  if (sessionStorage.getItem(KEY) === '1') return;
+
+  const TARGET = /\/assets\/bag-casino\.(png|PNG)$/i;
+  const audio  = document.getElementById('bagMoneySfx');
+  let armed = true;           // stop after first successful play
+  let preloaded = false;
+
+  // Preload when the image comes near the viewport
+  const io = new IntersectionObserver((entries)=>{
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const img = e.target;
+      const src = img.currentSrc || img.src || '';
+      if (TARGET.test(src)) {
+        if (!preloaded) { audio.load(); preloaded = true; }
+        io.unobserve(img);
+      }
+    }
+  }, { rootMargin: '300px' });
+
+  function observeExisting(){
+    document.querySelectorAll('img').forEach(img=>{
+      const src = img.currentSrc || img.src || '';
+      if (TARGET.test(src)) io.observe(img);
+    });
+  }
+  observeExisting();
+
+  // Watch for the image being added later without touching layout
+  const mo = new MutationObserver((muts)=>{
+    muts.forEach(m=>{
+      m.addedNodes && m.addedNodes.forEach(n=>{
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'IMG') {
+          const src = n.currentSrc || n.src || '';
+          if (TARGET.test(src)) io.observe(n);
+        } else if (n.querySelectorAll) {
+          n.querySelectorAll('img').forEach(img=>{
+            const src = img.currentSrc || img.src || '';
+            if (TARGET.test(src)) io.observe(img);
+          });
+        }
+      });
+    });
+  });
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+
+  async function playOnce(){
+    if (!armed) return;
+    try{
+      audio.currentTime = 0;
+      await audio.play();
+      armed = false;
+      sessionStorage.setItem(KEY,'1'); // lock for the rest of this visit
+      // optional light haptic on supported phones
+      if (navigator.vibrate) navigator.vibrate(12);
+      // remove listener after first play
+      document.removeEventListener('pointerdown', onPointer, { passive:true });
+    }catch(e){
+      // If a browser blocks it, a direct tap should succeed; silently ignore.
+    }
+  }
+
+  function onPointer(e){
+    const img = e.target && e.target.closest ? e.target.closest('img') : null;
+    if (!img) return;
+    const src = img.currentSrc || img.src || '';
+    if (TARGET.test(src)) playOnce();
+  }
+
+  // Fast mobile-friendly gesture listener
+  document.addEventListener('pointerdown', onPointer, { passive:true });
+})();
+</script>
+
 <!-- Service worker kept for PWA -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -250,4 +334,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
