@@ -15,11 +15,12 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getthebag.io/">
 <meta property="og:site_name" content="$BAG">
-<meta property="og:image" content="https://getthebag.io/assets/logo.png">
+<!-- Use the PNG for social previews -->
+<meta property="og:image" content="https://getthebag.io/assets/logo-512.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="GET THE $BAG">
 <meta name="twitter:description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token.">
-<meta name="twitter:image" content="https://getthebag.io/assets/logo.png">
+<meta name="twitter:image" content="https://getthebag.io/assets/logo-512.png">
 
 <!-- Icons / PWA -->
 <link rel="icon" href="/favicon.ico" type="image/x-icon">
@@ -155,7 +156,20 @@
 <body>
 
 <header class="hero">
-  <img src="/assets/logo.png" alt="$BAG Logo" class="hero-img" />
+  <!-- Responsive logo using your 256/512 assets; keep PNG fallback for max compat -->
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/logo-256.webp 256w, /assets/logo-512.webp 512w"
+            sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw">
+    <img src="/assets/logo-512.png"
+         srcset="/assets/logo-256.png 256w, /assets/logo-512.png 512w"
+         sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw"
+         alt="$BAG Logo"
+         class="hero-img"
+         width="512" height="512"
+         fetchpriority="high" decoding="async">
+  </picture>
+
   <h1>💼 GET THE $BAG</h1>
   <p class="tagline">XRPL's Heaviest Meme. 1T Supply. Meme-Built. Max Flex.</p>
   <p style="text-align:center;margin-top:8px;">
@@ -206,9 +220,20 @@
     <div class="line2">UTILITY. RISK. REWARD.</div>
   </div>
 
-  <!-- Main linked image -->
+  <!-- Main linked image (responsive, id used by audio logic) -->
   <a href="/casino/" aria-label="Open $BAG Casino">
-    <img src="/assets/bag-casino.PNG" alt="$BAG Casino">
+    <picture>
+      <source type="image/webp"
+              srcset="/assets/bag-casino-960.webp 960w, /assets/bag-casino-1024.webp 1024w"
+              sizes="(min-width:1024px) 960px, 100vw">
+      <img id="bag-casino-img"
+           src="/assets/bag-casino-1024.png"
+           srcset="/assets/bag-casino-960.png 960w, /assets/bag-casino-1024.png 1024w"
+           sizes="(min-width:1024px) 960px, 100vw"
+           alt="$BAG Casino"
+           width="1024" height="683"
+           loading="lazy" decoding="async">
+    </picture>
   </a>
 
   <!-- Divider matching Casino hub style -->
@@ -216,8 +241,18 @@
     <a href="/casino/" aria-label="Enter the Casino">ENTER THE CASINO</a>
   </div>
 
-  <!-- Optional poster below (kept from prior version) -->
-  <img src="/assets/bag-casino-poster.png" alt="$BAG Casino Poster">
+  <!-- Poster below (responsive) -->
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/bag-casino-poster-960.webp 960w, /assets/bag-casino-poster-1024.webp 1024w"
+            sizes="(min-width:1024px) 960px, 100vw">
+    <img src="/assets/bag-casino-poster-1024.png"
+         srcset="/assets/bag-casino-poster-960.png 960w, /assets/bag-casino-poster-1024.png 1024w"
+         sizes="(min-width:1024px) 960px, 100vw"
+         alt="$BAG Casino Poster"
+         width="1024" height="1536"
+         loading="lazy" decoding="async">
+  </picture>
 </div>
 
 <!-- LITE PAPER -->
@@ -251,10 +286,12 @@ if ('serviceWorker' in navigator) {
 <script>
 /* ===== $BAG index: play on scroll-into-view, first-scroll unlock, no-zoom ===== */
 (function(){
-  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3';  // exact filename
-  const IMG_MATCH = /\/assets\/bag-casino\.(png|PNG)$/i;       // target image
-  const THRESHOLD = 0.6;                                       // % visible to count as "in view"
-  const MIN_GAP_MS = 1500;                                     // cooldown between plays
+  const MONEY_SRC = '/assets/sounds/here-come-the-money.mp3';
+  const THRESHOLD = 0.6;
+  const MIN_GAP_MS = 1500;
+
+  // target the banner's <img> by id (robust with <picture>)
+  const TARGET_ID = 'bag-casino-img';
 
   // Create audio (no DOM changes)
   const sfx = new Audio(MONEY_SRC);
@@ -267,7 +304,6 @@ if ('serviceWorker' in navigator) {
   async function tryUnlock() {
     if (unlocked) return;
     try {
-      // Attempt a tiny play-pause to satisfy mobile policies
       sfx.muted = true;
       await sfx.play();
       sfx.pause();
@@ -278,7 +314,7 @@ if ('serviceWorker' in navigator) {
         window.removeEventListener(t, tryUnlock, unlockOpts);
         document.removeEventListener(t, tryUnlock, unlockOpts);
       });
-    } catch(_) { /* ignore; will retry on next interaction */ }
+    } catch(_) { /* retry on next interaction */ }
   }
   const unlockOpts = { passive:true, capture:true };
   UNLOCK_EVENTS.forEach(t => {
@@ -286,63 +322,44 @@ if ('serviceWorker' in navigator) {
     document.addEventListener(t, tryUnlock, unlockOpts);
   });
 
-  // --- Observe the specific image coming into view ---
+  // --- Observe the banner image coming into view ---
   let lastPlay = 0;
-  const visibleSet = new WeakSet(); // track current visibility to require leave-before-next-play
+  const visibleSet = new WeakSet(); // require leave-before-next-play
 
   async function playIfReady() {
     const now = performance.now();
-    if (!unlocked) return;                   // wait until audio is unlocked by user interaction
-    if (now - lastPlay < MIN_GAP_MS) return; // cooldown
+    if (!unlocked) return;
+    if (now - lastPlay < MIN_GAP_MS) return;
     try {
       sfx.currentTime = 0;
       await sfx.play();
       lastPlay = now;
       if (navigator.vibrate) navigator.vibrate(10);
-    } catch(_) {
-      // If still blocked, user hasn’t granted gesture yet; next scroll or tap will unlock
-    }
+    } catch(_) {}
   }
 
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       const img = e.target;
-      const src = img.currentSrc || img.src || '';
-      if (!IMG_MATCH.test(src)) continue;
-
       if (e.isIntersecting && e.intersectionRatio >= THRESHOLD) {
         if (!visibleSet.has(img)) {
-          visibleSet.add(img);     // became visible
-          playIfReady();           // fire once per enter
+          visibleSet.add(img);
+          playIfReady();
         }
       } else {
-        visibleSet.delete(img);    // mark as not visible to allow re-trigger on next enter
+        visibleSet.delete(img);
       }
     }
   }, { threshold: THRESHOLD });
 
-  function watchTargets(root=document) {
-    root.querySelectorAll('img').forEach(img => {
-      const src = img.currentSrc || img.src || '';
-      if (IMG_MATCH.test(src)) io.observe(img);
-    });
+  function watch() {
+    const el = document.getElementById(TARGET_ID);
+    if (el) io.observe(el);
   }
-  watchTargets();
+  watch();
 
-  // If the image is injected later, observe it without touching layout
-  const mo = new MutationObserver(muts => {
-    for (const m of muts) {
-      m.addedNodes && m.addedNodes.forEach(n => {
-        if (n.nodeType !== 1) return;
-        if (n.tagName === 'IMG') {
-          const s = n.currentSrc || n.src || '';
-          if (IMG_MATCH.test(s)) io.observe(n);
-        } else if (n.querySelectorAll) {
-          watchTargets(n);
-        }
-      });
-    }
-  });
+  // If the image is injected later, observe it
+  const mo = new MutationObserver(() => watch());
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
   // --- Preload when near viewport for snappy start ---
@@ -352,9 +369,8 @@ if ('serviceWorker' in navigator) {
       preIO.disconnect();
     }
   }, { rootMargin: '400px' });
-  // Preload off the first matching image we find
-  const firstImg = Array.from(document.images).find(i => IMG_MATCH.test(i.currentSrc || i.src || ''));
-  if (firstImg) preIO.observe(firstImg);
+  const preloadImg = document.getElementById(TARGET_ID);
+  if (preloadImg) preIO.observe(preloadImg);
 
   // --- Prevent zoom (pinch, Ctrl+wheel, double-tap) ---
   window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive:false });
@@ -364,14 +380,11 @@ if ('serviceWorker' in navigator) {
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
-    if (now - lastTouchEnd <= 300) e.preventDefault(); // block double-tap zoom
+    if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
   }, { passive:false });
 })();
 </script>
 
-  
 </body>
 </html>
-
-
