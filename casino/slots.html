@@ -105,15 +105,17 @@
 
   #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
   #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); background-size:200% 100%; -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
+  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
   #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
   #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  /* NEW: animate gradient sweep on WIN text */
-  @keyframes shine{ 0%{ background-position:0% 50%; } 100%{ background-position:200% 50%; } }
   @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
+
+  /* NEW: overlay image (centered above title) */
+  #win-img{ display:none; width:100px; height:auto; margin:0 auto 10px; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
+  @media (min-width:600px){ #win-img{ width:120px; } }
 
   /* ===== BAG "pill" tile — small and perfectly centered ===== */
   .tile{
@@ -315,6 +317,8 @@
 <div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" aria-modal="true">
   <div id="win-card">
     <button id="win-close" aria-label="Close">×</button>
+    <!-- NEW: overlay image element -->
+    <img id="win-img" alt="" decoding="async" loading="eager">
     <div id="win-text">WIN</div>
     <div id="win-sub">Nice spin</div>
   </div>
@@ -363,7 +367,7 @@
 })();
 </script>
 
-<!-- WIN overlay -->
+<!-- WIN overlay (with image support like Blackjack) -->
 <script>
 (function(){
   const overlay=document.getElementById('win-overlay');
@@ -372,6 +376,8 @@
   const closeBtn=document.getElementById('win-close');
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
+  const imgEl=document.getElementById('win-img');
+
   let rafId=null, particles=[], start=0, dur=2000, lastFocus=null;
   function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
   size(); addEventListener('resize', size);
@@ -380,14 +386,55 @@
     if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
   function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
   function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; closeBtn.focus({preventScroll:true}); }
+  function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; closeBtn.focus?.({preventScroll:true}); }
   function hide(){ overlay.style.display='none'; stop(); if(lastFocus && lastFocus.focus) lastFocus.focus({preventScroll:true}); }
   closeBtn.addEventListener('click', hide);
   addEventListener('keydown', (e)=>{ if(e.key==='Escape' && overlay.style.display==='grid') hide(); });
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
 
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice spin', sound=true, duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+  // Resolve 'bag-received' → /assets/bag-received.webp (then .png fallback)
+  function resolveImage({ image, imgUrl }){
+    if (imgUrl) return imgUrl;
+    if (!image) return null;
+    return `/assets/${image}.webp`;
+  }
+  async function loadImage(url){
+    if(!url) return null;
+    const tryLoad = (src)=>new Promise(res=>{
+      const i=new Image(); i.onload=()=>res(i); i.onerror=()=>res(null); i.decoding='async'; i.src=src;
+    });
+    let img = await tryLoad(url);
+    if (!img && url.endsWith('.webp')) img = await tryLoad(url.replace(/\.webp$/i,'.png'));
+    return img;
+  }
+
+  // Public API
+  window.showWin = async function(opts={}){
+    const { message='WIN', subtext='Nice spin', sound=true, duration=4000, image=null, imgUrl=null } = opts;
+
+    title.textContent = message;
+    sub.textContent = subtext;
+
+    const targetUrl = resolveImage({ image, imgUrl });
+    let showImg = false;
+    if (targetUrl){
+      try{
+        const im = await loadImage(targetUrl);
+        if (im){
+          imgEl.src = im.src;
+          imgEl.style.display = 'block';
+          imgEl.setAttribute('alt', message);
+          showImg = true;
+        }
+      }catch{}
+    }
+    if (!showImg){
+      imgEl.removeAttribute('src');
+      imgEl.style.display = 'none';
+      imgEl.setAttribute('alt','');
+    }
+
+    show(); canvas.style.display='block'; fire(180);
     if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
     cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
     clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
@@ -925,17 +972,17 @@
         sScratch();
         credit(sBag*1.00);
         spinText.className='t scratch'; spinText.textContent='SCRATCH — 1.00×';
-        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false });
+        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false, image:'bag-received' });
       } else if(mult===1.25){
         sWin();
         credit(sBag*1.25);
         spinText.className='t win'; spinText.textContent='WIN — 1.25×';
-        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200 });
+        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, image:'bag-received' });
       } else {
         sWin();
         credit(sBag*2.00);
         spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
-        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200 });
+        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, image:'bag-received' });
       }
     } else {
       sLose();
