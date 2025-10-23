@@ -55,7 +55,9 @@
   .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
   .game-header{text-align:center;padding:36px 10px 14px}
-  .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+  /* Ensure the <picture> wrapper centers, fixing any off-center 960 assets */
+  .game-header picture{display:block;margin:0 auto}
+  .game-header img.hero-img{margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
   .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
   @media (min-width:900px){
     .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
@@ -159,8 +161,13 @@
   #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
   #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
+
+  /* BAG WIN IMAGE (same as Blackjack) */
+  #win-bag{ display:none; width:96px; height:auto; margin:14px auto 0; filter:drop-shadow(0 6px 18px rgba(0,255,178,.25)); }
+
   @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
   @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
+  @keyframes shine{ 0%{background-position:0% 0} 100%{background-position:200% 0} }
   @media (prefers-reduced-motion: reduce){
     #win-card{ animation:none; transform:none; opacity:1; }
     #win-text{ animation:none; }
@@ -190,7 +197,19 @@
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
-  <img src="/assets/bag-dice.jpeg" alt="BAG Dice" class="hero-img" loading="lazy" decoding="async">
+  <!-- ✅ Only change: responsive WebP/PNG hero -->
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/bag-dice-960.webp 960w, /assets/bag-dice-1024.webp 1024w"
+            sizes="(min-width:900px) 420px, 70vw">
+    <img
+      class="hero-img"
+      src="/assets/bag-dice-1024.png"
+      srcset="/assets/bag-dice-960.png 960w, /assets/bag-dice-1024.png 1024w"
+      sizes="(min-width:900px) 420px, 70vw"
+      alt="BAG Dice"
+      loading="lazy" decoding="async">
+  </picture>
   <h2>🎲 $BAG DICE — Pass Line</h2>
   <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
 </section>
@@ -296,7 +315,7 @@
             <div id="dice3d" class="stage3d" aria-label="3D dice area">
               <div id="cssDice" class="css-dice-wrap"></div>
             </div>
-            <div class="row roll-row">
+            <div class="roll-row">
               <button id="rollBtn" class="btn-roll">ROLL</button>
             </div>
 
@@ -359,6 +378,14 @@
     <button id="win-close" aria-label="Close">×</button>
     <div id="win-text">WIN</div>
     <div id="win-sub">Nice roll</div>
+
+    <!-- BAG WIN IMAGE -->
+    <picture id="win-bag">
+      <source type="image/webp" srcset="/assets/bag-received-1024.webp 1024w, /assets/bag-received-960.webp 960w" sizes="96px">
+      <source type="image/png"  srcset="/assets/bag-received-1024.png 1024w, /assets/bag-received-960.png 960w" sizes="96px">
+      <img src="/assets/bag-received-960.png" alt="$BAG received" decoding="async" loading="eager" style="width:100%;height:auto">
+    </picture>
+    <!-- /BAG WIN IMAGE -->
   </div>
 </div>
 
@@ -371,6 +398,8 @@
   const closeBtn=document.getElementById('win-close');
   const sub=document.getElementById('win-sub');
   const title=document.getElementById('win-text');
+  const bagImg=document.getElementById('win-bag'); // BAG WIN IMAGE
+
   let rafId=null, particles=[], start=0, dur=2000;
 
   function size(){ const dpr=Math.min(devicePixelRatio||1,2);
@@ -405,9 +434,17 @@
   overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
   addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
 
-  window.showWin=function(opts={}){ 
+  window.showWin=function(opts={}){
     const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
+    title.textContent=message; 
+    sub.textContent=subtext; 
+    show(); 
+    canvas.style.display='block'; 
+    fire(180);
+
+    // Show $BAG image on WIN and JACKPOT (plus Blackjack parity)
+    if (bagImg) bagImg.style.display = /win|jackpot|blackjack/i.test(String(message)) ? 'block' : 'none';
+
     if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
     cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
     clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
@@ -572,7 +609,7 @@
 
   function updateLiveLine(){
     if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
-    // ✅ XRP fixed to two decimals in display
+    // ✅ XRP now always shows exactly two decimals in the live-prices display
     if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
       ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
       : '—';
@@ -744,7 +781,7 @@
     }
     updatePayouts();
     renderLimits();
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));  /* ✅ fixed */
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
 
   function autoFillUsd(){
@@ -921,7 +958,7 @@
       const r=0.22,m=0.56,c=0;
       const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[i];
       const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-      f.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/>${dots}</svg>`)}")`;
+      f.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 2' shape-rendering='geometricPrecision'><rect x='-1' y='-1' width='2' height='2' rx='0.18' fill='#FFFFFF'/><g>${dots}</g></svg>`)}")`;
       el.appendChild(f);
     }
   }
@@ -1023,8 +1060,8 @@
         alert('Start a session at The Cage');
         rollBtn.disabled=false; return;
       }
-      if (sUsdNow < 1){ alert(`Minimum $${(1).toFixed(2)} stake`); rollBtn.disabled=false; return; }
-      if (sUsdNow > 2000){ alert(`Maximum $${(2000).toFixed(2)} stake`); rollBtn.disabled=false; return; }
+      if (sUsdNow < MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+      if (sUsdNow > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
 
       if (startingComeOut){
         if (!(sBagNow > 0)) { alert('Enter a stake first'); rollBtn.disabled=false; return; }
@@ -1336,7 +1373,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6%;">
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
