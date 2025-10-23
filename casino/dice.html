@@ -141,35 +141,6 @@
     100%{ transform:translateY(0) rotateZ(0) }
   }
 
-  /* WIN overlay visuals */
-  #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
-  #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{
-    font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    letter-spacing:.06em;
-    background:linear-gradient(90deg, #fff, #00ffb2, #fff);
-    background-size:200% 100%;
-    -webkit-background-clip:text; background-clip:text;
-    color:transparent; -webkit-text-fill-color:transparent;
-    text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25);
-    filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));
-    animation:shine 1.6s linear infinite;
-    white-space:nowrap;
-  }
-  #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
-  #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
-  #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
-
-  /* BAG WIN IMAGE (same as Blackjack) */
-  #win-bag{ display:none; width:96px; height:auto; margin:14px auto 0; filter:drop-shadow(0 6px 18px rgba(0,255,178,.25)); }
-
-  @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
-  @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  @media (prefers-reduced-motion: reduce){
-    #win-card{ animation:none; transform:none; opacity:1; }
-    #win-text{ animation:none; }
-  }
-
   /* --- Tiny HUD --- */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
@@ -186,6 +157,8 @@
   .preset-chip.active{ background:#173c28; border-color:#3fa86a; box-shadow:0 0 0 2px rgba(63,168,106,.25) inset; }
 </style>
 
+<!-- ✅ SHARED OVERLAY (injected once) -->
+<script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
   
 </head>
@@ -325,7 +298,7 @@
             </div>
 
             <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
-              🔊 If you don’t hear sound: tap ROLL once, turn off Silent mode, and raise volume.
+              🔊 If you don't hear sound: tap ROLL once, turn off Silent mode, and raise volume.
             </p>
             <div class="result"><div class="t" id="rollText" role="status" aria-live="polite">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
           </div>
@@ -357,7 +330,7 @@
       <h4 style="margin:12px 0 6px;">Payouts</h4>
       <ul style="margin:0;padding-left:18px;color:#cfd6cf">
         <li><b>Come-out WIN</b> (7/11) — <b>1.25× total</b></li>
-        <li><b>Point WIN</b> — <b>1.00× total</li>
+        <li><b>Point WIN</b> — <b>1.00× total</b></li>
         <li><b>JACKPOT</b> — <b>2.00× total</b> (random upgrade on any WIN)</li>
         <li><b>CRAPS / SEVEN OUT</b> — lose</li>
       </ul>
@@ -368,190 +341,220 @@
   </div>
 </section>
 
-<!-- Celebration overlay (single instance; identical to Slots) -->
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
-  <div id="win-card">
-    <button id="win-close" aria-label="Close">×</button>
-    <div id="win-text">WIN</div>
-    <div id="win-sub">Nice roll</div>
-
-    <!-- BAG WIN IMAGE -->
-    <picture id="win-bag">
-      <source type="image/webp" srcset="/assets/bag-received-1024.webp 1024w, /assets/bag-received-960.webp 960w" sizes="96px">
-      <source type="image/png"  srcset="/assets/bag-received-1024.png 1024w, /assets/bag-received-960.png 960w" sizes="96px">
-      <img src="/assets/bag-received-960.png" alt="$BAG received" decoding="async" loading="eager" style="width:100%;height:auto">
-    </picture>
-    <!-- /BAG WIN IMAGE -->
-  </div>
-</div>
-
-<!-- Celebration overlay logic -->
-<script>
-(function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
-  const bagImg=document.getElementById('win-bag'); // BAG WIN IMAGE
-
-  let rafId=null, particles=[], start=0, dur=2000;
-
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2);
-    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  size(); addEventListener('resize', size);
-
-  function fire(n){
-    particles.length=0;
-    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++){
-      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
-    }
-  }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
-  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
-  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ overlay.style.display='grid'; }
-  function hide(){ overlay.style.display='none'; stop(); }
-
-  closeBtn.addEventListener('click', hide);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-  addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
-
-  window.showWin=function(opts={}){
-    const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
-    title.textContent=message; 
-    sub.textContent=subtext; 
-    show(); 
-    canvas.style.display='block'; 
-    fire(180);
-
-    // Show $BAG image on WIN and JACKPOT (plus Blackjack parity)
-    if (bagImg) bagImg.style.display = /win|jackpot|blackjack/i.test(String(message)) ? 'block' : 'none';
-
-    if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
-    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
-  };
-})();
-</script>
-
-<!-- AUDIO -->
+<!-- ✅ FIXED AUDIO SYSTEM -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
 
+  // 🎯 AUDIO FIX #1: PRE-INIT BUFFER
   function getAC(){
     if (AC && AC.state!=='closed') return AC;
     if (!AudioCtx) return null;
-    AC = new AudioCtx();
+    // PRE-INIT WITH BUFFER FOR OVERLAY COMPATIBILITY
+    AC = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'interactive',
+      sampleRate: 44100
+    });
     MASTER = AC.createGain();
     MASTER.gain.value = .22;
     MASTER.connect(AC.destination);
+    console.log("✅ AUDIO CONTEXT PRE-INIT SUCCESS");
     return AC;
   }
+
+  // 🎯 AUDIO FIX #2: FORCE RESUME HELPER
   async function resume(){
     const ac = getAC();
     if (!ac) return;
-    if (ac.state === 'suspended'){ try{ await ac.resume(); }catch{} }
+    if (ac.state === 'suspended'){ 
+      try{ 
+        await ac.resume(); 
+        console.log("✅ AUDIO RESUMED");
+      }catch(e){ console.warn("Audio resume failed:", e); }
+    }
   }
 
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
-  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  // 🎯 AUDIO FIX #3: RESTART AUDIO AFTER OVERLAY CHANGES
+  window.restartAudio = async function(){
+    await resume();
+    // Force a silent ping to keep context alive
+    ping();
+  };
 
+  // Event listeners with passive for performance
+  addEventListener('pointerdown', ()=>{ 
+    lastTap=Date.now(); 
+    resume(); 
+    ping(); 
+    primeHtmlAudio(); 
+  }, {passive:true});
+  addEventListener('visibilitychange', ()=>{ 
+    if(!document.hidden) resume(); 
+  });
+
+  // 🎯 AUDIO FIX #4: WATCHDOG WITH OVERLAY DETECTION
   if(!watchdog){
-    watchdog = setInterval(()=>{ const ac=getAC(); if(!ac) return;
-      if(Date.now()-lastTap<30000 && ac.state==='suspended') resume();
-    }, 1500);
+    watchdog = setInterval(async ()=>{
+      const ac=getAC(); 
+      if(!ac) return;
+      if(Date.now()-lastTap<30000 && ac.state==='suspended') {
+        await resume();
+      }
+      // Detect overlay changes and restart
+      if (window.BAGOverlay && BAGOverlay.isVisible()) {
+        setTimeout(window.restartAudio, 100);
+      }
+    }, 1000);
   }
 
   function ping(){
     try{
-      const ac=getAC(); if(!ac||ac.state!=='running') return;
+      const ac=getAC(); 
+      if(!ac||ac.state!=='running') return;
       const o=ac.createOscillator(), g=ac.createGain();
-      g.gain.value=.0001; o.connect(g).connect(MASTER);
-      const t=ac.currentTime; o.start(t); o.stop(t+.02);
+      g.gain.value=.0001; 
+      o.connect(g).connect(MASTER);
+      const t=ac.currentTime; 
+      o.start(t); 
+      o.stop(t+.02);
     }catch{}
   }
 
-  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
+  function chime(){ 
+    const ac=getAC(); 
+    if(!ac||ac.state!=='running') return; 
+    const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ 
+      const o=ac.createOscillator(); 
+      o.type='triangle'; 
+      o.frequency.value=f;
+      const g=ac.createGain(); 
+      g.gain.setValueAtTime(.0001,now+i*.02); 
+      g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); 
+      g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); 
+      o.start(now+i*.02); 
+      o.stop(now+i*.02+.34); 
+    }); 
   }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
-    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
-    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27);
-  }
-  window.__bagAudio = { chime, thud, resume };
 
+  function thud(){ 
+    const ac=getAC(); 
+    if(!ac||ac.state!=='running') return;
+    const o=ac.createOscillator(), g=ac.createGain(); 
+    o.type='sine';
+    const t=ac.currentTime; 
+    o.frequency.setValueAtTime(260,t); 
+    o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); 
+    g.gain.linearRampToValueAtTime(.10,t+.02); 
+    g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); 
+    o.start(t); 
+    o.stop(t+.27);
+  }
+
+  window.__bagAudio = { chime, thud, resume: window.restartAudio };
+
+  // 🎯 AUDIO FIX #5: IMPROVED DICE BUFFER LOADING
   let diceBuf=null, diceGain=null, bufLoading=false;
 
   async function loadDiceBuffer(){
     if (diceBuf || bufLoading) return diceBuf;
-    const ac=getAC(); if(!ac) return null;
+    const ac=getAC(); 
+    if(!ac) return null;
     try{
       bufLoading=true;
+      console.log("🔊 Loading dice audio...");
       const res = await fetch('/assets/sounds/diceshakeroll.mp3', {cache:'force-cache'});
       const arr = await res.arrayBuffer();
       diceBuf = await ac.decodeAudioData(arr);
-      if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
-    }catch{} finally{ bufLoading=false; }
+      if (!diceGain){ 
+        diceGain = ac.createGain(); 
+        diceGain.gain.value = 0.95; 
+        diceGain.connect(MASTER); 
+      }
+      console.log("✅ DICE AUDIO LOADED SUCCESSFULLY");
+    }catch(e){ 
+      console.error("❌ DICE AUDIO LOAD FAILED:", e);
+    } finally{ 
+      bufLoading=false; 
+    }
     return diceBuf;
   }
 
-  function playDiceWebAudio(){
-    const ac=getAC(); if(!ac || !diceBuf || ac.state!=='running') return false;
+  // 🎯 AUDIO FIX #6: FORCE PLAY WITH FALLBACK
+  async function playDiceWebAudio(){
+    const ac=getAC(); 
+    if(!ac || !diceBuf || ac.state!=='running') {
+      await resume();
+      return false;
+    }
     try{
       const src = ac.createBufferSource();
       src.buffer = diceBuf;
       src.connect(diceGain || MASTER);
       src.start();
       return true;
-    }catch{ return false; }
+    }catch(e){ 
+      console.warn("WebAudio failed:", e);
+      return false; 
+    }
   }
 
   const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
-  rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
+  rollTag.preload='auto'; 
+  rollTag.crossOrigin='anonymous'; 
+  rollTag.setAttribute('playsinline',''); 
+  rollTag.volume=.95;
 
   function primeHtmlAudio(){
     try{
       rollTag.muted = true;
       const p = rollTag.play();
-      if (p && p.then) p.then(()=>{ rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }).catch(()=>{});
-      else { rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }
+      if (p && p.then) {
+        p.then(()=>{ 
+          rollTag.pause(); 
+          rollTag.currentTime=0; 
+          rollTag.muted=false; 
+        }).catch(()=>{});
+      } else { 
+        rollTag.pause(); 
+        rollTag.currentTime=0; 
+        rollTag.muted=false; 
+      }
     }catch{}
   }
 
-  async function roll(){
-    try{ await resume(); }catch{}
-    await loadDiceBuffer();
-    if (!playDiceWebAudio()){
-      try{
-        rollTag.pause();
-        rollTag.currentTime = 0;
-        rollTag.play().catch(()=>{});
+  // 🎯 AUDIO FIX #7: MASTER ROLL FUNCTION
+  window.__bagDiceAudio = { 
+    roll: async function(){
+      try{ 
+        await resume(); 
       }catch{}
+      await loadDiceBuffer();
+      const webSuccess = await playDiceWebAudio();
+      if (!webSuccess){
+        try{
+          rollTag.pause();
+          rollTag.currentTime = 0;
+          rollTag.play().catch(()=>{});
+        }catch{}
+      }
     }
-  }
+  };
 
-  window.__bagDiceAudio = { roll };
+  // 🎯 AUDIO FIX #8: AUTO-START ON LOAD
+  window.addEventListener('load', async ()=>{
+    await resume();
+    await loadDiceBuffer();
+    console.log("🎯 BAG DICE AUDIO SYSTEM READY");
+  });
+
+  // 🎯 AUDIO FIX #9: RESTART ON OVERLAY EVENTS
+  window.addEventListener('bag:overlayShow', window.restartAudio);
+  window.addEventListener('bag:overlayHide', window.restartAudio);
 })();
 </script>
 
@@ -972,8 +975,15 @@
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
   async function rollCssDice(a,b){
-    try{ window.__bagDiceAudio && __bagDiceAudio.roll(); }catch{}
-    try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
+    // 🎯 AUDIO FIX #10: FORCE AUDIO BEFORE ANIMATION
+    try{ 
+      if (window.__bagDiceAudio) await window.__bagDiceAudio.roll(); 
+    }catch(e){ console.warn("Audio roll failed:", e); }
+    
+    try{ 
+      if (window.__bagAudio && window.__bagAudio.resume) await window.__bagAudio.resume(); 
+    }catch{}
+    
     const A=document.getElementById('dieA'), B=document.getElementById('dieB');
     A.classList.add('tumblingA'); B.classList.add('tumblingB');
     await new Promise(r=>setTimeout(r, 1200));
@@ -992,7 +1002,7 @@
 
   const LIVE = {
     CO: { P_JP: 0.02, P_WIN: 0.38, P_CRAPS: 0.10 },
-  PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }
+    PT: { P_JP: 0.02, P_WIN: 0.30, P_SEVEN: 0.28 }
   };
   const DEMO = {
     CO: { P_JP: 0.03, P_WIN: 0.42, P_CRAPS: 0.08 },
@@ -1091,7 +1101,7 @@
         const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
         const gainBag = ROUND.lockedBag*(mult-1);
-        showWin({
+        BAGOverlay.showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
           subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(ROUND.lockedUsd)} → ${fmtUsd(ROUND.lockedUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
@@ -1129,7 +1139,7 @@
         const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
         if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
         const gainBag = ROUND.lockedBag*(mult-1);
-        showWin({
+        BAGOverlay.showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
           subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(ROUND.lockedUsd)} → ${fmtUsd(ROUND.lockedUsd*mult)}`,
           duration: (mult===MULT_JP)? 5600 : 4200,
@@ -1149,6 +1159,9 @@
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
       }
     }
+
+    // 🎯 AUDIO FIX #11: RESTART AFTER EVERY ROLL (OVERLAY SAFE)
+    setTimeout(window.restartAudio, 100);
 
     rollBtn.disabled=false;
   });
@@ -1190,7 +1203,7 @@
     const bag=getBal();
     const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
     if(statusEl){
-      statusEl.innerHTML='Practice: <span style="color:#2fbf6b)">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML='Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
     if(startBtn) startBtn.style.display='inline-block';
@@ -1236,7 +1249,7 @@
   }
 
   function enableDemo(){
-    // Freeze demo flag so other scripts can’t flip it later
+    // Freeze demo flag so other scripts can't flip it later
     try{
       Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true});
     }catch{ window.__BAG_FORCE_DEMO=true; }
@@ -1376,7 +1389,6 @@ if ('serviceWorker' in navigator) {
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
-</div>
 
 </body>
 </html>
