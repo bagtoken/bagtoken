@@ -15,7 +15,6 @@
     --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
     --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
     --red:#e25b5b;
-    --win-fg:#fff; --win-glow:#00ffb2; --win-accent:#18a0fb; --win-bg: rgba(10,12,16,.70);
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);
     font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
@@ -103,21 +102,6 @@
   .warn{color:#e8a85c}
   .err{color:#e25b5b}
 
-  /* WIN overlay */
-  #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
-  #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{ font: 900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing:.06em; background:linear-gradient(90deg, #fff, var(--win-glow), #fff); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25); filter:drop-shadow(0 4px 10px rgba(0,0,0,.35)); animation:shine 1.6s linear infinite; white-space:nowrap; }
-  #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
-  #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
-  #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
-  @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
-  @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-  @media (prefers-reduced-motion: reduce){ #win-card{ animation:none; transform:none; opacity:1; } #win-text{ animation:none; } }
-
-  /* WIN overlay art */
-  .win-art{ width:128px; margin:12px auto 0; filter:drop-shadow(0 6px 18px rgba(0,0,0,.35)); }
-  @media (max-width:599px){ .win-art{ width:110px; } }
-
   /* BAG "pill" */
   .tile{
     display:inline-block;
@@ -148,6 +132,7 @@
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 </style>
 
+<script src="/js/bag-overlay.js"></script>
  <script src="/js/bag-session.js"></script>
 
 </head>
@@ -214,7 +199,7 @@
 
           <div>
             <div class="micro">Bet currency</div>
-            <div class="choice" id="curToggle" role="radiogroup" aria-label="Bet currency">
+            <div class="choice" id="curToggle">
               <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
               <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
             </div>
@@ -312,29 +297,6 @@
   </div>
 </section>
 
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" aria-modal="true">
-  <div id="win-card">
-    <button id="win-close" aria-label="Close">×</button>
-
-    <div id="win-text">WIN</div>
-    <div id="win-sub">Nice spin</div>
-
-    <!-- WIN image BELOW the text/sub -->
-    <picture aria-hidden="true">
-      <source srcset="/assets/bag-received-1024.webp 1024w, /assets/bag-received-960.webp 960w" type="image/webp" sizes="128px">
-      <img class="win-art"
-           src="/assets/bag-received-1024.png"
-           srcset="/assets/bag-received-1024.png 1024w, /assets/bag-received-960.png 960w"
-           sizes="128px"
-           alt=""
-           decoding="async"
-           loading="eager"
-           width="128" height="128">
-    </picture>
-  </div>
-</div>
-
 <!-- AUDIO (first-tap unlock + loop) -->
 <script>
 (function(){
@@ -375,40 +337,6 @@
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
 
   window.__bagAudio = { spinLoop, chime, scratch, thud, resume };
-})();
-</script>
-
-<!-- WIN overlay (sound disabled here to avoid double chime) -->
-<script>
-(function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
-  let rafId=null, particles=[], start=0, dur=2000, lastFocus=null;
-
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
-  size(); addEventListener('resize', size);
-
-  function fire(n){ particles.length=0; const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585']; for(let i=0;i<n;i++) particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')}); }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight); particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz; if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); } else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); } else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); } ctx.restore(); }); }
-  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
-  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ lastFocus=document.activeElement; overlay.style.display='grid'; try{ closeBtn.focus({preventScroll:true}); }catch{} }
-  function hide(){ overlay.style.display='none'; stop(); if(lastFocus && lastFocus.focus) lastFocus.focus({preventScroll:true}); }
-  closeBtn.addEventListener('click', hide);
-  addEventListener('keydown', (e)=>{ if(e.key==='Escape' && overlay.style.display==='grid') hide(); });
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-
-  // sound: false by default to prevent double-play with sWin/sScratch
-  window.showWin=function(opts={}){ const { message='WIN', subtext='Nice spin', sound=false, duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
-    if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
-    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
-  };
 })();
 </script>
 
@@ -511,7 +439,7 @@
           const xrpBal = parseXrpAmount(amm.amount2);
           if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
           const price = xrpBal / bagBal;
-          if (!(price>0) || !isFinite(price)) return resolve(null);
+          if (!(price>0) || !isFinite(price) ) return resolve(null);
           resolve(price);
         }catch{ resolve(null); }
       };
@@ -573,7 +501,6 @@
 
 <!-- ✅ Stake sync / payouts (unchanged logic) -->
 <script>
-/* full block kept from your working version */
 (function(){
   const usdBetEl = document.getElementById('usdBet');
   const betQtyEl = document.getElementById('betQty');
@@ -938,17 +865,17 @@
         sScratch();
         credit(sBag*1.00);
         spinText.className='t scratch'; spinText.textContent='SCRATCH — 1.00×';
-        showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false });
+        BAGOverlay.showWin({ message:'SCRATCH', subtext:`${(mult*100).toFixed(0)}% back`, duration:2200, sound:false });
       } else if(mult===1.25){
         sWin();
         credit(sBag*1.25);
         spinText.className='t win'; spinText.textContent='WIN — 1.25×';
-        showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, sound:false });
+        BAGOverlay.showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, sound:false });
       } else {
         sWin();
         credit(sBag*2.00);
         spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
-        showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, sound:false });
+        BAGOverlay.showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, sound:false });
       }
     } else {
       sLose();
@@ -968,7 +895,6 @@
 
 <!-- Xaman wallet connect -->
 <script>
-/* unchanged core */
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
   const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
@@ -1061,7 +987,6 @@
 
 <!-- TAB SESSION -->
 <script>
-/* unchanged core except a tiny typo fix in color */
 (function(){
   const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const SESSION_KEY = 'bag_session_v1';
