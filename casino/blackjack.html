@@ -99,32 +99,6 @@
   @keyframes glowRed  { from{ box-shadow:0 0 0 0 rgba(226,91,91,.0) inset } to{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset } }
   @keyframes glowGold { from{ box-shadow:0 0 0 0 rgba(255,225,117,.0) inset } to{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset } }
 
-  /* Win overlay */
-  #win-overlay{ position:fixed; inset:0; display:none; place-items:center; background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), var(--win-bg); z-index:2147483647; backdrop-filter:saturate(120%) blur(2px); }
-  #win-card{ position:relative; text-align:center; padding:24px 32px; border-radius:16px; background:rgba(0,0,0,.35); box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06); transform:scale(.9); opacity:0; animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite; }
-  #win-text{
-    font: 900 clamp(40px,8vw,56px)/1.05 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    letter-spacing:.04em;
-    text-align:center;
-    background:linear-gradient(90deg, #fff, #00ffb2, #fff);
-    background-size:200% 100%;
-    -webkit-background-clip:text; background-clip:text;
-    color:transparent; -webkit-text-fill-color:transparent;
-    text-shadow: 0 0 14px rgba(0,255,178,.30), 0 0 36px rgba(0,255,178,.2);
-    filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));
-    animation:shine 1.6s linear infinite;
-    white-space:nowrap;
-    margin:0 auto;
-  }
-  #win-sub{ margin-top:8px; color:#e7f6ff; opacity:.9; font: 600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
-  #win-close{ position:absolute; top:8px; right:10px; border:0; background:transparent; color:#cfeaff; font:700 20px/1 system-ui; cursor:pointer; padding:6px 8px; opacity:.7; }
-  #win-canvas{ position:fixed; inset:0; pointer-events:none; z-index:2147483646; display:none; }
-  /* $BAG image shown on every WIN (including Blackjack) */
-  #win-bag{ display:none; width:96px; height:auto; margin:14px auto 0; filter:drop-shadow(0 6px 18px rgba(0,255,178,.25)); }
-
-  @keyframes win-pop{ to{ transform:scale(1); opacity:1; } }
-  @keyframes win-float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
-
   /* Quick Amount buttons: green */
   .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .preset-chip{
@@ -289,21 +263,6 @@
   </div>
 </section>
 
-<!-- Win overlay -->
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification">
-  <div id="win-card">
-    <button id="win-close" aria-label="Close">×</button>
-    <div id="win-text">WIN</div>
-    <div id="win-sub">Nice hand</div>
-    <picture id="win-bag">
-      <source type="image/webp" srcset="/assets/bag-received-1024.webp 1024w, /assets/bag-received-960.webp 960w" sizes="96px">
-      <source type="image/png"  srcset="/assets/bag-received-1024.png 1024w, /assets/bag-received-960.png 960w" sizes="96px">
-      <img src="/assets/bag-received-960.png" alt="$BAG received" decoding="async" loading="eager" style="width:100%;height:auto">
-    </picture>
-  </div>
-</div>
-
 <!-- ===== Rules FAB + Modal Markup ===== -->
 <button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
 <div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
@@ -324,65 +283,6 @@
     <div class="rules-note">House visuals and payouts shown on this page apply. Push returns stake.</div>
   </div>
 </div>
-
-<!-- Celebration overlay logic -->
-<script>
-(function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
-  const bagImg=document.getElementById('win-bag');
-  let rafId=null, particles=[], start=0, dur=2000;
-
-  const isMobile = matchMedia('(max-width: 767px)').matches;
-
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2);
-    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  size(); addEventListener('resize', size);
-
-  function fire(n){
-    particles.length=0;
-    n = isMobile ? Math.min(n, 90) : n;
-    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++){
-      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
-    }
-  }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
-  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
-  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ overlay.style.display='grid'; }
-  function hide(){ overlay.style.display='none'; stop(); }
-
-  closeBtn.addEventListener('click', hide);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-  addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
-
-  window.showWin=function(opts={}){ 
-    const { message='WIN', subtext='Nice hand', sound=true, duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show();
-    bagImg.style.display = /win|blackjack/i.test(message) ? 'block' : 'none';
-    canvas.style.display='block'; fire(180);
-    if(sound) try{ window.__bagAudio && __bagAudio.chime(); }catch(e){}
-    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
-  };
-})();
-</script>
 
 <!-- AUDIO (buffered shuffle + synth-first effects) -->
 <script>
@@ -829,33 +729,59 @@
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
   function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
-  function currentCurrency(){ const el=curToggle?.querySelector('input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
-  function getBalances(){
-    const sess=(window.__bagSession && window.__bagSession.get && window.__bagSession.get())||{};
-    const bag=Number(sess.bag)||0; let xrp=Number(sess.xrp);
-    if(!(xrp>0)){ const {bagUsd,xrpUsd}=PR(); if(bagUsd>0&&xrpUsd>0) xrp=bag*(bagUsd/xrpUsd); else xrp=0; }
-    return {bag,xrp};
+  function currentCurrency(){
+    const el=curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
   }
-  function currentBet(){ const v=parseFloat(betQtyEl?.value||'0'); if(!Number.isFinite(v)||v<0) return 0; return Math.max(0, Math.floor(v)); }
+
+  function getBalances(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
+    }
+    return { bag, xrp };
+  }
+
+  function currentBet(){
+    const v=parseFloat(betQtyEl?.value||'0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return Math.max(0, Math.floor(v));
+  }
 
   function renderHud(){
     try{
       if(modeLbl) modeLbl.textContent = selectedMode();
       if(betHud)  betHud.textContent  = String(currentBet());
       if(lastLbl) lastLbl.textContent = String(window.__BJ_LAST__ || '—');
-      const ccy=currentCurrency(); const {bag,xrp}=getBalances();
-      if (ccy === 'XRP'){ if(balLbl) balLbl.textContent=fmt(xrp,6); if(ccyLbl) ccyLbl.textContent='XRP'; }
-      else { if(balLbl) balLbl.textContent=fmt(bag,6); if(ccyLbl) ccyLbl.textContent='BAG'; }
+      const ccy = currentCurrency();
+      const { bag, xrp } = getBalances();
+      if (ccy === 'XRP'){
+        if(balLbl) balLbl.textContent = fmt(xrp, 6);
+        if(ccyLbl) ccyLbl.textContent = 'XRP';
+      } else {
+        if(balLbl) balLbl.textContent = fmt(bag, 6);
+        if(ccyLbl) ccyLbl.textContent = 'BAG';
+      }
     }catch(e){}
   }
 
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:hudRefresh']
-    .forEach(ev=>addEventListener(ev, renderHud));
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+    'bag:hudRefresh'
+  ].forEach(ev => addEventListener(ev, renderHud));
+
   betQtyEl?.addEventListener('input', renderHud);
   curToggle?.addEventListener('change', renderHud);
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
 
-  renderHud(); let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+  renderHud();
+  let tries = 0; 
+  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
@@ -1052,7 +978,7 @@ function settle(override){
 
     if(override==='blackjack'){
       const mult=CFG.mBJ; credit += stake*mult; last('Blackjack 2×'); flash('win');
-      try{ showWin({ message:'BLACKJACK', subtext: winSubtext(mult), duration:5600, sound:true }); }catch{}
+      try{ window.showWin({ message:'BLACKJACK', subtext: winSubtext(mult), duration:5600, sound:true }); }catch{}
       return;
     }
     if(override==='push-bj'){
@@ -1064,7 +990,7 @@ function settle(override){
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
       credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
-      try{ showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext: winSubtext(mult), duration:(mult===CFG.mBJ?5600:4200), sound:true }); }catch{}
+      try{ window.showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext: winSubtext(mult), duration:(mult===CFG.mBJ?5600:4200), sound:true }); }catch{}
     } else if(pv===dv){
       credit += stake*CFG.mPUSH; last('Push'); flash('push');
     } else {
@@ -1118,6 +1044,8 @@ setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
   addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
 })();
 </script>
+
+<script src="/js/bag-overlay.js"></script>
 
 <script>
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
