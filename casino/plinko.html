@@ -44,8 +44,6 @@
   }
 }
 
-
- 
   .game-teaser{padding:10px 16px 60px;background:
     radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
@@ -1232,7 +1230,7 @@
     try{ window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{}
   });
 
-  function stakeUsdEq(){
+function stakeUsdEq(){
     const qty = Math.max(0, parseFloat(betInput?.value||'0'));
     const P=window.__PRICES__||{};
     const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
@@ -1505,11 +1503,12 @@
       const sUsd = Number(window.__PLINKO_LAST_STAKE_USD__||0);
       const gainBag = bagStakeForRound * (mult - 1);
       try{
-        showWin({
+        window.BAGOverlay.showWin({
           message: (mult>=2 ? 'JACKPOT' : 'WIN'),
           subtext: `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${(sUsd||0).toFixed(2)} → $${((sUsd||0)*mult).toFixed(2)}`,
           duration: (mult>=2 ? 5600 : 4200),
-          sound: true
+          sound: true,
+          showImage: true
         });
       }catch{}
     })();
@@ -1638,6 +1637,7 @@
     if (startBtn) startBtn.style.display = 'inline-block';
     if (topUpBtn) topUpBtn.style.display = 'none';
     if (endBtn)   endBtn.style.display   = 'none';
+    if (connectEl) connectEl.style.opacity = '0.9';
   }
 
   const demoSession = {
@@ -1762,88 +1762,8 @@
 })();
 </script>
 
-<!-- === Shared celebration overlay (image placed BELOW the card, not as background) === -->
-<canvas id="win-canvas"></canvas>
-<div id="win-overlay" role="dialog" aria-live="polite" aria-label="Win notification" style="display:none;place-items:center;background:radial-gradient(60% 60% at 50% 50%, rgba(24,160,251,.28), transparent 70%), rgba(10,12,16,.70);position:fixed;inset:0;z-index:2147483647;backdrop-filter:saturate(120%) blur(2px);">
-  <!-- wrapper ensures vertical stacking: card on top, image below -->
-  <div id="win-stack" style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-    <div id="win-card" style="position:relative;text-align:center;padding:24px 32px;border-radius:16px;background:rgba(0,0,0,.35);box-shadow:0 10px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(0,255,200,.06);transform:scale(.9);opacity:0;animation:win-pop .35s cubic-bezier(.2,.9,.2,1) forwards, win-float 1.8s ease-in-out .35s infinite;">
-      <button id="win-close" aria-label="Close" style="position:absolute;top:8px;right:10px;border:0;background:transparent;color:#cfeaff;font:700 20px/1 system-ui;cursor:pointer;padding:6px 8px;opacity:.7;">×</button>
-      <div id="win-text" style="font:900 64px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;letter-spacing:.06em;background:linear-gradient(90deg,#fff,#00ffb2,#fff);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;text-shadow:0 0 18px rgba(0,255,178,.35), 0 0 48px rgba(0,255,178,.25);filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));animation:shine 1.6s linear infinite;white-space:nowrap;">WIN</div>
-      <div id="win-sub" style="margin-top:8px;color:#e7f6ff;opacity:.9;font:600 16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">Nice roll</div>
-    </div>
-
-    <!-- ✅ The win image sits BELOW the overlay card (not a background) -->
-    <picture id="win-graphic" style="width:min(82%,520px);max-width:520px;filter:drop-shadow(0 10px 30px rgba(0,0,0,.35));">
-      <source type="image/webp"
-        srcset="/assets/bag-received-960.webp 960w, /assets/bag-received-1024.webp 1024w"
-        sizes="(min-width:900px) 520px, 82vw">
-      <img
-        src="/assets/bag-received-1024.png"
-        srcset="/assets/bag-received-960.png 960w, /assets/bag-received-1024.png 1024w"
-        sizes="(min-width:900px) 520px, 82vw"
-        alt="$BAG received"
-        loading="eager" decoding="async"
-        style="width:100%;height:auto;border-radius:14px;">
-    </picture>
-  </div>
-</div>
-<style>
-@keyframes win-pop{to{transform:scale(1);opacity:1}}
-@keyframes win-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@keyframes shine{0%{background-position:0% 0}100%{background-position:200% 0}}
-</style>
-<script>
-(function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
-  let rafId=null, particles=[], start=0, dur=2000;
-
-  function size(){ const dpr=Math.min(devicePixelRatio||1,2);
-    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  size(); addEventListener('resize', size);
-
-  function fire(n){
-    particles.length=0;
-    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
-    for(let i=0;i<n;i++){
-      particles.push({x:innerWidth*.5,y:innerHeight*.4,vx:(Math.random()-.5)*6,vy:-(3+Math.random()*5),g:.16,rot:Math.random()*6.28,vr:(Math.random()-.5)*.25,sz:6+Math.random()*10,col:colors[(Math.random()*colors.length)|0],shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')});
-    }
-  }
-  function draw(){ ctx.clearRect(0,0,innerWidth,innerHeight);
-    particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
-      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col; const s=p.sz;
-      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
-      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
-      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
-      ctx.restore();
-    });
-  }
-  function anim(ts){ if(!start) start=ts; draw(); if(ts-start<dur){ rafId=requestAnimationFrame(anim); } else stop(); }
-  function stop(){ cancelAnimationFrame(rafId); ctx.clearRect(0,0,innerWidth,innerHeight); canvas.style.display='none'; }
-  function show(){ overlay.style.display='grid'; }
-  function hide(){ overlay.style.display='none'; stop(); }
-
-  closeBtn.addEventListener('click', hide);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
-  addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ try{ window.__winTimer && clearTimeout(__winTimer);}catch{}; hide(); }});
-
-  window.showWin=function(opts={}){ 
-    const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
-    title.textContent=message; sub.textContent=subtext; show(); canvas.style.display='block'; fire(180);
-    if(sound) try{ window.__bagAudio && window.__bagAudio.chime && window.__bagAudio.chime(); }catch(e){}
-    cancelAnimationFrame(rafId); start=0; dur=2200; rafId=requestAnimationFrame(anim);
-    clearTimeout(window.__winTimer); window.__winTimer=setTimeout(hide, Math.max(1200,duration));
-  };
-})();
-</script>
+<!-- === Shared celebration overlay (aligned with Dice-standard) === -->
+<script src="/js/bag-overlay.js"></script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
