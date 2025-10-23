@@ -341,109 +341,220 @@
   </div>
 </section>
 
-<!-- AUDIO -->
+<!-- ✅ FIXED AUDIO SYSTEM -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
 
+  // 🎯 AUDIO FIX #1: PRE-INIT BUFFER
   function getAC(){
     if (AC && AC.state!=='closed') return AC;
     if (!AudioCtx) return null;
-    AC = new AudioCtx();
+    // PRE-INIT WITH BUFFER FOR OVERLAY COMPATIBILITY
+    AC = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'interactive',
+      sampleRate: 44100
+    });
     MASTER = AC.createGain();
     MASTER.gain.value = .22;
     MASTER.connect(AC.destination);
+    console.log("✅ AUDIO CONTEXT PRE-INIT SUCCESS");
     return AC;
   }
+
+  // 🎯 AUDIO FIX #2: FORCE RESUME HELPER
   async function resume(){
     const ac = getAC();
     if (!ac) return;
-    if (ac.state === 'suspended'){ try{ await ac.resume(); }catch{} }
+    if (ac.state === 'suspended'){ 
+      try{ 
+        await ac.resume(); 
+        console.log("✅ AUDIO RESUMED");
+      }catch(e){ console.warn("Audio resume failed:", e); }
+    }
   }
 
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
-  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  // 🎯 AUDIO FIX #3: RESTART AUDIO AFTER OVERLAY CHANGES
+  window.restartAudio = async function(){
+    await resume();
+    // Force a silent ping to keep context alive
+    ping();
+  };
 
+  // Event listeners with passive for performance
+  addEventListener('pointerdown', ()=>{ 
+    lastTap=Date.now(); 
+    resume(); 
+    ping(); 
+    primeHtmlAudio(); 
+  }, {passive:true});
+  addEventListener('visibilitychange', ()=>{ 
+    if(!document.hidden) resume(); 
+  });
+
+  // 🎯 AUDIO FIX #4: WATCHDOG WITH OVERLAY DETECTION
   if(!watchdog){
-    watchdog = setInterval(()=>{ const ac=getAC(); if(!ac) return;
-      if(Date.now()-lastTap<30000 && ac.state==='suspended') resume();
-    }, 1500);
+    watchdog = setInterval(async ()=>{
+      const ac=getAC(); 
+      if(!ac) return;
+      if(Date.now()-lastTap<30000 && ac.state==='suspended') {
+        await resume();
+      }
+      // Detect overlay changes and restart
+      if (window.BAGOverlay && BAGOverlay.isVisible()) {
+        setTimeout(window.restartAudio, 100);
+      }
+    }, 1000);
   }
 
   function ping(){
     try{
-      const ac=getAC(); if(!ac||ac.state!=='running') return;
+      const ac=getAC(); 
+      if(!ac||ac.state!=='running') return;
       const o=ac.createOscillator(), g=ac.createGain();
-      g.gain.value=.0001; o.connect(g).connect(MASTER);
-      const t=ac.currentTime; o.start(t); o.stop(t+.02);
+      g.gain.value=.0001; 
+      o.connect(g).connect(MASTER);
+      const t=ac.currentTime; 
+      o.start(t); 
+      o.stop(t+.02);
     }catch{}
   }
 
-  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
+  function chime(){ 
+    const ac=getAC(); 
+    if(!ac||ac.state!=='running') return; 
+    const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ 
+      const o=ac.createOscillator(); 
+      o.type='triangle'; 
+      o.frequency.value=f;
+      const g=ac.createGain(); 
+      g.gain.setValueAtTime(.0001,now+i*.02); 
+      g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); 
+      g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); 
+      o.start(now+i*.02); 
+      o.stop(now+i*.02+.34); 
+    }); 
   }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
-    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
-    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27);
-  }
-  window.__bagAudio = { chime, thud, resume };
 
+  function thud(){ 
+    const ac=getAC(); 
+    if(!ac||ac.state!=='running') return;
+    const o=ac.createOscillator(), g=ac.createGain(); 
+    o.type='sine';
+    const t=ac.currentTime; 
+    o.frequency.setValueAtTime(260,t); 
+    o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); 
+    g.gain.linearRampToValueAtTime(.10,t+.02); 
+    g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); 
+    o.start(t); 
+    o.stop(t+.27);
+  }
+
+  window.__bagAudio = { chime, thud, resume: window.restartAudio };
+
+  // 🎯 AUDIO FIX #5: IMPROVED DICE BUFFER LOADING
   let diceBuf=null, diceGain=null, bufLoading=false;
 
   async function loadDiceBuffer(){
     if (diceBuf || bufLoading) return diceBuf;
-    const ac=getAC(); if(!ac) return null;
+    const ac=getAC(); 
+    if(!ac) return null;
     try{
       bufLoading=true;
+      console.log("🔊 Loading dice audio...");
       const res = await fetch('/assets/sounds/diceshakeroll.mp3', {cache:'force-cache'});
       const arr = await res.arrayBuffer();
       diceBuf = await ac.decodeAudioData(arr);
-      if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
-    }catch{} finally{ bufLoading=false; }
+      if (!diceGain){ 
+        diceGain = ac.createGain(); 
+        diceGain.gain.value = 0.95; 
+        diceGain.connect(MASTER); 
+      }
+      console.log("✅ DICE AUDIO LOADED SUCCESSFULLY");
+    }catch(e){ 
+      console.error("❌ DICE AUDIO LOAD FAILED:", e);
+    } finally{ 
+      bufLoading=false; 
+    }
     return diceBuf;
   }
 
-  function playDiceWebAudio(){
-    const ac=getAC(); if(!ac || !diceBuf || ac.state!=='running') return false;
+  // 🎯 AUDIO FIX #6: FORCE PLAY WITH FALLBACK
+  async function playDiceWebAudio(){
+    const ac=getAC(); 
+    if(!ac || !diceBuf || ac.state!=='running') {
+      await resume();
+      return false;
+    }
     try{
       const src = ac.createBufferSource();
       src.buffer = diceBuf;
       src.connect(diceGain || MASTER);
       src.start();
       return true;
-    }catch{ return false; }
+    }catch(e){ 
+      console.warn("WebAudio failed:", e);
+      return false; 
+    }
   }
 
   const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
-  rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
+  rollTag.preload='auto'; 
+  rollTag.crossOrigin='anonymous'; 
+  rollTag.setAttribute('playsinline',''); 
+  rollTag.volume=.95;
 
   function primeHtmlAudio(){
     try{
       rollTag.muted = true;
       const p = rollTag.play();
-      if (p && p.then) p.then(()=>{ rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }).catch(()=>{});
-      else { rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }
+      if (p && p.then) {
+        p.then(()=>{ 
+          rollTag.pause(); 
+          rollTag.currentTime=0; 
+          rollTag.muted=false; 
+        }).catch(()=>{});
+      } else { 
+        rollTag.pause(); 
+        rollTag.currentTime=0; 
+        rollTag.muted=false; 
+      }
     }catch{}
   }
 
-  async function roll(){
-    try{ await resume(); }catch{}
-    await loadDiceBuffer();
-    if (!playDiceWebAudio()){
-      try{
-        rollTag.pause();
-        rollTag.currentTime = 0;
-        rollTag.play().catch(()=>{});
+  // 🎯 AUDIO FIX #7: MASTER ROLL FUNCTION
+  window.__bagDiceAudio = { 
+    roll: async function(){
+      try{ 
+        await resume(); 
       }catch{}
+      await loadDiceBuffer();
+      const webSuccess = await playDiceWebAudio();
+      if (!webSuccess){
+        try{
+          rollTag.pause();
+          rollTag.currentTime = 0;
+          rollTag.play().catch(()=>{});
+        }catch{}
+      }
     }
-  }
+  };
 
-  window.__bagDiceAudio = { roll };
+  // 🎯 AUDIO FIX #8: AUTO-START ON LOAD
+  window.addEventListener('load', async ()=>{
+    await resume();
+    await loadDiceBuffer();
+    console.log("🎯 BAG DICE AUDIO SYSTEM READY");
+  });
+
+  // 🎯 AUDIO FIX #9: RESTART ON OVERLAY EVENTS
+  window.addEventListener('bag:overlayShow', window.restartAudio);
+  window.addEventListener('bag:overlayHide', window.restartAudio);
 })();
 </script>
 
@@ -864,8 +975,15 @@
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
   async function rollCssDice(a,b){
-    try{ window.__bagDiceAudio && __bagDiceAudio.roll(); }catch{}
-    try{ window.__bagAudio && __bagAudio.resume && __bagAudio.resume(); }catch{}
+    // 🎯 AUDIO FIX #10: FORCE AUDIO BEFORE ANIMATION
+    try{ 
+      if (window.__bagDiceAudio) await window.__bagDiceAudio.roll(); 
+    }catch(e){ console.warn("Audio roll failed:", e); }
+    
+    try{ 
+      if (window.__bagAudio && window.__bagAudio.resume) await window.__bagAudio.resume(); 
+    }catch{}
+    
     const A=document.getElementById('dieA'), B=document.getElementById('dieB');
     A.classList.add('tumblingA'); B.classList.add('tumblingB');
     await new Promise(r=>setTimeout(r, 1200));
@@ -1041,6 +1159,9 @@
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
       }
     }
+
+    // 🎯 AUDIO FIX #11: RESTART AFTER EVERY ROLL (OVERLAY SAFE)
+    setTimeout(window.restartAudio, 100);
 
     rollBtn.disabled=false;
   });
