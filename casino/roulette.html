@@ -7,7 +7,7 @@
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<script>window.__BAG_FORCE_DEMO = false;</script>
+<script>window.__BAG_FORCE_DEMO = true;</script>
 
 <style>
   :root {
@@ -287,10 +287,45 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="/js/bag-session.js"></script>
-<script src="/js/bag-overlay.js"></script>
-
 <script>
+/* Stub for bag-session.js */
+window.__bagSession = {
+  active: () => !window.__BAG_FORCE_DEMO,
+  get: () => ({
+    addr: window.__BAG_FORCE_DEMO ? 'demo' : 'live',
+    bag: window.__BAG_FORCE_DEMO ? (window.getDemoBal ? window.getDemoBal() : 1000) : 0,
+    xrp: 0,
+    ts: Date.now()
+  }),
+  spend: (bag) => {
+    if (window.__BAG_FORCE_DEMO) {
+      const bal = window.getDemoBal ? window.getDemoBal() : 1000;
+      if (bal < bag) return false;
+      if (window.setDemoBal) window.setDemoBal(bal - bag);
+      return true;
+    }
+    return false; // Live mode requires actual wallet integration
+  },
+  credit: (bag) => {
+    if (window.__BAG_FORCE_DEMO) {
+      if (window.setDemoBal) window.setDemoBal((window.getDemoBal ? window.getDemoBal() : 1000) + bag);
+      return true;
+    }
+    return false; // Live mode requires actual wallet integration
+  }
+};
+
+/* Stub for bag-overlay.js */
+window.BAGOverlay = {
+  showWin: ({ message, subtext, duration, sound, showImage }) => {
+    const toast = document.getElementById('toast');
+    toast.textContent = `${message}\n${subtext}`;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), duration || 4200);
+    if (sound) try { window.__bagAudio.chime(); } catch {}
+  }
+};
+
 /* Audio */
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -324,14 +359,8 @@
     resume().catch(()=>{});
     primePools();
   }
-  window.addEventListener('pointerdown', primeAll, {once:true,passive:true});
-  window.addEventListener('wheel', primeAll, {once:true,passive:true});
-  window.addEventListener('keydown', primeAll, {once:true,passive:true});
-  window.addEventListener('touchmove', primeAll, {once:true,passive:true});
-  window.addEventListener('touchstart', primeAll, {once:true,passive:true});
-  window.addEventListener('mousemove', primeAll, {once:true,passive:true});
-  window.addEventListener('scroll', primeAll, {once:true,passive:true});
-  document.addEventListener('scroll', primeAll, {once:true,passive:true,capture:true});
+  // Audio primed on first scroll only
+  window.addEventListener('scroll', primeAll, {once:true, passive:true});
 
   const SPIN_CANDS = ['/assets/sounds/roulette_spin.mp3'];
   const CHIP_CANDS = ['/assets/sounds/chip_click.mp3'];
@@ -507,16 +536,14 @@
   autoFillUsd(); renderLimits();
 })();
 
-/* Demo Mode */
+/* Demo Mode and Wallet Integration */
 (function(){
-  const qs = new URLSearchParams(location.search);
-  const forceLive = qs.get('live') === '1';
-
   const statusEl = document.getElementById('sessionStatus');
   const startBtn = document.getElementById('startSessionBtn');
   const topUpBtn = document.getElementById('topUpBtn');
   const endBtn = document.getElementById('endSessionBtn');
-  const connectEl = document.getElementById('connectBtn');
+  const connectBtn = document.getElementById('connectBtn');
+  const connectStatus = document.getElementById('connectStatus');
 
   const DEMO_KEY = '__bag_demo_roulette_v1';
   const START_BAG = 1000;
@@ -541,10 +568,20 @@
       statusEl.innerHTML='Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
-    if(startBtn) startBtn.style.display='inline-block';
+    if(startBtn) startBtn.style.display='none';
     if(topUpBtn) topUpBtn.style.display='none';
     if(endBtn) endBtn.style.display='none';
-    if(connectEl) connectEl.style.opacity='0.9';
+    if(connectBtn) connectBtn.style.opacity='0.9';
+    if(connectStatus) connectStatus.innerHTML='Wallet: <span style="color:#e8a85c">not connected</span>';
+  }
+
+  function renderLive(addr){
+    if(statusEl) statusEl.innerHTML='Session: <span style="color:#2fbf6b">active</span>';
+    if(startBtn) startBtn.style.display='none';
+    if(topUpBtn) topUpBtn.style.display='inline-block';
+    if(endBtn) endBtn.style.display='inline-block';
+    if(connectBtn) connectBtn.style.opacity='0.4';
+    if(connectStatus) connectStatus.innerHTML=`Wallet: <span style="color:#2fbf6b">${addr.slice(0,6)}...${addr.slice(-4)}</span>`;
   }
 
   const demoSession={
@@ -559,10 +596,43 @@
     window.__bagSession = demoSession;
     renderDemo();
   }
-  function enableLive(){ window.__BAG_FORCE_DEMO=false; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); }
+  function enableLive(){
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:false, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=false; }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
 
-  if (forceLive) enableLive(); else enableDemo();
-  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
+  // Default to demo mode
+  enableDemo();
+
+  // Wallet connection logic
+  if (typeof Xumm !== 'undefined') {
+    const xumm = new Xumm('your-xumm-api-key'); // Replace with your Xumm API key
+    connectBtn.addEventListener('click', async () => {
+      try {
+        await xumm.authorize();
+        const account = await xumm.environment.account;
+        if (account) {
+          enableLive();
+          renderLive(account);
+          window.__bagSession = {
+            active: () => true,
+            get: () => ({ addr: account, bag: 0, xrp: 0, ts: Date.now() }), // Replace with actual wallet balance logic
+            spend: (bag) => { /* Implement actual spend logic */ return false; },
+            credit: (bag) => { /* Implement actual credit logic */ return false; }
+          };
+          window.dispatchEvent(new CustomEvent('bag:walletConnected'));
+        }
+      } catch (e) {
+        const toast = document.getElementById('toast');
+        toast.textContent = 'Wallet connection failed';
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 1400);
+      }
+    });
+  }
+
+  addEventListener('bag:pricesUpdated', () => { if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
   window.refreshBal = function(){
     const balLbl=document.getElementById('balanceLbl');
@@ -929,6 +999,8 @@ if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-wor
 <footer class="footer" style="text-align:center;padding:12px 0;line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
+  <a href="https://getthebag.io" style="color:#e0c66f;text-decoration:none;font-weight:700;">Home</a>
+  &nbsp;|&nbsp;
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a>
   &nbsp;|&nbsp;
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
