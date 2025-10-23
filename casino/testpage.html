@@ -172,6 +172,7 @@
 }
 
 
+
   /* --- Tiny HUD --- */
   .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
@@ -386,52 +387,114 @@
   <source type="image/png"
           srcset="/assets/bag-received-1024.png 1024w, /assets/bag-received-960.png 960w"
           sizes="(min-width:900px) 520px, 82vw">
-  <img
-    src="/assets/bag-received-1024.png"
-    alt="$BAG received"
-    decoding="async"
-    loading="eager"
-    style="width:100%;height:auto">
+  <img src="/assets/bag-received-1024.png" alt="$BAG received" decoding="async" loading="eager"
+       style="width:100%;height:auto">
 </picture>
 <!-- /BAG WIN IMAGE -->
 
 
-<!-- Celebration overlay logic — replace the single getElementById line -->
+
 <script>
 (function(){
-  const overlay=document.getElementById('win-overlay');
-  const canvas=document.getElementById('win-canvas');
-  const ctx=canvas.getContext('2d');
-  const closeBtn=document.getElementById('win-close');
-  const sub=document.getElementById('win-sub');
-  const title=document.getElementById('win-text');
+  const overlay = document.getElementById('win-overlay');
+  const canvas  = document.getElementById('win-canvas');
+  const ctx     = canvas && canvas.getContext ? canvas.getContext('2d') : null;
+  const closeBtn= document.getElementById('win-close');
+  const sub     = document.getElementById('win-sub');
+  const title   = document.getElementById('win-text');
 
-  // ✅ NEW: support either #win-bag (your original) or #win-graphic (Plinko-exact snippet)
-  let bagImg = document.getElementById('win-bag') || document.getElementById('win-graphic');
+  let rafId=null, particles=[], start=0, dur=2200;
+  let closing=false;
 
-  let rafId=null, particles=[], start=0, dur=2000;
+  function size(){
+    if (!canvas || !ctx) return;
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
+    canvas.style.width=innerWidth+'px'; canvas.style.height=innerHeight+'px';
+    try{ ctx.setTransform(dpr,0,0,dpr,0,0); }catch{}
+  }
+  size(); addEventListener('resize', size);
 
-  /* ...keep the rest of this file unchanged until window.showWin... */
-
-  window.showWin=function(opts={}){
-    const { message='WIN', subtext='Nice roll', sound=true, duration=4000 }=opts;
-    title.textContent=message; 
-    sub.textContent=subtext; 
-    overlay.style.display='grid';
-    canvas.style.display='block';
-    // ✅ re-query in case overlay was re-rendered
-    bagImg = document.getElementById('win-bag') || document.getElementById('win-graphic');
-
-    // 🔁 robust match (allows WIN!, Win 🎉, etc.)
-    const shouldShow = /\b(win|jackpot|blackjack)\b/i.test(String(message));
-    if (bagImg){
-      bagImg.style.display = shouldShow ? 'block' : 'none';
+  function fire(n){
+    particles.length=0;
+    const colors=['#ffffff','#00ffb2','#18a0fb','#ffd166','#f72585'];
+    for(let i=0;i<n;i++){
+      particles.push({
+        x:innerWidth*.5,y:innerHeight*.4,
+        vx:(Math.random()-.5)*6, vy:-(3+Math.random()*5), g:.16,
+        rot:Math.random()*6.28, vr:(Math.random()-.5)*.25,
+        sz:6+Math.random()*10, col:colors[(Math.random()*colors.length)|0],
+        shape:Math.random()<.4?'circle':(Math.random()<.5?'square':'tri')
+      });
     }
+  }
+  function draw(){
+    if (!ctx) return;
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    for(const p of particles){
+      p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.rot+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.col;
+      const s=p.sz;
+      if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,s*0.6,0,Math.PI*2); ctx.fill(); }
+      else if(p.shape==='square'){ ctx.fillRect(-s/2,-s/2,s,s); }
+      else { ctx.beginPath(); ctx.moveTo(0,-s/1.2); ctx.lineTo(s/1.2,s/1.2); ctx.lineTo(-s/1.2,s/1.2); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+  }
+  function anim(ts){
+    if(!start) start=ts;
+    draw();
+    if(ts-start<dur && !closing){ rafId=requestAnimationFrame(anim); }
+    else { stop(); }
+  }
+  function stop(){
+    try{ cancelAnimationFrame(rafId); }catch{}
+    if (ctx) ctx.clearRect(0,0,innerWidth,innerHeight);
+    if (canvas) canvas.style.display='none';
+  }
+  function show(){ if(overlay){ overlay.style.display='grid'; } }
+  function hide(){
+    closing=true;
+    stop();
+    if(overlay) overlay.style.display='none';
+    closing=false;
+  }
 
-    /* confetti logic unchanged... */
+  closeBtn && closeBtn.addEventListener('click', hide);
+  overlay && overlay.addEventListener('click', e=>{ if(e.target===overlay) hide(); });
+  addEventListener('keydown', e=>{ if(e.key==='Escape'){ clearTimeout(window.__winTimer); hide(); }});
+
+  // Public API
+  window.showWin = function(opts={}){
+    const { message='WIN', subtext='Nice roll', sound=true, duration=4200 } = opts;
+
+    // Re-grab the image every time (supports either id)
+    const bagImg = document.getElementById('win-bag') || document.getElementById('win-graphic');
+
+    if (title) title.textContent = String(message||'');
+    if (sub)   sub.textContent   = String(subtext||'');
+
+    // Display overlay
+    show();
+    if (canvas){ canvas.style.display='block'; }
+
+    // Toggle image visibility for WIN/JACKPOT/BLACKJACK (case-insensitive, punctuation-safe)
+    const shouldShow = /\b(win|jackpot|blackjack)\b/i.test(String(message||''));
+    if (bagImg){ bagImg.style.display = shouldShow ? 'block' : 'none'; }
+
+    // Confetti + optional sound
+    fire(180);
+    if (sound){ try{ window.__bagAudio && window.__bagAudio.chime && window.__bagAudio.chime(); }catch{} }
+
+    try{ cancelAnimationFrame(rafId); }catch{}
+    start=0; dur=2200; rafId=requestAnimationFrame(anim);
+
+    clearTimeout(window.__winTimer);
+    window.__winTimer = setTimeout(hide, Math.max(1200, Number(duration)||0 || 4200));
   };
 })();
 </script>
+
 
 
 <!-- AUDIO -->
