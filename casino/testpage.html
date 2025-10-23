@@ -3,585 +3,1353 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>$BAG Casino</title>
+<title>BAG Roulette</title>
 
-<!-- Preload audio to reduce first-tap latency -->
-<link rel="preload" href="/assets/sounds/casino-ambiance.mp3" as="audio" />
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<script>window.__BAG_FORCE_DEMO = true;</script>
 
 <style>
   *{box-sizing:border-box}
   :root{
-    --gold:#ffd700;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;
-    --muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;
-    --line:#173524;--shadow:rgba(0,0,0,.35);
-    --content:1200px;       /* desktop line-length */
-    --backbar-h:56px;       /* sticky header height for offsets */
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --red:#e25b5b;
+    --roulette-red:#e25b5b;--roulette-black:#0a1e15;--roulette-green:#2fbf6b;
+    --ball-r:160px;--pocket-h:26px;--marker-origin:200px;--wheel-font:14px;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);
-    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
   img{display:block;max-width:100%;height:auto}
+  button,input{font-size:16px}
 
-  /* Back */
-  .backbar{position:sticky;top:0;z-index:1000;background:linear-gradient(180deg,#0f1f17,#0e271c);
-    border-bottom:1px solid #1b4a2f;box-shadow:0 4px 18px rgba(0,0,0,.35)}
-  .backlink{display:inline-block;margin:10px 12px;padding:10px 14px;border-radius:12px;
-    color:#08130d;text-decoration:none;font-weight:900;letter-spacing:.2px;
-    background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
-    box-shadow:0 3px 0 #b08a19;transition:transform .06s ease,box-shadow .2 ease,filter .2s ease}
-  .backlink:hover{filter:brightness(1.05)}
-  .backlink:active{transform:translateY(1px);box-shadow:0 2px 0 #9a7315}
-
-  /* Center the whole page on wide screens */
-  .wrap{max-width:var(--content);margin:0 auto;padding:18px 16px 32px}
-  @media (min-width:1024px){.wrap{padding:24px 24px 40px}}
-
-  .top{text-align:center;padding:18px 0 6px}
-  .tag{color:var(--muted);font-weight:600;letter-spacing:.04em}
-  .tag.gold{color:var(--gold);}
-  .tag.gold strong{color:inherit;}
-
-  /* Hero */
-  .casino-hero{padding:10px 0 0}
-  .casino-hero .poster{margin:0 auto 18px;border-radius:14px;box-shadow:0 8px 28px var(--shadow)}
-  @media (min-width:900px){.casino-hero .poster{max-width:1000px}}
-  @media (max-width:899px){.casino-hero .poster{width:100%;max-width:none;border-radius:0;box-shadow:none}}
-
-  /* Under Construction (centered) */
-  .under-construction{
-    max-width:900px;margin:0 auto 16px;text-align:center;color:#e9efe9;
-    padding:12px 14px;border:1px dashed #2b6a48;border-radius:12px;
-    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
-    box-shadow:0 6px 20px var(--shadow);
+  .back-casino{
+    position:fixed;top:18px;left:18px;z-index:1000;
+    background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
+    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
+    box-shadow:0 4px 0 #b08a19;transition:all .15s ease
   }
-  .under-construction p{margin:6px 0}
+  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 
-  /* ===== Player’s Card Section ===== */
-  .pcard{margin:24px 0 12px;padding:16px;border:1px solid var(--line);
-    border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--panel2));
-    box-shadow:0 8px 24px var(--shadow)}
-  .pcard h2{margin:0 0 8px;font-size:1.45rem}
-  .pcard-grid{display:grid;gap:16px;align-items:center}
-  @media (min-width:860px){.pcard-grid{grid-template-columns:1.1fr 1fr}}
-  .pcard-media{background:#0b0f0c;border:1px solid #1c3426;border-radius:14px;padding:8px}
-  .pcard-copy p{margin:.4rem 0;color:#dfe6df}
-  .pcard-copy .lead{color:#ffd700;font-weight:700}
-  .pcard-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-  .pcard .watchlist{background:#173524;color:#dfe9e2;border:1px solid #2b6a48}
-
-  /* Divider line (reusable) */
-  .section-divider{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;
-    margin:36px auto 28px;font-size:1rem;opacity:.85;position:relative}
-  .section-divider::before,.section-divider::after{
-    content:"";display:inline-block;vertical-align:middle;width:60px;height:2px;
-    background:linear-gradient(90deg,transparent,var(--gold),transparent);
-    margin:0 12px;opacity:.7}
-
-  /* THE CAGE (cashier) */
-  .cage{margin:0 0 24px}
-  .cage-panel{
-    display:flex;gap:16px;align-items:center;justify-content:space-between;
-    padding:14px 16px;border-radius:16px;
-    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
-    border:1px solid var(--line);box-shadow:0 8px 24px var(--shadow)
+  .game-header{text-align:center;padding:36px 10px 14px}
+  .game-header img.hero-img{margin-bottom:10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+  @media (min-width:900px){
+    .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
   }
-  .cage-title{font-weight:900;letter-spacing:.06em;color:var(--gold)}
-  .cage-meta{margin:4px 0 0;color:#cfd6cf;font-size:.95rem;max-width:60ch}
-  .cage-actions{display:flex;gap:10px;flex-wrap:wrap}
-  @media (max-width:720px){.cage-panel{flex-direction:column;align-items:flex-start}}
-  @media (min-width:1024px){.cage-actions{justify-content:flex-end}}
 
-  /* ENTER THE FLOOR (original size) */
-  .vault-break{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;
-    margin:48px auto 24px;font-size:1rem;opacity:.85;position:relative}
-  .vault-break::before,.vault-break::after{
-    content:"";display:inline-block;vertical-align:middle;width:60px;height:2px;
-    background:linear-gradient(90deg,transparent,var(--gold),transparent);
-    margin:0 12px;opacity:.7}
+  .game-teaser{padding:10px 16px 60px;background:
+    radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+    border-top:1px solid #131313;border-bottom:1px solid #131313}
+  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
+  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
 
-  /* Games */
-  .grid{display:grid;gap:18px;margin-top:16px}
-  @media (min-width:720px){.grid{grid-template-columns:repeat(3,1fr)}}
-  @media (max-width:719px){.grid{grid-template-columns:1fr}}
+  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
+  .mock{padding:16px}
 
-  .card{position:relative;background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
-    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);overflow:hidden}
-  .card-img{aspect-ratio:16/9;width:100%;object-fit:cover;background:#0b0b0c}
-  .card-body{padding:14px 14px 16px}
-  .card h3{margin:0 0 6px;font-size:clamp(1.05rem,1.2vw,1.2rem)}
-  .btn{display:inline-block;padding:10px 16px;font-weight:800;text-decoration:none;border-radius:12px;
+  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+  .stake-box{padding:14px}
+  .stack{display:grid;gap:10px}
+  .choice{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+  .chip input{accent-color:#2fbf6b}
+  .mono{font-variant-numeric:tabular-nums}
+  .micro{font-size:.85rem;color:#aeb7af}
+  .muted{color:#cfd6cf}
+  .divider{height:1px;background:#123221;margin:10px 0}
+
+  .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+  .payout-grid{display:grid;gap:4px}
+  .payout-grid .row{display:flex;justify-content:space-between}
+  .payout-grid .lab{color:#cfd6cf}
+  .payout-grid .val{font-variant-numeric:tabular-nums}
+
+  .roulette-wrap{display:grid;gap:12px}
+  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px}
+  .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
+  .wheelBox { position: relative; aspect-ratio: 1; border-radius: 14px; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.08), transparent 55%); overflow: hidden; }
+  .wood {
+    position: absolute; inset: 6% 6% 6% 6%; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), rgba(0,0,0,.35) 70%), conic-gradient(from 0deg, #744923, #5e3a1b 25%, #744923 50%, #5e3a1b 75%, #744923 100%);
+    box-shadow: inset 0 0 0 12px #b8844f, inset 0 0 0 20px #8d5b2e;
+  }
+  .pockets { position: absolute; inset: 10% 10% 10% 10%; border-radius: 50%; transform: rotate(0deg); transition: transform 4.2s cubic-bezier(.15,.9,.15,1); }
+  .pocket {
+    position: absolute; left: 50%; top: 50%; transform-origin: 0% 0%; width: 46%; height: var(--pocket-h); margin-top: calc(var(--pocket-h) * -0.5);
+    border-radius: 4px 999px 999px 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px;
+    font-weight: 900; font-size: var(--wheel-font); color: #fff; border: 1px solid #0007; text-shadow: 0 1px 2px #000c; user-select: none;
+  }
+  .pocket.green { background: var(--roulette-green); }
+  .pocket.red { background: var(--roulette-red); }
+  .pocket.black { background: var(--roulette-black); }
+  .spindle { position: absolute; inset: 27% 27% 27% 27%; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #d2a253, #8b612d 70%); box-shadow: 0 8px 16px var(--shadow); }
+  .ball {
+    position: absolute; width: 18px; height: 18px; background: #eee; border-radius: 50%; box-shadow: 0 1px 4px #000a;
+    left: 50%; top: 50%; margin: -9px; transform-origin: 0 0; transform: rotate(0deg) translate(var(--ball-r));
+    transition: transform 4.2s cubic-bezier(.15,.9,.15,1);
+  }
+  .marker { position: absolute; left: 50%; top: 50%; width: 3px; height: 22px; background: #d2a253; transform-origin: 50% var(--marker-origin); border-radius: 2px; }
+
+  .spin-row{display:flex;justify-content:center}
+  .btn-spin{
+    width:min(360px,90%);padding:16px 22px;margin-top:2px;
+    font-size:1.15rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;border:0;border-radius:14px;
     color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
-    box-shadow:0 4px 0 #b08a19;transition:transform .06s ease, filter .2s ease, box-shadow .2s ease}
-  .btn:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
-  .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
-  .btn.disabled, .btn[aria-disabled="true"]{opacity:.6;cursor:not-allowed}
-
-  /* Compliance */
-  .comp-wrap{margin-top:24px;border-top:1px solid var(--line);padding:16px 0;color:var(--muted);font-size:14px;line-height:1.5;
-    max-width:900px;margin-left:auto;margin-right:auto;text-align:center;} /* centered */
-  .comp-grid{display:grid;gap:12px;justify-items:center;} /* centered */
-  .comp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center;} /* centered */
-  .comp-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--panel2);color:var(--fg);font-size:13px}
-  .comp-pill small{opacity:.8}
-  .comp-links{display:flex;gap:14px;justify-content:center;} /* centered */
-  .comp-links a{color:var(--gold);text-decoration:none}
-  .comp-links a:hover{text-decoration:underline}
-  .comp-note{font-size:12px;color:var(--muted)}
-  .comp-rtp{padding:12px;border-radius:12px;background:var(--panel)}
-  .badge-21{background:#e25b5b;color:#111;padding:2px 8px;border-radius:999px;font-weight:700}
-  .comp-disclaimer{margin-top:8px;font-size:12px;color:var(--muted)}
-
-  /* Floating sound toggle (upper-right) */
-  #soundToggle{
-    position:fixed;top:10px;right:12px;z-index:2147483647;
-    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
-    border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
-    color:var(--gold);font-size:1.2rem;cursor:pointer;opacity:.9;
-    transition:opacity .2s ease, transform .12s ease;
+    box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease; cursor:pointer;
   }
-  #soundToggle:hover{opacity:1;transform:scale(1.06)}
-  #soundToggle:active{transform:scale(.98)}
+  .btn-spin:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn-spin:disabled{opacity:.65;cursor:not-allowed}
 
-  .foot{color:#aab3ab;text-align:center;margin:26px 0 8px;font-size:.9rem}
-  .foot a{color:#e0c66f;text-decoration:none;font-weight:700}
+  .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
+  .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
+
+  /* Status dot colors */
+  #liveDot{margin-right:6px}
+  .ok{color:#2fbf6b}
+  .warn{color:#e8a85c}
+  .err{color:#e25b5b}
+
+  /* BAG "pill" */
+  .tile{
+    display:inline-block;
+    line-height:1;
+    font-weight:900;
+    letter-spacing:.06em;
+  }
+  .tile--bar{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:8px 16px;
+    background:#0b0b0b;
+    color:#fff;
+    border:2px solid #1e1e1e;
+    border-radius:999px;
+    font-size:20px;
+    white-space:nowrap;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      0 2px 6px rgba(0,0,0,.35);
+    margin:0;
+    max-width:100%;
+  }
+  .cell > .tile--bar{ justify-self:center; align-self:center; }
+
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+  .board { display: grid; gap: 6px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .bet-chip {
+    width: 40px; height: 40px; border-radius: 50%; border: 2px solid #d8b800; background: radial-gradient(circle, #ffe688, #ffd700);
+    color: #1b1500; font-weight: 900; display: grid; place-items: center; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,.35);
+  }
+  .bet-chip.active { outline: 2px solid #fff; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  @media (min-width: 760px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+  .cell {
+    background: #0b1f16; border: 1px solid #1b3b2c; border-radius: 10px; padding: 8px; min-height: 46px;
+    display: grid; place-items: center; font-weight: 800; cursor: pointer; user-select: none; position: relative;
+  }
+  .cell:hover { background: #0e2a1c; border-color: #2b6a48; }
+  .cell[data-kind="n"].red { color: #ffb3b3; }
+  .cell[data-kind="n"].black { color: #ddd; }
+  .cell[data-kind="n"].green { color: #bff3c8; }
+  .badge { position: absolute; bottom: 4px; right: 6px; background: #0e2a1c; border: 1px solid #204a32; border-radius: 6px; padding: 2px 6px; font-size: 11px; color: #ddefe5; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #0b1b13; border: 1px solid #173524; color: #e7efe9;
+    padding: 8px 12px; border-radius: 10px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; z-index: 1000;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .win { color: #2fbf6b; font-weight: 900; }
+  .lose { color: #e25b5b; font-weight: 900; }
+
+  .preset-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .preset-chip {
+    appearance: none; border: 1px solid var(--green-600); background: var(--green); color: #ffffff; border-radius: 999px;
+    padding: 8px 12px; font-weight: 900; letter-spacing: .2px; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12); transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .preset-chip:hover { filter: brightness(1.03); }
+  .preset-chip:active { transform: translateY(1px); box-shadow: 0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1); }
+  .preset-chip:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+  .preset-chip.active { box-shadow: 0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25); }
+
+  .btn {
+    padding: 10px 14px; font-weight: 800; border: 0; border-radius: 12px; color: #08130d;
+    background: linear-gradient(180deg, #ffe175 0%, #f5c94c 100%); box-shadow: 0 4px 0 #b08a19; cursor: pointer;
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .btn:hover { filter: brightness(1.05); box-shadow: 0 4px 0 #b08a19, 0 14px 28px rgba(255,225,117,.22); }
+  .btn:active { transform: translateY(1px); box-shadow: 0 3px 0 #9a7315; }
+  .btn:disabled { opacity: .65; cursor: not-allowed; }
+  .btn.alt { background: #15261c; color: #dfe9e2; border: 1px solid #2b6a48; box-shadow: 0 4px 0 #1b3b2c; }
+  .btn.alt:hover { box-shadow: 0 4px 0 #1b3b2c, 0 14px 28px rgba(47,191,107,.18); }
+  .btn.alt:active { box-shadow: 0 3px 0 #1b3b2c; }
+
+  .pill {
+    background: #0a1e15; border: 1px solid #244330; border-radius: 999px; padding: 6px 10px;
+    font-size: 12px; color: #cfe6d8; font-weight: 600;
+  }
+  .pill b { font-weight: 800; }
+  .hudbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
 </style>
 
-<!-- Desktop layout cap -->
-<style id="casino-pc-fixes">
-  @media (min-width: 1024px){
-    .grid{
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      max-width: 1040px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    .card{
-      max-width: 340px;
-      margin: 0 auto;
-    }
-  }
-</style>
+<script src="/js/bag-overlay.js"></script>
+ <script src="/js/bag-session.js"></script>
 
-<!-- Mobile overrides -->
-<style id="casino-mobile-fixes">
-  @media (max-width: 719px){
-    .wrap{ padding-left:12px; padding-right:12px; }
-    .grid{ grid-template-columns: 1fr !important; gap:14px; max-width:none; margin-left:0; margin-right:0; }
-    .card{ max-width:none !important; width:100%; margin:0; }
-    .card-img{ width:100%; aspect-ratio:16/9; }
-    .casino-hero .poster{ width:100%; max-width:100%; border-radius:0; box-shadow:none; }
-    html, body { overflow-x: hidden; }
-  }
-</style>
-
-<!-- ===== Player’s Card Modal styles ===== -->
-<style>
-  .gold{color:var(--gold)}
-  .muted{color:var(--muted)}
-  .bag-btn,.bag-cta,.bag-outline{
-    font:600 16px/1.1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    padding:.9rem 1.1rem; border-radius:10px; cursor:pointer; text-decoration:none; display:inline-block;
-  }
-  .bag-btn{background:var(--gold); color:#111; border:none}
-  .bag-cta{background:var(--gold); color:#111}
-  .bag-outline{background:transparent; color:var(--fg); border:1px solid var(--muted)}
-  .bag-modal{position:fixed; inset:0; display:none; z-index:9999}
-  .bag-modal[aria-hidden="false"]{display:block}
-  .bag-modal__backdrop{position:absolute; inset:0; background:rgba(0,0,0,.65)}
-  .bag-modal__dialog{
-    position:relative; margin:4vh auto 0; max-width:720px; background:linear-gradient(180deg,var(--panel),var(--panel2));
-    color:var(--fg); border:1px solid #273a2e; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.6); padding:1rem 1rem 1.25rem;
-  }
-  .bag-modal__header h2{margin:.25rem 0 .25rem; font-size:1.6rem}
-  .bag-modal__close{
-    position:absolute; top:.35rem; right:.6rem; width:36px; height:36px; border-radius:8px; border:1px solid #243428;
-    background:#0f1f16; color:var(--fg); cursor:pointer; font-size:22px; line-height:32px;
-  }
-  .bag-steps{margin:1rem 0; padding-left:1.2rem}
-  .bag-steps > li{margin:.6rem 0}
-  .bag-steps ul{margin:.35rem 0 .25rem 0; padding-left:1rem}
-  .bag-perks{margin:1.1rem 0 .75rem; padding:.9rem; border:1px dashed #2a3c30; border-radius:10px; background:rgba(32,58,44,.25)}
-  .bag-perks h3{margin:.1rem 0 .4rem; color:var(--gold); font-size:1.05rem}
-  .bag-modal__footer{display:flex; gap:.6rem; justify-content:flex-end; margin-top:.75rem}
-  .footnote{margin:.75rem 0 0}
-  @media (max-width:520px){
-    .bag-modal__dialog{margin:2vh .75rem 0; padding:.8rem}
-    .bag-modal__footer{flex-direction:column; align-items:stretch}
-    .bag-cta,.bag-outline,.bag-btn{width:100%}
-  }
-</style>
-
-<script src="/js/bag-session.js" defer></script>
 </head>
+
 <body>
 
-<nav class="backbar" role="navigation" aria-label="Back">
-  <a class="backlink" href="/" aria-label="Back to $BAG">⬅ Back to $BAG</a>
-</nav>
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
-<!-- 🔊 Floating speaker -->
-<button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
-<audio id="casinoAmbience" src="/assets/sounds/casino-ambiance.mp3" loop preload="auto" playsinline></audio>
+<section class="game-header">
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/bag-roulette-960.webp 960w, /assets/bag-roulette-1024.webp 1024w"
+            sizes="(min-width:900px) 420px, 70vw">
+    <img
+      class="hero-img"
+      src="/assets/bag-roulette-1024.png"
+      srcset="/assets/bag-roulette-960.png 960w, /assets/bag-roulette-1024.png 1024w"
+      sizes="(min-width:900px) 420px, 70vw"
+      alt="BAG Roulette"
+      loading="lazy" decoding="async">
+  </picture>
+  <h2>🎰 $BAG ROULETTE</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">
+    💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+  </p>
+</section>
 
-<div class="wrap">
-  <div class="top">
-    <div style="font-size:1.6rem;font-weight:900;letter-spacing:.03em">💼 $BAG CASINO</div>
-    <div class="tag">Utility on Chain. Culture on Brand.</div>
-    <div class="tag gold" style="margin-top:6px">
-      Bet in $XRP or <strong>$BAG</strong> on all games. $XRP bets auto-convert at the live rate; payouts are in <strong>$BAG</strong>.
-    </div>
-  </div>
+<section class="game-teaser" aria-labelledby="game-teaser-title">
+  <div class="game-wrap">
 
-  <!-- HERO -->
-  <section class="casino-hero" aria-label="$BAG Casino">
-    <picture>
-      <source type="image/webp"
-              srcset="/assets/casino-floor-960.webp 960w, /assets/casino-floor-1024.webp 1024w"
-              sizes="(min-width:900px) 1000px, 100vw">
-      <img class="poster"
-           src="/assets/casino-floor-1024.png"
-           srcset="/assets/casino-floor-960.png 960w, /assets/casino-floor-1024.png 1024w"
-           sizes="(min-width:900px) 1000px, 100vw"
-           alt="$BAG Casino Entrance" width="1024" height="576" decoding="async" loading="lazy">
-    </picture>
-  </section>
-
-  <!-- 🚧 Under Construction -->
-  <div class="under-construction" role="status" aria-live="polite">
-    <p>🚧 <strong>Pardon the Dust — We’re Building the BAG</strong></p>
-    <p>The tables are being polished. The dice are loading.</p>
-    <p>The vault’s wiring in progress — you’re early to the floor.</p>
-    <p>🎰 <strong>$BAG Casino coming online piece by piece.</strong></p>
-  </div>
-
-  <!-- 🪪 PLAYER’S CARD (moved above THE CAGE) -->
-  <section class="pcard" aria-label="$BAG Player’s Card">
-    <h2>💳 <em>$BAG Player’s Card — Loyalty Has Perks</em></h2>
-    <div class="pcard-grid">
-      <div class="pcard-media">
-        <picture>
-          <source type="image/webp"
-                  srcset="/assets/bag-players-card-960.webp 960w, /assets/bag-players-card-1024.webp 1024w"
-                  sizes="(min-width:860px) 560px, 100vw">
-          <img src="/assets/bag-players-card-1024.png"
-               srcset="/assets/bag-players-card-960.png 960w, /assets/bag-players-card-1024.png 1024w"
-               width="1024" height="576"
-               alt="$BAG Player’s Card (front & back)" loading="lazy" decoding="async">
-        </picture>
+    <div class="panel mock" id="bagRouletteDemo">
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
       </div>
-      <div class="pcard-copy">
-        <p class="lead">Real loyalty. Real rewards.</p>
-        <p>The <strong>$BAG Player’s Card NFT</strong> unlocks exclusive perks, early drops, and <strong>Free Play Fridays</strong>. Powered by <strong>$XRP</strong>.</p>
-        <p>We’re watching for real people — the ones who show up early and consistently.</p>
-        <div class="pcard-actions">
-          <a class="btn watchlist" aria-disabled="true" role="button">🎰 COMING SOON — JOIN THE WATCHLIST</a>
-          <button id="bagCardHowBtn" class="bag-btn" type="button">How to get the $BAG Player’s Card</button>
+
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
+          <button id="topUpBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;display:none;">Top Up</button>
+          <button id="endSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">End</button>
+        </div>
+      </div>
+
+      <div class="section-title">Stake & Prices</div>
+
+      <div class="stake-box">
+        <div class="stack">
+          <div>
+            <div class="micro">Amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;align-items:center;gap:6px">
+                <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" pattern="[0-9]*"
+                       min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="micro" aria-hidden="true">USD</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet currency</div>
+            <div class="choice" id="curToggle">
+              <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+              <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div>
+                <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done"
+                       min="0" step="any" value="1" aria-label="Stake units"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="unit">XRP</span>
+              </div>
+            </div>
+            <div class="micro" id="betLimits" style="margin-top:6px" aria-live="polite"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="micro">Live prices</div>
+          <div class="muted mono" id="liveLine" aria-live="polite">
+            <span id="liveDot" class="warn">●</span>
+            <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
+            <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Payouts preview -->
+      <div class="callout mono" id="payoutBox">
+        <div class="payout-grid">
+          <div class="row"><div class="lab"><strong>Straight</strong> (35×):</div><div class="val" id="payStraight">—</div></div>
+          <div class="row"><div class="lab"><strong>Dozen/Column</strong> (2×):</div><div class="val" id="payDozen">— <span class="micro" id="payDozenGain" style="opacity:.9"></span></div></div>
+          <div class="row"><div class="lab"><strong>Even money</strong> (1×):</div><div class="val" id="payEven">— <span class="micro" id="payEvenGain" style="opacity:.9"></span></div></div>
+        </div>
+        <div class="micro" style="margin-top:6px;opacity:.85;">
+          American roulette with 0 and 00. Payouts add together for multiple wins.
         </div>
       </div>
     </div>
-  </section>
 
-  <!-- ✴️ DIVIDER BETWEEN Player’s Card and THE CAGE -->
-  <div class="section-divider">LIVE PLAY FUNDING</div>
+    <div class="roulette-wrap">
+      <div class="marquee">$BAG ROULETTE</div>
+      <div class="cabinet">
+        <div class="wheelBox" id="wheelBox" aria-label="Roulette wheel">
+          <div class="wood"></div>
+          <div class="pockets" id="pockets"></div>
+          <div class="spindle"></div>
+          <div class="ball" id="ball"></div>
+          <div class="marker"></div>
+        </div>
 
-  <!-- 🏦 THE CAGE -->
-  <section class="cage" aria-label="The Cage (Cashier)">
-    <div class="cage-panel">
-      <div>
-        <div class="cage-title">🏦 THE CAGE</div>
-        <p class="cage-meta">
-          Connect, deposit, and play across all games with one balance. Bet in <strong>$XRP</strong> or <strong>$BAG</strong>
-          (XRP auto-converts; payouts in <strong>$BAG</strong>).
+        <div class="spin-row">
+          <button id="spinBtn" class="btn-spin" aria-label="Spin the wheel">SPIN</button>
+        </div>
+
+        <!-- Tiny HUD row -->
+        <div class="hudbar" aria-live="polite">
+          <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
+        </div>
+
+        <p class="micro" style="text-align:center;margin-top:10px;font-size:12px;opacity:.7;color:#aeb7af;">
+          🔊 If you don’t hear sound: tap SPIN once, turn off Silent mode, and raise volume.
         </p>
-      </div>
-      <div class="cage-actions">
-        <button class="btn" id="btnConnect">Connect Wallet</button>
-        <button class="btn" id="btnStart">Start Session</button>
-        <button class="btn" id="btnTopup">Top Up</button>
-        <button class="btn" id="btnEnd" style="background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;">End</button>
-      </div>
-    </div>
-  </section>
 
-  <script>
-    const $ = s => document.querySelector(s);
-    $('#btnConnect').onclick = async ()=>{ try{ await __bagSession.connect(); alert('Wallet connected'); }catch(e){ alert(e.message||'Connect failed'); } };
-    $('#btnStart').onclick   = async ()=>{ try{ await __bagSession.start({ usdDeposit: 10 }); alert('Session started'); }catch(e){ alert(e.message||'Start failed'); } };
-    $('#btnTopup').onclick   = async ()=>{ try{ await __bagSession.topUp({ usdDeposit: 10 }); alert('Topped up'); }catch(e){ alert(e.message||'Top-up failed'); } };
-    $('#btnEnd').onclick     = ()=>{ __bagSession.end(); alert('Session ended'); };
-    window.addEventListener('bag:sessionSynced', ()=>{/* optionally refresh UI */});
-  </script>
-
-  <!-- Divider -->
-  <div class="vault-break">ENTER THE FLOOR</div>
-
-  <!-- Games -->
-  <section aria-label="Games" class="grid">
-    <!-- 🎲 DICE -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-dice-960.webp 960w, /assets/bag-dice-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-dice-1024.png"
-             srcset="/assets/bag-dice-960.png 960w, /assets/bag-dice-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Dice" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>🎲 $BAG Dice</h3>
-        <p class="meta">Pass Line. Instant on-ledger payouts in $BAG.</p>
-        <a class="btn" href="/casino/dice.html">Play Dice (🚧DEMO AVAILABLE🚧)</a>
-      </div>
-    </article>
-
-    <!-- 🎰 SLOTS -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-slots-960.webp 960w, /assets/bag-slots-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-slots-1024.png"
-             srcset="/assets/bag-slots-960.png 960w, /assets/bag-slots-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Slots" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>🎰 $BAG Slots</h3>
-        <p class="meta">3×3 classic. Manual spin. Multipliers & payouts.</p>
-        <a class="btn" href="/casino/slots.html">Play Slots (🚧DEMO AVAILABLE🚧)</a>
-      </div>
-    </article>
-
-    <!-- 💥 PLINKO -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-plinko-960.webp 960w, /assets/bag-plinko-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-plinko-1024.png"
-             srcset="/assets/bag-plinko-960.png 960w, /assets/bag-plinko-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Plinko" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>💥 $BAG Plinko</h3>
-        <p class="meta">Risk ladder. Choose your rows & odds.</p>
-        <a class="btn" href="/casino/plinko.html" aria-disabled="true">Play Plinko (🚧DEMO AVAILABLE🚧)</a>
-      </div>
-    </article>
-
-    <!-- 🎯 ROULETTE -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-roulette-960.webp 960w, /assets/bag-roulette-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-roulette-1024.png"
-             srcset="/assets/bag-roulette-960.png 960w, /assets/bag-roulette-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Roulette" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>🎯 $BAG Roulette</h3>
-        <p class="meta">American wheel. Bet red, black, or green — house edge never sleeps.</p>
-        <a class="btn" href="/casino/">Play Roulette (🚧COMING SOON🚧)</a>
-      </div>
-    </article>
-
-    <!-- ♠️ POKER -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-poker-960.webp 960w, /assets/bag-poker-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-poker-1024.png"
-             srcset="/assets/bag-poker-960.png 960w, /assets/bag-poker-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Poker" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>♠️ $BAG Poker</h3>
-        <p class="meta">5-Card Draw. Read the table — and the chain.</p>
-        <a class="btn" href="/casino/">Play Poker (🚧COMING SOON🚧)</a>
-      </div>
-    </article>
-
-    <!-- 🃏 BLACKJACK -->
-    <article class="card">
-      <picture>
-        <source type="image/webp"
-                srcset="/assets/bag-blackjack-960.webp 960w, /assets/bag-blackjack-1024.webp 1024w"
-                sizes="(min-width:1024px) 340px, 100vw">
-        <img class="card-img"
-             src="/assets/bag-blackjack-1024.png"
-             srcset="/assets/bag-blackjack-960.png 960w, /assets/bag-blackjack-1024.png 1024w"
-             sizes="(min-width:1024px) 340px, 100vw"
-             alt="$BAG Blackjack" width="1024" height="576"
-             loading="lazy" decoding="async">
-      </picture>
-      <div class="card-body">
-        <h3>🃏 $BAG Blackjack</h3>
-        <p class="meta">21 protocol. Double down or burn your hand.</p>
-        <a class="btn" href="/casino/blackjack.html">Play Blackjack (🚧DEMO AVAILABLE🚧)</a>
-      </div>
-    </article>
-  </section>
-
-  <!-- Compliance (centered) -->
-  <div class="comp-wrap" role="complementary" aria-label="Compliance">
-    <div class="comp-grid">
-      <div class="comp-rtp">
-        <strong>Game disclosure</strong>
-        <div id="rtpBlock" class="comp-note"></div>
-        <div class="comp-disclaimer">
-          $BAG Casino runs on XRPL. All transfers are on-ledger. Crypto carries risk. Never play with funds you cannot lose.
+        <div class="result" role="status" aria-live="polite">
+          <div class="t" id="spinText">Tap SPIN</div>
         </div>
       </div>
-
-      <div class="comp-row comp-links">
-        <span class="comp-pill"><span class="badge-21">21+</span> <small>Play responsibly</small></span>
-        <a href="/support/" rel="noopener">Support</a>
-        <a href="/terms/" rel="noopener">Terms</a>
-        <a href="/privacy/" rel="noopener">Privacy</a>
-      </div>
-
-      <div class="comp-note">
-        By playing you confirm you are at least 21 years old in the U.S. or the legal minimum age in your region. Availability may be restricted by jurisdiction.
-      </div>
     </div>
+
+    <!-- How it plays -->
+    <div class="panel" style="padding:16px">
+      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
+      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+        <li>American roulette wheel with 0 and 00. 38 pockets.</li>
+        <li><b>Straight:</b> Bet on a single number (35× payout).</li>
+        <li><b>Dozen/Column:</b> Bet on 12 numbers (2× payout).</li>
+        <li><b>Even money:</b> Red/Black, Even/Odd, Low/High (1× payout).</li>
+      </ul>
+
+      <h4 style="margin:12px 0 6px;">Payouts:</h4>
+      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+        <li><b>Straight</b> — 35×</li>
+        <li><b>Dozen/Column</b> — 2×</li>
+        <li><b>Even money</b> — 1×</li>
+      </ul>
+
+      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA.</p>
+    </div>
+
   </div>
+</section>
 
-  <footer class="foot">
-    © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
-    <br>
-    <a href="https://x.com/getthebag_io" target="_blank" rel="noopener">𝕏 @getthebag_io</a> |
-    <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">Telegram @getthebag_io</a>
-  </footer>
-</div>
-
-<!-- 🔊 Sound toggle + autoplay unlock (lower volume) -->
+<!-- AUDIO (first-tap unlock + loop) -->
 <script>
 (function(){
-  const btn   = document.getElementById('soundToggle');
-  const audio = document.getElementById('casinoAmbience');
-  const KEY   = 'bag_sound_pref';
-  let playing = false, armed = false;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
 
-  audio.setAttribute('playsinline','');
-  audio.preload = 'auto';
-  audio.loop = true;
-  audio.volume = 0.25;
+  function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null;
+    AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC;}
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } }
 
-  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
+  addEventListener('pointerdown', async ()=>{ if(armed) return; armed=true; await resume();
+    try{ const o=getAC().createOscillator(), g=getAC().createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER); o.start(); o.stop(getAC().currentTime+.02);}catch{} }, {once:true, passive:true});
+  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  if(!watchdog) watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); },1500);
 
-  async function playAudio(){
+  function noise(ac,lenSec=.08){ const n=Math.max(1,Math.floor(lenSec*ac.sampleRate));
+    const b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*.9;
+    const s=ac.createBufferSource(); s.buffer=b; return s; }
+
+  function spinLoop(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return {stop:()=>{}}; 
+    let alive=true; const bus=ac.createGain(); bus.gain.value=.18; bus.connect(MASTER);
+    function click(){ if(!alive) return; const o=ac.createOscillator(), g=ac.createGain(); o.type='square'; o.frequency.value=1500+Math.random()*400;
+      const t=ac.currentTime; g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.25,t+.004); g.gain.exponentialRampToValueAtTime(.0001,t+.03);
+      o.connect(g).connect(bus); o.start(t); o.stop(t+.035); }
+    const iv=setInterval(click,70); return { stop(){ alive=false; clearInterval(iv);} };
+  }
+  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
+  function scratch(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const s=noise(ac,.06), g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
+    const t=ac.currentTime; g.gain.linearRampToValueAtTime(.08,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.09); s.start(t); s.stop(t+.1); }
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=getAC().createGain(); o.type='sine';
+    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
+
+  function rouletteSpin(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return {stop:()=>{}}; 
+    let alive=true; const bus=ac.createGain(); bus.gain.value=.18; bus.connect(MASTER);
+    function tick(){ if(!alive) return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine'; o.frequency.value=800+Math.random()*200;
+      const t=ac.currentTime; g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.15,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.05);
+      o.connect(g).connect(bus); o.start(t); o.stop(t+.06); }
+    const iv=setInterval(tick,80); return { stop(){ alive=false; clearInterval(iv);} };
+  }
+
+  function ballBounce(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return;
+    const now=ac.currentTime;
+    [3,2,1].forEach((amp,i)=>{ 
+      const s=noise(ac,0.04), g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
+      const t=now+i*0.1; g.gain.linearRampToValueAtTime(amp*0.08,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.04);
+      s.start(t); s.stop(t+0.05);
+    });
+  }
+
+  window.__bagAudio = { spinLoop: rouletteSpin, ballBounce, chime, thud, resume };
+})();
+</script>
+
+<!-- === PRICES (live-first; fallback to last-live; then view cache; cross-tab sync) === -->
+<script>
+(function(){
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';
+  const XRP_KEY        = 'xrp_usd';
+
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k, ttlMs){
     try{
-      await audio.play();
-      playing = true; setIcon();
-      localStorage.setItem(KEY,'on');
-      removeUnlock();
-    }catch(e){}
+      const o=JSON.parse(localStorage.getItem(k)||'null');
+      if(!o) return null;
+      const age = Date.now() - (o.t||0);
+      return age<=ttlMs ? o.v : null;
+    }catch{ return null; }
   }
-  function pauseAudio(){
-    try{ audio.pause(); }catch(_){}
-    playing = false; setIcon();
-    localStorage.setItem(KEY,'off');
-    addUnlock();
+  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl = new AbortController();
+    const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{
+      const u = new URL(url, location.origin);
+      u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(), {
+        ...opts,
+        headers: { Accept:'application/json', ...(opts.headers||{}) },
+        mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+        signal: ctrl.signal
+      });
+    } finally { setTimeout(()=>clearTimeout(id),0); }
   }
 
-  btn.addEventListener('pointerdown', ev => { ev.preventDefault(); playing ? pauseAudio() : playAudio(); }, {passive:false});
+  function updateLiveLine(){
+    if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
+    if (liveXRP)  liveXRP.textContent  = (Number.isFinite(PRICES.xrpUsd) ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—');
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
+    if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
 
-  const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','mousedown','keydown'];
-  function unlockHandler(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
-  function addUnlock(){ if (armed) return; armed = true; UNLOCK_EVENTS.forEach(t => window.addEventListener(t, unlockHandler, {once:true, passive:true, capture:true})); }
-  function removeUnlock(){ armed = false; }
+  async function fetchXrpUsdLive(){
+    try{
+      const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if(Number(v)>0){
+        PRICES.xrpUsd = Number(v);
+        cacheSet(XRP_KEY, PRICES.xrpUsd);
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
+  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+  async function fetchBagViaAMMLive(){
+    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+    const xrpPerBag = await new Promise((resolve)=>{
+      const ws = new WebSocket(XRPL_WSS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
+          const bagBal = parseIouAmount(amm.amount);
+          const xrpBal = parseXrpAmount(amm.amount2);
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price = xrpBal / bagBal;
+          if (!(price>0) || !isFinite(price) ) return resolve(null);
+          resolve(price);
+        }catch{ resolve(null); }
+      };
+    });
+    if (!(xrpPerBag>0)) return false;
+    if (!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+    PRICES.source = 'live-amm';
+    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    return true;
+  }
 
-  function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
-  window.addEventListener('focus', softResume);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) softResume(); });
+  function loadLastLiveBundle(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      PRICES.source = 'last-live';
+      return true;
+    }
+    return false;
+  }
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    let ok = false;
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      ok = true;
+    }
+    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok = true; }
+    if (ok && PRICES.source==='—') PRICES.source = 'last-live';
+    return ok;
+  }
 
-  setIcon();
-  addUnlock();
+  async function refreshPrices(){
+    let liveOk = false;
+    const gotX = await fetchXrpUsdLive();
+    const gotBag = await fetchBagViaAMMLive();
+    liveOk = gotX && gotBag;
+    if (!liveOk){
+      if (!loadLastLiveBundle()) loadViewCache();
+    }
+    updateLiveLine();
+  }
+
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+
+  window.addEventListener('storage', (e)=>{
+    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      if (!loadLastLiveBundle()) loadViewCache();
+      updateLiveLine();
+    }
+  });
 })();
 </script>
 
-<!-- ======== HOW-TO MODAL (LOYALTY) ======== -->
-<div id="bagCardModal" class="bag-modal" aria-hidden="true" role="dialog" aria-labelledby="bagCardTitle" aria-modal="true">
-  <div class="bag-modal__backdrop" data-close></div>
-  <div class="bag-modal__dialog" role="document" tabindex="-1">
-    <button class="bag-modal__close" aria-label="Close" data-close>&times;</button>
-
-    <header class="bag-modal__header">
-      <h2 id="bagCardTitle">How to earn the <span class="gold">$BAG Player’s Card</span></h2>
-      <p class="muted">Loyalty unlocks access. Real people only. No bots.</p>
-    </header>
-
-    <section class="bag-modal__body">
-      <ol class="bag-steps">
-        <li><strong>Follow all three</strong>:
-          <ul>
-            <li>𝕏: <a href="https://x.com/getthebag_io" target="_blank" rel="noopener">@getthebag_io</a></li>
-            <li>Telegram (Main): <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">t.me/getthebag_io</a></li>
-            <li>Telegram (XCHANGE): <a href="https://t.me/bagxchange" target="_blank" rel="noopener">t.me/bagxchange</a></li>
-          </ul>
-        </li>
-        <li><strong>Engage consistently</strong> on 𝕏:
-          <div class="muted">Like, repost, and comment on new posts. Signal over noise.</div>
-        </li>
-        <li><strong>Share the brand</strong>:
-          <div class="muted">Post your own mentions of $BAG and tag us. Use real accounts only.</div>
-        </li>
-        <li><strong>Show up in Telegram</strong>:
-          <div class="muted">Be active. Add value. No spam. Respect the floor.</div>
-        </li>
-        <li><strong>Stay verified</strong>:
-          <div class="muted">We review manually. We’re watching for real people, not botted activity.</div>
-        </li>
-      </ol>
-
-      <div class="bag-perks">
-        <h3>What the card gives you</h3>
-        <ul>
-          <li><strong>Free Play Fridays</strong> for card holders</li>
-          <li>Early access to drops & casino features</li>
-          <li>XRPL membership status — powered by $XRP</li>
-        </ul>
-      </div>
-
-      <p class="footnote muted">First Player’s Card NFTs go to the ones proving it. If you’re early and consistent, you’re on our radar.</p>
-    </section>
-
-    <footer class="bag-modal__footer">
-      <a class="bag-cta" href="https://x.com/getthebag_io" target="_blank" rel="noopener">Start with 𝕏</a>
-      <button class="bag-outline" data-close>Got it</button>
-    </footer>
-  </div>
-</div>
-
+<!-- ✅ Stake sync / payouts (adapted for roulette) -->
 <script>
 (function(){
-  const openBtn = document.getElementById('bagCardHowBtn');
-  const modal   = document.getElementById('bagCardModal');
-  const dialog  = modal?.querySelector('.bag-modal__dialog');
+  const usdBetEl = document.getElementById('usdBet');
+  const betQtyEl = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan  = document.querySelector('.unit');
+  const limitsEl  = document.getElementById('betLimits');
 
-  function open(){ modal.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; setTimeout(()=>dialog.focus(), 0); }
-  function close(){ modal.setAttribute('aria-hidden','true'); document.body.style.overflow=''; openBtn && openBtn.focus(); }
+  const payStraight = document.getElementById('payStraight');
+  const payDozen  = document.getElementById('payDozen');
+  const payDozenGain = document.getElementById('payDozenGain');
+  const payEven = document.getElementById('payEven');
+  const payEvenGain = document.getElementById('payEvenGain');
 
-  openBtn && openBtn.addEventListener('click', open);
-  modal?.addEventListener('click', e => { if (e.target.hasAttribute('data-close')) close(); });
-  window.addEventListener('keydown', e => { if (modal.getAttribute('aria-hidden')==='false' && e.key==='Escape') close(); });
+  const spinBtn = document.getElementById('spinBtn');
+
+  const MIN_USD = 1;
+  const MAX_USD = 2000;
+
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const selectedCur = () => (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+  const priceFor = (cur) => (cur==='BAG'? PR().bagUsd : PR().xrpUsd) || 0;
+
+  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+
+  function stakeUsd(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
+    const px = priceFor(selectedCur());
+    return (px>0 && qty()>0) ? qty()*px : 0;
+  }
+
+  function stakeBag(){
+    const q = qty();
+    const {bagUsd,xrpUsd} = PR();
+    if (selectedCur()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+
+  let syncing=false;
+
+  function updateUsdFromBet(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    const usdVal = (px>0 ? qty()*px : 0);
+    syncing = true;
+    usdBetEl.value = usdVal>0 ? usdVal.toFixed(2) : '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  function updateBetFromUsd(){
+    if (!usdBetEl || !betQtyEl || syncing) return;
+    const px = priceFor(selectedCur());
+    let u = parseFloat(usdBetEl.value||'');
+    if (!Number.isFinite(u) || u<=0 || px<=0){ renderLimits(); renderPayouts(); return; }
+    u = Math.min(MAX_USD, Math.max(0, u));
+    const units = Math.floor((u/px) * 1e6)/1e6;
+    syncing = true;
+    betQtyEl.value = units || '';
+    syncing = false;
+    renderLimits(); renderPayouts();
+  }
+
+  function renderLimits(){
+    const sUsd = stakeUsd()||0;
+    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
+    if (spinBtn) spinBtn.disabled = (!window.__BAG_FORCE_DEMO && sUsd>0 && sUsd<MIN_USD);
+  }
+
+  function renderPayouts(){
+    const sUsd = stakeUsd()||0;
+    const sBag = stakeBag()||0;
+    const mStraight=35, mDozen=2, mEven=1;
+    const showDash = !(sUsd>0 && sBag>0);
+
+    const straightStr = showDash ? '—' : `${fmt(sBag*mStraight)} BAG (${usd(sUsd*mStraight)})`;
+    if (payStraight) payStraight.textContent = straightStr;
+
+    if (payDozen){
+      const base = showDash ? '—' : `${fmt(sBag*mDozen)} BAG (${usd(sUsd*mDozen)})`;
+      if (payDozen.firstChild) payDozen.firstChild.nodeValue = base;
+      else payDozen.textContent = base;
+      if (payDozenGain) payDozenGain.textContent = showDash ? '' : ` (+${fmt(sBag*(mDozen-1))} BAG)`;
+    }
+
+    if (payEven){
+      const base = showDash ? '—' : `${fmt(sBag*mEven)} BAG (${usd(sUsd*mEven)})`;
+      if (payEven.firstChild) payEven.firstChild.nodeValue = base;
+      else payEven.textContent = base;
+      if (payEvenGain) payEvenGain.textContent = showDash ? '' : ` (+${fmt(sBag*(mEven-1))} BAG)`;
+    }
+  }
+
+  function installUsdPresets(){
+    if(!usdBetEl) return;
+    const flexRow = usdBetEl.closest('div')?.parentElement;
+    const hostBlock = flexRow?.parentElement;
+    if(!flexRow || !hostBlock) return;
+    if(hostBlock.querySelector('#usdPresets')) return;
+
+    const presets = [1,2,5,10,20,50,100,'MAX'];
+    const wrap = document.createElement('div');
+    wrap.id = 'usdPresets';
+    wrap.className = 'choice';
+    wrap.style.marginTop = '8px';
+
+    presets.forEach(p => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip';
+      btn.textContent = (p==='MAX') ? 'MAX' : `$${p}`;
+      btn.dataset.usd = (p==='MAX') ? String(MAX_USD) : String(p);
+      btn.addEventListener('click', () => {
+        usdBetEl.value = btn.dataset.usd;
+        updateBetFromUsd();
+        usdBetEl.dispatchEvent(new Event('input', {bubbles:true}));
+      });
+      wrap.appendChild(btn);
+    });
+
+    hostBlock.appendChild(wrap);
+  }
+
+  usdBetEl?.addEventListener('input', updateBetFromUsd);
+  betQtyEl?.addEventListener('input', updateUsdFromBet);
+  curToggle?.addEventListener('change', ()=>{
+    if (unitSpan) unitSpan.textContent = selectedCur();
+    updateUsdFromBet();
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    if (usdBetEl?.value) updateBetFromUsd(); else updateUsdFromBet();
+  });
+
+  addEventListener('keydown', (e)=>{
+    if ((e.code==='Space' || e.key==='Enter') && document.activeElement === document.body){
+      e.preventDefault();
+      const b = document.getElementById('spinBtn');
+      if (b && !b.disabled) b.click();
+    }
+  });
+
+  if (unitSpan) unitSpan.textContent = selectedCur();
+  updateUsdFromBet();
+  renderLimits();
+  renderPayouts();
+  installUsdPresets();
+
+  window.__bagStake = { usd: stakeUsd, bag: stakeBag, minUsd: MIN_USD, maxUsd: MAX_USD };
 })();
 </script>
 
+<!-- ===================== Wheel & Odds + Spin ===================== -->
+<script>
+(function(){
+  const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
+  const COLOR = {};
+  ["00",0].forEach(n=>COLOR[n]="green");
+  [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
+  [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
+  const COLUMN = {};
+  [1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
+  [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
+  [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
+
+  const pockets = document.getElementById('pockets');
+  const DEG = 360 / WHEEL.length;
+  WHEEL.forEach((val,i)=>{
+    const el=document.createElement('div');
+    el.className = 'pocket ' + (COLOR[val] || 'black');
+    el.style.transform = `rotate(${i*DEG}deg) translate(-2%, -50%)`;
+    el.textContent = String(val);
+    pockets.appendChild(el);
+  });
+
+  const wheelBox = document.getElementById('wheelBox');
+  const ball = document.getElementById('ball');
+  function sizeWheel(){
+    if (!wheelBox) return;
+    const r=wheelBox.getBoundingClientRect();
+    const size=Math.min(r.width,r.height);
+    const ballR = size*0.39;
+    const pocketH = Math.max(20, Math.round(size*0.04));
+    const markerOrigin = Math.round(size*0.40);
+    const font = Math.max(10, Math.round(size*0.028));
+    wheelBox.style.setProperty('--ball-r', ballR+'px');
+    wheelBox.style.setProperty('--pocket-h', pocketH+'px');
+    wheelBox.style.setProperty('--marker-origin', markerOrigin+'px');
+    wheelBox.style.setProperty('--wheel-font', font+'px');
+  }
+  addEventListener('resize', sizeWheel, {passive:true});
+  setTimeout(sizeWheel, 0);
+
+  const grid = document.getElementById('grid');
+  if (grid) {
+    grid.innerHTML = '';
+    const NUMBERS = ["00",0, ...Array.from({length:36},(_,i)=>i+1)];
+    NUMBERS.forEach(n=>{
+      const c=document.createElement('div');
+      c.className='cell';
+      c.dataset.kind='n';
+      c.dataset.val=String(n);
+      const color=COLOR[n]||'black';
+      c.classList.add(color);
+      c.textContent=String(n);
+      grid.appendChild(c);
+    });
+  }
+
+  const chips = document.getElementById('chips')?.querySelectorAll('.bet-chip');
+  let chip=10;
+  chips?.forEach(el=>{
+    el.addEventListener('click', ()=>{
+      chips.forEach(x=>x.classList.remove('active'));
+      el.classList.add('active'); chip=Number(el.dataset.v)||1;
+      try{ window.__playChip && window.__playChip(); }catch{}
+    });
+  });
+
+  const bets = { n: {}, rb: {}, eo: {}, hl: {}, dozen: {}, col: {} };
+  const undoStack=[];
+
+  function stakeUsdEq(){
+    const qty = chip;
+    const P = window.__PRICES__ || {};
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value.toUpperCase() || 'XRP';
+    if (cur === 'BAG') return P.bagUsd > 0 ? qty * P.bagUsd : 0;
+    return P.xrpUsd > 0 ? qty * P.xrpUsd : 0;
+  }
+  function stakeBag(){
+    const qty = chip;
+    const { bagUsd, xrpUsd } = window.__PRICES__ || {};
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value.toUpperCase() || 'XRP';
+    return cur === 'BAG' ? qty : (bagUsd > 0 && xrpUsd > 0 ? qty * (xrpUsd / bagUsd) : 0);
+  }
+
+  function bumpBet(kind, key, amt){
+    const b = bets[kind];
+    const nxt = (Number(b[key])||0) + amt;
+    b[key] = nxt;
+    undoStack.push({kind,key,amt});
+    paintCell(kind,key);
+    renderBetTotal();
+    document.getElementById('betPill')?.querySelector('b').textContent = fmt(totalStake());
+    try{ window.__playChip && window.__playChip(); }catch{}
+  }
+  function paintCell(kind,key){
+    const sel = kind==='n' ? `.cell[data-kind="n"][data-val="${key}"]` : `.cell[data-kind="${kind}"][data-val="${key}"]`;
+    const el = document.querySelector(sel);
+    if(!el) return;
+    el.querySelector('.badge')?.remove();
+    const v = bets[kind][key];
+    if(v>0){
+      const bd=document.createElement('div'); bd.className='badge'; bd.textContent=v;
+      el.appendChild(bd);
+    }
+  }
+  function clearAllBets(){
+    Object.keys(bets).forEach(k=>{ Object.keys(bets[k]).forEach(key=>bets[k][key]=0); });
+    undoStack.length=0;
+    document.querySelectorAll('.badge').forEach(b=>b.remove());
+    renderBetTotal();
+    document.getElementById('betPill')?.querySelector('b').textContent = '—';
+  }
+  function undoLast(){
+    const last=undoStack.pop(); if(!last) return;
+    const cur = Number(bets[last.kind][last.key])||0;
+    bets[last.kind][last.key] = Math.max(0, cur - last.amt);
+    paintCell(last.kind,last.key);
+    renderBetTotal();
+    document.getElementById('betPill')?.querySelector('b').textContent = fmt(totalStake());
+  }
+  function totalStake(){
+    let t=0;
+    Object.values(bets.n).forEach(v=>t+=v||0);
+    ['rb','eo','hl','dozen','col'].forEach(k=>Object.values(bets[k]).forEach(v=>t+=v||0));
+    return t;
+  }
+  function renderBetTotal(){
+    const stakeTotal = document.getElementById('stakeTotal');
+    const stakeUnit = document.getElementById('stakeUnit');
+    if (stakeTotal) stakeTotal.textContent = fmt(totalStake());
+    if (stakeUnit) stakeUnit.textContent = document.querySelector('#curToggle input[name="betCur"]:checked')?.value.toUpperCase() || 'XRP';
+  }
+
+  document.getElementById('grid')?.addEventListener('click', (e)=>{
+    const el=e.target.closest('.cell'); if(!el) return;
+    const key=el.dataset.val;
+    bumpBet('n', key, chip);
+  });
+  document.getElementById('outsides')?.addEventListener('click', (e)=>{
+    const el=e.target.closest('.cell'); if(!el) return;
+    const kind=el.dataset.kind, key=el.dataset.val;
+    bumpBet(kind, key, chip);
+  });
+  document.getElementById('clear')?.addEventListener('click', clearAllBets);
+  document.getElementById('undo')?.addEventListener('click', undoLast);
+
+  function playSpin(){ try{ if(window.__bagAudio){ __bagAudio.resume && __bagAudio.resume(); window.__spinHandle=__bagAudio.spinLoop(); } }catch{} }
+  function playBounce(){ try{ window.__bagAudio && window.__bagAudio.ballBounce(); }catch{} }
+  function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
+  function sWin(){ try{ window.__bagAudio && window.__bagAudio.chime(); }catch{} }
+  function sLose(){ try{ window.__bagAudio && window.__bagAudio.thud(); }catch{} }
+
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  let spinningNow = false;
+
+  document.getElementById('spinBtn').addEventListener('click', async ()=>{
+    if (spinningNow || spinBtn.disabled) return;
+    spinningNow = true;
+
+    const sBag = (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+    const sUsd = (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
+    if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); spinningNow=false; return; }
+    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); spinningNow=false; return; }
+    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) { spinningNow=false; return; } }
+
+    spinBtn.disabled=true; spinText.className='t'; spinText.textContent='Spinning…';
+    try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
+    playSpin();
+
+    const idx = Math.floor(Math.random() * WHEEL.length);
+    const hit = WHEEL[idx];
+
+    const revs = 6;
+    const targetDeg = 360*revs + (360 - idx*DEG);
+    pockets.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
+    pockets.style.transform = `rotate(${targetDeg}deg)`;
+    ball.style.transition = 'transform 4.2s cubic-bezier(.15,.9,.15,1)';
+    ball.style.transform = `rotate(${-(targetDeg+720)}deg) translate(var(--ball-r))`;
+
+    setTimeout(()=>{
+      stopSpin();
+      playBounce();
+
+      const {win, notes, maxMult} = computeWin(hit);
+      const gain = win - sBag;
+
+      if(gain>0){
+        sWin();
+        credit(win);
+        spinText.className='t win'; spinText.textContent='WIN — ' + notes.join(' · ');
+        BAGOverlay.showWin({ message: maxMult>=35 ? 'STRAIGHT WIN!' : 'WIN', subtext: `+${fmt(gain)} BAG · $${sUsd.toFixed(2)} → $${(sUsd + gain).toFixed(2)}`, duration: maxMult>=35 ? 6200 : 4200, sound:false });
+      } else {
+        sLose();
+        spinText.className='t lose'; spinText.textContent='Lose — try again';
+      }
+
+      window.dispatchEvent(new CustomEvent('bag:rouletteResult', {
+        detail: { gain, maxMult, stakeBag: sBag }
+      }));
+
+      spinBtn.disabled=false;
+      spinningNow = false;
+    }, 4300);
+  });
+
+  function computeWin(hit){
+    let win=0, notes=[], maxMult=0;
+    Object.entries(bets.n).forEach(([k,v])=>{
+      if(v>0 && String(hit)===k){ win += v*35; notes.push(`Straight(${k}) +35x`); maxMult=Math.max(maxMult,35); }
+    });
+    Object.entries(bets.rb).forEach(([k,v])=>{
+      if(v>0 && COLOR[hit] && COLOR[hit].toUpperCase()===k){ win += v*1; notes.push('RB +1x'); maxMult=Math.max(maxMult,1); }
+    });
+    Object.entries(bets.eo).forEach(([k,v])=>{
+      if(v>0 && typeof hit==="number" && hit!==0){
+        if((k==='EVEN' && hit%2===0) || (k==='ODD' && hit%2===1)){ win += v*1; notes.push('EO +1x'); maxMult=Math.max(maxMult,1); }
+      }
+    });
+    Object.entries(bets.hl).forEach(([k,v])=>{
+      if(v>0 && typeof hit==="number" && hit!==0){
+        if((k==='LOW' && hit>=1 && hit<=18) || (k==='HIGH' && hit>=19 && hit<=36)){ win += v*1; notes.push('HL +1x'); maxMult=Math.max(maxMult,1); }
+      }
+    });
+    Object.entries(bets.dozen).forEach(([k,v])=>{
+      if(v>0 && typeof hit==="number" && hit!==0){
+        const ok = (k==='D1'&&hit>=1&&hit<=12)||(k==='D2'&&hit>=13&&hit<=24)||(k==='D3'&&hit>=25&&hit<=36);
+        if(ok){ win += v*2; notes.push('Dozen +2x'); maxMult=Math.max(maxMult,2); }
+      }
+    });
+    Object.entries(bets.col).forEach(([k,v])=>{
+      if(v>0 && COLUMN[hit]===k){ win += v*2; notes.push('Column +2x'); maxMult=Math.max(maxMult,2); }
+    });
+    return {win, notes, maxMult};
+  }
+
+  function selectedBetsCount(){
+    let c = 0;
+    if(Object.keys(bets.n).length > 0) c++;
+    if(Object.keys(bets.rb).length > 0) c++;
+    if(Object.keys(bets.eo).length > 0) c++;
+    if(Object.keys(bets.hl).length > 0) c++;
+    if(Object.keys(bets.dozen).length > 0) c++;
+    if(Object.keys(bets.col).length > 0) c++;
+    return c;
+  }
+})();
+</script>
+
+<!-- Xaman wallet connect -->
+<script>
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+
+  function safeShort(a){ try{ const s = a == null ? '' : String(a); if (!s) return ''; return s.slice(0,6) + '…' + s.slice(-4); }catch{ return ''; } }
+
+  let connectedNow = false;
+  let currentAddr = '';
+
+  function render(){
+    try{
+      if (connectedNow && currentAddr){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(currentAddr)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      statusEl.textContent = 'Wallet: error'; btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
+    if (ready) return true;
+    if (typeof window.Xumm === 'function'){
+      xumm = new Xumm(API_KEY);
+      ready = true;
+      xumm.on('success', () => {
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            connectedNow = true; currentAddr = String(acct);
+            write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+            render();
+          }
+        }catch(e){}
+      });
+      xumm.on('ready', () => { render(); });
+      return true;
+    }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
+    return false;
+  }
+
+  async function connectXaman(){
+    if (!ready && !initIfSdk()){ alert('Loading Xaman… try again in a moment.'); return; }
+    btn.disabled = true;
+    try {
+      const auth = await xumm.authorize();
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      connectedNow = true; currentAddr = String(acct);
+      write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+      render();
+    } catch (e) {
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    if (connectedNow){
+      connectedNow = false; currentAddr = '';
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+  initIfSdk();
+})();
+</script>
+
+<!-- TAB SESSION -->
+<script>
+(function(){
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 1;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML =
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
+      startBtn.style.display = 'none';
+      if (topUpBtn) topUpBtn.style.display = 'inline-block';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      topUpBtn.style.display = 'none';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
+    const depositUsd = Math.max(1, suggestDepositUsd());
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    try{
+      const { created, resolved } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('ROULETTE_SESSION')}}] },
+        options: { submit:true, expire:300 }
+      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      const res = await resolved;
+      if (!res?.signed) throw new Error('User declined in Xaman');
+      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      if (!txid) throw new Error('No txid returned');
+      const validated = await waitForTx(txid, 60000);
+      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      alert('Session started — you’re good to play!');
+    } catch (err){
+      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  async function topUpSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+    const s = read();
+    if (!(s && s.addr)){ alert('Start a session first.'); return; }
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('ROULETTE_TOPUP')}}] },
+        options: { submit:true, expire:300 }
+      }, ()=>{});
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+      const addBag = (depositUsd / PRICES.bagUsd);
+      const cur = read() || { addr: s.addr, bag: 0 };
+      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
+      write(cur); render();
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
+    } catch(e){
+      alert('Top-up cancelled or failed.');
+    } finally {
+      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
+    }
+  }
+
+  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
+
+  startBtn?.addEventListener('click', startSession);
+  topUpBtn?.addEventListener('click', topUpSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+}
+</script>
+
+<!-- Unified HUD -->
+<script>
+(function(){
+  const hudbar = document.querySelector('.hudbar');
+  if(!hudbar) return;
+
+  function ensurePill(id, label, beforeEl=null){
+    let el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('span');
+      el.id = id;
+      el.className = 'pill';
+      if(beforeEl) hudbar.insertBefore(el, beforeEl);
+      else hudbar.appendChild(el);
+    }
+    el.dataset.label = label;
+    return el;
+  }
+
+  const balancePill = hudbar.querySelector('#balLbl')?.closest('.pill') || ensurePill('balancePill','Balance');
+  const modePill    = ensurePill('hudMode','Mode', balancePill);
+  const betPill     = ensurePill('hudBet','Bet');
+  const lastPill    = ensurePill('hudLast','Last');
+
+  const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
+  const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
+  const sessionObj = () => (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null;
+  const stakeBag   = () => (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+  const stakeUsd   = () => (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
+  function renderMode(){
+    const live = (window.__BAG_FORCE_DEMO !== true);
+    modePill.innerHTML = `Mode: <b>${live?'LIVE':'DEMO'}</b>`;
+  }
+
+  function renderBalance(){
+    const s = sessionObj();
+    const bagBal = s && Number(s.bag) > 0 ? Number(s.bag) : 0;
+    const balLbl = document.getElementById('balLbl');
+    const ccyLbl = document.getElementById('ccyLbl');
+    if (!balLbl || !ccyLbl) return;
+
+    const curEl = document.querySelector('#curToggle input[name="betCur"]:checked');
+    const cur = curEl ? String(curEl.value).toUpperCase() : 'XRP';
+
+    const { bagUsd=0, xrpUsd=0 } = (window.__PRICES__ || {});
+
+    if (cur === 'BAG') {
+      balLbl.textContent = bagBal ? fmtBag(bagBal) : '—';
+      ccyLbl.textContent = 'BAG';
+    } else {
+      const xrpBal = (bagBal && bagUsd>0 && xrpUsd>0) ? bagBal * (bagUsd/xrpUsd) : NaN;
+      balLbl.textContent = Number.isFinite(xrpBal) ? fmtBag(xrpBal) : '—';
+      ccyLbl.textContent = 'XRP';
+    }
+  }
+
+  function renderBet(){
+    const b = stakeBag();
+    const u = stakeUsd();
+    betPill.innerHTML = `Bet: <b>${b>0?fmtBag(b):'—'}</b>` + (b>0&&u>0? ` <span class="micro">(${fmtUsd(u)})</span>`:'');
+  }
+
+  function renderLast(ev){
+    const d = ev && ev.detail ? ev.detail : null;
+    if(!d){
+      lastPill.innerHTML = `Last: <b>—</b>`;
+      return;
+    }
+    let txt='Lose', delta='';
+    if(d.gain>0){ txt='WIN'; delta = ` +${fmtBag(d.gain)} BAG`; }
+    lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">&nbsp;${delta}</span>`;
+  }
+
+  function paint(){ renderMode(); renderBalance(); renderBet(); }
+
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:walletConnected','bag:walletDisconnected','bag:pricesUpdated']
+    .forEach(ev=>addEventListener(ev, paint));
+
+  addEventListener('bag:rouletteResult', (e)=>{ paint(); renderLast(e); });
+
+  ['input','change'].forEach(t=>{
+    document.getElementById('usdBet')?.addEventListener(t, renderBet);
+    document.getElementById('betQty')?.addEventListener(t, renderBet);
+    document.getElementById('curToggle')?.addEventListener(t, renderBet);
+  });
+
+  document.getElementById('curToggle')?.addEventListener('change', renderBalance);
+
+  paint();
+  renderLast(null);
+
+  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
+})();
+</script>
+
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+  <br>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+</footer>
 </body>
 </html>
