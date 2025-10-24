@@ -263,12 +263,15 @@
         <div class="marquee">$BAG PRICE SPIN</div>
         <div class="table">
           <div class="felt">
-            <!-- PATCH 1: Stage markup with 7-segment canvas -->
+            <!-- Stage with 7-seg canvas -->
             <div class="stage3d">
               <div id="wheel3dMount" style="position:relative;width:100%;height:100%;"></div>
               <!-- right-side 7-seg score -->
               <canvas id="sevenSeg" width="200" height="120"
                       style="position:absolute; right:36px; top:32px; width:160px; height:96px;"></canvas>
+              <!-- visual side cabinets (CSS only, 3D set is inside WebGL) -->
+              <div class="cab left"><div class="bulbs"></div><div class="dollar"></div></div>
+              <div class="cab right"><div class="bulbs"></div><div class="dollar"></div></div>
             </div>
 
             <div class="roll-row">
@@ -322,7 +325,7 @@
   </div>
 </section>
 
-<!-- ✅ AUDIO: tick + cheer (no jackpot anthem) -->
+<!-- ✅ AUDIO: tick + cheer -->
 <script>
 (function(){
   const tick = new Audio('/assets/sounds/tick.mp3'); tick.preload='auto'; tick.crossOrigin='anonymous'; tick.setAttribute('playsinline',''); tick.volume=.8;
@@ -334,7 +337,7 @@
 })();
 </script>
 
-<!-- ✅ PRICES (shared, inline page version — same as Dice) -->
+<!-- ✅ PRICES (with PRAGES→PRICES fix) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -387,7 +390,8 @@
     if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
       ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
       : '—';
-    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRAGES?.source==='last-live' ? 'warn' : 'err');
+    /* FIXED: PRAGES → PRICES */
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES?.source==='last-live' ? 'warn' : 'err');
     if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
     if (liveConv){
       if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
@@ -746,244 +750,32 @@
 })();
 </script>
 
-<!-- HUD updater -->
+<!-- ---------- Utility: robust mount size helper (for zero-height issues) ---------- -->
 <script>
-(function(){
-  const curToggle = document.getElementById('curToggle');
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
-
-  function els(){ 
-    return { 
-      hud: document.getElementById('diceHud'),
-      balLbl: document.getElementById('balLbl'),
-      ccyLbl: document.getElementById('ccyLbl'),
-      betLbl: document.getElementById('betLbl'),
-      modeLbl: document.getElementById('modeLbl'),
-      lastLbl: document.getElementById('lastLbl'),
-      betQtyEl: document.getElementById('betQty'),
-    }; 
+function __bagGetMountSize(mount){
+  const r = mount.getBoundingClientRect();
+  let w = Math.max(1, Math.floor(r.width || mount.clientWidth || 1));
+  let h = Math.max(1, Math.floor(r.height || mount.clientHeight || 0));
+  if (!h) {
+    const host = mount.closest('.stage3d');
+    const cssH = host ? parseInt(getComputedStyle(host).height, 10) : 520;
+    h = Math.max(1, cssH || 520);
   }
-
-  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-
-  function getBalances(){
-    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
-    const bag = Number(sess.bag) || 0;
-    let xrp = Number(sess.xrp);
-    if (!(xrp > 0)) {
-      const { bagUsd, xrpUsd } = PR();
-      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
-      else xrp = 0;
-    }
-    return { bag, xrp };
-  }
-
-  function currentBet(){
-    const { betQtyEl } = els();
-    const v = parseFloat(betQtyEl?.value || '0');
-    if (!Number.isFinite(v) || v < 0) return 0;
-    return Number(v);
-  }
-
-  function renderHud(){
-    try{
-      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-      const mode = selectedMode();
-      const ccy  = currentCurrency();
-      const { bag, xrp } = getBalances();
-
-      if (modeLbl) modeLbl.textContent = mode;
-      if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);
-      if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
-
-      if (balLbl && ccyLbl){
-        if (ccy === 'XRP'){
-          balLbl.textContent = fmt(xrp, 6);
-          ccyLbl.textContent = 'XRP';
-        } else {
-          balLbl.textContent = fmt(bag, 6);
-          ccyLbl.textContent = 'BAG';
-        }
-      }
-    }catch(e){}
-  }
-
-  [
-    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
-    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
-    'bag:diceResult','bag:hudRefresh'
-  ].forEach(ev => addEventListener(ev, renderHud));
-
-  document.getElementById('betQty')?.addEventListener('input', renderHud);
-  curToggle?.addEventListener('change', renderHud);
-
-  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
-
-  renderHud();
-  let tries = 0; 
-  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
-})();
+  return { w, h };
+}
 </script>
 
-<!-- Demo/Live session -->
-<script>
-(function(){
-  const qs = new URLSearchParams(location.search);
-  const forceLive = qs.get('live') === '1';
-
-  const $ = (s)=>document.querySelector(s);
-  const statusEl  = $('#sessionStatus');
-  const startBtn  = $('#startSessionBtn');
-  const topUpBtn  = $('#topUpBtn');
-  const endBtn    = $('#endSessionBtn');
-  const connectEl = $('#connectBtn');
-  const playBtn   = document.getElementById('spinBtn') || document.getElementById('rollBtn');
-
-  // --- Demo config ---
-  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
-  const DEMO_INIT_KEY  = '__bag_demo_init_v2';
-  const START_USD      = 2000;
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n){
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
-
-  function getCachedBagUsd(){
-    try{
-      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
-    }catch{}
-    return 0;
-  }
-
-  function ensureSeedNowOrWhenReady(){
-    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-
-    const live = Number(PR().bagUsd||0);
-    const cached = getCachedBagUsd();
-    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
-
-    if (bagUsd>0){
-      const startBag = START_USD / bagUsd;
-      setBag(startBag);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      return true;
-    }
-    return false;
-  }
-
-  function renderDemo(){
-    const bag=getBag();
-    const { bagUsd, xrpUsd } = PR();
-    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
-
-    if(statusEl){
-      statusEl.innerHTML =
-        `<div class="practiceBlock" style="-webkit-touch-callout:none;">
-          <div class="title" style="font-weight:800;margin-bottom:4px;">Practice:</div>
-          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
-          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
-          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
-        </div>`;
-    }
-
-    if(startBtn) startBtn.style.display='inline-block';
-    if(topUpBtn) topUpBtn.style.display='none';
-    if(endBtn)   endBtn.style.display='none';
-  }
-
-  // Demo session
-  const demoSession={
-    active:()=>true,
-    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
-    set:()=>{},
-    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); return true; }
-  };
-
-  function forceBetXRP1Once(){
-    const bet  = document.getElementById('betQty');
-    const usd  = document.getElementById('usdBet');
-    const unit = document.querySelector('.unit');
-    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-
-    if (xrpRadio && !xrpRadio.checked){
-      xrpRadio.checked = true;
-      xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    if (unit) unit.textContent = 'XRP';
-
-    if (bet && (!bet.value || Number(bet.value) <= 0)){
-      bet.value = '1';
-      bet.dispatchEvent(new Event('input', {bubbles:true}));
-      bet.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    if (usd){
-      usd.dataset.userTyped = '0';
-      usd.dispatchEvent(new Event('input', {bubbles:true}));
-      usd.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
-
-  function enableDemo(){
-    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
-    catch{ window.__BAG_FORCE_DEMO=true; }
-
-    window.__bagSession = demoSession;
-
-    const seeded = ensureSeedNowOrWhenReady();
-    renderDemo();
-
-    if (playBtn) playBtn.disabled = !seeded;
-
-    addEventListener('bag:pricesUpdated', ()=>{
-      if (!localStorage.getItem(DEMO_INIT_KEY)){
-        const ok = ensureSeedNowOrWhenReady();
-        if (ok && playBtn) playBtn.disabled = false;
-        renderDemo();
-      } else {
-        renderDemo();
-      }
-    });
-
-    forceBetXRP1Once();
-
-    if (connectEl) connectEl.style.opacity='0.9';
-  }
-
-  function enableLive(){
-    window.__BAG_FORCE_DEMO=false;
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-  }
-
-  if (forceLive) enableLive(); else enableDemo();
-
-  window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
-
-})();
-</script>
-
-<!-- PATCH 3: Replace whole initBAGBigWheel3D() to full Showcase Showdown build -->
+<!-- BIG WHEEL: full Showcase Showdown build with size + WebGL guards -->
 <script>
 function initBAGBigWheel3D(){
+  // ---- Sanity logs to catch env problems ----
+  if (!window.THREE) { console.error('[BigWheel] THREE not loaded'); }
+  try{
+    const test = document.createElement('canvas');
+    const gl = test.getContext('webgl') || test.getContext('experimental-webgl');
+    if (!gl) console.warn('[BigWheel] WebGL not available on this device/browser.');
+  }catch(e){ console.warn('[BigWheel] WebGL init failed:', e); }
+
   const {
     Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh,
     MeshStandardMaterial, MeshBasicMaterial,
@@ -1011,10 +803,16 @@ function initBAGBigWheel3D(){
   // Scene + camera + renderer
   const scene = new Scene();
   scene.background = new Color('#091913');
+
   const renderer = new WebGLRenderer({ antialias:true, alpha:true });
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
   mount.appendChild(renderer.domElement);
+
+  // Force canvas to fill stage (CSS-proof)
+  Object.assign(renderer.domElement.style, {
+    position:'absolute', inset:'0', width:'100%', height:'100%', display:'block'
+  });
 
   const camera = new PerspectiveCamera(40, 1, 0.1, 100);
   camera.position.set(0, 0.2, 8.6);
@@ -1035,16 +833,12 @@ function initBAGBigWheel3D(){
     // face panel
     const cv = document.createElement('canvas'); cv.width=256; cv.height=512;
     const g = cv.getContext('2d');
-    // orange tiles
     for(let r=0;r<8;r++)for(let c=0;c<3;c++){
       g.fillStyle = (r+c)%2? '#e14b1f' : '#ff9b46'; g.fillRect(12+c*80, 12+r*60, 68, 48);
     }
-    // bulbs frame
     g.strokeStyle='#ffe9c6'; g.lineWidth=14; g.strokeRect(8,8,240,496);
-    // silver "$"
     g.fillStyle='#cfd2d6'; g.strokeStyle='#9aa2aa'; g.lineWidth=10;
-    g.beginPath();
-    g.moveTo(128,60);
+    g.beginPath(); g.moveTo(128,60);
     g.bezierCurveTo(100,60,86,80,86,96);
     g.lineTo(86,116);
     g.bezierCurveTo(40,124,18,154,18,184);
@@ -1053,7 +847,6 @@ function initBAGBigWheel3D(){
     g.bezierCurveTo(44,338,20,364,20,394);
     g.bezierCurveTo(20,438,66,466,128,472);
     g.lineTo(128,492);
-    g.lineWidth=10; g.stroke();
     const face = new Mesh(new PlaneGeometry(2.0, 7.3),
                   new MeshBasicMaterial({ map:new CanvasTexture(cv) }));
     face.position.set(x,0,-0.3);
@@ -1120,11 +913,8 @@ function initBAGBigWheel3D(){
     const bg = is100? '#b90b0b' : isGreen? '#1b7f3a' : (dark? '#121212' : '#f1f1f1');
     const fg = is100||isGreen? '#f7f7f7' : (dark? '#f7f7f7' : '#151515');
 
-    // base
     g.fillStyle = bg; g.fillRect(0,0,c.width,c.height);
-    // gold frame
     g.strokeStyle='#d5b55c'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
-    // value
     g.fillStyle = fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif';
     g.textAlign='center'; g.textBaseline='middle';
     const txt = is100 ? '100' : String(Math.round(val*100));
@@ -1169,15 +959,16 @@ function initBAGBigWheel3D(){
   flapper.rotation.y = Math.PI/2;
   scene.add(flapper);
 
-  // ---------- sizing
+  // ---------- sizing (bullet-proof) ----------
   function resize(){
-    const r = mount.getBoundingClientRect();
-    renderer.setSize(r.width, r.height, false);
-    camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+    const { w, h } = __bagGetMountSize(mount);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
   }
   resize(); addEventListener('resize', resize);
 
-  // ---------- physics / interaction
+  // ---------- physics / interaction ----------
   let ang = -Math.PI/2, vel = 0;
   const FRICTION = 0.992, VMIN = 0.002, PIX2RAD=0.012;
 
@@ -1220,7 +1011,7 @@ function initBAGBigWheel3D(){
   resetBtn.addEventListener('click', resetRound);
   holdBtn.addEventListener('click', holdAfterFirst);
 
-  // staking helpers (same as your dice page)
+  // staking helpers
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
@@ -1402,7 +1193,6 @@ function initBAGBigWheel3D(){
 
 <!-- THREE.JS LOADER (robust & waits for init function) -->
 <script>
-/* Robust loader that waits for THREE + initBAGBigWheel3D before booting */
 (function(){
   function load(src, ok, fail){
     var s=document.createElement('script');
@@ -1412,7 +1202,7 @@ function initBAGBigWheel3D(){
     var tries = 0;
     (function poll(){
       if (window.THREE && typeof window.initBAGBigWheel3D === 'function') { run(); return; }
-      if (++tries > 400) { console.error('[bag-wheel] init timed out'); return; } // ~20s
+      if (++tries > 400) { console.error('[bag-wheel] init timed out'); return; }
       setTimeout(poll, 50);
     })();
   }
