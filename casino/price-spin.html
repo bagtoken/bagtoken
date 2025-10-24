@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Showcase Big Wheel — 3D Vertical Drum</title>
+<title>Showcase Big Wheel — 3D Vertical Drum (Fixed Height)</title>
 <style>
   :root{ --bg:#06120d; --felt:#0b1f16; --line:#244b35; }
   html,body{margin:0;background:var(--bg);color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
@@ -12,8 +12,8 @@
     border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
   .marquee{ text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
     background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:10px;padding:8px;margin-bottom:8px }
-  .stage{position:relative;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px solid #244b35}
-  .stage::before{content:"";display:block;padding-top:68vh;max-height:78vh} /* tall on mobile */
+  /* IMPORTANT: explicit height so WebGL has a layout box everywhere */
+  .stage{position:relative;height:70vh;max-height:78vh;min-height:420px;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px solid #244b35}
   .layer{position:absolute;inset:0}
   #hud{position:absolute;right:10px;top:10px;width:min(40vw,180px);height:min(24vw,110px);z-index:3}
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
@@ -46,79 +46,58 @@
 
 <script>
 (() => {
-  // ==== Authentic order & formatting
+  // ===== Real wheel order
   const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-  const labels=seq.map(v=>v.toFixed(2));
-  const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
+  const labels=seq.map(v=>v.toFixed(2)); const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
-  // ==== DOM
   const mount=document.getElementById('mount'), hud=document.getElementById('hud');
   const spinBtn=document.getElementById('spinBtn'), holdBtn=document.getElementById('holdBtn'), resetBtn=document.getElementById('resetBtn');
   const msg=document.getElementById('msg'); holdBtn.disabled=true;
 
-  // ==== THREE scene
   const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
-         CylinderGeometry,TorusGeometry,PlaneGeometry,CircleGeometry,CanvasTexture,
-         DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace,Vector3} = THREE;
+         CylinderGeometry,TorusGeometry,PlaneGeometry,CircleGeometry,CanvasTexture,Vector3,
+         DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace}=THREE;
 
   const scene=new Scene(); scene.background=new Color('#091913');
   const renderer=new WebGLRenderer({antialias:true,alpha:true}); renderer.outputColorSpace=SRGBColorSpace;
   renderer.setPixelRatio(Math.min(devicePixelRatio||1,2)); mount.appendChild(renderer.domElement);
+
   const camera=new PerspectiveCamera(40,1,0.1,100); camera.position.set(0,0,8.6);
 
-  // lights
+  // Lights
   scene.add(new DirectionalLight(0xffffff,1)).position.set(3,6,8);
   scene.add(new DirectionalLight(0xffffff,.6)).position.set(-5,2,6);
   scene.add(new DirectionalLight(0xfff0cc,.7)).position.set(0,-6,6);
   scene.add(new AmbientLight(0xffffff,.35));
 
-  // ==== The wheel DRUM (AXIS = X) so rotation around X makes numbers roll vertically
+  // ===== Wheel (axis = X so plates roll vertically)
   const R=2.75, DEPTH=1.2;
   const wheel=new Group(); scene.add(wheel);
 
-  // Cylinder side only; height along X after rotation
   const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
                       new MeshStandardMaterial({color:'#111',metalness:.5,roughness:.6}));
-  // Cylinder axis is Y by default; rotate 90° so the axis becomes X (horizontal)
-  drum.rotation.z = Math.PI/2;
-  wheel.add(drum);
+  drum.rotation.z=Math.PI/2; wheel.add(drum);
 
-  // Front rim (thin ring you see around the edge)
   const rimFront=new Mesh(new TorusGeometry(R+0.02,0.06,12,64),
                           new MeshStandardMaterial({color:'#111',metalness:.8,roughness:.3}));
-  // Place the ring at the "front" edge (positive Z)
-  rimFront.rotation.y = Math.PI/2;   // torus ring sits in YZ plane
-  rimFront.position.z =  DEPTH/2 + 0.02;
-  wheel.add(rimFront);
+  rimFront.rotation.y=Math.PI/2; rimFront.position.z=DEPTH/2+0.02; wheel.add(rimFront);
 
-  // Subtle grooves around circumference (visual separation between slices)
   const grooves=new Group();
   for(let i=0;i<N;i++){
-    const ring=new Mesh(new TorusGeometry(R-0.02,0.002,8,16,STEP-0.02),
-                        new MeshBasicMaterial({color:'#214d39'}));
-    ring.rotation.y = Math.PI/2;
-    // rotate around X so the gap sits between plates
-    ring.rotation.x = i*STEP + STEP/2;
-    grooves.add(ring);
+    const ring=new Mesh(new TorusGeometry(R-0.02,0.002,8,16,STEP-0.02), new MeshBasicMaterial({color:'#214d39'}));
+    ring.rotation.y=Math.PI/2; ring.rotation.x=i*STEP+STEP/2; grooves.add(ring);
   }
   wheel.add(grooves);
 
-  // Pegs around the FRONT rim (so flapper at right ticks them)
   const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
   const pegMat=new MeshStandardMaterial({color:'#d5b55c',metalness:.8,roughness:.35});
   const pegs=new Group();
   for(let i=0;i<N;i++){
-    const a=i*STEP;
-    const y=Math.sin(a)*(R-0.02);
-    const z=Math.cos(a)*(R-0.02);
-    const p=new Mesh(pegGeo,pegMat);
-    p.position.set( DEPTH/2 + 0.18, y, z );     // sit on front edge, protruding toward right flapper (x+)
-    p.rotation.y = Math.PI/2;                   // stand up relative to viewer
-    pegs.add(p);
+    const a=i*STEP, y=Math.sin(a)*(R-0.02), z=Math.cos(a)*(R-0.02);
+    const p=new Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.18,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
   }
   wheel.add(pegs);
 
-  // Number PLATES hugging the curved surface; they roll vertically as wheel rotates around X
   function plateTex(v, idx){
     const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
     const is100=v==='1.00', isG=(v==='0.05'||v==='0.15');
@@ -132,89 +111,85 @@
     return new CanvasTexture(c);
   }
 
-  const plateGeo=new PlaneGeometry(1.1,0.55); const plates=new Group();
+  const plates=new Group(), plateGeo=new PlaneGeometry(1.1,0.55);
   for(let i=0;i<N;i++){
-    const a=i*STEP + STEP/2;        // center of slice
-    const y=Math.sin(a)*(R-0.55);
-    const z=Math.cos(a)*(R-0.55);
-    const m=new Mesh(plateGeo, new MeshBasicMaterial({map:plateTex(labels[i],i)}));
-    // place plates mid-drum (x=0), wrapped around YZ circle
-    m.position.set(0, y, z);
-    // make the plate face the outward normal of the cylinder at that spot
-    const n=new Vector3(0, y, z).normalize();
-    m.lookAt(n.x, n.y, n.z);
+    const a=i*STEP+STEP/2, y=Math.sin(a)*(R-0.55), z=Math.cos(a)*(R-0.55);
+    const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i)}));
+    m.position.set(0,y,z);
+    const n=new Vector3(0,y,z).normalize(); m.lookAt(n.x,n.y,n.z);
     plates.add(m);
   }
   wheel.add(plates);
 
-  // Center cap + logo (small disc at front center)
   const hub=new Mesh(new CircleGeometry(0.9,64),
                      new MeshStandardMaterial({color:'#0b0f10',metalness:.5,roughness:.5}));
-  hub.rotation.y = Math.PI/2;
-  hub.position.set( DEPTH/2 + 0.07, 0, 0 );
-  scene.add(hub);
+  hub.rotation.y=Math.PI/2; hub.position.set(DEPTH/2+0.07,0,0); scene.add(hub);
 
   (function(){
     const c=document.createElement('canvas'); c.width=256; c.height=256; const g=c.getContext('2d');
-    g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256); g.fillStyle='#ffd34d';
-    g.font='800 72px Inter,Arial'; g.textAlign='center'; g.fillText('$BAG',128,128);
+    g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256); g.fillStyle='#ffd34d'; g.font='800 72px Inter,Arial'; g.textAlign='center';
+    g.fillText('$BAG',128,128);
     const logo=new Mesh(new PlaneGeometry(1.6,1.6), new MeshBasicMaterial({map:new CanvasTexture(c),transparent:true}));
-    logo.position.set( DEPTH/2 + 0.071, 0, 0 );
-    scene.add(logo);
+    logo.position.set(DEPTH/2+0.071,0,0); scene.add(logo);
   })();
 
-  // Right-side RED flapper (at x > 0), centered vertically
   const flapper=new Mesh(new PlaneGeometry(0.5,0.28),
                          new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
-  flapper.rotation.z = Math.PI/2;       // point toward the pegs
-  flapper.position.set( DEPTH/2 + 0.20, 0, R*0.02 );
-  scene.add(flapper);
+  flapper.rotation.z=Math.PI/2; flapper.position.set(DEPTH/2+0.20,0,R*0.02); scene.add(flapper);
 
-  // ==== sizing
+  // ===== Sizing (robust on iOS/Android)
   function size(){
     const r=mount.getBoundingClientRect();
     const w=Math.max(1,Math.floor(r.width)), h=Math.max(420,Math.floor(r.height));
-    renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w,h,false);
+    renderer.domElement.style.width=w+'px';
+    renderer.domElement.style.height=h+'px';
+    camera.aspect=w/h; camera.updateProjectionMatrix();
   }
-  size(); addEventListener('resize', size);
+  // Wait one RAF so mount has real size, then size()
+  requestAnimationFrame(size);
+  addEventListener('resize', size);
 
-  // ==== 7-segment HUD
+  // ===== HUD (7-seg)
   function drawHUD(val){
     const g=hud.getContext('2d'), w=hud.width, h=hud.height;
     g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
     g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
-    const fs=Math.min(88,Math.max(44,Math.floor(h*0.7)));
-    g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",ui-monospace,monospace`;
+    const fs=Math.min(88,Math.max(44,Math.floor(h*0.7))); g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",ui-monospace,monospace`;
     g.textAlign='center'; g.textBaseline='middle'; g.fillText((val||0).toFixed(2),w/2,h/2+2);
   }
   drawHUD(0);
 
-  // ==== physics & interaction (rotate around X to make vertical rolling)
+  // ===== Physics (rotate around X to roll numbers vertically)
   let angX=-Math.PI/2, vel=0, spinning=false, spin1=null, total=0, done=false;
   const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
 
-  function setAngle(a){ angX=a; wheel.rotation.x = a; }
-  // Index math now uses rotation around X; "front center" is at angle 0
+  function setAngle(a){ angX=a; wheel.rotation.x=a; }
   function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
   function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
-  function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEP - STEP/2; }
+  function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEP-STEP/2; }
 
   // peg tick (index change)
-  let lastIdx=-1; function pegTick(){ const i=idxFrom(angX); if(i!==lastIdx){ lastIdx=i; /* hook audio if you like */ } }
+  let lastIdx=-1; function pegTick(){ const i=idxFrom(angX); if(i!==lastIdx){ lastIdx=i; } }
 
-  // swipe/drag (vertical)
+  // Swipe (vertical)
   const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
   let dragging=false,lastY=0,lastT=0,samples=[];
-  function down(e){ if(spinning||done) return; dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now(); e.preventDefault(); }
-  function move(e){ if(!dragging) return; const y=getY(e),t=performance.now(),dy=y-lastY;
-    setAngle(angX + dy*PIX2RAD); const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6)samples.shift(); }
-    lastY=y; lastT=t; e.preventDefault(); }
-  function up(){ if(!dragging) return; dragging=false; const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-    vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1); startSpin(); }
+  function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
+  function move(e){ if(!dragging) return; const y=getY(e), t=performance.now(), dy=y-lastY;
+    setAngle(angX + dy*PIX2RAD);
+    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
+    lastY=y; lastT=t; e.preventDefault();
+  }
+  function up(){ if(!dragging) return; dragging=false;
+    const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
+    vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1);
+    startSpin();
+  }
   surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
   surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
 
-  // buttons
+  // Buttons
   spinBtn.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
   holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
   resetBtn.onclick=reset;
@@ -265,9 +240,9 @@
     setAngle(-Math.PI/2); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size();
   }
 
-  // render
   function render(){ renderer.render(scene,camera); requestAnimationFrame(render); }
-  setAngle(-Math.PI/2); render(); size();
+  setAngle(-Math.PI/2);
+  requestAnimationFrame(render);
 })();
 </script>
 </body>
