@@ -72,7 +72,7 @@
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px;overflow:hidden}
   .felt{
     background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;
-    position:relative; /* keeps the rules FAB anchored for universal helper */
+    position:relative;
   }
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
@@ -122,14 +122,59 @@
   @keyframes glowGreen{ from{ box-shadow:0 0 0 0 rgba(47,191,107,.0) inset } to{ box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset } }
   @keyframes glowRed  { from{ box-shadow:0 0 0 0 rgba(226,91,91,.0) inset } to{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset } }
   @keyframes glowGold { from{ box-shadow:0 0 0 0 rgba(255,225,117,.0) inset } to{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset } }
+
+  /* Quick Amount buttons: green */
+  .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .preset-chip{
+    appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
+    padding:8px 12px;font-weight:900;letter-spacing:.2px;cursor:pointer;
+    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .preset-chip:hover{filter:brightness(1.03)}
+  .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
+  .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
+  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
+
+  /* -------- Rules pill + Modal -------- */
+  .rules-fab{ position:absolute; right:12px; bottom:12px; z-index:5;
+    background:linear-gradient(180deg,#4ea3ff,#287bff);
+    color:#f7fbff; font-weight:800; border:1px solid #1e5fd1;
+    padding:6px 10px; font-size:13px; border-radius:999px;
+    box-shadow:0 6px 16px rgba(40,123,255,.25), inset 0 1px 0 rgba(255,255,255,.12);
+    cursor:pointer; transition:transform .06s ease, box-shadow .2s ease, filter .15s ease; }
+  .rules-fab:hover{ filter:brightness(1.05); box-shadow:0 6px 16px rgba(40,123,255,.3), 0 10px 30px rgba(0,0,0,.25); }
+  .rules-fab:active{ transform:translateY(1px); }
+
+  .rules-overlay{
+    display:none; place-items:center;
+    position:fixed; inset:0; z-index:1200;
+    background:rgba(0,0,0,.55); backdrop-filter:saturate(120%) blur(6px);
+    padding:16px; }
+  .rules-modal{
+    width:min(680px, 96vw);
+    background:linear-gradient(180deg,#0b1b13,#0d2217); color:#eaf3ec;
+    border:1px solid #204b33; border-radius:16px; box-shadow:0 18px 42px rgba(0,0,0,.45);
+    padding:18px 18px 20px; position:relative; }
+  .rules-modal h3{ margin:0 0 10px; font-size:1.2rem; }
+  .rules-modal ul{ margin:8px 0 0 20px; }
+  .rules-modal li{ margin:6px 0; }
+  .rules-note{ margin-top:12px; font-size:.9rem; color:#cfe2d6; opacity:.9; }
+  .rules-close{
+    position:absolute; top:10px; right:10px; width:32px; height:32px; border-radius:8px;
+    display:inline-grid; place-items:center; border:1px solid #2b6a48; background:#15261c; color:#e9efe9;
+    font-size:20px; line-height:1; cursor:pointer; }
+  .rules-close:hover{ filter:brightness(1.05); }
+  @media (max-width:520px){
+    .rules-modal{ padding:16px; }
+    .rules-modal h3{ font-size:1.1rem; }
+  }
 </style>
 
 <!-- SHARED OVERLAY / SESSION + QUICK AMOUNTS -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
-<!-- NEW: Universal Rules helper -->
-<script src="/js/bag-rules.js"></script>
 </head>
 
  <body>
@@ -258,12 +303,7 @@
         </div>
       </div>
 
-      <!-- Game felt; Rules FAB will auto-mount here via data-* -->
-      <div class="felt" id="feltBoard"
-           data-bag-rules="#rules-blackjack"
-           data-bag-rules-title="🃏 Blackjack — Quick Rules"
-           data-bag-rules-pos="br"
-           data-bag-rules-label="ℹ️ Rules">
+      <div class="felt" id="feltBoard">
         <div class="table" id="tableBoard">
           <div class="hand" id="dealer">
             <div class="label">Dealer</div><div class="total" id="dealerTotal">0</div>
@@ -295,30 +335,35 @@
           </p>
           <div id="status" class="micro" style="text-align:center;margin-top:8px">Place a stake, then Deal</div>
         </div>
+
+        <!-- Rules FAB anchored to this felt (gameboard) -->
+        <button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
       </div>
     </div>
 
   </div>
 </section>
 
-  <!-- Reusable rules content for universal BAGRules -->
-<template id="rules-blackjack">
-  <ul>
-    <li><b>Goal:</b> Beat the dealer by getting as close to 21 as possible without going over</li>
-    <li><b>Card Values:</b> Numbers = face value; J/Q/K = 10; A = 1 or 11</li>
-    <li><b>Blackjack:</b> Ace + 10-value card (house payout shown on screen)</li>
-    <li><b>Hit:</b> Take another card</li>
-    <li><b>Stand:</b> Keep your total</li>
-    <li><b>Double Down:</b> Double your bet, take exactly one final card</li>
-    <li><b>Split:</b> If your first two cards are a pair, you may split <b>on the first hand only</b></li>
-    <li><b>Bust:</b> Over 21 is an automatic loss</li>
-    <li><b>Dealer:</b> Hits until 17 or higher (hits soft 17)</li>
-  </ul>
-  <div class="rules-note">House visuals and payouts shown on this page apply. Push returns stake.</div>
-</template>
+  <div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+  <div class="rules-modal" role="document">
+    <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
+    <h3 id="rulesTitle">🃏 Blackjack — Quick Rules</h3>
+    <ul>
+      <li><b>Goal:</b> Beat the dealer by getting as close to 21 as possible without going over</li>
+      <li><b>Card Values:</b> Numbers = face value; J/Q/K = 10; A = 1 or 11</li>
+      <li><b>Blackjack:</b> Ace + 10-value card pays <b>3:2</b></li>
+      <li><b>Hit:</b> Take another card</li>
+      <li><b>Stand:</b> Keep your total</li>
+      <li><b>Double Down:</b> Double your bet, take exactly one final card</li>
+      <li><b>Split:</b> If your first two cards are a pair, you may split <b>on the first hand only</b></li>
+      <li><b>Bust:</b> Over 21 is an automatic loss</li>
+      <li><b>Dealer:</b> Hits until 17 or higher</li>
+    </ul>
+    <div class="rules-note">House visuals and payouts shown on this page apply. Push returns stake.</div>
+  </div>
+</div>
 
-  <!-- AUDIO (shared pattern with Dice) -->
-<script>
+  <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, primed=false, COMP=null;
@@ -453,8 +498,7 @@
 })();
 </script>
 
-<!-- CARD FACTORY -->
-<script>
+  <script>
 (function(){
   const ROOT = '/assets/cards';
   const BACK = `${ROOT}/back-black.webp`;
@@ -517,8 +561,7 @@
 })();
 </script>
 
-<!-- PRICES (identical logic to Dice) -->
-<script>
+  <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
@@ -676,8 +719,7 @@
 })();
 </script>
 
-<!-- UNIVERSAL STAKE WIRE (same as Dice) -->
-<script>
+  <script>
 (function(global){
   const PR = ()=>global.__PRICES__ || { bagUsd:0, xrpUsd:0 };
 
@@ -858,8 +900,7 @@
   });
 </script>
 
-<!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice -->
-<script>
+  <script>
 (function(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
@@ -1011,8 +1052,7 @@
 })();
 </script>
 
-<!-- HUD updater (Balance pill row like Dice) -->
-<script>
+  <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
 
@@ -1113,8 +1153,7 @@
 })();
 </script>
 
-<!-- GAME CORE + LIVE PAYOUT RENDERING -->
-<script>
+  <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 
 let shoe=[];
@@ -1386,15 +1425,27 @@ btnAgain.addEventListener('click', ()=>{
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 </script>
 
-<!-- Disable pinch/double-tap/ctrl+wheel zoom -->
-<script>
+  <script>
   document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
   document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
   window.addEventListener('wheel', (e)=>{ if(e.ctrlKey){ e.preventDefault(); } }, {passive:false});
 </script>
 
-<!-- Service worker -->
-<script>
+  <script>
+(function(){
+  const fab = document.getElementById('rulesFab');
+  const ov  = document.getElementById('rulesOverlay');
+  const x   = document.getElementById('rulesClose');
+  function open(){ ov.style.display='grid'; }
+  function close(){ ov.style.display='none'; }
+  fab?.addEventListener('click', open);
+  x?.addEventListener('click', close);
+  ov?.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
+  addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
+})();
+</script>
+
+  <script>
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
 </script>
 
