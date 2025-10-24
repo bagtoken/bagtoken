@@ -788,7 +788,7 @@
   });
 </script>
 
-<!-- Game logic (unchanged; uses stakeUsd/stakeBag which now stay in sync) -->
+<!-- Game logic (live-like demo: spend/credit in both modes) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
@@ -802,6 +802,7 @@
 
   const MIN_USD = 1, MAX_USD = 2000;
 
+  // --- HUD "Last:" helper ---
   window.__DICE_LAST__ = window.__DICE_LAST__ || '—';
   function setLast(s){ try{ window.__DICE_LAST__ = s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{} }
 
@@ -827,6 +828,7 @@
   }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+  // Inline CSS dice stage
   container.innerHTML = `
     <style>
       .cssstage{position:absolute;inset:0;display:grid;place-items:center;}
@@ -907,40 +909,32 @@
     return pick(neutrals);
   }
 
+  // Round state with locked stake
   const ROUND={active:false,point:null,lockedBag:0,lockedUsd:0};
   const isComeOut=()=>!ROUND.active||ROUND.point==null;
 
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    const q = parseFloat(betQtyEl?.value||0) || 0;
-    const directUsd = parseFloat(usdBetEl?.value||'') || 0;
-    const {bagUsd,xrpUsd} = PR();
-    const cur = currentCurrency();
-    const sUsdNow = directUsd>0 ? directUsd : (cur==='BAG' ? (bagUsd>0 ? q*bagUsd : 0) : (xrpUsd>0 ? q*xrpUsd : 0));
-    const sBagNow = (cur==='BAG') ? q : ((bagUsd>0 && xrpUsd>0) ? q*(xrpUsd/bagUsd) : 0);
-
+    // Always compute from helpers (kept in sync by BAGStakeWire)
+    const sUsdNow = stakeUsd();
+    const sBagNow = stakeBag();
     const startingComeOut = isComeOut();
 
-    if (!window.__BAG_FORCE_DEMO) {
-      if (!window.__bagSession || !__bagSession.active()) {
-        alert('Start a session at The Cage');
-        rollBtn.disabled=false; return;
-      }
-      if (sUsdNow < MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
-      if (sUsdNow > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+    // Enforce session & limits in BOTH modes (demo behaves like live)
+    if (!window.__bagSession || !__bagSession.active()) {
+      alert('Start a session at The Cage');
+      rollBtn.disabled=false; return;
+    }
+    if (sUsdNow < MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+    if (sUsdNow > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
 
-      if (startingComeOut){
-        if (!(sBagNow > 0)) { alert('Enter a stake first'); rollBtn.disabled=false; return; }
-        if (!__bagSession.spend(sBagNow)) { alert('Insufficient balance'); rollBtn.disabled=false; return; }
-        ROUND.lockedBag = sBagNow;
-        ROUND.lockedUsd = sUsdNow;
-      }
-    } else {
-      if (startingComeOut){
-        ROUND.lockedBag = sBagNow;
-        ROUND.lockedUsd = sUsdNow;
-      }
+    if (startingComeOut){
+      if (!(sBagNow > 0)) { alert('Enter a stake first'); rollBtn.disabled=false; return; }
+      // Debit for both Demo and Live
+      if (!__bagSession.spend(sBagNow)) { alert('Insufficient balance'); rollBtn.disabled=false; return; }
+      ROUND.lockedBag = sBagNow;
+      ROUND.lockedUsd = sUsdNow;
     }
 
     let outcome;
@@ -959,7 +953,8 @@
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
       } else if (outcome.kind==='win-co' || outcome.kind==='jackpot-co'){
         const mult = (outcome.kind==='jackpot-co') ? MULT_JP : MULT_CO;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
+        // Credit in BOTH modes
+        try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{}
         const gainBag = ROUND.lockedBag*(mult-1);
         BAGOverlay.showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
@@ -997,7 +992,8 @@
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
       } else if (outcome.kind==='win-pt' || outcome.kind==='jackpot-pt'){
         const mult = (outcome.kind==='jackpot-pt') ? MULT_JP : MULT_PT;
-        if (!window.__BAG_FORCE_DEMO) { try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{} }
+        // Credit in BOTH modes
+        try{ __bagSession.credit(ROUND.lockedBag * mult); }catch{}
         const gainBag = ROUND.lockedBag*(mult-1);
         BAGOverlay.showWin({
           message: (mult===MULT_JP)?'JACKPOT':'WIN',
@@ -1026,7 +1022,7 @@
 })();
 </script>
 
-<!-- Practice Mode Wrapper (Demo default; Live only with ?live=1) -->
+
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -1039,12 +1035,31 @@
   const endBtn    = $('#endSessionBtn');
   const connectEl = $('#connectBtn');
 
-  const DEMO_KEY = '__bag_demo_bag_v1';
-  const START_BAG = 1000;
+  // --- Demo "live-like" config ---
+  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';      // BAG balance storage
+  const DEMO_INIT_KEY  = '__bag_demo_init_v2';     // one-time seed marker
+  const START_USD      = 2000;                     // 🎯 target starting USD
+  const MIN_USD        = 1;                        // keep in sync with page
+  const MAX_USD        = 2000;
 
-  function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
-  function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
-  if(localStorage.getItem(DEMO_KEY)==null) setBal(START_BAG);
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
+  function ensureSeedOnce(){
+    // Only seed once per browser (until you clear localStorage).
+    if (localStorage.getItem(DEMO_INIT_KEY)) return;
+
+    const bagUsd = Number(window.__PRICES__?.bagUsd || 0);
+    if (bagUsd > 0) {
+      const startBag = START_USD / bagUsd; // Hold balance in BAG so payouts remain native.
+      setBag(startBag);
+      localStorage.setItem(DEMO_INIT_KEY,'1');
+      renderDemo();
+    }
+  }
+
+  // In case prices weren’t ready on load, try again on first price push.
+  window.addEventListener('bag:pricesUpdated', ensureSeedOnce);
 
   function fmt(n){
     if(!Number.isFinite(n)) return '—';
@@ -1056,10 +1071,10 @@
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   function renderDemo(){
-    const bag=getBal();
-    const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
+    const bag = getBag();
+    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
     if(statusEl){
-      statusEl.innerHTML='Practice: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+      statusEl.innerHTML = 'Practice (Live-like): <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
         (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
     if(startBtn) startBtn.style.display='inline-block';
@@ -1067,15 +1082,17 @@
     if(endBtn)   endBtn.style.display='none';
   }
 
+  // Demo session acts like live: spend/credit actually change balance.
   const demoSession={
     active:()=>true,
-    get:()=>({addr:'demo',bag:getBal(),ts:Date.now()}),
+    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
     set:()=>{},
-    spend(bag){ const b=getBal(); if(!(bag>0)||b<bag) return false; setBal(b-bag); renderDemo(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemo(); return true; }
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); return true; }
   };
 
-  function forceBetXRP1(){
+  // Force a sane default bet (1 XRP) but DO NOT override player thereafter.
+  function forceBetXRP1Once(){
     const bet  = document.getElementById('betQty');
     const usd  = document.getElementById('usdBet');
     const unit = document.querySelector('.unit');
@@ -1087,31 +1104,32 @@
     }
     if (unit) unit.textContent = 'XRP';
 
-    if (bet){
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
       bet.value = '1';
       bet.dispatchEvent(new Event('input', {bubbles:true}));
       bet.dispatchEvent(new Event('change', {bubbles:true}));
     }
-
     if (usd){
       usd.dataset.userTyped = '0';
       usd.dispatchEvent(new Event('input', {bubbles:true}));
       usd.dispatchEvent(new Event('change', {bubbles:true}));
     }
-
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
 
   function enableDemo(){
+    // Lock demo flag (but we’ll behave “live-like” in the roll logic)
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
     catch{ window.__BAG_FORCE_DEMO=true; }
+
     window.__bagSession = demoSession;
+
+    // Seed as soon as prices appear; if prices are already here, seed now.
+    ensureSeedOnce();
     renderDemo();
 
-    forceBetXRP1();
-    setTimeout(forceBetXRP1, 0);
-    const once = ()=>{ forceBetXRP1(); window.removeEventListener('bag:pricesUpdated', once); };
-    window.addEventListener('bag:pricesUpdated', once);
+    // Help first-time players
+    forceBetXRP1Once();
 
     if (connectEl) connectEl.style.opacity='0.9';
   }
@@ -1123,7 +1141,17 @@
 
   if (forceLive) enableLive(); else enableDemo();
 
+  // Keep the demo balance USD mirror fresh
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
+
+  // Optional: allow a manual “Top Up” to $2,000 again (resets to target USD)
+  topUpBtn?.addEventListener('click', ()=>{
+    const bagUsd = Number(window.__PRICES__?.bagUsd||0);
+    if (bagUsd>0){
+      setBag(START_USD/bagUsd);
+      renderDemo();
+    }
+  });
 })();
 </script>
 
