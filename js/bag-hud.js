@@ -1,65 +1,84 @@
 <script>
-(function(w){
-  const { PR, on, fmtQty } = w.BAG;
+(function(){
+  const curToggle = document.getElementById('curToggle');
 
-  function mount(opts){
-    const cfg=Object.assign({
-      root:'#diceHud',
-      balanceSel:{ value:'#balLbl', ccy:'#ccyLbl' },
-      mode:'#modeLbl', bet:'#betLbl', last:'#lastLbl',
-      betQty:'#betQty', curToggle:'#curToggle'
-    }, opts||{});
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
 
-    const $=(s)=>document.querySelector(s);
-    const root=$(cfg.root);
-    const balLbl=$(cfg.balanceSel.value), ccyLbl=$(cfg.balanceSel.ccy);
-    const modeLbl=$(cfg.mode), betLbl=$(cfg.bet), lastLbl=$(cfg.last);
-    const betQtyEl=$(cfg.betQty), curToggle=$(cfg.curToggle);
-
-    const currentCurrency=()=>{
-      const el=curToggle?.querySelector('input[name="betCur"]:checked');
-      return el?String(el.value).toUpperCase():'XRP';
+  function els(){
+    return {
+      hud: document.getElementById('diceHud'),
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betLbl'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
     };
-    const selectedMode=()=> (window.__BAG_FORCE_DEMO===true)?'Demo':'Live';
-
-    function getBalances(){
-      const sess=(window.__bagSession && window.__bagSession.get && window.__bagSession.get())||{};
-      const bag=Number(sess.bag)||0;
-      let xrp=Number(sess.xrp);
-      if(!(xrp>0)){
-        const {bagUsd,xrpUsd}=PR();
-        xrp = (bagUsd>0 && xrpUsd>0) ? bag*(bagUsd/xrpUsd) : 0;
-      }
-      return {bag,xrp};
+  }
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO===true)?'Demo':'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+  function getBalances(){
+    const sess=(window.__bagSession && window.__bagSession.get && window.__bagSession.get())||{};
+    const bag=Number(sess.bag)||0;
+    let xrp=Number(sess.xrp);
+    if(!(xrp>0)){
+      const {bagUsd,xrpUsd}=PR();
+      xrp = (bagUsd>0 && xrpUsd>0) ? (bag * (bagUsd/xrpUsd)) : 0;
     }
-
-    const currentBet=()=>{
-      const v=parseFloat(betQtyEl?.value||'0');
-      return (Number.isFinite(v)&&v>0)? v : 0;
-    };
-
-    function render(){
-      const ccy=currentCurrency();
-      const {bag,xrp}=getBalances();
-      if(modeLbl) modeLbl.textContent=selectedMode();
-      if(betLbl)  betLbl.textContent=String(Math.floor(currentBet())||0);
-      if(lastLbl) lastLbl.textContent=String(window.__DICE_LAST__||'—');
-      if(balLbl && ccyLbl){
-        if(ccy==='XRP'){ balLbl.textContent=fmtQty(xrp); ccyLbl.textContent='XRP'; }
-        else           { balLbl.textContent=fmtQty(bag); ccyLbl.textContent='BAG'; }
-      }
-    }
-
-    ['input','change'].forEach(ev=> betQtyEl?.addEventListener(ev, render));
-    curToggle?.addEventListener('change', render);
-
-    ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:sessionChanged',
-     'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
-     'bag:diceResult','bag:hudRefresh'].forEach(n=> on(n, render));
-
-    render(); setTimeout(render,300); setTimeout(render,1200);
+    return {bag,xrp};
+  }
+  function currentBet(){
+    const {betQtyEl}=els(); const v=parseFloat(betQtyEl?.value||'0');
+    if(!Number.isFinite(v)||v<0) return 0; return Math.max(0, Math.floor(v));
   }
 
-  w.BAG = Object.assign(w.BAG||{}, { hud:{ mount }});
-})(window);
+  function styleBalanceRow(){
+    const { hud } = els(); if (!hud) return;
+    // Make Balance pill larger and full width row; others below it
+    hud.style.display = 'grid';
+    hud.style.gridTemplateColumns = '1fr';
+    hud.style.gap = '6px';
+    const pills = hud.querySelectorAll('.pill');
+    if (pills.length){
+      // Balance pill is the 2nd pill in your markup: [Mode][Balance][Bet][Last]
+      pills.forEach(p=>{ p.style.fontSize='12px'; p.style.padding='6px 10px'; });
+      if (pills[1]){ pills[1].style.fontSize='14px'; pills[1].style.padding='8px 12px'; pills[1].style.fontWeight='800'; }
+      // Place the rest in a row under Balance
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='6px';
+      // Move Mode, Bet, Last into row (Balance stays)
+      hud.appendChild(row);
+      [pills[0], pills[2], pills[3]].forEach(p=> row.appendChild(p));
+    }
+  }
+
+  function renderHud(){
+    try{
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      const mode=selectedMode(), ccy=currentCurrency();
+      const {bag,xrp}=getBalances();
+      if (modeLbl) modeLbl.textContent=mode;
+      if (betLbl)  betLbl.textContent=String(currentBet());
+      if (lastLbl) lastLbl.textContent=String(window.__DICE_LAST__||'—');
+      if (balLbl && ccyLbl){
+        if (ccy==='XRP'){ balLbl.textContent=fmt(xrp,6); ccyLbl.textContent='XRP'; }
+        else            { balLbl.textContent=fmt(bag,6); ccyLbl.textContent='BAG'; }
+      }
+    }catch(e){}
+  }
+
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:diceResult','bag:hudRefresh']
+    .forEach(ev=>addEventListener(ev, renderHud));
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
+
+  // first paint + layout tweak
+  renderHud();
+  styleBalanceRow();
+})();
 </script>
