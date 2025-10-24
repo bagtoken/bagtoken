@@ -1,36 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Big Wheel — Demo</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Big Wheel — 2D Canvas</title>
 <style>
-  :root{ --bg:#06120d; --felt:#0b1f16; --line:#244b35; --cream:#ffe9c6; --gold:#d5b55c; }
-  html,body{margin:0;height:100%;background:var(--bg);color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  .wrap{max-width:1100px;margin:0 auto;padding:22px}
+  :root{ --bg:#06120d; --felt:#0b1f16; --line:#244b35; --gold:#d5b55c; }
+  html,body{margin:0;background:var(--bg);color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
   .board{background:linear-gradient(180deg,#0c2218,#091a13);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:16px}
   .marquee{ text-align:center; font-weight:900; letter-spacing:.08em; color:#ffe9a6;
             background:linear-gradient(180deg,#17311f,#0e2419); border:1px solid #254a33;
             border-radius:10px; padding:8px; margin-bottom:8px; }
-  .felt{position:relative;background:var(--felt);border:1px solid var(--line);border-radius:12px;padding:12px;overflow:hidden}
-  /* Stage keeps aspect on phones so the wheel fits */
-  .stage3d{ position:relative; border-radius:10px; overflow:hidden; height: min(70vh, 85vw); min-height:360px; }
-  .stage3d canvas{ position:absolute; inset:0; width:100% !important; height:100% !important; display:block; }
-  /* 7-seg on top of everything */
-  #sevenSeg{ position:absolute; right:12px; top:12px; width:160px; height:96px; z-index:5; }
-  /* Decorative HTML cabinets (hidden on phones) */
-  .cab { position:absolute; top:18px; bottom:18px; width:140px; border-radius:18px;
-         background:linear-gradient(180deg,#ff8d37,#d33b1d);
-         box-shadow:inset 0 0 0 6px #fcbb74, 0 12px 30px rgba(0,0,0,.35);
-         z-index:1; pointer-events:none; }
-  .cab.left  { left:18px; }
-  .cab.right { right:18px; }
-  .bulbs { position:absolute; inset:10px; border-radius:16px; box-shadow:inset 0 0 0 12px var(--cream); }
-  .dollar { position:absolute; inset:22px; background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 600'%3E%3path d='M150 40c-18 0-32 14-32 32v16c-40 6-70 32-70 64 0 20 12 38 30 50 14 10 30 15 40 18l0 74c-38 6-66 30-66 62 0 40 40 66 96 70v14c0 18 14 32 32 32s32-14 32-32v-14c42-6 74-32 74-66 0-21-12-40-32-53-12-8-30-16-42-19v-80c38-6 66-30 66-60 0-42-40-70-92-74v-16c0-18-14-32-32-32zm0 138c-22-4-40-16-40-30 0-12 14-22 40-26v56zm32 120c24 6 44 18 44 32 0 14-18 26-44 30v-62z' fill='%23cfd2d6' stroke='%23888' stroke-width='8'/%3E%3C/svg%3E")
-    center/contain no-repeat; filter: drop-shadow(0 2px 1px rgba(0,0,0,.25)); }
-  @media (max-width: 820px){ .cab{ display:none; } } /* <- prevent cabinets covering the wheel on phones */
-
+  .stage{position:relative; border-radius:12px; overflow:hidden; background:#0b1f16; border:1px solid #244b35;}
+  .wheelCanvas{display:block; width:100%; height:auto}
+  /* keep a nice aspect on phones */
+  .stage::before{content:"";display:block;padding-top:62%}
+  .stage > .layer{position:absolute; inset:0}
+  /* 7-segment */
+  #sevenSeg{ position:absolute; right:12px; top:12px; width:min(38vw,180px); height:min(22vw,110px); }
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:10px}
   .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer;letter-spacing:.4px}
   .spin{background:linear-gradient(180deg,#ffe175,#f5c94c);color:#0b120d;box-shadow:0 5px 0 #b08a19}
@@ -42,229 +30,295 @@
 </head>
 <body>
 <div class="wrap">
-  <h2 style="margin:0 0 10px">🎡 Big Wheel — Demo</h2>
+  <h2 style="margin:0 0 10px">🎡 Big Wheel — Canvas</h2>
   <div class="board">
     <div class="marquee">SHOWCASE SPIN</div>
-    <div class="felt">
-      <div class="stage3d">
-        <div id="wheel3dMount" style="position:relative;width:100%;height:100%"></div>
-        <canvas id="sevenSeg" width="200" height="120"></canvas>
-        <!-- decorative cabinets (hidden on phones by media query) -->
-        <div class="cab left"><div class="bulbs"></div><div class="dollar"></div></div>
-        <div class="cab right"><div class="bulbs"></div><div class="dollar"></div></div>
-      </div>
 
-      <div class="row">
-        <button id="spinBtn"  class="btn spin">SPIN</button>
-        <button id="holdBtn"  class="btn hold">HOLD</button>
-        <button id="resetBtn" class="btn reset">RESET</button>
-      </div>
-      <div id="msg" class="t">Spin up to two times to reach 1.00 without going over.</div>
+    <div id="stage" class="stage">
+      <div class="layer"><canvas id="wheel" class="wheelCanvas"></canvas></div>
+      <canvas id="sevenSeg" width="220" height="130"></canvas>
     </div>
+
+    <div class="row">
+      <button id="spinBtn"  class="btn spin">SPIN</button>
+      <button id="holdBtn"  class="btn hold">HOLD</button>
+      <button id="resetBtn" class="btn reset">RESET</button>
+    </div>
+    <div id="msg" class="t">Spin up to two times to reach 1.00 without going over.</div>
   </div>
 </div>
 
-<!-- three.js -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-
 <script>
-(function initBigWheel(){
-  const {
-    Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh,
-    MeshStandardMaterial, MeshBasicMaterial,
-    CylinderGeometry, TorusGeometry, CircleGeometry, PlaneGeometry,
-    BoxGeometry, DirectionalLight, AmbientLight, CanvasTexture,
-    Color, DoubleSide, SRGBColorSpace
-  } = THREE;
-
-  const mount   = document.getElementById('wheel3dMount');
-  const seven   = document.getElementById('sevenSeg');
-  const spinBtn = document.getElementById('spinBtn');
-  const holdBtn = document.getElementById('holdBtn');
-  const resetBtn= document.getElementById('resetBtn');
-  const msg     = document.getElementById('msg');
-  holdBtn.disabled = true;
-
-  // PiR ordering and visuals
+(() => {
+  // --- constants / data
   const seq = [0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
   const labels = seq.map(v=>v.toFixed(2));
-  const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
+  const N = labels.length, TAU = Math.PI*2, STEP = TAU/N;
 
-  // Scene / renderer
-  const scene = new Scene(); scene.background = new Color('#091913');
-  const renderer = new WebGLRenderer({antialias:true,alpha:true});
-  renderer.outputColorSpace = SRGBColorSpace;
-  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
-  mount.appendChild(renderer.domElement);
-  Object.assign(renderer.domElement.style,{position:'absolute',inset:'0',width:'100%',height:'100%',display:'block'});
-  const camera = new PerspectiveCamera(40, 1, 0.1, 100); camera.position.set(0,0.2,8.6);
+  // --- elements
+  const stage  = document.getElementById('stage');
+  const cvs    = document.getElementById('wheel');
+  const ctx    = cvs.getContext('2d');
+  const seg    = document.getElementById('sevenSeg');
+  const spinBtn= document.getElementById('spinBtn');
+  const holdBtn= document.getElementById('holdBtn');
+  const resetBtn=document.getElementById('resetBtn');
+  const msg    = document.getElementById('msg');
+  holdBtn.disabled = true;
 
-  // Lights
-  scene.add(new DirectionalLight(0xffffff,1)).position.set(3,6,8);
-  scene.add(new DirectionalLight(0xffffff,.6)).position.set(-5,2,6);
-  scene.add(new DirectionalLight(0xfff0cc,.7)).position.set(0,-6,6);
-  scene.add(new AmbientLight(0xffffff,.35));
-
-  // Side towers in 3D (thin) – these are in WebGL, so they never block UI
-  function addCab(x){
-    const body = new Mesh(new BoxGeometry(2.1,7.8,0.6), new MeshStandardMaterial({color:'#ff8d37',metalness:.2,roughness:.8}));
-    body.position.set(x,0,-0.6);
-    const cv=document.createElement('canvas'); cv.width=256; cv.height=512; const g=cv.getContext('2d');
-    for(let r=0;r<8;r++)for(let c=0;c<3;c++){g.fillStyle=(r+c)%2?'#e14b1f':'#ff9b46'; g.fillRect(12+c*80,12+r*60,68,48)}
-    g.strokeStyle='#ffe9c6'; g.lineWidth=14; g.strokeRect(8,8,240,496);
-    const face=new Mesh(new PlaneGeometry(2,7.3), new MeshBasicMaterial({map:new CanvasTexture(cv)}));
-    face.position.set(x,0,-0.3);
-    const gpo=new Group(); gpo.add(body,face); scene.add(gpo);
+  // --- sizing
+  function size() {
+    const r = stage.getBoundingClientRect();
+    const w = Math.floor(r.width);
+    const h = Math.floor(r.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cvs.width = w*dpr; cvs.height = h*dpr; cvs.style.width = w+'px'; cvs.style.height = h+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    draw();
   }
-  addCab(-5.1); addCab(5.1);
+  window.addEventListener('resize', size);
 
-  // Wheel
-  const R=2.75, DEPTH=0.9; const wheel=new Group(); scene.add(wheel);
-  const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true), new MeshStandardMaterial({color:'#111',metalness:.5,roughness:.6}));
-  drum.rotation.x=Math.PI/2; wheel.add(drum);
-  const rim=new Mesh(new TorusGeometry(R+0.02,0.06,12,64), new MeshStandardMaterial({color:'#111',metalness:.8,roughness:.3}));
-  rim.rotation.x=Math.PI/2; rim.position.z=DEPTH/2+0.02; wheel.add(rim);
-  const face=new Mesh(new CircleGeometry(R-0.02,128), new MeshStandardMaterial({color:'#0e1e18',metalness:.2,roughness:.5}));
-  face.position.z=DEPTH/2+0.001; wheel.add(face);
+  // --- drawing helpers (2D)
+  let ang = -Math.PI/2;         // wheel angle (slice center at top)
+  const RIM = { outer: 0, inner: 0, hub: 0 };
 
-  // Grooves
-  const grooves=new Group();
-  for(let i=0;i<N;i++){ const t=new TorusGeometry(R-0.02,0.002,8,16,STEP-0.02);
-    const m=new MeshBasicMaterial({color:'#214d39'}); const r=new Mesh(t,m);
-    r.rotation.x=Math.PI/2; r.rotation.z=i*STEP+STEP/2; grooves.add(r);}
-  wheel.add(grooves);
+  function draw() {
+    const w = cvs.width / (window.devicePixelRatio||1);
+    const h = cvs.height/ (window.devicePixelRatio||1);
+    ctx.clearRect(0,0,w,h);
 
-  // Pegs
-  const pegGeo=new CylinderGeometry(0.06,0.06,0.32,12);
-  const pegMat=new MeshStandardMaterial({color:'#d5b55c',metalness:.8,roughness:.35});
-  const pegs=new Group();
-  for(let i=0;i<N;i++){ const a=i*STEP; const p=new Mesh(pegGeo,pegMat);
-    p.position.set(Math.cos(a)*(R-0.02), Math.sin(a)*(R-0.02), DEPTH/2+0.18); p.rotation.x=Math.PI/2; pegs.add(p); }
-  wheel.add(pegs);
+    // layout
+    const cx = w/2, cy = h*0.54;
+    const R  = Math.min(w,h) * 0.38;          // wheel radius
+    RIM.outer = R;
+    RIM.inner = R*0.86;
+    RIM.hub   = R*0.32;
 
-  // Plates (black/white alt, 5/15 green, 100 red, with gold frame)
-  function plateTex(v, idx){
-    const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
-    const is100=v==='1.00', isGreen=(v==='0.05'||v==='0.15'); const dark=!is100 && !isGreen && (idx%2===0);
-    const bg=is100? '#b90b0b' : isGreen? '#1b7f3a' : (dark? '#121212' : '#f1f1f1');
-    const fg=(is100||isGreen||dark)? '#f7f7f7' : '#151515';
-    g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
-    g.strokeStyle='#d5b55c'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
-    g.fillStyle=fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+8);
-    return new CanvasTexture(c);
+    // drum base
+    ctx.save();
+    ctx.translate(cx,cy);
+
+    // face base
+    ctx.beginPath();
+    ctx.arc(0,0,R,0,TAU);
+    ctx.fillStyle = '#0e1e18';
+    ctx.fill();
+
+    // grooves
+    ctx.strokeStyle = '#214d39';
+    ctx.lineWidth = 2;
+    for (let i=0;i<N;i++){
+      ctx.save();
+      ctx.rotate(i*STEP + STEP/2);
+      ctx.beginPath();
+      ctx.arc(0,0,R-2, -STEP/2+0.01, STEP/2-0.01);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // pegs
+    for (let i=0;i<N;i++){
+      const a=i*STEP + ang;
+      const x=Math.cos(a)*(R-6);
+      const y=Math.sin(a)*(R-6);
+      ctx.fillStyle = '#d5b55c';
+      ctx.beginPath(); ctx.arc(x,y,4,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y-10,2,0,TAU); ctx.fill();
+    }
+
+    // plates
+    for (let i=0;i<N;i++){
+      const val = labels[i];
+      const is100 = val==='1.00';
+      const isGreen = (val==='0.05'||val==='0.15');
+      const dark = !is100 && !isGreen && (i%2===0);
+      const bg = is100? '#b90b0b' : isGreen? '#1b7f3a' : (dark? '#121212' : '#f1f1f1');
+      const fg = (is100||isGreen||dark)? '#f7f7f7' : '#151515';
+
+      const a = i*STEP + STEP/2 + ang;
+      const rx = Math.cos(a)*(R*0.74);
+      const ry = Math.sin(a)*(R*0.74);
+      const w = R*0.78, h = R*0.38; // projected width/height
+
+      ctx.save();
+      ctx.translate(rx,ry);
+      ctx.rotate(a + Math.PI/2);
+
+      // card base
+      roundRect(ctx, -w/2+2,-h/2+2, w-4,h-4, 10, bg);
+      // gold frame
+      ctx.lineWidth = 8; ctx.strokeStyle = '#d5b55c';
+      roundRectStroke(ctx, -w/2+10,-h/2+10, w-20,h-20, 10);
+      // text
+      ctx.fillStyle = fg;
+      ctx.font = `bold ${Math.round(h*0.6)}px Inter,Arial,Helvetica,sans-serif`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(is100? '100' : String(Math.round(parseFloat(val)*100)), 0, 4);
+      ctx.restore();
+    }
+
+    // center hub
+    ctx.beginPath(); ctx.arc(0,0,R*0.34,0,TAU);
+    ctx.fillStyle='#0b0f10'; ctx.fill();
+    // logo
+    ctx.fillStyle='#ffd34d'; ctx.font=`bold ${Math.round(R*0.28)}px Inter,Arial`; ctx.textAlign='center';
+    ctx.fillText('$BAG',0, R*0.02);
+
+    // right-side red flapper (fixed in world coords)
+    ctx.restore();
+    const flapX = cx + R + 14, flapY = cy;
+    ctx.save();
+    ctx.translate(flapX, flapY);
+    ctx.fillStyle = '#e23a21';
+    roundRect(ctx, -8,-26, 16,52, 4, '#e23a21'); // little bracket
+    ctx.beginPath(); // triangle
+    ctx.moveTo(0,0);
+    ctx.lineTo(24,12);
+    ctx.lineTo(24,-12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    drawSeg(currentValue());
   }
-  const plateGeo=new PlaneGeometry(1.1,0.55); const plates=new Group();
-  for(let i=0;i<N;i++){ const a=i*STEP+STEP/2; const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i)}));
-    m.position.set(Math.cos(a)*(R-0.55), Math.sin(a)*(R-0.55), DEPTH/2+0.03); m.lookAt(0,0, DEPTH/2+1); plates.add(m); }
-  wheel.add(plates);
 
-  // Center logo
-  const hub=new Mesh(new CircleGeometry(0.9,64), new MeshStandardMaterial({color:'#0b0f10',metalness:.5,roughness:.5}));
-  hub.position.z=DEPTH/2+0.05; wheel.add(hub);
-  (function(){ const c=document.createElement('canvas'); c.width=256; c.height=256; const g=c.getContext('2d');
-    g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256); g.fillStyle='#ffd34d'; g.font='800 72px Inter,Arial'; g.textAlign='center';
-    g.fillText('$BAG',128,120); const tex=new CanvasTexture(c);
-    const logo=new Mesh(new PlaneGeometry(1.6,1.6), new MeshBasicMaterial({map:tex,transparent:true}));
-    logo.position.z=DEPTH/2+0.06; wheel.add(logo);
-  })();
+  function roundRect(ctx, x,y,w,h,r, fillStyle){ ctx.beginPath();
+    const rr = Math.min(r, w/2, h/2);
+    ctx.moveTo(x+rr,y);
+    ctx.arcTo(x+w,y, x+w,y+h, rr);
+    ctx.arcTo(x+w,y+h, x, y+h, rr);
+    ctx.arcTo(x,y+h, x, y, rr);
+    ctx.arcTo(x,y, x+w, y, rr);
+    ctx.closePath(); ctx.fillStyle = fillStyle; ctx.fill();
+  }
+  function roundRectStroke(ctx,x,y,w,h,r){ ctx.beginPath();
+    const rr = Math.min(r, w/2, h/2);
+    ctx.moveTo(x+rr,y);
+    ctx.arcTo(x+w,y, x+w,y+h, rr);
+    ctx.arcTo(x+w,y+h, x, y+h, rr);
+    ctx.arcTo(x,y+h, x, y, rr);
+    ctx.arcTo(x,y, x+w, y, rr);
+    ctx.closePath(); ctx.stroke();
+  }
 
-  // RIGHT red flapper
-  const flapper=new Mesh(new PlaneGeometry(0.5,0.28), new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
-  flapper.position.set(R+0.12, 0, DEPTH/2+0.15); flapper.rotation.y=Math.PI/2; scene.add(flapper);
-
-  // Sizing
-  function size(){ const r=mount.getBoundingClientRect(); const w=Math.max(1,Math.floor(r.width||1));
-    const h=Math.max(1,Math.floor(r.height||360)); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
-  size(); addEventListener('resize', size);
-
-  // 7-segment
+  // --- 7-segment (canvas text, bold mono)
   function drawSeg(val){
-    const g=seven.getContext('2d'); const s=Number(val||0).toFixed(2);
-    g.clearRect(0,0,seven.width,seven.height); g.fillStyle='#07090b'; g.fillRect(0,0,seven.width,seven.height);
-    g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,seven.width-8,seven.height-8);
-    g.fillStyle='#ffe26a'; g.font='700 88px "DM Mono",ui-monospace,monospace'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(s, seven.width/2, seven.height/2+2);
+    const g = seg.getContext('2d');
+    const w = seg.width, h = seg.height;
+    g.clearRect(0,0,w,h);
+    g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
+    g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
+    g.fillStyle='#ffe26a';
+    g.font='700 88px "DM Mono", ui-monospace, monospace';
+    // scale font for smaller canvases
+    const fs = Math.min(88, Math.max(44, Math.floor(h*0.7)));
+    g.font = `700 ${fs}px "DM Mono", ui-monospace, monospace`;
+    g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(val.toFixed(2), w/2, h/2+2);
   }
-  drawSeg(0);
 
-  // Physics
-  let ang=-Math.PI/2, vel=0, spinning=false, spin1=null, spin2=null, total=0, done=false;
-  const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
+  // --- physics & interaction
+  let vel = 0, spinning=false, spin1=null, spin2=null, total=0, done=false;
+  const FRICTION=0.992, VMIN=0.003, PIX2RAD=0.012;
 
-  function setAngle(a){ ang=a; wheel.rotation.z=-a; }
   function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
+  function currentValue(){ return parseFloat(labels[idxFrom(ang)]); }
   function snapTarget(){ const i=idxFrom(ang); const top=(N-i)%N; return top*STEP - STEP/2; }
+  function setAngle(a){ ang=a; draw(); }
 
-  // Input (swipe/drag)
-  let dragging=false,lastY=0,lastT=0,samples=[];
-  const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+  // drag / swipe
+  const getY = e => (e.touches? e.touches[0].clientY : e.clientY);
+  let dragging=false,lastY=0,lastT=0, samples=[];
   function down(e){ if(spinning||done) return; dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now(); e.preventDefault(); }
-  function move(e){ if(!dragging) return; const y=getY(e),t=performance.now(),dy=y-lastY;
-    setAngle(ang+dy*PIX2RAD); const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6)samples.shift(); }
-    lastY=y; lastT=t; e.preventDefault(); }
-  function up(){ if(!dragging) return; dragging=false;
-    const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0; vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1); startSpin(); }
-  surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
-  surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
+  function move(e){
+    if(!dragging) return;
+    const y=getY(e), t=performance.now(), dy=y-lastY;
+    setAngle(ang + dy*PIX2RAD);
+    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
+    lastY=y; lastT=t; e.preventDefault();
+  }
+  function up(){
+    if(!dragging) return; dragging=false;
+    const v = samples.length ? samples.reduce((a,b)=>a+b,0)/samples.length : 0;
+    vel = Math.max(1.2, Math.min(8, Math.abs(v*1.2))) * Math.sign(v||1);
+    startSpin();
+  }
 
-  // Buttons (no session!)
-  spinBtn.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
-  holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
-  resetBtn.onclick=reset;
+  cvs.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cvs.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
+
+  // buttons
+  spinBtn.onclick = ()=>{ if(spinning||done) return; vel=6; startSpin(); };
+  holdBtn.onclick = ()=>{ if(spinning||done||spin1==null) return; settleHold(); };
+  resetBtn.onclick= reset;
 
   function startSpin(){
     spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
     msg.className='t'; msg.textContent = (spin1==null)?'Spinning 1…':'Spinning 2…';
-    const loop=()=>{ setAngle(ang+vel*(1/60)); vel*=FRICTION; drawSeg(parseFloat(labels[idxFrom(ang)]));
-      if(Math.abs(vel)<VMIN){ const target=snapTarget(); const d=((target-ang+Math.PI*3)%(TAU))-Math.PI;
-        if(Math.abs(d)>0.0006){ setAngle(ang+d*0.25); requestAnimationFrame(loop); }
-        else { setAngle(target); spinning=false; onSettle(); }
-      } else { requestAnimationFrame(loop); } };
-    requestAnimationFrame(loop);
+    loop();
+  }
+
+  function loop(){
+    if (!spinning) return;
+    setAngle(ang + vel*(1/60));
+    vel *= FRICTION;
+    if (Math.abs(vel) < VMIN){
+      const target = snapTarget();
+      const delta = ((target-ang+Math.PI*3)%TAU)-Math.PI;
+      if (Math.abs(delta) > 0.0008){ setAngle(ang + delta*0.25); requestAnimationFrame(loop); }
+      else { setAngle(target); spinning=false; onSettle(); }
+    } else { requestAnimationFrame(loop); }
   }
 
   function onSettle(){
-    const landed=labels[idxFrom(ang)], val=parseFloat(landed); drawSeg(val);
-    if(spin1==null){ spin1=landed; total=val; msg.textContent=`Spin 1: ${landed} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return; }
-    spin2=landed; total+=val; drawSeg(total);
-    if(total>1.00){ msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; done=true; endRound(0,'Bust'); return; }
-    if(total===1.00){ msg.className='t win'; msg.textContent=`Exact 1.00 — 5×. Bonus spin…`; bonusSpin(); return; }
-    if(total>=0.95){ endRound(1,'Near 1.00'); } else { endRound(0,'Under 1.00'); }
+    const landed = currentValue();
+    if (spin1==null){
+      spin1 = landed; total = landed;
+      msg.textContent = `Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`;
+      holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return;
+    }
+    spin2 = landed; total += landed;
+    if (total > 1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; endRound(0,'Bust'); return; }
+    if (total === 1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonusSpin(); return; }
+    if (total >= 0.95){ endRound(1,'Near 1.00'); } else { endRound(0,'Under 1.00'); }
   }
 
   function settleHold(){
-    if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonusSpin(); return; }
-    if(total>=0.95) endRound(1,'Held near 1.00'); else endRound(0,'Held under 1.00');
+    if (total === 1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonusSpin(); return; }
+    if (total >= 0.95) endRound(1,'Held near 1.00'); else endRound(0,'Held under 1.00');
   }
 
   function bonusSpin(){
     spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
-    vel=5.5;
-    const loop=()=>{ setAngle(ang+vel*(1/60)); vel*=FRICTION;
-      if(Math.abs(vel)<VMIN){
-        const landed=labels[idxFrom(ang)];
-        const extra = (landed==='0.05')?5 : (landed==='0.15')?15 : (landed==='1.00')?25 : 0;
-        msg.className = extra? 't win' : 't';
-        msg.textContent = extra ? `Bonus hit ${landed} — +${extra}×` : `Bonus missed — kept base 5×`;
-        done=true; resetBtn.disabled=false;
-      } else requestAnimationFrame(loop); };
-    requestAnimationFrame(loop);
+    vel = 5.3; spinning = true;
+    const loopB = ()=>{
+      setAngle(ang + vel*(1/60)); vel *= FRICTION;
+      if (Math.abs(vel) < VMIN){
+        const landed = currentValue();
+        const extra = (landed===0.05)?5 : (landed===0.15)?15 : (landed===1.00)?25 : 0;
+        msg.className = extra ? 't win' : 't';
+        msg.textContent = extra ? `Bonus hit ${landed.toFixed(2)} — +${extra}×` : `Bonus missed — kept base 5×`;
+        done=true; resetBtn.disabled=false; spinning=false;
+      } else requestAnimationFrame(loopB);
+    };
+    requestAnimationFrame(loopB);
   }
 
   function endRound(mult,label){
     done=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
-    if(mult>0){ msg.className='t win'; msg.textContent=`${label} — ${mult.toFixed(2)}×`; }
-    else { msg.className='t lose'; msg.textContent=`${label} — 0×`; }
+    msg.className = mult>0 ? 't win' : 't lose';
+    msg.textContent = mult>0 ? `${label} — ${mult.toFixed(2)}×` : `${label} — 0×`;
   }
 
-  function reset(){ spinning=false; spin1=null; spin2=null; total=0; done=false;
+  function reset(){
+    spinning=false; spin1=null; spin2=null; total=0; done=false;
     holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false;
-    setAngle(-Math.PI/2); drawSeg(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size(); }
+    ang = -Math.PI/2; draw(); msg.className='t';
+    msg.textContent='Spin up to two times to reach 1.00 without going over.';
+  }
 
-  // kick
-  setAngle(-Math.PI/2);
-  (function render(){ renderer.render(scene,camera); requestAnimationFrame(render); })();
+  // init
+  size(); ang = -Math.PI/2; draw();
 })();
 </script>
 </body>
