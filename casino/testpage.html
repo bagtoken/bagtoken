@@ -77,6 +77,21 @@
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
 
+  /* --- Payout preview box --- */
+  .payouts{
+    background:#07140e;border:1px solid #1b4a2f;border-radius:12px;padding:10px;margin-bottom:12px
+  }
+  .payouts .title{font-weight:900;letter-spacing:.02em;margin:0 0 8px;color:#ffe9a6}
+  .payout-grid{
+    display:grid;grid-template-columns:1.1fr .7fr 1fr 1fr 1fr;gap:6px;align-items:center
+  }
+  .payout-grid .h{color:#a8b5ab;font-size:.85rem}
+  .payout-grid .cell{font-variant-numeric:tabular-nums}
+  @media (max-width:560px){
+    .payout-grid{grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .payout-grid .hide-sm{display:none}
+  }
+
   .hand{position:relative;min-height:calc(var(--cardH) + 36px);padding-top:20px}
   .label{position:absolute;top:0;left:0;color:#bcd0c4;font-size:12px}
   .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
@@ -274,6 +289,25 @@
     <!-- RIGHT: Table -->
     <div class="panel pad">
       <div class="marquee">$BAG BLACKJACK TABLE</div>
+
+      <!-- LIVE PAYOUT PREVIEW -->
+      <div class="payouts" id="payoutsBox" aria-live="polite">
+        <div class="title">Payout Preview (Return)</div>
+        <div class="payout-grid mono" role="table" aria-label="Payout preview">
+          <div class="h hide-sm" role="columnheader">Outcome</div>
+          <div class="h hide-sm" role="columnheader">Return</div>
+          <div class="h" role="columnheader">BAG</div>
+          <div class="h" role="columnheader">XRP</div>
+          <div class="h" role="columnheader">USD</div>
+
+          <!-- rows will be filled by JS; static placeholders for first paint -->
+          <div class="cell hide-sm">Blackjack</div><div class="cell hide-sm">2.00×</div><div class="cell" id="p_bj_bag">—</div><div class="cell" id="p_bj_xrp">—</div><div class="cell" id="p_bj_usd">—</div>
+          <div class="cell hide-sm">Win</div><div class="cell hide-sm">1.25×</div><div class="cell" id="p_win_bag">—</div><div class="cell" id="p_win_xrp">—</div><div class="cell" id="p_win_usd">—</div>
+          <div class="cell hide-sm">Push</div><div class="cell hide-sm">1.00×</div><div class="cell" id="p_push_bag">—</div><div class="cell" id="p_push_xrp">—</div><div class="cell" id="p_push_usd">—</div>
+          <div class="cell hide-sm">Lose</div><div class="cell hide-sm">0.00×</div><div class="cell" id="p_lose_bag">0</div><div class="cell" id="p_lose_xrp">0</div><div class="cell" id="p_lose_usd">$0.00</div>
+        </div>
+      </div>
+
       <div class="felt" id="feltBoard">
         <div class="table" id="tableBoard">
           <div class="hand" id="dealer">
@@ -1132,7 +1166,7 @@
 })();
 </script>
 
-<!-- GAME CORE -->
+<!-- GAME CORE + LIVE PAYOUT RENDERING -->
 <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
 
@@ -1197,6 +1231,41 @@ function stakeUsd(){
   if(currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
   return xrpUsd>0 ? q*xrpUsd : 0;
 }
+function stakeXrp(){
+  const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+  const {bagUsd,xrpUsd}=PR();
+  if(currentCurrency()==='XRP') return q;
+  if(currentCurrency()==='BAG' && bagUsd>0 && xrpUsd>0){
+    const bag= q; // qty is BAG in this branch
+    return bag*(bagUsd/xrpUsd);
+  }
+  return 0;
+}
+
+/* --- Live Payout Preview rendering --- */
+function fmtUSD(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtUnit(n,d=6){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:d}); }
+function renderPayouts(){
+  try{
+    const bag = stakeBag();
+    const xrp = stakeXrp();
+    const usd = stakeUsd();
+
+    const rows = [
+      ['bj',   CFG.mBJ],
+      ['win',  CFG.mWIN],
+      ['push', CFG.mPUSH],
+      ['lose', 0],
+    ];
+    rows.forEach(([key,m])=>{
+      const b = bag*m, x = xrp*m, u = usd*m;
+      const bEl = D(`p_${key}_bag`), xEl = D(`p_${key}_xrp`), uEl = D(`p_${key}_usd`);
+      if (bEl) bEl.textContent = (b>0)? fmtUnit(b,6) : (m===0?'0':'—');
+      if (xEl) xEl.textContent = (x>0)? fmtUnit(x,6) : (m===0?'0':'—');
+      if (uEl) uEl.textContent = (u>0)? fmtUSD(u) : (m===0?'$0.00':'—');
+    });
+  }catch(e){}
+}
 
 /* Deal card DOM */
 function dealOne(toNode, arr, faceUp=true, sound=true){
@@ -1251,12 +1320,6 @@ function startRound(){
   setStatus('Play your hand'); last('Dealt');
 
   queueMicrotask(updTotals);
-
-  if(isBJ(STATE.player)){
-    revealHole();
-    if(isBJ(STATE.dealer)) return settle('push-bj');
-    return settle('blackjack');
-  }
 }
 
 function hit(){
@@ -1355,6 +1418,12 @@ function settle(override){
   setTimeout(()=>{ try{ window.__bagAudio && window.__bagAudio.resume(); }catch{} },100);
 }
 
+/* ---- Binders for payout preview ---- */
+['bag:pricesUpdated','bag:hudRefresh'].forEach(evt => addEventListener(evt, renderPayouts));
+document.getElementById('usdBet')?.addEventListener('input', renderPayouts);
+document.getElementById('betQty')?.addEventListener('input', renderPayouts);
+document.getElementById('curToggle')?.addEventListener('change', renderPayouts);
+
 btnDeal.addEventListener('click', startRound);
 btnHit.addEventListener('click', hit);
 btnStand.addEventListener('click', ()=>stand(false));
@@ -1366,7 +1435,8 @@ btnAgain.addEventListener('click', ()=>{
   setStatus('Place a stake, then Deal'); last('—');
 });
 
-(function boot(){ buildShoe(); updateBetHud(); })();
+/* boot */
+(function boot(){ buildShoe(); updateBetHud(); renderPayouts(); })();
 setInterval(()=>{ if(shoe.length<15) buildShoe(); }, 2000);
 </script>
 
