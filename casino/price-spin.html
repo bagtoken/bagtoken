@@ -1,23 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Showcase Big Wheel — Forward Facing</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Showcase Big Wheel — 3D</title>
 <style>
   :root{ --bg:#06120d; --felt:#0b1f16; --line:#244b35; }
   html,body{margin:0;background:var(--bg);color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  .wrap{max-width:980px;margin:0 auto;padding:18px}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
   .board{background:linear-gradient(180deg,#0c2218,#091a13);border:1px solid var(--line);
-         border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
+    border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
   .marquee{ text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
-            background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;
-            border-radius:10px;padding:8px;margin-bottom:8px }
-  /* Square stage so the wheel is big and forward facing */
+    background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:10px;padding:8px;margin-bottom:8px }
   .stage{position:relative;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px solid #244b35}
-  .stage::before{content:"";display:block;padding-top:100%} /* 1:1 */
+  .stage::before{content:"";display:block;padding-top:70vh;max-height:78vh} /* tall, fills phone */
   .layer{position:absolute;inset:0}
-  #wheel{display:block;width:100%;height:100%}
-  #seven{position:absolute;right:10px;top:10px;width:min(38vw,180px);height:min(22vw,110px);z-index:3}
+  #hud{position:absolute;right:10px;top:10px;width:min(40vw,180px);height:min(24vw,110px);z-index:3}
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
   .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer}
   .spin{background:linear-gradient(180deg,#ffe175,#f5c94c);color:#0b120d;box-shadow:0 5px 0 #b08a19}
@@ -28,12 +26,12 @@
 </head>
 <body>
 <div class="wrap">
-  <h2 style="margin:0 0 10px">🎡 Showcase Big Wheel — Swipe</h2>
+  <h2 style="margin:0 0 10px">🎡 Showcase Big Wheel — 3D (Swipe to spin)</h2>
   <div class="board">
-    <div class="marquee">SWIPE DOWN TO SPIN</div>
+    <div class="marquee">SWIPE DOWN TO SPIN • HOLD AFTER FIRST</div>
     <div class="stage">
-      <div class="layer"><canvas id="wheel"></canvas></div>
-      <canvas id="seven" width="220" height="130"></canvas>
+      <div class="layer" id="mount"></div>
+      <canvas id="hud" width="220" height="130"></canvas>
     </div>
     <div class="row">
       <button id="spinBtn" class="btn spin">SPIN</button>
@@ -44,141 +42,192 @@
   </div>
 </div>
 
+<!-- three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+
 <script>
 (() => {
-  // Real Showcase order
   const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-  const labels=seq.map(v=>v.toFixed(2)); const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
+  const labels=seq.map(v=>v.toFixed(2)), N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
-  // Elements
-  const stage=document.querySelector('.stage');
-  const cvs=document.getElementById('wheel'); const ctx=cvs.getContext('2d');
-  const seg=document.getElementById('seven'); const msg=document.getElementById('msg');
+  const mount=document.getElementById('mount'), hud=document.getElementById('hud');
   const spinBtn=document.getElementById('spinBtn'), holdBtn=document.getElementById('holdBtn'), resetBtn=document.getElementById('resetBtn');
-  holdBtn.disabled=true;
+  const msg=document.getElementById('msg'); holdBtn.disabled=true;
 
-  // Size canvas to stage
-  function size(){ const r=stage.getBoundingClientRect(), dpr=Math.min(devicePixelRatio||1,2);
-    cvs.width=r.width*dpr; cvs.height=r.height*dpr; cvs.style.width=r.width+'px'; cvs.style.height=r.height+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }
-  addEventListener('resize', size);
+  // --- THREE scene
+  const {
+    Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
+    CylinderGeometry, TorusGeometry, CircleGeometry, PlaneGeometry, BoxGeometry, CanvasTexture,
+    DirectionalLight, AmbientLight, Color, DoubleSide, SRGBColorSpace
+  } = THREE;
 
-  // Wheel state
-  let ang=-Math.PI/2; // which slice's center is at the top under the flapper
-  let vel=0, spinning=false, spin1=null, total=0, done=false;
-  const FRICTION=0.992, VMIN=0.003, PIX2RAD=0.012;
+  const scene=new Scene(); scene.background=new Color('#091913');
+  const renderer=new WebGLRenderer({antialias:true,alpha:true}); renderer.outputColorSpace=SRGBColorSpace;
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2)); mount.appendChild(renderer.domElement);
 
-  // Helpers
-  function rr(ctx,x,y,w,h,r,fill){ctx.beginPath();const a=Math.min(r,w/2,h/2);
-    ctx.moveTo(x+a,y);ctx.arcTo(x+w,y,x+w,y+h,a);ctx.arcTo(x+w,y+h,x,y+h,a);
-    ctx.arcTo(x,y+h,x,y,a);ctx.arcTo(x,y,x+w,y,a);ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
-  function rrS(ctx,x,y,w,h,r){ctx.beginPath();const a=Math.min(r,w/2,h/2);
-    ctx.moveTo(x+a,y);ctx.arcTo(x+w,y,x+w,y+h,a);ctx.arcTo(x+w,y+h,x,y+h,a);
-    ctx.arcTo(x,y+h,x,y,a);ctx.arcTo(x,y,x+w,y,a);ctx.closePath();ctx.stroke();}
+  const camera=new PerspectiveCamera(40,1,0.1,100); camera.position.set(0,0.15,8.6);
 
-  function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
-  function currentVal(){ return parseFloat(labels[idxFrom(ang)]); }
-  function snapTarget(){ const i=idxFrom(ang); const top=(N-i)%N; return top*STEP-STEP/2; }
-  function setAngle(a){ const prev=idxFrom(ang); ang=a; const now=idxFrom(ang); if(now!==prev){ /* tick spot */ }
-    draw(); }
+  // lights
+  scene.add(new DirectionalLight(0xffffff,1)).position.set(3,6,8);
+  scene.add(new DirectionalLight(0xffffff,.6)).position.set(-5,2,6);
+  scene.add(new DirectionalLight(0xfff0cc,.7)).position.set(0,-6,6);
+  scene.add(new AmbientLight(0xffffff,.35));
 
-  // Draw a forward-facing drum with tangent plates and upright text
-  function draw(){
-    const w=cvs.width/(devicePixelRatio||1), h=cvs.height/(devicePixelRatio||1);
-    ctx.clearRect(0,0,w,h);
-    const cx=w/2, cy=h/2, R=Math.min(w,h)*0.42;
+  // cabinets (thin, behind wheel) so it's the same vibe but never blocks touch
+  function addCab(x){
+    const body=new Mesh(new BoxGeometry(2.1,7.8,0.6),new MeshStandardMaterial({color:'#ff8d37',metalness:.2,roughness:.8}));
+    body.position.set(x,0,-0.7);
+    const cv=document.createElement('canvas'); cv.width=256; cv.height=512; const g=cv.getContext('2d');
+    for(let r=0;r<8;r++)for(let c=0;c<3;c++){g.fillStyle=(r+c)%2?'#e14b1f':'#ff9b46'; g.fillRect(12+c*80,12+r*60,68,48)}
+    g.strokeStyle='#ffe9c6'; g.lineWidth=14; g.strokeRect(8,8,240,496);
+    const face=new Mesh(new PlaneGeometry(2.0,7.3),new MeshBasicMaterial({map:new CanvasTexture(cv)}));
+    face.position.set(x,0,-0.35); scene.add(body,face);
+  }
+  addCab(-5.1); addCab(5.1);
 
-    // back ring
-    ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.fillStyle='#0e1e18'; ctx.fill();
+  // --- WHEEL (front-facing drum)
+  const R=2.75, DEPTH=0.9;
+  const wheel=new Group(); scene.add(wheel);
 
-    // subtle radial grooves
-    ctx.strokeStyle='#214d39'; ctx.lineWidth=2;
-    for(let i=0;i<N;i++){
-      ctx.beginPath();
-      const a0=i*STEP+STEP*0.49+ang, a1=i*STEP+STEP*0.51+ang;
-      ctx.arc(cx,cy,R-2,a0,a1); ctx.stroke();
-    }
+  const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
+                      new MeshStandardMaterial({color:'#111',metalness:.5,roughness:.6}));
+  drum.rotation.x=Math.PI/2; wheel.add(drum);
 
-    // pegs
-    ctx.fillStyle='#d5b55c';
-    for(let i=0;i<N;i++){
-      const a=i*STEP+ang, x=cx+Math.cos(a)*(R-8), y=cy+Math.sin(a)*(R-8);
-      ctx.beginPath(); ctx.arc(x,y,4,0,TAU); ctx.fill();
-    }
+  const rim=new Mesh(new TorusGeometry(R+0.02,0.06,12,64),
+                     new MeshStandardMaterial({color:'#111',metalness:.8,roughness:.3}));
+  rim.rotation.x=Math.PI/2; rim.position.z=DEPTH/2+0.02; wheel.add(rim);
 
-    // tangent plates (front-facing, gold trim)
-    for(let i=0;i<N;i++){
-      const v=labels[i], is100=v==='1.00', isG=(v==='0.05'||v==='0.15'), dark=!is100&&!isG&&(i%2===0);
-      const bg=is100?'#b90b0b':isG?'#1b7f3a':(dark?'#121212':'#f1f1f1'); const fg=(is100||isG||dark)?'#f7f7f7':'#151515';
+  const face=new Mesh(new CircleGeometry(R-0.02,128),
+                      new MeshStandardMaterial({color:'#0e1e18',metalness:.2,roughness:.5}));
+  face.position.z=DEPTH/2+0.001; wheel.add(face);
 
-      const a=i*STEP+ang;                      // plate center angle (radial)
-      const tx=cx+Math.cos(a)*(R*0.72);        // plate center position
-      const ty=cy+Math.sin(a)*(R*0.72);
-      const W=R*0.78, H=R*0.36;                // visual size (same for all plates)
+  // grooves
+  const grooves=new Group();
+  for(let i=0;i<N;i++){
+    const tg=new TorusGeometry(R-0.02,0.002,8,16,STEP-0.02);
+    const m=new MeshBasicMaterial({color:'#214d39'});
+    const ring=new Mesh(tg,m); ring.rotation.x=Math.PI/2; ring.rotation.z=i*STEP+STEP/2; grooves.add(ring);
+  }
+  wheel.add(grooves);
 
-      // draw a tangent card: rotate to plate tangent (a + 90°), but keep numbers upright
-      ctx.save(); ctx.translate(tx,ty); ctx.rotate(a+Math.PI/2);
-      rr(ctx,-W/2,-H/2,W,H,12,bg);
-      ctx.lineWidth=8; ctx.strokeStyle='#d5b55c'; rrS(ctx,-W/2+10,-H/2+10,W-20,H-20,10);
+  // pegs
+  const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
+  const pegMat=new MeshStandardMaterial({color:'#d5b55c',metalness:.8,roughness:.35});
+  const pegs=new Group();
+  for(let i=0;i<N;i++){
+    const a=i*STEP;
+    const p=new Mesh(pegGeo,pegMat);
+    p.position.set(Math.cos(a)*(R-0.02), Math.sin(a)*(R-0.02), DEPTH/2+0.18);
+    p.rotation.x=Math.PI/2;
+    pegs.add(p);
+  }
+  wheel.add(pegs);
 
-      // numbers upright (undo rotation just for text)
-      ctx.save(); ctx.rotate(-(a+Math.PI/2));
-      ctx.fillStyle=fg; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.font=`900 ${Math.round(H*0.6)}px Inter,Arial,Helvetica,sans-serif`;
-      ctx.fillText(is100?'100':String(Math.round(parseFloat(v)*100)),0,4);
-      ctx.restore();
-      ctx.restore();
-    }
-
-    // center hub + logo
-    ctx.beginPath(); ctx.arc(cx,cy,R*0.34,0,TAU); ctx.fillStyle='#0b0f10'; ctx.fill();
-    ctx.fillStyle='#ffd34d'; ctx.font=`800 ${Math.round(R*0.28)}px Inter,Arial`; ctx.textAlign='center';
-    ctx.fillText('$BAG',cx,cy+R*0.02);
-
-    // right-side RED flapper
-    const fx=cx+R+18, fy=cy;
-    ctx.fillStyle='#e23a21';
-    rr(ctx,fx-8,fy-28,16,56,4,'#e23a21'); // bracket
-    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(fx+28,fy+12); ctx.lineTo(fx+28,fy-12); ctx.closePath(); ctx.fill();
-
-    drawSeg(currentVal());
+  // label plate texture generator
+  function plateTex(v, idx){
+    const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
+    const is100=v==='1.00', isG=(v==='0.05'||v==='0.15');
+    const dark=!is100 && !isG && (idx%2===0);
+    const bg=is100? '#b90b0b' : isG? '#1b7f3a' : (dark? '#121212' : '#f1f1f1');
+    const fg=(is100||isG||dark)? '#f7f7f7' : '#151515';
+    g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
+    g.strokeStyle='#d5b55c'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
+    g.fillStyle=fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+8);
+    return new CanvasTexture(c);
   }
 
+  // plates
+  const plateGeo=new PlaneGeometry(1.1,0.55); const plates=new Group();
+  for(let i=0;i<N;i++){
+    const a=i*STEP+STEP/2;
+    const m=new Mesh(plateGeo, new MeshBasicMaterial({map:plateTex(labels[i],i)}));
+    m.position.set(Math.cos(a)*(R-0.55), Math.sin(a)*(R-0.55), DEPTH/2+0.03);
+    m.lookAt(0,0, DEPTH/2+1.0);
+    plates.add(m);
+  }
+  wheel.add(plates);
+
+  // center hub + logo
+  const hub=new Mesh(new CircleGeometry(0.9,64),
+                     new MeshStandardMaterial({color:'#0b0f10',metalness:.5,roughness:.5}));
+  hub.position.z=DEPTH/2+0.05; wheel.add(hub);
+  (function(){
+    const c=document.createElement('canvas'); c.width=256; c.height=256; const g=c.getContext('2d');
+    g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256); g.fillStyle='#ffd34d';
+    g.font='800 72px Inter,Arial'; g.textAlign='center'; g.fillText('$BAG',128,120);
+    const logo=new Mesh(new PlaneGeometry(1.6,1.6), new MeshBasicMaterial({map:new CanvasTexture(c),transparent:true}));
+    logo.position.z=DEPTH/2+0.06; wheel.add(logo);
+  })();
+
+  // right-side red flapper
+  const flapper=new Mesh(new PlaneGeometry(0.5,0.28),
+                         new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
+  flapper.position.set(R+0.12, 0, DEPTH/2+0.15); flapper.rotation.y=Math.PI/2; scene.add(flapper);
+
+  // size stage
+  function size(){
+    const r=mount.getBoundingClientRect(); const w=Math.max(1,Math.floor(r.width)), h=Math.max(360,Math.floor(r.height));
+    renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+  }
+  size(); addEventListener('resize', size);
+
   // 7-segment display
-  function drawSeg(v){ const g=seg.getContext('2d'), w=seg.width, h=seg.height;
+  function drawHUD(val){
+    const g=hud.getContext('2d'), w=hud.width, h=hud.height;
     g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
     g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
     const fs=Math.min(88,Math.max(44,Math.floor(h*0.7))); g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",ui-monospace,monospace`;
-    g.textAlign='center'; g.textBaseline='middle'; g.fillText(v.toFixed(2),w/2,h/2+2); }
+    g.textAlign='center'; g.textBaseline='middle'; g.fillText((val||0).toFixed(2),w/2,h/2+2);
+  }
+  drawHUD(0);
 
-  // Interaction (swipe down to spin)
-  const getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+  // physics / interaction
+  let ang=-Math.PI/2, vel=0, spinning=false, spin1=null, total=0, done=false;
+  const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
+
+  function setAngle(a){ ang=a; wheel.rotation.z=-a; }
+  function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
+  function currentVal(){ return parseFloat(labels[idxFrom(ang)]); }
+  function snapTarget(){ const i=idxFrom(ang); const top=(N-i)%N; return top*STEP-STEP/2; }
+
+  // simple peg “tick” when index changes (hook up audio later if you want)
+  let lastIdx=-1; function pegTick(){ const i=idxFrom(ang); if(i!==lastIdx){ lastIdx=i; /* play tick */ } }
+
+  // swipe/drag
+  const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
   let dragging=false,lastY=0,lastT=0,samples=[];
-  function down(e){ if(spinning||done) return; dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now(); e.preventDefault();}
-  function move(e){ if(!dragging) return; const y=getY(e),t=performance.now(),dy=y-lastY; setAngle(ang+dy*PIX2RAD);
-    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6)samples.shift(); } lastY=y; lastT=t; e.preventDefault();}
+  function down(e){ if(spinning||done) return; dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now(); e.preventDefault(); }
+  function move(e){ if(!dragging) return; const y=getY(e),t=performance.now(),dy=y-lastY;
+    setAngle(ang+dy*PIX2RAD); const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6)samples.shift(); }
+    lastY=y; lastT=t; e.preventDefault(); }
   function up(){ if(!dragging) return; dragging=false; const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
     vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1); startSpin(); }
-  cvs.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
-  cvs.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
+  surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
+  surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
 
-  // Buttons
+  // buttons
   spinBtn.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
   holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
   resetBtn.onclick=reset;
 
-  function startSpin(){ spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
-    msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…'; loop(); }
-  function loop(){ if(!spinning) return; setAngle(ang+vel*(1/60)); vel*=FRICTION;
-    if(Math.abs(vel)<VMIN){ const target=snapTarget(); const d=((target-ang+Math.PI*3)%TAU)-Math.PI;
-      if(Math.abs(d)>0.0008){ setAngle(ang+d*0.25); requestAnimationFrame(loop); }
-      else{ setAngle(target); spinning=false; onSettle(); } }
-    else requestAnimationFrame(loop); }
+  function startSpin(){
+    spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
+    msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
+    const loop=()=>{ setAngle(ang+vel*(1/60)); vel*=FRICTION; pegTick(); drawHUD(currentVal());
+      if(Math.abs(vel)<VMIN){
+        const target=snapTarget(); const d=((target-ang+Math.PI*3)%TAU)-Math.PI;
+        if(Math.abs(d)>0.0006){ setAngle(ang+d*0.25); requestAnimationFrame(loop); }
+        else{ setAngle(target); spinning=false; onSettle(); }
+      } else requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
 
   function onSettle(){
     const landed=currentVal();
     if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return; }
-    total+=landed;
+    total+=landed; drawHUD(total);
     if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; end(0,'Bust'); return; }
     if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
     if(total>=0.95) end(1,'Near 1.00'); else end(0,'Under 1.00');
@@ -186,28 +235,31 @@
   function settleHold(){ if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
     if(total>=0.95) end(1,'Held near 1.00'); else end(0,'Held under 1.00'); }
 
-  function bonus(){ vel=5.3; spinning=true; const loopB=()=>{ setAngle(ang+vel*(1/60)); vel*=FRICTION;
-      if(Math.abs(vel)<VMIN){ const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
+  function bonus(){
+    vel=5.4; spinning=true; holdBtn.disabled=true; spinBtn.disabled=true; resetBtn.disabled=true;
+    const loop=()=>{ setAngle(ang+vel*(1/60)); vel*=FRICTION; pegTick();
+      if(Math.abs(vel)<VMIN){
+        const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
         msg.className=extra?'t win':'t'; msg.textContent= extra?`Bonus hit ${v.toFixed(2)} — +${extra}×`:`Bonus missed — kept base 5×`;
-        done=true; resetBtn.disabled=false; spinning=false; } else requestAnimationFrame(loopB); };
-    requestAnimationFrame(loopB); }
+        done=true; resetBtn.disabled=false; spinning=false;
+      } else requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
 
-  function end(mult,label){ done=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
-    msg.className=mult?'t win':'t lose'; msg.textContent = mult?`${label} — ${mult.toFixed(2)}×`:`${label} — 0×`; }
+  function end(mult,label){
+    done=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
+    msg.className=mult?'t win':'t lose'; msg.textContent = mult?`${label} — ${mult.toFixed(2)}×`:`${label} — 0×`;
+  }
 
-  function reset(){ spinning=false; spin1=null; total=0; done=false; holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false;
-    ang=-Math.PI/2; draw(); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; }
+  function reset(){
+    spinning=false; spin1=null; total=0; done=false; holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false;
+    setAngle(-Math.PI/2); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size();
+  }
 
-  // 7-segment initial & first render
-  function drawSeg(v){ const g=seg.getContext('2d'), w=seg.width, h=seg.height;
-    g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
-    g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
-    const fs=Math.min(88,Math.max(44,Math.floor(h*0.7))); g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",ui-monospace,monospace`;
-    g.textAlign='center'; g.textBaseline='middle'; g.fillText((v||0).toFixed(2),w/2,h/2+2); }
-  drawSeg(0);
-
-  // init
-  size(); ang=-Math.PI/2; draw();
+  // render
+  function render(){ renderer.render(scene,camera); requestAnimationFrame(render); }
+  setAngle(-Math.PI/2); render();
 })();
 </script>
 </body>
