@@ -84,6 +84,8 @@
 
   /* Upright 3D Stage */
   .stage3d{ height:520px; position:relative; border-radius:10px; overflow:hidden; }
+  .stage3d canvas{ position:absolute; inset:0; width:100% !important; height:100% !important; display:block; }
+
   .roll-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
   .btn-roll{
     width:min(360px,90%);padding:16px 22px;margin-top:2px;
@@ -373,7 +375,7 @@
     if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
       ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
       : '—';
-    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRAGES?.source==='last-live' ? 'warn' : 'err');
     if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
     if (liveConv){
       if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
@@ -829,14 +831,12 @@
   const topUpBtn  = $('#topUpBtn');
   const endBtn    = $('#endSessionBtn');
   const connectEl = $('#connectBtn');
-  const playBtn   = document.getElementById('spinBtn') || document.getElementById('rollBtn'); // support both
+  const playBtn   = document.getElementById('spinBtn') || document.getElementById('rollBtn');
 
   // --- Demo config ---
   const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
   const DEMO_INIT_KEY  = '__bag_demo_init_v2';
   const START_USD      = 2000;
-  const MIN_USD        = 1;
-  const MAX_USD        = 2000;
 
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function fmt(n){
@@ -966,32 +966,6 @@
 
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  topUpBtn?.addEventListener('click', ()=>{
-    const bagUsd = Number(PR().bagUsd||0) || getCachedBagUsd();
-    if (bagUsd>0){
-      setBag(START_USD/bagUsd);
-      renderDemo();
-    }
-  });
-})();
-</script>
-
-<!-- THREE.JS LOADER (robust) -->
-<script>
-(function(){
-  function load(src, ok, fail){
-    var s=document.createElement('script'); s.src=src; s.async=true; s.onload=ok; s.onerror=fail; document.head.appendChild(s);
-  }
-  function boot(){
-    if (window.THREE) return initBAGBigWheel3D();
-    load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-      initBAGBigWheel3D,
-      function(){
-        load('https://unpkg.com/three@0.158.0/build/three.min.js', initBAGBigWheel3D, function(){ console.error('[bag-wheel] three.js failed to load'); });
-      }
-    );
-  }
-  boot();
 })();
 </script>
 
@@ -999,7 +973,7 @@
 <script>
 function initBAGBigWheel3D(){
   const { Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
-          CylinderGeometry, RingGeometry, TorusGeometry, CircleGeometry, PlaneGeometry, CanvasTexture,
+          CylinderGeometry, TorusGeometry, CircleGeometry, PlaneGeometry, CanvasTexture,
           Color, DirectionalLight, AmbientLight, DoubleSide, SRGBColorSpace } = THREE;
 
   const mount = document.getElementById('wheel3dMount');
@@ -1007,6 +981,9 @@ function initBAGBigWheel3D(){
   const holdBtn = document.getElementById('holdBtn');
   const resetBtn= document.getElementById('resetBtn');
   const rollText= document.getElementById('rollText');
+
+  // disable HOLD until first spin result
+  if (holdBtn) holdBtn.disabled = true;
 
   const betQtyEl = document.getElementById('betQty');
   const usdBetEl = document.getElementById('usdBet');
@@ -1342,9 +1319,9 @@ function initBAGBigWheel3D(){
           state.done=true; resetBtn.disabled=false; return;
         }
       }
-      raf = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   function finishRound(mult,label){
@@ -1368,18 +1345,54 @@ function initBAGBigWheel3D(){
     spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
   }
 
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
   function resetRound(){
-    cancelAnimationFrame(raf); raf=null;
     state.spinning=false; state.spin1=null; state.spin2=null; state.done=false; state.total=0;
-    state.lockedBag=0; state.lockedUsd=0; angVel=0; setWheelAngle(-Math.PI/2);
+    state.lockedBag=0; state.lockedUsd=0;
+    holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false;
+
+    // reset angle and render size (in case container changed)
+    setWheelAngle(-Math.PI/2);
+    resize();
+
     rollText.className='t'; rollText.textContent='Spin up to two times to reach 1.00 without going over.';
-    spinBtn.disabled=false; holdBtn.disabled=true; resetBtn.disabled=false;
   }
 
-  // Render
+  // Render loop
   function render(){ renderer.render(scene, camera); requestAnimationFrame(render); }
   requestAnimationFrame(render);
 }
+</script>
+
+<!-- THREE.JS LOADER (robust & waits for init function) -->
+<script>
+/* Robust loader that waits for THREE + initBAGBigWheel3D before booting */
+(function(){
+  function load(src, ok, fail){
+    var s=document.createElement('script');
+    s.src=src; s.async=true; s.onload=ok; s.onerror=fail; document.head.appendChild(s);
+  }
+  function whenReady(run){
+    var tries = 0;
+    (function poll(){
+      if (window.THREE && typeof window.initBAGBigWheel3D === 'function') { run(); return; }
+      if (++tries > 400) { console.error('[bag-wheel] init timed out'); return; } // ~20s
+      setTimeout(poll, 50);
+    })();
+  }
+  function boot(){
+    if (window.THREE) { whenReady(()=> initBAGBigWheel3D()); return; }
+    load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
+      ()=> whenReady(()=> initBAGBigWheel3D()),
+      ()=> load('https://unpkg.com/three@0.158.0/build/three.min.js',
+        ()=> whenReady(()=> initBAGBigWheel3D()),
+        ()=> console.error('[bag-wheel] three.js failed to load')
+      )
+    );
+  }
+  boot();
+})();
 </script>
 
 <script>
