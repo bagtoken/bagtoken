@@ -246,7 +246,7 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div style="display:flex;align-items:center;gap:6px">
                 <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-                <!-- Keep this label strictly "USD" (do NOT give it class 'unit') -->
+                <!-- Keep this label strictly "USD" -->
                 <span class="micro" aria-hidden="true">USD</span>
               </div>
             </div>
@@ -630,86 +630,156 @@
 <!-- ✅ UNIVERSAL QUICK AMOUNTS (shared across games) -->
 <script src="/js/bag-quick-amounts.js"></script>
 
-<!-- ✅ Lightweight stake display & limits (kept per game; no preset logic here) -->
+<!-- 🔄 Stake sync & limits (now fully price-connected + bidirectional + currency conversion) -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');     // USD input
   const betQtyEl = document.getElementById('betQty');     // XRP/BAG qty input
   const curToggle = document.getElementById('curToggle'); // XRP/BAG radio group
-  const unitQtyEls = document.querySelectorAll('.unit');  // unit labels for the BET QTY only
+  const unitQtyEls = document.querySelectorAll('.unit');  // unit labels near betQty
   const betLimits = document.getElementById('betLimits'); // limits label
 
   const MIN_USD = 1, MAX_USD = 2000;
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
 
+  const STATE = { lastEdited:'qty', lastCur:null, syncing:false };
+
   function currentCurrency(){
     const el=curToggle?.querySelector('input[name="betCur"]:checked');
     return el?String(el.value).toUpperCase():'XRP';
   }
-  function priceForCurrent(){
+  function priceFor(cur){
     const {bagUsd,xrpUsd}=PR();
-    return currentCurrency()==='BAG'?bagUsd:xrpUsd;
+    return (cur==='BAG')?bagUsd:xrpUsd;
   }
-  function qty(){
-    const v=parseFloat(betQtyEl?.value||'');
-    return Number.isFinite(v)&&v>0?v:0;
+  function priceForCurrent(){
+    return priceFor(currentCurrency());
   }
-  function derivedUsd(){
-    const px=priceForCurrent(), q=qty();
-    return (px>0 && q>0)? q*px : 0;
-  }
-  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   function paintUnits(){
-    unitQtyEls.forEach(s=> s.textContent = currentCurrency());
+    const cur = currentCurrency();
+    unitQtyEls.forEach(s=> s.textContent = cur);
   }
 
-  function autoFillUsdIfAllowed(){
+  function clampUsd(u){
+    if(!(u>0)) return 0;
+    return Math.max(MIN_USD, Math.min(MAX_USD, u));
+  }
+
+  function readUsdField(){
+    const v = parseFloat(usdBetEl?.value||'');
+    return Number.isFinite(v) && v>0 ? v : 0;
+  }
+  function readQtyField(){
+    const v = parseFloat(betQtyEl?.value||'');
+    return Number.isFinite(v) && v>0 ? v : 0;
+  }
+
+  function writeUsd(u){
     if(!usdBetEl) return;
-    if(usdBetEl.dataset.userTyped==='1') return; // respect manual USD typing
-    const v=derivedUsd();
-    if(v>0){
-      usdBetEl.value=(Math.round(v*100)/100).toFixed(2);
-      usdBetEl.dataset.autofill='1';
-    } else {
-      usdBetEl.value='';
-      usdBetEl.dataset.autofill='0';
-    }
+    usdBetEl.value = u ? (Math.round(u*100)/100).toFixed(2) : '';
+  }
+  function writeQty(q){
+    if(!betQtyEl) return;
+    // Keep decent precision for BAG while not being noisy for XRP
+    const decimals = currentCurrency()==='BAG' ? 6 : 6;
+    betQtyEl.value = q ? Number(q).toFixed(Math.min(6,decimals)).replace(/\.?0+$/,'') : '';
   }
 
   function renderLimits(){
-    const direct = parseFloat(usdBetEl?.value||'');
-    const uv = Number.isFinite(direct)&&direct>0 ? direct : derivedUsd();
-    const warn = (uv>0 && uv<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
-                 (uv>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
-    if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(uv)}${warn}`;
+    const u = readUsdField() || (readQtyField() * priceForCurrent()) || 0;
+    const warn = (u>0 && u<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (u>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ $${(u||0).toFixed(2)}${warn}`;
   }
 
-  // Inputs
+  // --- Synchronizers (guarded to avoid feedback loops) ---
+  function syncFromUSD(){
+    if(STATE.syncing) return;
+    STATE.syncing = true;
+    const px = priceForCurrent();
+    const usd = clampUsd(readUsdField());
+    if (usd && px>0){
+      const qty = usd / px;
+      writeQty(qty);
+    } else if (!usd){
+      // clear qty if usd cleared
+      writeQty('');
+    }
+    renderLimits();
+    STATE.syncing = false;
+  }
+
+  function syncFromQty(){
+    if(STATE.syncing) return;
+    STATE.syncing = true;
+    const px = priceForCurrent();
+    const qty = readQtyField();
+    if (qty && px>0){
+      const usd = qty * px;
+      writeUsd(usd);
+    } else if (!qty){
+      writeUsd('');
+    }
+    renderLimits();
+    STATE.syncing = false;
+  }
+
+  // --- Currency conversion on toggle ---
+  function convertQtyOnCurrencyChange(prevCur, nextCur){
+    const pxPrev = priceFor(prevCur);
+    const pxNext = priceFor(nextCur);
+
+    const usdTyped = readUsdField();
+    const qtyPrev  = readQtyField();
+
+    // Strategy:
+    // - If USD has a value, keep USD constant and recalc qty for new currency.
+    // - Else, translate existing qty from prev currency -> same USD -> new qty.
+    let usd = usdTyped;
+    if (!(usd>0)) {
+      usd = (qtyPrev>0 && pxPrev>0) ? qtyPrev * pxPrev : 0;
+    }
+    if (usd>0 && pxNext>0){
+      writeUsd(usd);
+      writeQty(usd / pxNext);
+    }
+    renderLimits();
+  }
+
+  // --- Event wiring ---
   usdBetEl?.addEventListener('input', ()=>{
-    usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0';
-    renderLimits();
+    STATE.lastEdited='usd';
+    syncFromUSD();
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  });
-  betQtyEl?.addEventListener('input', ()=>{
-    autoFillUsdIfAllowed();
-    renderLimits();
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  });
-  curToggle?.addEventListener('change', ()=>{
-    paintUnits();
-    autoFillUsdIfAllowed();
-    renderLimits();
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  });
-  addEventListener('bag:pricesUpdated', ()=>{
-    autoFillUsdIfAllowed();
-    renderLimits();
   });
 
-  // Initial paint
+  betQtyEl?.addEventListener('input', ()=>{
+    STATE.lastEdited='qty';
+    syncFromQty();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  });
+
+  // Track previous currency to convert amounts correctly
+  STATE.lastCur = currentCurrency();
+  curToggle?.addEventListener('change', ()=>{
+    const prev = STATE.lastCur;
+    const next = currentCurrency();
+    STATE.lastCur = next;
+    paintUnits();
+    convertQtyOnCurrencyChange(prev, next);
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  });
+
+  // When prices move, recompute the derived side keeping the user's last edit sticky
+  addEventListener('bag:pricesUpdated', ()=>{
+    if (STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty();
+  });
+
+  // Initial paint & sync
   paintUnits();
-  autoFillUsdIfAllowed();
+  if (readUsdField()>0){ STATE.lastEdited='usd'; syncFromUSD(); }
+  else { STATE.lastEdited='qty'; syncFromQty(); }
   renderLimits();
 })();
 </script>
