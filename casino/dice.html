@@ -797,62 +797,6 @@
   });
 </script>
 
-<!-- ✅ DICE: payout readout wire (come-out win / point win / jackpot) -->
-<script>
-(function(){
-  const payWinCO   = document.getElementById('payWinComeOut');
-  const payWinPT   = document.getElementById('payWinPoint');
-  const payJackpot = document.getElementById('payJackpot');
-  if(!payWinCO || !payWinPT || !payJackpot) return;
-
-  const usdEl     = document.getElementById('usdBet');
-  const qtyEl     = document.getElementById('betQty');
-  const curToggle = document.getElementById('curToggle');
-
-  const MULT_CO = 1.25, MULT_PT = 1.00, MULT_JP = 2.00;
-
-  const PR  = ()=>window.__PRICES__ || { bagUsd:0, xrpUsd:0 };
-  const cur = ()=> (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
-
-  function fmt(n, max=6){ return Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
-  function usd(n){ return '$' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function readQty(){ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0 ? v : 0; }
-  function readUsd(){ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0 ? v : 0; }
-
-  function stakeBag(){
-    const q = readQty(); if(!q) return 0;
-    const { bagUsd, xrpUsd } = PR();
-    if (cur()==='BAG') return q;
-    return (bagUsd>0 && xrpUsd>0) ? q * (xrpUsd / bagUsd) : 0;
-  }
-  function stakeUsd(){
-    const direct = readUsd();
-    if (direct>0) return direct;
-    const q = readQty(); if(!q) return 0;
-    const { bagUsd, xrpUsd } = PR();
-    return (cur()==='BAG') ? (bagUsd>0 ? q*bagUsd : 0) : (xrpUsd>0 ? q*xrpUsd : 0);
-  }
-
-  function paint(){
-    const sBag = stakeBag();
-    const sUsd = stakeUsd();
-    const show = (sBag>0 && sUsd>0);
-    payWinCO.textContent   = show ? `${fmt(sBag*MULT_CO)} BAG (${usd(sUsd*MULT_CO)})` : '—';
-    payWinPT.textContent   = show ? `${fmt(sBag*MULT_PT)} BAG (${usd(sUsd*MULT_PT)})` : '—';
-    payJackpot.textContent = show ? `${fmt(sBag*MULT_JP)} BAG (${usd(sUsd*MULT_JP)})` : '—';
-  }
-
-  ['input','change'].forEach(ev=>{
-    usdEl?.addEventListener(ev, paint);
-    qtyEl?.addEventListener(ev, paint);
-    curToggle?.addEventListener(ev, paint);
-  });
-  addEventListener('bag:pricesUpdated', paint);
-
-  paint();
-})();
-</script>
-
 <!-- Game logic (demo behaves like live; debits/credits) -->
 <script>
 (function(){
@@ -967,7 +911,7 @@
   function sumForOutcome(kind, point){
     if (kind==='craps') return pick([2,3,12]);
     if (kind==='win-co' || kind==='jackpot-co') return pick([7,11]);
-    if (kind==='point') return pick([4,5,6,8,9,10']);
+    if (kind==='point') return pick([4,5,6,8,9,10]);
     if (kind==='sevenout') return 7;
     if (kind==='win-pt' || kind==='jackpot-pt') return point;
     const neutrals=[2,3,4,5,6,8,9,10,11,12].filter(s=>s!==7 && s!==point);
@@ -1258,12 +1202,6 @@
 
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
-  /* NEW: fixed-6 formatter for Bet pill */
-  function fmtFixed6(n){
-    const x = Number(n);
-    if (!Number.isFinite(x)) return '—';
-    return x.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 });
-  }
 
   function els(){ 
     return { 
@@ -1295,11 +1233,11 @@
     return { bag, xrp };
   }
 
-  /* UPDATED: preserve decimals instead of flooring; return null if no valid bet */
   function currentBet(){
     const { betQtyEl } = els();
-    const v = parseFloat(betQtyEl?.value || '');
-    return (Number.isFinite(v) && v > 0) ? v : null;
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return Math.max(0, Math.floor(v));
   }
 
   function styleBalanceRow(){
@@ -1330,11 +1268,7 @@
       const { bag, xrp } = getBalances();
 
       if (modeLbl) modeLbl.textContent = mode;
-      /* UPDATED: show Bet with exactly 6 decimals */
-      if (betLbl){
-        const v = currentBet();
-        betLbl.textContent = (v == null) ? '—' : fmtFixed6(v);
-      }
+      if (betLbl)  betLbl.textContent  = String(currentBet());
       if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
 
       if (balLbl && ccyLbl){
