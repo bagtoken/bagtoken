@@ -1195,6 +1195,69 @@
 })();
 </script>
 
+<!-- ░░░ NEW: Wire payout preview ░░░ -->
+<script>
+/* Wire payout preview */
+(function(){
+  const MULT_CO = 1.25, MULT_PT = 1.00, MULT_JP = 2.00;
+
+  const $ = (s)=>document.querySelector(s);
+  const payCO = $('#payWinComeOut');
+  const payPT = $('#payWinPoint');
+  const payJP = $('#payJackpot');
+  const usdBetEl = $('#usdBet');
+  const qtyEl = $('#betQty');
+  const curToggle = $('#curToggle');
+
+  const PR = ()=>window.__PRICES__ || { bagUsd:0, xrpUsd:0 };
+
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+  function readStakeUSD(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return direct;
+    const q = parseFloat(qtyEl?.value||'')||0;
+    const { bagUsd, xrpUsd } = PR();
+    if (currentCurrency()==='BAG') return (bagUsd>0) ? q*bagUsd : 0;
+    return (xrpUsd>0) ? q*xrpUsd : 0;
+  }
+  function readStakeBAG(){
+    const q = parseFloat(qtyEl?.value||'')||0;
+    const { bagUsd, xrpUsd } = PR();
+    if (currentCurrency()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtBag(n){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
+
+  function paint(){
+    const stakeUsd = readStakeUSD();
+    const stakeBag = readStakeBAG();
+    if (payCO) payCO.textContent = (stakeBag>0 && stakeUsd>0)
+      ? `${fmtBag(stakeBag*MULT_CO)} BAG (${fmtUsd(stakeUsd*MULT_CO)})` : '—';
+    if (payPT) payPT.textContent = (stakeBag>0 && stakeUsd>0)
+      ? `${fmtBag(stakeBag*MULT_PT)} BAG (${fmtUsd(stakeUsd*MULT_PT)})` : '—';
+    if (payJP) payJP.textContent = (stakeBag>0 && stakeUsd>0)
+      ? `${fmtBag(stakeBag*MULT_JP)} BAG (${fmtUsd(stakeUsd*MULT_JP)})` : '—';
+  }
+
+  // react to everything that can change stake or price
+  ['input','change'].forEach(ev=>{
+    usdBetEl?.addEventListener(ev, paint);
+    qtyEl?.addEventListener(ev, paint);
+    curToggle?.addEventListener(ev, paint);
+  });
+  addEventListener('bag:pricesUpdated', paint);
+  addEventListener('bag:hudRefresh', paint);
+
+  // first paint
+  paint();
+})();
+</script>
+
 <!-- HUD updater (and balance pill layout: its own row) -->
 <script>
 (function(){
@@ -1233,11 +1296,12 @@
     return { bag, xrp };
   }
 
+  // UPDATED: keep decimals (no floor) and display up to 6
   function currentBet(){
     const { betQtyEl } = els();
     const v = parseFloat(betQtyEl?.value || '0');
     if (!Number.isFinite(v) || v < 0) return 0;
-    return Math.max(0, Math.floor(v));
+    return Number(v);
   }
 
   function styleBalanceRow(){
@@ -1268,7 +1332,7 @@
       const { bag, xrp } = getBalances();
 
       if (modeLbl) modeLbl.textContent = mode;
-      if (betLbl)  betLbl.textContent  = String(currentBet());
+      if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);   // ← show 6 decimals
       if (lastLbl) lastLbl.textContent = String(window.__DICE_LAST__ || '—');
 
       if (balLbl && ccyLbl){
