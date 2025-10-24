@@ -114,6 +114,17 @@
   .preset-chip:active{ transform:translateY(1px); box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1); }
   .preset-chip:focus-visible{ outline:2px solid #ffffff; outline-offset:2px; }
   .preset-chip.active{ box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25); }
+
+  /* Side cabinets + bulbs (visual panels assisting the 3D set) */
+  .cab { position:absolute; top:38px; bottom:38px; width:140px; border-radius:18px;
+         background:linear-gradient(180deg,#ff8d37,#d33b1d);
+         box-shadow:inset 0 0 0 6px #fcbb74, 0 12px 30px rgba(0,0,0,.35); }
+  .cab.left  { left:22px; }
+  .cab.right { right:22px; }
+  .bulbs { position:absolute; inset:10px; border-radius:16px; box-shadow:inset 0 0 0 12px #ffe9c6; }
+  .dollar { position:absolute; inset:22px; background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 600'%3E%3Cpath d='M150 40c-18 0-32 14-32 32v16c-40 6-70 32-70 64 0 20 12 38 30 50 14 10 30 15 40 18l0 74c-38 6-66 30-66 62 0 40 40 66 96 70v14c0 18 14 32 32 32s32-14 32-32v-14c42-6 74-32 74-66 0-21-12-40-32-53-12-8-30-16-42-19v-80c38-6 66-30 66-60 0-42-40-70-92-74v-16c0-18-14-32-32-32zm0 138c-22-4-40-16-40-30 0-12 14-22 40-26v56zm32 120c24 6 44 18 44 32 0 14-18 26-44 30v-62z' fill='%23cfd2d6' stroke='%23888' stroke-width='8'/%3E%3C/svg%3E")
+    center/contain no-repeat; filter: drop-shadow(0 2px 1px rgba(0,0,0,.25)); }
 </style>
 
 <!-- SHARED OVERLAY / SESSION -->
@@ -252,13 +263,14 @@
         <div class="marquee">$BAG PRICE SPIN</div>
         <div class="table">
           <div class="felt">
+            <!-- PATCH 1: Stage markup with 7-segment canvas -->
             <div class="stage3d">
               <div id="wheel3dMount" style="position:relative;width:100%;height:100%;"></div>
-              <!-- visual flapper topper -->
-              <div style="position:absolute; top:8px; left:50%; transform:translateX(-50%); width:0; height:0;
-                          border-left:16px solid transparent; border-right:16px solid transparent; border-bottom:28px solid #ffd34d;
-                          filter:drop-shadow(0 4px 8px rgba(0,0,0,.5)); pointer-events:none;"></div>
+              <!-- right-side 7-seg score -->
+              <canvas id="sevenSeg" width="200" height="120"
+                      style="position:absolute; right:36px; top:32px; width:160px; height:96px;"></canvas>
             </div>
+
             <div class="roll-row">
               <button id="spinBtn" class="btn-roll">SPIN</button>
               <button id="holdBtn" class="btn-roll" style="width:auto;padding:14px 18px;">HOLD</button>
@@ -677,7 +689,7 @@
   });
 </script>
 
-<!-- ░░░ NEW: Wire payout preview (wheel version) ░░░ -->
+<!-- ░░░ Wire payout preview (wheel version) ░░░ -->
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
@@ -734,7 +746,7 @@
 })();
 </script>
 
-<!-- HUD updater (same as Dice but ID-safe) -->
+<!-- HUD updater -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -819,7 +831,7 @@
 })();
 </script>
 
-<!-- Demo/Live session: seed exact $2,000 in demo and mirror USD/XRP in label (tweaked to use spinBtn) -->
+<!-- Demo/Live session -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -969,140 +981,195 @@
 })();
 </script>
 
-<!-- BIG WHEEL GAME LOGIC (upright 3D, swipe physics) -->
+<!-- PATCH 3: Replace whole initBAGBigWheel3D() to full Showcase Showdown build -->
 <script>
 function initBAGBigWheel3D(){
-  const { Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
-          CylinderGeometry, TorusGeometry, CircleGeometry, PlaneGeometry, CanvasTexture,
-          Color, DirectionalLight, AmbientLight, DoubleSide, SRGBColorSpace } = THREE;
+  const {
+    Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh,
+    MeshStandardMaterial, MeshBasicMaterial,
+    CylinderGeometry, TorusGeometry, CircleGeometry, BoxGeometry,
+    PlaneGeometry, CanvasTexture, DirectionalLight, AmbientLight,
+    Color, DoubleSide, SRGBColorSpace
+  } = THREE;
 
-  const mount = document.getElementById('wheel3dMount');
+  const mount   = document.getElementById('wheel3dMount');
+  const scoreCV = document.getElementById('sevenSeg');
   const spinBtn = document.getElementById('spinBtn');
   const holdBtn = document.getElementById('holdBtn');
   const resetBtn= document.getElementById('resetBtn');
   const rollText= document.getElementById('rollText');
-
-  // disable HOLD until first spin result
   if (holdBtn) holdBtn.disabled = true;
 
-  const betQtyEl = document.getElementById('betQty');
-  const usdBetEl = document.getElementById('usdBet');
-  const curToggle= document.getElementById('curToggle');
+  // official-ish variety ordering
+  const seq = [0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+  const labels = seq.map(v => v.toFixed(2));
+  const TAU = Math.PI*2, N = labels.length, STEP = TAU/N;
 
-  const values = Array.from({length:20}, (_,i)=>((i+1)*0.05).toFixed(2));
-  const TAU = Math.PI*2;
-  const per = TAU/values.length;
-
-  const PAYOUTS = { exactBase:5, nearMin:0.95, nearPay:1, bonus:{'0.05':5,'0.15':15,'1.00':25} };
+  const PAY = { exactBase:5, nearMin:0.95, nearPay:1, bonus:{'0.05':5,'0.15':15,'1.00':25} };
   const MIN_USD=1, MAX_USD=2000;
 
-  // Scene
+  // Scene + camera + renderer
   const scene = new Scene();
-  scene.background = new Color('#07140e');
-
+  scene.background = new Color('#091913');
   const renderer = new WebGLRenderer({ antialias:true, alpha:true });
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
   mount.appendChild(renderer.domElement);
 
   const camera = new PerspectiveCamera(40, 1, 0.1, 100);
-  camera.position.set(0, 0, 8.4);
+  camera.position.set(0, 0.2, 8.6);
 
   // Lights
-  const key = new DirectionalLight(0xffffff, 1.0); key.position.set(3, 6, 8);
-  const fill= new DirectionalLight(0xffffff, 0.5); fill.position.set(-5, 2, 6);
-  const rim = new DirectionalLight(0xfff0cc, 0.6); rim.position.set(0, -6, 6);
-  const amb = new AmbientLight(0xffffff, 0.35);
-  scene.add(key, fill, rim, amb);
+  scene.add(new DirectionalLight(0xffffff, 1.0)).position.set(3, 6, 8);
+  scene.add(new DirectionalLight(0xffffff, 0.6)).position.set(-5, 2, 6);
+  scene.add(new DirectionalLight(0xfff0cc, 0.7)).position.set(0, -6, 6);
+  scene.add(new AmbientLight(0xffffff, 0.35));
 
-  // Wheel
+  // ---------- SET PIECES (side orange cabinets with $ + bulbs) ----------
+  function addCab(side){
+    const cab = new Group();
+    const x = side==='L' ? -5.1 : 5.1;
+    const body = new Mesh(new BoxGeometry(2.1, 7.8, 0.6),
+                 new MeshStandardMaterial({ color:'#ff8d37', metalness:.2, roughness:.8 }));
+    body.position.set(x, 0, -0.6);
+    // face panel
+    const cv = document.createElement('canvas'); cv.width=256; cv.height=512;
+    const g = cv.getContext('2d');
+    // orange tiles
+    for(let r=0;r<8;r++)for(let c=0;c<3;c++){
+      g.fillStyle = (r+c)%2? '#e14b1f' : '#ff9b46'; g.fillRect(12+c*80, 12+r*60, 68, 48);
+    }
+    // bulbs frame
+    g.strokeStyle='#ffe9c6'; g.lineWidth=14; g.strokeRect(8,8,240,496);
+    // silver "$"
+    g.fillStyle='#cfd2d6'; g.strokeStyle='#9aa2aa'; g.lineWidth=10;
+    g.beginPath();
+    g.moveTo(128,60);
+    g.bezierCurveTo(100,60,86,80,86,96);
+    g.lineTo(86,116);
+    g.bezierCurveTo(40,124,18,154,18,184);
+    g.bezierCurveTo(18,212,40,236,86,252);
+    g.lineTo(86,332);
+    g.bezierCurveTo(44,338,20,364,20,394);
+    g.bezierCurveTo(20,438,66,466,128,472);
+    g.lineTo(128,492);
+    g.lineWidth=10; g.stroke();
+    const face = new Mesh(new PlaneGeometry(2.0, 7.3),
+                  new MeshBasicMaterial({ map:new CanvasTexture(cv) }));
+    face.position.set(x,0,-0.3);
+    cab.add(body, face);
+    scene.add(cab);
+  }
+  addCab('L'); addCab('R');
+
+  // ---------- WHEEL (upright drum) ----------
+  const R = 2.75, DEPTH = 0.9;
   const wheel = new Group(); scene.add(wheel);
 
-  const R = 2.6, DEPTH = 0.6;
+  const drum = new Mesh(
+    new CylinderGeometry(R, R, DEPTH, 128, 1, true),
+    new MeshStandardMaterial({ color:'#111', metalness:.5, roughness:.6 })
+  );
+  drum.rotation.x = Math.PI/2; wheel.add(drum);
 
-  const drumGeo = new CylinderGeometry(R, R, DEPTH, 120, 1, true);
-  const drumMat = new MeshStandardMaterial({ color:'#134b34', metalness:.2, roughness:.6 });
-  const drum = new Mesh(drumGeo, drumMat);
-  drum.rotation.x = Math.PI/2;
-  wheel.add(drum);
+  // front rim ring
+  const rim = new Mesh(
+    new TorusGeometry(R+0.02, 0.06, 12, 64),
+    new MeshStandardMaterial({ color:'#111', metalness:.8, roughness:.3 })
+  );
+  rim.rotation.x = Math.PI/2; rim.position.z = DEPTH/2+0.02; wheel.add(rim);
 
-  const faceGeo = new CircleGeometry(R, 120);
-  const faceMat = new MeshStandardMaterial({ color:'#0f3a28', metalness:.25, roughness:.35 });
-  const face = new Mesh(faceGeo, faceMat);
-  face.position.z = DEPTH/2 + 0.001;
-  wheel.add(face);
+  // face base
+  const face = new Mesh(
+    new CircleGeometry(R-0.02, 128),
+    new MeshStandardMaterial({ color:'#0e1e18', metalness:.2, roughness:.5 })
+  );
+  face.position.z = DEPTH/2 + 0.001; wheel.add(face);
 
-  // Slice grooves
+  // grooves between slices
   const grooves = new Group();
-  for (let i=0;i<values.length;i++){
-    const g = new TorusGeometry(R-0.02, 0.002, 8, 16, per-0.02);
-    const m = new MeshBasicMaterial({ color:'#1d5a3a' });
-    const ring = new Mesh(g, m);
-    ring.rotation.x = Math.PI/2;
-    ring.rotation.z = i*per + per/2;
+  for(let i=0;i<N;i++){
+    const g = new TorusGeometry(R-0.02, 0.002, 8, 16, STEP-0.02);
+    const m = new MeshBasicMaterial({ color:'#214d39' });
+    const ring = new Mesh(g,m); ring.rotation.x = Math.PI/2; ring.rotation.z = i*STEP + STEP/2;
     grooves.add(ring);
   }
   wheel.add(grooves);
 
-  // Pegs
-  const pegGeo = new CylinderGeometry(0.06, 0.06, 0.28, 12);
-  const pegMat = new MeshStandardMaterial({ color:'#d5b55c', metalness:.7, roughness:.35 });
+  // pegs around rim (front)
+  const pegGeo = new CylinderGeometry(0.06,0.06,0.32,12);
+  const pegMat = new MeshStandardMaterial({ color:'#d5b55c', metalness:.8, roughness:.35 });
   const pegs = new Group();
-  for (let i=0;i<values.length;i++){
+  for(let i=0;i<N;i++){
+    const a = i*STEP;
     const p = new Mesh(pegGeo, pegMat);
-    const a = i*per;
-    p.position.set(Math.cos(a)*(R-0.06), Math.sin(a)*(R-0.06), DEPTH/2 + 0.14);
-    p.rotation.z = a; p.rotation.x = Math.PI/2;
+    p.position.set(Math.cos(a)*(R-0.02), Math.sin(a)*(R-0.02), DEPTH/2 + 0.18);
+    p.rotation.x = Math.PI/2;
     pegs.add(p);
   }
   wheel.add(pegs);
 
-  // Number plates
-  const plates = new Group();
-  function makeLabelTexture(text){
-    const c=document.createElement('canvas'); c.width=256; c.height=128;
-    const g=c.getContext('2d'); g.fillStyle='#0b2318'; g.fillRect(0,0,c.width,c.height);
-    g.strokeStyle='#256244'; g.lineWidth=6; g.strokeRect(6,6,c.width-12,c.height-12);
-    g.fillStyle='#f9fdf9'; g.font='700 72px Inter, Arial, sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(text, c.width/2, c.height/2+4);
-    const t=new CanvasTexture(c); t.anisotropy=8; return t;
+  // label plate factory (PiR style)
+  function makePlateTexture(text, idx){
+    const c=document.createElement('canvas'); c.width=512; c.height=256;
+    const g=c.getContext('2d');
+    const val = parseFloat(text);
+    const is100 = text==='1.00';
+    const isGreen = (text==='0.05'||text==='0.15');
+    const dark = !is100 && !isGreen && (idx%2===0); // alternate black/white
+    const bg = is100? '#b90b0b' : isGreen? '#1b7f3a' : (dark? '#121212' : '#f1f1f1');
+    const fg = is100||isGreen? '#f7f7f7' : (dark? '#f7f7f7' : '#151515');
+
+    // base
+    g.fillStyle = bg; g.fillRect(0,0,c.width,c.height);
+    // gold frame
+    g.strokeStyle='#d5b55c'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
+    // value
+    g.fillStyle = fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif';
+    g.textAlign='center'; g.textBaseline='middle';
+    const txt = is100 ? '100' : String(Math.round(val*100));
+    g.fillText(txt, c.width/2, c.height/2+8);
+    return new CanvasTexture(c);
   }
-  const plateGeo = new PlaneGeometry(0.9, 0.45);
-  for (let i=0;i<values.length;i++){
-    const tex = makeLabelTexture(values[i]);
+
+  // number plates arranged around rim
+  const plateGeo = new PlaneGeometry(1.1,0.55);
+  const plates = new Group();
+  for(let i=0;i<N;i++){
+    const a=i*STEP + STEP/2;
+    const tex = makePlateTexture(labels[i], i);
     const mat = new MeshBasicMaterial({ map:tex });
     const m = new Mesh(plateGeo, mat);
-    const a = i*per + per/2;
-    m.position.set(Math.cos(a)*(R-0.55), Math.sin(a)*(R-0.55), DEPTH/2 + 0.02);
+    m.position.set(Math.cos(a)*(R-0.55), Math.sin(a)*(R-0.55), DEPTH/2 + 0.03);
     m.lookAt(0,0, DEPTH/2 + 1.0);
     plates.add(m);
   }
   wheel.add(plates);
 
-  // Hub + logo
-  const hub = new Mesh(new CircleGeometry(0.85, 64), new MeshStandardMaterial({ color:'#0b1b13', metalness:.35, roughness:.5 }));
-  hub.position.z = DEPTH/2 + 0.02; wheel.add(hub);
-
+  // center cap and logo
+  const hub = new Mesh(new CircleGeometry(0.9,64),
+              new MeshStandardMaterial({ color:'#0b0f10', metalness:.5, roughness:.5 }));
+  hub.position.z = DEPTH/2 + 0.05; wheel.add(hub);
   (function(){
     const c=document.createElement('canvas'); c.width=256; c.height=256;
-    const g=c.getContext('2d'); g.fillStyle='#0b1b13'; g.fillRect(0,0,256,256);
-    g.fillStyle='#ffd700'; g.font='800 72px Inter, Arial'; g.textAlign='center';
-    g.fillText('$BAG',128,118);
-    g.fillStyle='#aeb7af'; g.font='600 28px Inter, Arial'; g.fillText('PRICE SPIN',128,168);
-    const tex = new CanvasTexture(c);
-    const mat = new MeshBasicMaterial({ map:tex, transparent:true });
-    const plane = new Mesh(new PlaneGeometry(1.6,1.6), mat);
-    plane.position.z = DEPTH/2 + 0.03;
-    wheel.add(plane);
+    const g=c.getContext('2d'); g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256);
+    g.fillStyle='#ffd34d'; g.font='800 72px Inter,Arial'; g.textAlign='center';
+    g.fillText('$BAG',128,120);
+    const tex=new CanvasTexture(c);
+    const plane=new Mesh(new PlaneGeometry(1.6,1.6), new MeshBasicMaterial({ map:tex, transparent:true }));
+    plane.position.z = DEPTH/2 + 0.06; wheel.add(plane);
   })();
 
-  // Flapper (3D plane)
-  const flap = new Mesh(new PlaneGeometry(0.4,0.28), new MeshStandardMaterial({ color:'#ffd34d', metalness:.4, roughness:.4, side:DoubleSide }));
-  flap.position.set(0, R+0.02, DEPTH/2 + 0.12);
-  flap.rotation.x = Math.PI;
-  scene.add(flap);
+  // big RIGHT red flapper
+  const flapper = new Mesh(
+    new PlaneGeometry(0.5,0.28),
+    new MeshStandardMaterial({ color:'#e23a21', metalness:.4, roughness:.5, side:DoubleSide })
+  );
+  flapper.position.set(R+0.12, 0, DEPTH/2 + 0.15);
+  flapper.rotation.y = Math.PI/2;
+  scene.add(flapper);
 
-  // Resize
+  // ---------- sizing
   function resize(){
     const r = mount.getBoundingClientRect();
     renderer.setSize(r.width, r.height, false);
@@ -1110,83 +1177,58 @@ function initBAGBigWheel3D(){
   }
   resize(); addEventListener('resize', resize);
 
-  // Physics
-  let ang = -Math.PI/2, angVel = 0;
-  const FRICTION = 0.992, MIN_STOP = 0.002, PIXEL_TO_RAD = 0.012;
+  // ---------- physics / interaction
+  let ang = -Math.PI/2, vel = 0;
+  const FRICTION = 0.992, VMIN = 0.002, PIX2RAD=0.012;
 
   const state = { spinning:false, spin1:null, spin2:null, total:0, done:false, lockedBag:0, lockedUsd:0 };
 
-  function setWheelAngle(a){ ang=a; wheel.rotation.z = -ang; }
-  function normalize(a){ a%=TAU; if(a> Math.PI) a-=TAU; if(a<-Math.PI) a+=TAU; return a; }
-  function currentIndexFromAngle(a){
-    let t=a%TAU; if(t<0) t+=TAU;
-    const idx = Math.floor((t + per/2)/per) % values.length;
-    return (values.length - idx) % values.length;
-  }
-  function snapToNearest(){
-    const idx=currentIndexFromAngle(ang);
-    const centerFromTop=(values.length - idx) % values.length;
-    return centerFromTop*per - per/2;
-  }
+  function setAngle(a){ ang=a; wheel.rotation.z = -a; }
+  function norm(a){ a%=TAU; if(a> Math.PI) a-=TAU; if(a<-Math.PI) a+=TAU; return a; }
+  function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i = Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
+  function snapTarget(){ const i=idxFrom(ang); const top=(N-i)%N; return top*STEP - STEP/2; }
 
-  // Peg tick
-  let lastTickIdx=-1;
+  // peg tick
+  let lastIdx=-1;
   function pegTick(){
-    const idx = currentIndexFromAngle(ang);
-    if (idx !== lastTickIdx){
-      lastTickIdx = idx;
-      try{ window.__bagWheelAudio && __bagWheelAudio.tick(); }catch{}
-    }
+    const i=idxFrom(ang);
+    if(i!==lastIdx){ lastIdx=i; try{ __bagWheelAudio && __bagWheelAudio.tick(); }catch{} }
   }
 
-  // Input
-  let dragging=false, lastY=0, lastT=0, vSamples=[];
-  const surface = renderer.domElement;
-  const getY = (e)=> (e.touches? e.touches[0].clientY : e.clientY);
-  function onDown(e){ if(state.spinning||state.done) return; dragging=true; vSamples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
-  function onMove(e){
+  // drag/swipe spin
+  let dragging=false,lastY=0,lastT=0,samples=[];
+  const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+  function down(e){ if(state.spinning||state.done) return; dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now(); e.preventDefault(); }
+  function move(e){
     if(!dragging) return;
-    const y=getY(e), t=performance.now();
-    const dy=y-lastY; setWheelAngle(ang + dy*PIXEL_TO_RAD);
-    const dt=t-lastT; if (dt>0){ vSamples.push(((dy*PIXEL_TO_RAD)/(dt/1000))); if(vSamples.length>6) vSamples.shift(); }
+    const y=getY(e), t=performance.now(), dy=y-lastY;
+    setAngle(ang + dy*PIX2RAD);
+    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
     lastY=y; lastT=t; e.preventDefault();
   }
-  function onUp(){
+  function up(){
     if(!dragging) return; dragging=false;
-    const v = vSamples.length ? vSamples.reduce((a,b)=>a+b,0)/vSamples.length : 0;
-    angVel = Math.max(1.2, Math.min(8, Math.abs(v*1.2))) * Math.sign(v||1);
+    const v = samples.length ? samples.reduce((a,b)=>a+b,0)/samples.length : 0;
+    vel = Math.max(1.2, Math.min(8, Math.abs(v*1.2))) * Math.sign(v||1);
     startSpin();
   }
-  surface.addEventListener('mousedown', onDown); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
-  surface.addEventListener('touchstart', onDown, {passive:false}); surface.addEventListener('touchmove', onMove, {passive:false}); surface.addEventListener('touchend', onUp);
+  surf.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  surf.addEventListener('touchstart',down,{passive:false}); surf.addEventListener('touchmove',move,{passive:false}); surf.addEventListener('touchend',up);
 
-  // Buttons
-  spinBtn.addEventListener('click', ()=>{ if(state.spinning||state.done) return; angVel = 6.0; startSpin(); });
+  // buttons
+  spinBtn.addEventListener('click', ()=>{ if(state.spinning||state.done) return; vel=6.0; startSpin(); });
   resetBtn.addEventListener('click', resetRound);
   holdBtn.addEventListener('click', holdAfterFirst);
 
-  // Stake helpers
+  // staking helpers (same as your dice page)
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-  function stakeBag(){
-    const q = parseFloat(betQtyEl?.value||0) || 0;
-    if (!q) return 0;
-    const {bagUsd,xrpUsd} = PR();
-    if (currentCurrency()==='BAG') return q;
-    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
-    return 0;
-  }
-  function stakeUsd(){
-    const direct = parseFloat(usdBetEl?.value||'');
-    if (Number.isFinite(direct) && direct>0) return direct;
-    const q = parseFloat(betQtyEl?.value||0) || 0;
-    const {bagUsd,xrpUsd} = PR();
-    if (currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
+  const betQtyEl = document.getElementById('betQty');
+  const usdBetEl = document.getElementById('usdBet');
+  const curToggle= document.getElementById('curToggle');
+
+  function currentCurrency(){ const el = curToggle?.querySelector('input[name="betCur"]:checked'); return el ? String(el.value).toUpperCase() : 'XRP'; }
+  function stakeBag(){ const q=parseFloat(betQtyEl?.value||0)||0; if(!q) return 0; const {bagUsd,xrpUsd}=PR(); return currentCurrency()==='BAG'? q : (bagUsd>0&&xrpUsd>0? q*(xrpUsd/bagUsd):0); }
+  function stakeUsd(){ const d=parseFloat(usdBetEl?.value||''); if(Number.isFinite(d)&&d>0) return d; const q=parseFloat(betQtyEl?.value||0)||0; const {bagUsd,xrpUsd}=PR(); return currentCurrency()==='BAG' ? (bagUsd>0? q*bagUsd:0) : (xrpUsd>0? q*xrpUsd:0); }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
   async function lockStakeIfNeeded(){
@@ -1197,31 +1239,41 @@ function initBAGBigWheel3D(){
     if (sUsd > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); return false; }
     if (!(sBag>0)){ alert('Enter a stake first'); return false; }
     if (!__bagSession.spend(sBag)){ alert('Insufficient balance'); return false; }
-    state.lockedBag=sBag; state.lockedUsd=sUsd;
-    return true;
+    state.lockedBag=sBag; state.lockedUsd=sUsd; return true;
   }
 
-  // Spin loop
+  // 7-segment score (pure canvas)
+  function drawScore(val){
+    const g = scoreCV.getContext('2d');
+    const s = Number(val||0).toFixed(2);
+    g.clearRect(0,0,scoreCV.width,scoreCV.height);
+    g.fillStyle='#07090b'; g.fillRect(0,0,scoreCV.width,scoreCV.height);
+    g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,scoreCV.width-8,scoreCV.height-8);
+    g.fillStyle='#ffe26a';
+    g.font='700 88px "DM Mono", ui-monospace, monospace';
+    g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(s, scoreCV.width/2, scoreCV.height/2+2);
+  }
+  drawScore(0);
+
+  // spin loop
   let raf=null;
   async function startSpin(){
-    const ok = await lockStakeIfNeeded(); if(!ok){ angVel=0; return; }
+    const ok = await lockStakeIfNeeded(); if(!ok){ vel=0; return; }
     state.spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
     rollText.className='t'; rollText.textContent = (state.spin1==null) ? 'Spinning 1…' : 'Spinning 2…';
 
     const loop = ()=>{
-      setWheelAngle(ang + angVel*(1/60));
-      angVel *= FRICTION;
+      setAngle(ang + vel*(1/60));
+      vel *= FRICTION;
       pegTick();
+      drawScore( parseFloat(labels[idxFrom(ang)]) );
 
-      if (Math.abs(angVel) < MIN_STOP){
-        const target = snapToNearest();
-        const delta = normalize(target - ang);
-        if (Math.abs(delta) > 0.0006){ setWheelAngle(ang + delta*0.25); }
-        else {
-          setWheelAngle(target);
-          state.spinning=false; cancelAnimationFrame(raf); raf=null; onSettle();
-          return;
-        }
+      if (Math.abs(vel) < VMIN){
+        const target = snapTarget();
+        const delta = norm(target - ang);
+        if (Math.abs(delta) > 0.0006){ setAngle(ang + delta*0.25); }
+        else { setAngle(target); state.spinning=false; cancelAnimationFrame(raf); raf=null; onSettle(); return; }
       }
       raf = requestAnimationFrame(loop);
     };
@@ -1229,18 +1281,21 @@ function initBAGBigWheel3D(){
   }
 
   function onSettle(){
-    const landed = values[currentIndexFromAngle(ang)];
+    const landed = labels[idxFrom(ang)];
+    const landedNum = parseFloat(landed);
+    drawScore(landedNum);
 
     if (!state.spin1){
       state.spin1 = landed;
-      state.total = parseFloat(landed);
-      rollText.textContent = `Spin 1: ${landed} — ${state.total.toFixed(2)}. Spin again or HOLD.`;
+      state.total = landedNum;
+      rollText.textContent = `Spin 1: ${landed} — total ${state.total.toFixed(2)}. Spin again or HOLD.`;
       holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false;
       return;
     }
 
     state.spin2 = landed;
-    state.total = parseFloat(state.spin1)+parseFloat(landed);
+    state.total = parseFloat(state.spin1)+landedNum;
+    drawScore(state.total);
 
     if (state.total > 1.00){
       rollText.className='t lose';
@@ -1249,21 +1304,20 @@ function initBAGBigWheel3D(){
       return;
     }
     if (state.total === 1.00){
-      const base = PAYOUTS.exactBase;
+      const base = PAY.exactBase;
       BAGOverlay.showWin({
         message:'WIN',
         subtext:`Exact 1.00 — ${state.lockedBag.toLocaleString(undefined,{maximumFractionDigits:6})} → ${(state.lockedBag*base).toLocaleString(undefined,{maximumFractionDigits:6})} BAG`,
-        duration: 4200,
-        sound:true
+        duration: 4200, sound:true
       });
-      try{ window.__bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
+      try{ __bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
       rollText.className='t win';
-      rollText.textContent = `Exact 1.00 — ${base.toFixed(2)}×. Bonus spin incoming…`;
+      rollText.textContent = `Exact 1.00 — ${base.toFixed(2)}×. Bonus spin…`;
       bonusSpin(base);
       return;
     }
-    if (state.total >= PAYOUTS.nearMin){
-      finishRound(PAYOUTS.nearPay,'Near 1.00');
+    if (state.total >= PAY.nearMin){
+      finishRound(PAY.nearPay,'Near 1.00');
     } else {
       finishRound(0,'Under 1.00');
     }
@@ -1272,52 +1326,40 @@ function initBAGBigWheel3D(){
   function holdAfterFirst(){
     if (state.spinning||state.done) return;
     if (state.spin1==null){ rollText.textContent='You must spin first.'; return; }
+    drawScore(state.total);
     if (state.total === 1.00){
-      const base=PAYOUTS.exactBase;
+      const base=PAY.exactBase;
       BAGOverlay.showWin({
         message:'WIN',
         subtext:`Exact 1.00 — ${state.lockedBag.toLocaleString(undefined,{maximumFractionDigits:6})} → ${(state.lockedBag*base).toLocaleString(undefined,{maximumFractionDigits:6})} BAG`,
-        duration: 4200,
-        sound:true
+        duration: 4200, sound:true
       });
-      try{ window.__bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
-      bonusSpin(base);
-      return;
+      try{ __bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
+      bonusSpin(base); return;
     }
-    if (state.total >= PAYOUTS.nearMin) finishRound(PAYOUTS.nearPay, 'Held near 1.00');
+    if (state.total >= PAY.nearMin) finishRound(PAY.nearPay, 'Held near 1.00');
     else finishRound(0, 'Held under 1.00');
   }
 
   async function bonusSpin(basePaid){
     spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
-    await new Promise(r=>setTimeout(r,500));
+    await new Promise(r=>setTimeout(r,400));
     rollText.textContent='Bonus spin… (0.05/0.15/1.00 pay extra)';
-
-    const targetIdx = Math.floor(Math.random()*values.length);
-    const targetAngle = ((values.length - targetIdx)%values.length)*per - per/2;
-
-    angVel = 5.5;
+    vel = 5.5;
     const loop = ()=>{
-      setWheelAngle(ang + angVel*(1/60));
-      angVel *= FRICTION;
-      pegTick();
-
-      if (Math.abs(angVel) < MIN_STOP){
-        const delta = ((targetAngle - ang + TAU) % TAU + TAU) % TAU;
-        if (Math.abs(delta) > 0.002){ setWheelAngle(ang + Math.sign(delta)*(Math.min(delta, 0.2))); }
-        else {
-          const landed = values[currentIndexFromAngle(ang)];
-          const extra = PAYOUTS.bonus[landed]||0;
-          if (extra>0){
-            try{ __bagSession.credit(state.lockedBag*extra); }catch{}
-            BAGOverlay.showWin({ message:'BONUS', subtext:`Hit ${landed} — +${extra}×`, duration:4800, sound:true });
-            try{ window.__bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
-            rollText.className='t win'; rollText.textContent = `Bonus hit ${landed} — +${extra}×`;
-          } else {
-            rollText.className='t'; rollText.textContent = `Bonus missed — kept base ${basePaid.toFixed(2)}×`;
-          }
-          state.done=true; resetBtn.disabled=false; return;
+      setAngle(ang + vel*(1/60)); vel *= FRICTION; pegTick();
+      if (Math.abs(vel) < VMIN){
+        const landed = labels[idxFrom(ang)];
+        const extra = PAY.bonus[landed]||0;
+        if (extra>0){
+          try{ __bagSession.credit(state.lockedBag*extra); }catch{}
+          BAGOverlay.showWin({ message:'BONUS', subtext:`Hit ${landed} — +${extra}×`, duration:4800, sound:true });
+          try{ __bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
+          rollText.className='t win'; rollText.textContent = `Bonus hit ${landed} — +${extra}×`;
+        } else {
+          rollText.className='t'; rollText.textContent = `Bonus missed — kept base ${basePaid.toFixed(2)}×`;
         }
+        state.done=true; resetBtn.disabled=false; return;
       }
       requestAnimationFrame(loop);
     };
@@ -1332,15 +1374,12 @@ function initBAGBigWheel3D(){
       BAGOverlay.showWin({
         message: mult>=5?'BIG WIN':'WIN',
         subtext:`+${gain.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(state.lockedUsd)} → ${fmtUsd(state.lockedUsd*mult)}`,
-        duration: mult>=5?5600:4200,
-        sound:true
+        duration: mult>=5?5600:4200, sound:true
       });
-      try{ window.__bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
-      rollText.className='t win';
-      rollText.textContent = `${label} — ${mult.toFixed(2)}×`;
+      try{ __bagWheelAudio && __bagWheelAudio.cheer(); }catch{}
+      rollText.className='t win'; rollText.textContent = `${label} — ${mult.toFixed(2)}×`;
     } else {
-      rollText.className='t lose';
-      rollText.textContent = `${label} — 0×`;
+      rollText.className='t lose'; rollText.textContent = `${label} — 0×`;
     }
     spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
   }
@@ -1351,17 +1390,13 @@ function initBAGBigWheel3D(){
     state.spinning=false; state.spin1=null; state.spin2=null; state.done=false; state.total=0;
     state.lockedBag=0; state.lockedUsd=0;
     holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false;
-
-    // reset angle and render size (in case container changed)
-    setWheelAngle(-Math.PI/2);
-    resize();
-
+    setAngle(-Math.PI/2); drawScore(0); resize();
     rollText.className='t'; rollText.textContent='Spin up to two times to reach 1.00 without going over.';
   }
 
-  // Render loop
-  function render(){ renderer.render(scene, camera); requestAnimationFrame(render); }
-  requestAnimationFrame(render);
+  // initial pose & render
+  setAngle(-Math.PI/2);
+  (function render(){ renderer.render(scene,camera); requestAnimationFrame(render); })();
 }
 </script>
 
