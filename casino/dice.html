@@ -149,7 +149,7 @@
   :root{ --green:#2fbf6b; --green-600:#249a55; }
   .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .preset-chip{
-    appearance:none; border:1px solid var(--green-600); background:var(--green); color:#fff;
+    appearance:none; border:1px solid(var(--green-600)); background:var(--green); color:#fff;
     border-radius:999px; padding:8px 12px; font-weight:900; letter-spacing:.2px; cursor:pointer;
     box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
     transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
@@ -163,9 +163,9 @@
 <!-- SHARED OVERLAY / SESSION -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
-
 </head>
-<body>
+
+  <body>
 
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
@@ -353,7 +353,7 @@
   </div>
 </section>
 
-<!-- ✅ AUDIO SYSTEM (unchanged) -->
+    <!-- ✅ AUDIO SYSTEM (unchanged) -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -400,7 +400,7 @@
       const arr = await res.arrayBuffer();
       diceBuf = await ac.decodeAudioData(arr);
       if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
-    }catch(e){ } finally{ bufLoading=false; }
+    }catch(e){} finally{ bufLoading=false; }
     return diceBuf;
   }
   async function playDiceWebAudio(){
@@ -428,7 +428,7 @@
 })();
 </script>
 
-<!-- PRICES -->
+    <!-- PRICES -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -587,10 +587,10 @@
 })();
 </script>
 
-<!-- ✅ Keep the shared Quick Amount buttons script -->
+    <!-- ✅ Keep the shared Quick Amount buttons script -->
 <script src="/js/bag-quick-amounts.js"></script>
 
-<!-- ✅ UNIVERSAL STAKE WIRE (for ALL games) -->
+    <!-- ✅ UNIVERSAL STAKE WIRE (for ALL games) -->
 <script>
 /*!
  * BAGStakeWire — universal stake & preset wiring
@@ -788,7 +788,7 @@
   });
 </script>
 
-<!-- Game logic (live-like demo: spend/credit in both modes) -->
+    <!-- Game logic (demo behaves like live; debits/credits) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
@@ -916,7 +916,6 @@
   rollBtn?.addEventListener('click', async ()=>{
     rollBtn.disabled=true;
 
-    // Always compute from helpers (kept in sync by BAGStakeWire)
     const sUsdNow = stakeUsd();
     const sBagNow = stakeBag();
     const startingComeOut = isComeOut();
@@ -1022,8 +1021,7 @@
 })();
 </script>
 
-
-<script>
+    <script>
 (function(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
@@ -1034,32 +1032,14 @@
   const topUpBtn  = $('#topUpBtn');
   const endBtn    = $('#endSessionBtn');
   const connectEl = $('#connectBtn');
+  const rollBtn   = $('#rollBtn');
 
-  // --- Demo "live-like" config ---
+  // --- Demo config ---
   const DEMO_BAL_KEY   = '__bag_demo_bag_v2';      // BAG balance storage
-  const DEMO_INIT_KEY  = '__bag_demo_init_v2';     // one-time seed marker
-  const START_USD      = 2000;                     // 🎯 target starting USD
-  const MIN_USD        = 1;                        // keep in sync with page
+  const DEMO_INIT_KEY  = '__bag_demo_init_v2';     // seed marker
+  const START_USD      = 2000;                     // exact starting USD
+  const MIN_USD        = 1;
   const MAX_USD        = 2000;
-
-  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
-
-  function ensureSeedOnce(){
-    // Only seed once per browser (until you clear localStorage).
-    if (localStorage.getItem(DEMO_INIT_KEY)) return;
-
-    const bagUsd = Number(window.__PRICES__?.bagUsd || 0);
-    if (bagUsd > 0) {
-      const startBag = START_USD / bagUsd; // Hold balance in BAG so payouts remain native.
-      setBag(startBag);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      renderDemo();
-    }
-  }
-
-  // In case prices weren’t ready on load, try again on first price push.
-  window.addEventListener('bag:pricesUpdated', ensureSeedOnce);
 
   function fmt(n){
     if(!Number.isFinite(n)) return '—';
@@ -1070,19 +1050,49 @@
   }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
+  // Try to recover a cached BAG USD price immediately (same keys used by PRICES script)
+  function getCachedBagUsd(){
+    try{
+      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
+      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
+    }catch{}
+    return 0;
+  }
+
+  function ensureSeedNowOrWhenReady(){
+    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
+
+    const live = Number(window.__PRICES__?.bagUsd||0);
+    const cached = getCachedBagUsd();
+    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
+
+    if (bagUsd>0){
+      const startBag = START_USD / bagUsd; // hold balance natively in BAG
+      setBag(startBag);
+      localStorage.setItem(DEMO_INIT_KEY,'1');
+      return true;
+    }
+    return false; // will seed on first pricesUpdated
+  }
+
   function renderDemo(){
-    const bag = getBag();
-    const bagUsd = (window.__PRICES__?.bagUsd||0) * bag;
+    const bag=getBag();
+    const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
+    const label = bag>0 ? `Practice: <span style="color:#2fbf6b">${fmt(bag)} BAG</span>` : `Practice: <span style="color:#e8a85c">seeding…</span>`;
     if(statusEl){
-      statusEl.innerHTML = 'Practice (Live-like): <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
-        (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
+      statusEl.innerHTML = label + (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
     if(startBtn) startBtn.style.display='inline-block';
     if(topUpBtn) topUpBtn.style.display='none';
     if(endBtn)   endBtn.style.display='none';
   }
 
-  // Demo session acts like live: spend/credit actually change balance.
+  // Demo session — same mechanics as live
   const demoSession={
     active:()=>true,
     get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
@@ -1091,7 +1101,6 @@
     credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); return true; }
   };
 
-  // Force a sane default bet (1 XRP) but DO NOT override player thereafter.
   function forceBetXRP1Once(){
     const bet  = document.getElementById('betQty');
     const usd  = document.getElementById('usdBet');
@@ -1118,17 +1127,29 @@
   }
 
   function enableDemo(){
-    // Lock demo flag (but we’ll behave “live-like” in the roll logic)
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
     catch{ window.__BAG_FORCE_DEMO=true; }
 
     window.__bagSession = demoSession;
 
-    // Seed as soon as prices appear; if prices are already here, seed now.
-    ensureSeedOnce();
+    // Seed immediately if possible; otherwise wait for first price tick
+    const seeded = ensureSeedNowOrWhenReady();
     renderDemo();
 
-    // Help first-time players
+    // Disable Roll until we actually have a seeded balance
+    if (rollBtn) rollBtn.disabled = !seeded;
+
+    addEventListener('bag:pricesUpdated', ()=>{
+      if (!localStorage.getItem(DEMO_INIT_KEY)){
+        const ok = ensureSeedNowOrWhenReady();
+        if (ok && rollBtn) rollBtn.disabled = false;
+        renderDemo();
+      } else {
+        renderDemo();
+      }
+    });
+
+    // Sensible first-time defaults (won't override user after)
     forceBetXRP1Once();
 
     if (connectEl) connectEl.style.opacity='0.9';
@@ -1144,9 +1165,9 @@
   // Keep the demo balance USD mirror fresh
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  // Optional: allow a manual “Top Up” to $2,000 again (resets to target USD)
+  // Optional Top Up back to EXACT $2,000 (in BAG at current price)
   topUpBtn?.addEventListener('click', ()=>{
-    const bagUsd = Number(window.__PRICES__?.bagUsd||0);
+    const bagUsd = Number(window.__PRICES__?.bagUsd||0) || getCachedBagUsd();
     if (bagUsd>0){
       setBag(START_USD/bagUsd);
       renderDemo();
@@ -1155,7 +1176,7 @@
 })();
 </script>
 
-<!-- HUD updater -->
+    <!-- HUD updater -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -1231,7 +1252,8 @@
   document.getElementById('betQty')?.addEventListener('input', renderHud);
   curToggle?.addEventListener('change', renderHud);
 
-  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
+  // listen to current demo key
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
 
   renderHud();
   let tries = 0; 
@@ -1239,7 +1261,7 @@
 })();
 </script>
 
-<script>
+    <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
 }
