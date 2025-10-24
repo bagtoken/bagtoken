@@ -1,21 +1,19 @@
+<!-- /js/bag-quick-amounts.js -->
 <script>
 (function (global) {
   "use strict";
 
+  // ===== Utilities =====
   const W = window;
-
-  // ---- Helpers
   const $ = (sel, root = document) => root.querySelector(sel);
   const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   const toFixed2 = (n) => (Number(n) || 0).toFixed(2);
   const floor6 = (n) => Math.floor((Number(n) || 0) * 1e6) / 1e6;
 
-  // Safe price getter that matches your global price object
   function PRICES() {
     return W.__PRICES__ || { bagUsd: 0, xrpUsd: 0 };
   }
-
   function getCurrentCurrency(toggleEl) {
     try {
       const el = toggleEl?.querySelector('input[name="betCur"]:checked');
@@ -24,28 +22,32 @@
       return "XRP";
     }
   }
-
   function convertUsdToQty(usd, ccy) {
     const { bagUsd, xrpUsd } = PRICES();
     if (!(usd > 0)) return 0;
     if (ccy === "BAG") return bagUsd > 0 ? usd / bagUsd : 0;
     return xrpUsd > 0 ? usd / xrpUsd : 0; // XRP
   }
-
   function parseUsdAttr(v, maxUsd) {
     const s = String(v || "").trim().toLowerCase();
     if (s === "max") return Number(maxUsd) || 0;
     const n = Number(s);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }
-
   function clearActive(container, activeClass) {
     $all(`[data-usd].${activeClass}`, container).forEach((b) =>
       b.classList.remove(activeClass)
     );
   }
+  function dispatchInputChange(el) {
+    // Ensures any game-specific listeners (limits, HUD, etc.) react
+    try {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    } catch {}
+  }
 
-  // ---- Core mounting
+  // ===== Mount one container =====
   function mount(container, opts = {}) {
     if (!container) return;
 
@@ -81,17 +83,20 @@
 
     function setFromUsd(usdVal) {
       const u = clamp(Number(usdVal) || 0, 0, cfg.maxUsd);
+
       if (targetUsd) {
         targetUsd.value = u ? toFixed2(u) : "";
-        // Mark as not "user-typed" so we’re free to keep qty synced to USD
         targetUsd.dataset.userTyped = u ? "1" : "0";
+        dispatchInputChange(targetUsd);
       }
       if (targetQty) {
         const ccy = getCurrentCurrency(curToggle);
         const qty = convertUsdToQty(u, ccy);
         targetQty.value = u > 0 ? String(floor6(qty)) : "";
+        dispatchInputChange(targetQty);
       }
-      // Let anything else listening (HUD, etc.) refresh
+
+      // Let HUDs and other components refresh
       W.dispatchEvent(new CustomEvent("bag:hudRefresh"));
     }
 
@@ -102,15 +107,15 @@
       const ccy = getCurrentCurrency(curToggle);
       const qty = convertUsdToQty(usdNow, ccy);
       targetQty.value = String(floor6(qty));
+      dispatchInputChange(targetQty);
       W.dispatchEvent(new CustomEvent("bag:hudRefresh"));
     }
 
-    // Click handler for all quick amount buttons in this container
+    // Click → set USD and derived qty, set active state
     container.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-usd]");
       if (!btn || !container.contains(btn)) return;
 
-      // Visual state
       clearActive(container, cfg.activeClass);
       btn.classList.add(cfg.activeClass);
 
@@ -118,8 +123,8 @@
       const usdVal = parseUsdAttr(raw, cfg.maxUsd);
       const clamped = clamp(usdVal, 0, cfg.maxUsd);
 
-      // Enforce min warning via custom event (non-blocking)
       if (clamped > 0 && clamped < cfg.minUsd) {
+        // Non-blocking heads-up hook
         W.dispatchEvent(
           new CustomEvent("bag:qa:minWarning", {
             detail: { minUsd: cfg.minUsd, value: clamped },
@@ -128,19 +133,19 @@
       }
 
       setFromUsd(clamped);
+
       // Optional analytics hook
       W.dispatchEvent(
         new CustomEvent("bag:quickAmount", { detail: { container, usd: clamped } })
       );
     });
 
-    // If the user manually types in inputs, clear “active” state so chips don’t look selected.
+    // Manual edits clear chip active state
     if (targetUsd) {
       targetUsd.addEventListener("input", () => {
         clearActive(container, cfg.activeClass);
         targetUsd.dataset.userTyped =
           targetUsd.value && targetUsd.value.length ? "1" : "0";
-        // Do not auto-convert here; let the app’s own logic decide.
       });
     }
     if (targetQty) {
@@ -149,14 +154,12 @@
       });
     }
 
-    // Currency tab change → preserve USD and recompute qty
+    // Currency tab change → keep USD fixed, recompute qty
     if (curToggle) {
-      curToggle.addEventListener("change", () => {
-        recalcQtyFromUsdIfAny();
-      });
+      curToggle.addEventListener("change", () => recalcQtyFromUsdIfAny());
     }
 
-    // When live prices update, optionally keep qty in sync with USD
+    // Live prices → keep USD fixed, recompute qty (configurable)
     if (cfg.syncOnPrice) {
       W.addEventListener("bag:pricesUpdated", recalcQtyFromUsdIfAny);
     }
@@ -164,28 +167,24 @@
     // Initial gentle sync if USD already has a value
     recalcQtyFromUsdIfAny();
 
+    // Public instance API (optional)
     return {
       setFromUsd,
       recalcQtyFromUsdIfAny,
       destroy() {
-        // (Left simple; no teardown necessary in this usage)
+        // Intentionally empty (lightweight)
       },
     };
   }
 
+  // Mount all containers with the data-attribute
   function mountAll(root = document) {
     const containers = $all("[data-quick-amounts]", root);
     containers.forEach((el) => mount(el));
   }
 
-  const API = {
-    mount,
-    mountAll,
-    convertUsdToQty,
-    getCurrentCurrency,
-  };
-
-  // Expose and auto-mount
+  // Export + auto-mount on DOM ready
+  const API = { mount, mountAll, convertUsdToQty, getCurrentCurrency };
   global.BAGQuickAmounts = API;
   document.addEventListener("DOMContentLoaded", () => mountAll());
 })(window);
