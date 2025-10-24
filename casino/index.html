@@ -199,6 +199,11 @@
   .bag-perks h3{margin:.1rem 0 .4rem;color:var(--gold);font-size:1.05rem}
   .bag-modal__footer{display:flex;gap:.6rem;justify-content:flex-end;margin-top:.75rem}
   .footnote{margin:.75rem 0 0}
+
+  /* (2) Lighter blue links inside the modal body for visibility */
+  .bag-modal__body a{color:#8dc8ff;text-decoration:underline}
+  .bag-modal__body a:hover{color:#cfe6ff}
+
   @media (max-width:520px){
     .bag-modal__dialog{margin:2vh .75rem 0;padding:.8rem}
     .bag-modal__footer{flex-direction:column;align-items:stretch}
@@ -208,8 +213,7 @@
 
 <script src="/js/bag-session.js" defer></script>
 </head>
-
- <body>
+<body>
 
 <nav class="backbar" role="navigation" aria-label="Back">
   <a class="backlink" href="/" aria-label="Back to $BAG">⬅ Back to $BAG</a>
@@ -466,7 +470,7 @@
   </footer>
 </div>
 
-  <!-- 🔊 Sound toggle + autoplay unlock (lower volume) -->
+<!-- (1) 🔊 Sound: try on load; if blocked, start on first scroll/gesture. Lower volume. -->
 <script>
 (function(){
   const btn   = document.getElementById('soundToggle');
@@ -477,7 +481,7 @@
   audio.setAttribute('playsinline','');
   audio.preload = 'auto';
   audio.loop = true;
-  audio.volume = 0.25;
+  audio.volume = 0.22; // low but audible
 
   function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
 
@@ -487,7 +491,9 @@
       playing = true; setIcon();
       localStorage.setItem(KEY,'on');
       removeUnlock();
-    }catch(e){}
+    }catch(e){
+      // Autoplay blocked — leave unlock listeners armed
+    }
   }
   function pauseAudio(){
     try{ audio.pause(); }catch(_){}
@@ -498,9 +504,19 @@
 
   btn.addEventListener('pointerdown', ev => { ev.preventDefault(); playing ? pauseAudio() : playAudio(); }, {passive:false});
 
+  // Try at page load
+  if (localStorage.getItem(KEY) !== 'off') {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') playAudio();
+    else document.addEventListener('DOMContentLoaded', playAudio, {once:true});
+  }
+
+  // Fallback: start on first scroll/gesture
   const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','mousedown','keydown'];
   function unlockHandler(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
-  function addUnlock(){ if (armed) return; armed = true; UNLOCK_EVENTS.forEach(t => window.addEventListener(t, unlockHandler, {once:true, passive:true, capture:true})); }
+  function addUnlock(){
+    if (armed) return; armed = true;
+    UNLOCK_EVENTS.forEach(t => window.addEventListener(t, unlockHandler, {once:true, passive:true, capture:true}));
+  }
   function removeUnlock(){ armed = false; }
 
   function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
@@ -559,16 +575,15 @@
     </section>
 
     <footer class="bag-modal__footer">
-      <a class="bag-cta" href="https://x.com/getthebag_io" rel="noopener noreferrer">Start with 𝕏</a>
+      <!-- (3) Start with X button removed per request -->
       <button class="bag-outline" data-close>Got it</button>
     </footer>
-  </div> <!-- CLOSE .bag-modal__dialog -->
-</div>   <!-- CLOSE #bagCardModal -->
+  </div>
+</div>
 
-<!-- Modal open/close + force-clean X navigation -->
+<!-- Modal open/close (no X button scripting anymore) -->
 <script>
 (function(){
-  // OPEN/CLOSE WIRING — this was missing
   const openBtn = document.getElementById('bagCardHowBtn');
   const modal   = document.getElementById('bagCardModal');
   const dialog  = modal?.querySelector('.bag-modal__dialog');
@@ -581,15 +596,6 @@
   window.addEventListener('keydown', e => {
     if (modal.getAttribute('aria-hidden')==='false' && e.key==='Escape') close();
   });
-
-  // Force web navigation to X (no App Store)
-  const xBtn = document.querySelector('.bag-cta[href*="getthebag_io"]');
-  if (xBtn){
-    xBtn.addEventListener('click', function(e){
-      e.preventDefault();
-      window.location.href = 'https://x.com/getthebag_io';
-    });
-  }
 })();
 </script>
 
