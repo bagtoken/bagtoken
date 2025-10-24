@@ -36,7 +36,7 @@
   *{box-sizing:border-box}
   :root{
     --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
     --win-bg: rgba(10,12,16,.70);
     --lose:#e25b5b; --warn:#e8a85c;
   }
@@ -146,15 +146,37 @@
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
   .hudbar .pill b{ font-weight:800 }
 
-  /* --- NEW: preset chips row --- */
-  .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-  .preset-chip{
-    appearance:none; border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
-    border-radius:999px; padding:6px 10px; font-weight:800; cursor:pointer;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  /* --- Quick Amount buttons — Blackjack green theme (shared) --- */
+  :root{
+    --green:#2fbf6b;
+    --green-600:#249a55;
   }
-  .preset-chip:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
-  .preset-chip.active{ background:#173c28; border-color:#3fa86a; box-shadow:0 0 0 2px rgba(63,168,106,.25) inset; }
+  .preset-chips{
+    display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;
+  }
+  .preset-chip{
+    appearance:none;
+    border:1px solid var(--green-600);
+    background:var(--green);
+    color:#ffffff;
+    border-radius:999px;
+    padding:8px 12px;
+    font-weight:900;
+    letter-spacing:.2px;
+    cursor:pointer;
+    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .preset-chip:hover{ filter:brightness(1.03); }
+  .preset-chip:active{
+    transform:translateY(1px);
+    box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1);
+  }
+  .preset-chip:focus-visible{ outline:2px solid #ffffff; outline-offset:2px; }
+  .preset-chip.active{
+    box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,
+               0 8px 22px rgba(47,191,107,.25);
+  }
 </style>
 
 <!-- ✅ SHARED OVERLAY (injected once) -->
@@ -214,21 +236,34 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div style="display:flex;align-items:center;gap:6px">
                 <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-                <span class="micro" aria-hidden="true">USD</span>
+                <span class="micro unit" aria-hidden="true">USD</span>
               </div>
             </div>
-<!-- Quick Amount buttons -->
-<div class="preset-chips" id="usdPresets" role="group" aria-label="Quick bet">
-  <button type="button" class="preset-chip" data-usd="1">$1</button>
-  <button type="button" class="preset-chip" data-usd="2">$2</button>
-  <button type="button" class="preset-chip" data-usd="5">$5</button>
-  <button type="button" class="preset-chip" data-usd="10">$10</button>
-  <button type="button" class="preset-chip" data-usd="20">$20</button>
-  <button type="button" class="preset-chip" data-usd="50">$50</button>
-  <button type="button" class="preset-chip" data-usd="100">$100</button>
-  <button type="button" class="preset-chip" data-usd="max">Max</button>
-</div>
 
+            <!-- Quick Amount buttons, now driven by /js/bag-quick-amounts.js -->
+            <div
+              class="preset-chips"
+              id="usdPresets"
+              data-quick-amounts
+              data-target-usd="#usdBet"
+              data-target-qty="#betQty"
+              data-currency-toggle="#curToggle"
+              data-min-usd="1"
+              data-max-usd="2000"
+              data-active-class="active"
+              data-sync-on-price="1"
+              role="group"
+              aria-label="Quick bet"
+            >
+              <button type="button" class="preset-chip" data-usd="1">$1</button>
+              <button type="button" class="preset-chip" data-usd="2">$2</button>
+              <button type="button" class="preset-chip" data-usd="5">$5</button>
+              <button type="button" class="preset-chip" data-usd="10">$10</button>
+              <button type="button" class="preset-chip" data-usd="20">$20</button>
+              <button type="button" class="preset-chip" data-usd="50">$50</button>
+              <button type="button" class="preset-chip" data-usd="100">$100</button>
+              <button type="button" class="preset-chip" data-usd="max">Max</button>
+            </div>
           </div>
 
           <div>
@@ -344,216 +379,78 @@
 
 <!-- ✅ FIXED AUDIO SYSTEM -->
 <script>
+/* unchanged audio system from your version */
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
-
-  // 🎯 AUDIO FIX #1: PRE-INIT BUFFER
   function getAC(){
     if (AC && AC.state!=='closed') return AC;
     if (!AudioCtx) return null;
-    // PRE-INIT WITH BUFFER FOR OVERLAY COMPATIBILITY
-    AC = new (window.AudioContext || window.webkitAudioContext)({
-      latencyHint: 'interactive',
-      sampleRate: 44100
-    });
-    MASTER = AC.createGain();
-    MASTER.gain.value = .22;
-    MASTER.connect(AC.destination);
+    AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint:'interactive', sampleRate:44100 });
+    MASTER = AC.createGain(); MASTER.gain.value = .22; MASTER.connect(AC.destination);
     console.log("✅ AUDIO CONTEXT PRE-INIT SUCCESS");
     return AC;
   }
-
-  // 🎯 AUDIO FIX #2: FORCE RESUME HELPER
-  async function resume(){
-    const ac = getAC();
-    if (!ac) return;
-    if (ac.state === 'suspended'){ 
-      try{ 
-        await ac.resume(); 
-        console.log("✅ AUDIO RESUMED");
-      }catch(e){ console.warn("Audio resume failed:", e); }
-    }
-  }
-
-  // 🎯 AUDIO FIX #3: RESTART AUDIO AFTER OVERLAY CHANGES
-  window.restartAudio = async function(){
-    await resume();
-    // Force a silent ping to keep context alive
-    ping();
-  };
-
-  // Event listeners with passive for performance
-  addEventListener('pointerdown', ()=>{ 
-    lastTap=Date.now(); 
-    resume(); 
-    ping(); 
-    primeHtmlAudio(); 
-  }, {passive:true});
-  addEventListener('visibilitychange', ()=>{ 
-    if(!document.hidden) resume(); 
-  });
-
-  // 🎯 AUDIO FIX #4: WATCHDOG WITH OVERLAY DETECTION
+  async function resume(){ const ac=getAC(); if(!ac) return; if (ac.state==='suspended'){ try{ await ac.resume(); console.log("✅ AUDIO RESUMED"); }catch(e){ console.warn("Audio resume failed:", e); } } }
+  window.restartAudio = async function(){ await resume(); ping(); };
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); primeHtmlAudio(); }, {passive:true});
+  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
   if(!watchdog){
     watchdog = setInterval(async ()=>{
-      const ac=getAC(); 
-      if(!ac) return;
-      if(Date.now()-lastTap<30000 && ac.state==='suspended') {
-        await resume();
-      }
-      // Detect overlay changes and restart
-      if (window.BAGOverlay && BAGOverlay.isVisible()) {
-        setTimeout(window.restartAudio, 100);
-      }
+      const ac=getAC(); if(!ac) return;
+      if(Date.now()-lastTap<30000 && ac.state==='suspended') { await resume(); }
+      if (window.BAGOverlay && BAGOverlay.isVisible()) { setTimeout(window.restartAudio, 100); }
     }, 1000);
   }
-
-  function ping(){
-    try{
-      const ac=getAC(); 
-      if(!ac||ac.state!=='running') return;
-      const o=ac.createOscillator(), g=ac.createGain();
-      g.gain.value=.0001; 
-      o.connect(g).connect(MASTER);
-      const t=ac.currentTime; 
-      o.start(t); 
-      o.stop(t+.02);
-    }catch{}
+  function ping(){ try{ const ac=getAC(); if(!ac||ac.state!=='running') return;
+    const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER);
+    const t=ac.currentTime; o.start(t); o.stop(t+.02);
+  }catch{}}
+  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
   }
-
-  function chime(){ 
-    const ac=getAC(); 
-    if(!ac||ac.state!=='running') return; 
-    const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ 
-      const o=ac.createOscillator(); 
-      o.type='triangle'; 
-      o.frequency.value=f;
-      const g=ac.createGain(); 
-      g.gain.setValueAtTime(.0001,now+i*.02); 
-      g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); 
-      g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); 
-      o.start(now+i*.02); 
-      o.stop(now+i*.02+.34); 
-    }); 
-  }
-
-  function thud(){ 
-    const ac=getAC(); 
-    if(!ac||ac.state!=='running') return;
-    const o=ac.createOscillator(), g=ac.createGain(); 
-    o.type='sine';
-    const t=ac.currentTime; 
-    o.frequency.setValueAtTime(260,t); 
-    o.frequency.exponentialRampToValueAtTime(140,t+.22);
-    g.gain.setValueAtTime(.0001,t); 
-    g.gain.linearRampToValueAtTime(.10,t+.02); 
-    g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); 
-    o.start(t); 
-    o.stop(t+.27);
-  }
-
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
   window.__bagAudio = { chime, thud, resume: window.restartAudio };
-
-  // 🎯 AUDIO FIX #5: IMPROVED DICE BUFFER LOADING
   let diceBuf=null, diceGain=null, bufLoading=false;
-
   async function loadDiceBuffer(){
     if (diceBuf || bufLoading) return diceBuf;
-    const ac=getAC(); 
-    if(!ac) return null;
+    const ac=getAC(); if(!ac) return null;
     try{
       bufLoading=true;
       console.log("🔊 Loading dice audio...");
       const res = await fetch('/assets/sounds/diceshakeroll.mp3', {cache:'force-cache'});
       const arr = await res.arrayBuffer();
       diceBuf = await ac.decodeAudioData(arr);
-      if (!diceGain){ 
-        diceGain = ac.createGain(); 
-        diceGain.gain.value = 0.95; 
-        diceGain.connect(MASTER); 
-      }
+      if (!diceGain){ diceGain = ac.createGain(); diceGain.gain.value = 0.95; diceGain.connect(MASTER); }
       console.log("✅ DICE AUDIO LOADED SUCCESSFULLY");
-    }catch(e){ 
-      console.error("❌ DICE AUDIO LOAD FAILED:", e);
-    } finally{ 
-      bufLoading=false; 
-    }
+    }catch(e){ console.error("❌ DICE AUDIO LOAD FAILED:", e); } finally{ bufLoading=false; }
     return diceBuf;
   }
-
-  // 🎯 AUDIO FIX #6: FORCE PLAY WITH FALLBACK
   async function playDiceWebAudio(){
-    const ac=getAC(); 
-    if(!ac || !diceBuf || ac.state!=='running') {
-      await resume();
-      return false;
-    }
-    try{
-      const src = ac.createBufferSource();
-      src.buffer = diceBuf;
-      src.connect(diceGain || MASTER);
-      src.start();
-      return true;
-    }catch(e){ 
-      console.warn("WebAudio failed:", e);
-      return false; 
-    }
+    const ac=getAC(); if(!ac || !diceBuf || ac.state!=='running') { await resume(); return false; }
+    try{ const src = ac.createBufferSource(); src.buffer = diceBuf; src.connect(diceGain || MASTER); src.start(); return true; }
+    catch(e){ console.warn("WebAudio failed:", e); return false; }
   }
-
   const rollTag = new Audio('/assets/sounds/diceshakeroll.mp3');
-  rollTag.preload='auto'; 
-  rollTag.crossOrigin='anonymous'; 
-  rollTag.setAttribute('playsinline',''); 
-  rollTag.volume=.95;
-
+  rollTag.preload='auto'; rollTag.crossOrigin='anonymous'; rollTag.setAttribute('playsinline',''); rollTag.volume=.95;
   function primeHtmlAudio(){
     try{
       rollTag.muted = true;
       const p = rollTag.play();
-      if (p && p.then) {
-        p.then(()=>{ 
-          rollTag.pause(); 
-          rollTag.currentTime=0; 
-          rollTag.muted=false; 
-        }).catch(()=>{});
-      } else { 
-        rollTag.pause(); 
-        rollTag.currentTime=0; 
-        rollTag.muted=false; 
-      }
+      if (p && p.then) { p.then(()=>{ rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }).catch(()=>{}); }
+      else { rollTag.pause(); rollTag.currentTime=0; rollTag.muted=false; }
     }catch{}
   }
-
-  // 🎯 AUDIO FIX #7: MASTER ROLL FUNCTION
   window.__bagDiceAudio = { 
-    roll: async function(){
-      try{ 
-        await resume(); 
-      }catch{}
-      await loadDiceBuffer();
-      const webSuccess = await playDiceWebAudio();
-      if (!webSuccess){
-        try{
-          rollTag.pause();
-          rollTag.currentTime = 0;
-          rollTag.play().catch(()=>{});
-        }catch{}
-      }
-    }
+    roll: async function(){ try{ await resume(); }catch{} await loadDiceBuffer(); const ok = await playDiceWebAudio();
+      if(!ok){ try{ rollTag.pause(); rollTag.currentTime=0; rollTag.play().catch(()=>{}); }catch{} } }
   };
-
-  // 🎯 AUDIO FIX #8: AUTO-START ON LOAD
-  window.addEventListener('load', async ()=>{
-    await resume();
-    await loadDiceBuffer();
-    console.log("🎯 BAG DICE AUDIO SYSTEM READY");
-  });
-
-  // 🎯 AUDIO FIX #9: RESTART ON OVERLAY EVENTS
+  window.addEventListener('load', async ()=>{ await resume(); await loadDiceBuffer(); console.log("🎯 BAG DICE AUDIO SYSTEM READY"); });
   window.addEventListener('bag:overlayShow', window.restartAudio);
   window.addEventListener('bag:overlayHide', window.restartAudio);
 })();
@@ -610,7 +507,6 @@
 
   function updateLiveLine(){
     if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
-    // ✅ XRP now always shows exactly two decimals in the live-prices display
     if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
       ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
       : '—';
@@ -720,15 +616,17 @@
 })();
 </script>
 
-<!-- USD autofill + payouts + limits + PRESETS -->
+<!-- ✅ UNIVERSAL QUICK AMOUNTS (shared across games) -->
+<script src="/js/bag-quick-amounts.js"></script>
+
+<!-- ✅ Lightweight stake display & limits (kept per game; no preset logic here) -->
 <script>
 (function(){
   const usdBetEl = document.getElementById('usdBet');     // USD input
   const betQtyEl = document.getElementById('betQty');     // XRP/BAG qty input
   const curToggle = document.getElementById('curToggle'); // XRP/BAG radio group
-  const unitSpans = document.querySelectorAll('.unit');   // shows current unit label
+  const unitEls   = document.querySelectorAll('.unit');   // unit labels next to inputs
   const betLimits = document.getElementById('betLimits'); // limits label
-  const presets   = document.getElementById('usdPresets'); // the buttons container
 
   const MIN_USD = 1, MAX_USD = 2000;
   const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
@@ -743,33 +641,21 @@
   }
   function qty(){
     const v=parseFloat(betQtyEl?.value||'');
-    return Number.isFinite(v)&&v>0?v:1;
+    return Number.isFinite(v)&&v>0?v:0;
   }
   function derivedUsd(){
     const px=priceForCurrent(), q=qty();
-    return px>0?q*px:0;
+    return (px>0 && q>0)? q*px : 0;
   }
   function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function clearPresetActive(){ try{ presets?.querySelectorAll('.preset-chip.active').forEach(b=>b.classList.remove('active')); }catch{} }
 
-  function setFromUsd(value){
-    const u=Math.max(0, Math.min(MAX_USD, Number(value)||0));
-    if (usdBetEl){
-      usdBetEl.value=u?u.toFixed(2):'';
-      usdBetEl.dataset.userTyped = u?'1':'0';
-    }
-    const px=priceForCurrent();
-    if (betQtyEl){
-      // convert USD → current currency qty with 6-dec precision floor
-      betQtyEl.value = (px>0 && u>0) ? (Math.floor((u/px)*1e6)/1e6) : '';
-    }
-    renderLimits();
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  function paintUnits(){
+    unitEls.forEach(s=> s.textContent = currentCurrency());
   }
 
-  function autoFillUsd(){
+  function autoFillUsdIfAllowed(){
     if(!usdBetEl) return;
-    if(usdBetEl.dataset.userTyped==='1') return; // respect manual edits
+    if(usdBetEl.dataset.userTyped==='1') return; // respect manual USD typing
     const v=derivedUsd();
     if(v>0){
       usdBetEl.value=(Math.round(v*100)/100).toFixed(2);
@@ -788,53 +674,34 @@
     if (betLimits) betLimits.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(uv)}${warn}`;
   }
 
-  // wire up inputs
+  // Inputs
   usdBetEl?.addEventListener('input', ()=>{
-    clearPresetActive();
     usdBetEl.dataset.userTyped = (usdBetEl.value && usdBetEl.value.length) ? '1' : '0';
     renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
   betQtyEl?.addEventListener('input', ()=>{
-    clearPresetActive();
-    autoFillUsd();
+    autoFillUsdIfAllowed();
     renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
   curToggle?.addEventListener('change', ()=>{
-    unitSpans.forEach(s=>s.textContent=currentCurrency());
-    if(usdBetEl?.dataset.userTyped==='1'){
-      setFromUsd(parseFloat(usdBetEl.value)||0);
-    } else {
-      autoFillUsd();
-      renderLimits();
-    }
+    paintUnits();
+    autoFillUsdIfAllowed();
+    renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
   addEventListener('bag:pricesUpdated', ()=>{
-    if(usdBetEl?.dataset.userTyped==='1'){
-      setFromUsd(parseFloat(usdBetEl.value)||0);
-    } else {
-      autoFillUsd();
-      renderLimits();
-    }
+    autoFillUsdIfAllowed();
+    renderLimits();
   });
 
-  // the preset button click handler
-  presets?.addEventListener('click', (e)=>{
-    const b = e.target.closest('.preset-chip');
-    if(!b) return;
-    clearPresetActive();
-    b.classList.add('active');
-    const d = b.dataset.usd;
-    const val = (d==='max') ? MAX_USD : Math.max(0, Number(d)||0);
-    setFromUsd(val);
-  });
-
-  // initial paint
-  unitSpans.forEach(s=>s.textContent=currentCurrency());
-  autoFillUsd();
+  // Initial paint
+  paintUnits();
+  autoFillUsdIfAllowed();
   renderLimits();
 })();
 </script>
-
 
 <!-- Game logic (with locked stake across the round) -->
 <script>
@@ -907,20 +774,11 @@
       </div>
     </div>
   `;
-  function faceSVG(val){
-    const r=0.22,m=0.56,c=0;
-    const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[val];
-    const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
-    return `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='-1 -1 2 -2' transform='scale(1,-1)'></svg>`
-    )}")`; // (Note: faces are built below in makeDie)
-  }
   function makeDie(el){
     el.innerHTML='';
     for(let i=1;i<=6;i++){
       const f=document.createElement('div');
       f.className='face f'+i;
-      // rebuild the SVG here for crisp dots:
       const r=0.22,m=0.56,c=0;
       const P={1:[[c,c]],2:[[-m,-m],[m,m]],3:[[-m,-m],[c,c],[m,m]],4:[[-m,-m],[m,-m],[-m,m],[m,m]],5:[[-m,-m],[m,-m],[c,c],[-m,m],[m,m]],6:[[-m,-m],[m,-m],[-m,c],[m,c],[-m,m],[m,m]]}[i];
       const dots=P.map(([x,y])=>`<circle cx="${x}" cy="${-y}" r="${r}" fill="#0B0B0B"/>`).join('');
@@ -941,15 +799,8 @@
   };
   const poseToFront=v=>(FRONT[v]||FRONT[1])();
   async function rollCssDice(a,b){
-    // 🎯 AUDIO FIX #10: FORCE AUDIO BEFORE ANIMATION
-    try{ 
-      if (window.__bagDiceAudio) await window.__bagDiceAudio.roll(); 
-    }catch(e){ console.warn("Audio roll failed:", e); }
-    
-    try{ 
-      if (window.__bagAudio && window.__bagAudio.resume) await window.__bagAudio.resume(); 
-    }catch{}
-    
+    try{ if (window.__bagDiceAudio) await window.__bagDiceAudio.roll(); }catch(e){ console.warn("Audio roll failed:", e); }
+    try{ if (window.__bagAudio && window.__bagAudio.resume) await window.__bagAudio.resume(); }catch{}
     const A=document.getElementById('dieA'), B=document.getElementById('dieB');
     A.classList.add('tumblingA'); B.classList.add('tumblingB');
     await new Promise(r=>setTimeout(r, 1200));
@@ -1059,7 +910,7 @@
       if (outcome.kind==='craps'){
         rollText.className='t lose';
         rollText.textContent=`Rolled ${sum} — CRAPS — You lose`;
-        setLast('Scratch'); // HUD (Plinko parity)
+        setLast('Scratch');
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-craps'}}));
@@ -1077,14 +928,14 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — Pass Line WIN (${mult.toFixed(2)}×)`;
-        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.25×'); // HUD
+        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.25×');
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-comeout':'win-comeout')}}));
       } else {
         ROUND.active=true; ROUND.point=sum;
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Point is ${sum}`;
-        setLast('Point set'); // HUD
+        setLast('Point set');
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'point-set', point:sum}}));
       }
 
@@ -1097,7 +948,7 @@
       if (outcome.kind==='sevenout'){
         rollText.className='t lose';
         rollText.textContent=`Rolled 7 — SEVEN OUT — You lose`;
-        setLast('Scratch'); // HUD
+        setLast('Scratch');
         try{ window.__bagAudio && __bagAudio.thud(); }catch{}
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'lose-sevenout'}}));
@@ -1115,20 +966,18 @@
         rollText.textContent = (mult===MULT_JP)
           ? `Rolled ${sum} — JACKPOT ${mult.toFixed(2)}×`
           : `Rolled ${sum} — POINT MADE (${mult.toFixed(2)}×)`;
-        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.00×'); // HUD
+        setLast(mult===MULT_JP ? 'Jackpot 2×' : 'Win 1.00×');
         ROUND.active=false; ROUND.point=null; ROUND.lockedBag=0; ROUND.lockedUsd=0;
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:(mult===MULT_JP?'jackpot-point':'win-point')}}));
       } else {
         rollText.className='t';
         rollText.textContent=`Rolled ${sum} — Need ${ROUND.point} before 7`;
-        setLast('Hold'); // HUD (neutral)
+        setLast('Hold');
         window.dispatchEvent(new CustomEvent('bag:diceResult',{detail:{sum, outcome:'neutral'}}));
       }
     }
 
-    // 🎯 AUDIO FIX #11: RESTART AFTER EVERY ROLL (OVERLAY SAFE)
     setTimeout(window.restartAudio, 100);
-
     rollBtn.disabled=false;
   });
 })();
@@ -1137,7 +986,6 @@
 <!-- Practice Mode Wrapper (force DEMO by default; Live only with ?live=1) -->
 <script>
 (function(){
-  // Live only if you explicitly add ?live=1 to the URL
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
 
@@ -1152,7 +1000,6 @@
   const START_BAG = 1000;
 
   function getBal(){ try{ const n=Number(localStorage.getItem(DEMO_KEY)); return Number.isFinite(n)&&n>0?n:START_BAG; }catch{ return START_BAG; } }
-  // preserve decimals like Slots demo (no Math.floor)
   function setBal(v){ try{ localStorage.setItem(DEMO_KEY, String(Math.max(0, Number(v)))) }catch{} }
   if(localStorage.getItem(DEMO_KEY)==null) setBal(START_BAG);
 
@@ -1177,7 +1024,6 @@
     if(endBtn)   endBtn.style.display='none';
   }
 
-  // Simple demo-only session
   const demoSession={
     active:()=>true,
     get:()=>({addr:'demo',bag:getBal(),ts:Date.now()}),
@@ -1186,7 +1032,6 @@
     credit(bag){ if(!(bag>0)) return false; setBal(getBal()+bag); renderDemo(); return true; }
   };
 
-  // Stronger: always force 1 XRP bet in Demo (user can still change)
   function forceBetXRP1(){
     const bet  = document.getElementById('betQty');
     const usd  = document.getElementById('usdBet');
@@ -1215,14 +1060,11 @@
   }
 
   function enableDemo(){
-    // Freeze demo flag so other scripts can't flip it later
-    try{
-      Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true});
-    }catch{ window.__BAG_FORCE_DEMO=true; }
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
+    catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
     renderDemo();
 
-    // Force default bet immediately + next tick + once after prices arrive
     forceBetXRP1();
     setTimeout(forceBetXRP1, 0);
     const once = ()=>{ forceBetXRP1(); window.removeEventListener('bag:pricesUpdated', once); };
@@ -1236,13 +1078,9 @@
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  // --- Mode selection: DEMO default; Live only via ?live=1 ---
   if (forceLive) enableLive(); else enableDemo();
 
-  // Keep the demo balance display in sync with price updates
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
-
-  // Do NOT auto-switch on wallet connect; Live must be explicit (?live=1)
 })();
 </script>
 
@@ -1275,12 +1113,9 @@
     return el ? String(el.value).toUpperCase() : 'XRP';
   }
 
-  // Pull balances (prefer session-provided; fall back to conversion)
   function getBalances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
     const bag = Number(sess.bag) || 0;
-
-    // If session provides XRP explicitly, use it; otherwise convert BAG→XRP using prices.
     let xrp = Number(sess.xrp);
     if (!(xrp > 0)) {
       const { bagUsd, xrpUsd } = PR();
@@ -1294,7 +1129,6 @@
     const { betQtyEl } = els();
     const v = parseFloat(betQtyEl?.value || '0');
     if (!Number.isFinite(v) || v < 0) return 0;
-    // Display integer like Plinko (display-only; underlying may be fractional)
     return Math.max(0, Math.floor(v));
   }
 
@@ -1321,27 +1155,22 @@
     }catch(e){}
   }
 
-  // Re-render when anything relevant changes
   [
     'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
     'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
     'bag:diceResult','bag:hudRefresh'
   ].forEach(ev => addEventListener(ev, renderHud));
 
-  // React to bet amount & currency tab changes
   document.getElementById('betQty')?.addEventListener('input', renderHud);
   curToggle?.addEventListener('change', renderHud);
 
-  // Also react to localStorage changes (demo multi-tab)
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v1') renderHud(); });
 
-  // First paint + small watchdog for late-mount
   renderHud();
   let tries = 0; 
   const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
-
 
 <script>
 if ('serviceWorker' in navigator) {
