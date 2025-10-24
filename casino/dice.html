@@ -165,7 +165,7 @@
 <script src="/js/bag-session.js"></script>
 </head>
 
-  <body>
+<body>
 
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
@@ -353,7 +353,7 @@
   </div>
 </section>
 
-    <!-- ✅ AUDIO SYSTEM (unchanged) -->
+<!-- ✅ AUDIO SYSTEM (unchanged) -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -428,7 +428,7 @@
 })();
 </script>
 
-    <!-- PRICES -->
+<!-- PRICES (shared, inline page version) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -587,10 +587,10 @@
 })();
 </script>
 
-    <!-- ✅ Keep the shared Quick Amount buttons script -->
+<!-- ✅ Keep the shared Quick Amount buttons script -->
 <script src="/js/bag-quick-amounts.js"></script>
 
-    <!-- ✅ UNIVERSAL STAKE WIRE (for ALL games) -->
+<!-- ✅ UNIVERSAL STAKE WIRE (for ALL games) -->
 <script>
 /*!
  * BAGStakeWire — universal stake & preset wiring
@@ -788,7 +788,7 @@
   });
 </script>
 
-    <!-- Game logic (demo behaves like live; debits/credits) -->
+<!-- Game logic (demo behaves like live; debits/credits) -->
 <script>
 (function(){
   const container = document.getElementById('dice3d');
@@ -1021,7 +1021,8 @@
 })();
 </script>
 
-    <script>
+<!-- Demo/Live session: seed exact $2,000 in demo and mirror USD/XRP in label -->
+<script>
 (function(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
@@ -1083,9 +1084,13 @@
   function renderDemo(){
     const bag=getBag();
     const bagUsd=(window.__PRICES__?.bagUsd||0)*bag;
-    const label = bag>0 ? `Practice: <span style="color:#2fbf6b">${fmt(bag)} BAG</span>` : `Practice: <span style="color:#e8a85c">seeding…</span>`;
+    const xrpUsd=(window.__PRICES__?.xrpUsd||0);
+    const xrp = (xrpUsd>0 && window.__PRICES__?.bagUsd>0) ? (bag * (window.__PRICES__.bagUsd/xrpUsd)) : 0;
+
     if(statusEl){
-      statusEl.innerHTML = label + (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
+      statusEl.innerHTML = `Practice: <span style="color:#2fbf6b">${fmt(bag)} BAG</span>` +
+        (xrp?` · <span style="color:#a8f">${fmt(xrp)} XRP</span>`:'') +
+        (bagUsd?` <span class="micro" style="opacity:.75">(${fmtUsd(bagUsd)})</span>`:'');
     }
     if(startBtn) startBtn.style.display='inline-block';
     if(topUpBtn) topUpBtn.style.display='none';
@@ -1162,7 +1167,7 @@
 
   if (forceLive) enableLive(); else enableDemo();
 
-  // Keep the demo balance USD mirror fresh
+  // Keep the demo balance USD/XRP mirror fresh
   window.addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
   // Optional Top Up back to EXACT $2,000 (in BAG at current price)
@@ -1176,7 +1181,7 @@
 })();
 </script>
 
-    <!-- HUD updater -->
+<!-- HUD updater (and balance pill layout: its own row) -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -1186,6 +1191,7 @@
 
   function els(){ 
     return { 
+      hud: document.getElementById('diceHud'),
       balLbl: document.getElementById('balLbl'),
       ccyLbl: document.getElementById('ccyLbl'),
       betLbl: document.getElementById('betLbl'),
@@ -1218,6 +1224,26 @@
     const v = parseFloat(betQtyEl?.value || '0');
     if (!Number.isFinite(v) || v < 0) return 0;
     return Math.max(0, Math.floor(v));
+  }
+
+  function styleBalanceRow(){
+    const { hud } = els(); if (!hud) return;
+    // Make Balance pill larger and full width row; others below it
+    hud.style.display = 'grid';
+    hud.style.gridTemplateColumns = '1fr';
+    hud.style.gap = '6px';
+    const pills = hud.querySelectorAll('.pill');
+    if (pills.length){
+      // Balance pill is the 2nd pill in your markup: [Mode][Balance][Bet][Last]
+      pills.forEach(p=>{ p.style.fontSize='12px'; p.style.padding='6px 10px'; });
+      if (pills[1]){ pills[1].style.fontSize='14px'; pills[1].style.padding='8px 12px'; pills[1].style.fontWeight='800'; }
+      // Place the rest in a row under Balance
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='6px';
+      // Move Mode, Bet, Last into row (Balance stays)
+      hud.appendChild(row);
+      [pills[0], pills[2], pills[3]].forEach(p=> row.appendChild(p));
+    }
   }
 
   function renderHud(){
@@ -1256,12 +1282,13 @@
   addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
 
   renderHud();
+  styleBalanceRow();
   let tries = 0; 
   const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
-    <script>
+<script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
 }
