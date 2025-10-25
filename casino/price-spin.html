@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>$BAG Is Right — Upright 3D Wheel (Side-On)</title>
+<title>$BAG Is Right — Perfect Side-On Wheel</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:18px}
@@ -26,7 +26,7 @@
 <div class="wrap">
   <h2 style="margin:0 0 10px">🎡 The $BAG Is Right Wheel</h2>
   <div class="board">
-    <div class="marquee">SWIPE UP/DOWN TO SPIN • UPRIGHT SIDE-ON 3D WHEEL • Robust CDN→local loader</div>
+    <div class="marquee">SWIPE UP/DOWN TO SPIN • PERFECT SIDE-ON 3D WHEEL • Robust CDN→local loader</div>
     <div class="stage">
       <div id="mount"></div>
       <canvas id="hud" width="220" height="130"></canvas>
@@ -45,16 +45,14 @@
 (async()=>{
   const E=document.getElementById('err');
   function showError(m){E.style.display='flex';E.innerHTML=`<div><b>3D failed</b><br>${m}</div>`;}
-  try{
-    await import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js');
-  }catch{ showError('Three.js failed to load.'); return; }
+  try{await import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js');}
+  catch{showError('Three.js failed');return;}
 
   init();
 
   function init(){
     const mount=document.getElementById('mount'),hud=document.getElementById('hud');
-    const spinBtn=document.getElementById('spinBtn'), holdBtn=document.getElementById('holdBtn'), resetBtn=document.getElementById('resetBtn');
-    holdBtn.disabled=true;
+    const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),resetBtn=document.getElementById('resetBtn');
 
     const scene=new THREE.Scene();
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
@@ -63,31 +61,28 @@
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
 
-    // === CAMERA ===
-    // Looking straight at the SIDE of the wheel (axis = X). This is the “barrel” view you want.
-    const camera=new THREE.PerspectiveCamera(40,mount.clientWidth/mount.clientHeight,0.01,200);
-    camera.position.set(8.8,0.2,0);   // +X, slight Y lift
+    // Camera - pulled back for full view
+    const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.01,200);
+    camera.position.set(11.5,1.5,0);  // pulled back and slightly raised
     camera.lookAt(0,0,0);
     scene.add(camera);
 
-    // Lights
+    // Lighting
     scene.add(new THREE.AmbientLight(0xffffff,.45));
-    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(6,6,6); scene.add(key);
-    const rimL=new THREE.DirectionalLight(0xffffff,.8); rimL.position.set(6,2,-6); scene.add(rimL);
+    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(5,5,5); scene.add(key);
+    const fill=new THREE.DirectionalLight(0xffffff,.7); fill.position.set(5,2,-5); scene.add(fill);
 
-    // === WHEEL (axis = X) ===
-    const R=2.75, DEPTH=1.25;
+    // Wheel
+    const R=2.75,DEPTH=1.25;
     const wheel=new THREE.Group(); scene.add(wheel);
 
-    // Drum (cylinder rotated so its axis is X)
     const drum=new THREE.Mesh(
       new THREE.CylinderGeometry(R,R,DEPTH,128,1,true),
       new THREE.MeshStandardMaterial({color:'#0d0d0d',metalness:.4,roughness:.75})
     );
-    drum.rotation.z=Math.PI/2; // axis -> X
+    drum.rotation.z=Math.PI/2; // axis X
     wheel.add(drum);
 
-    // Front edge trim (thin torus)
     const rim=new THREE.Mesh(
       new THREE.TorusGeometry(R+0.03,0.08,16,96),
       new THREE.MeshStandardMaterial({color:'#121212',metalness:.85,roughness:.28})
@@ -96,129 +91,99 @@
     rim.position.x=DEPTH/2+0.02;
     wheel.add(rim);
 
-    // Back edge (shadow ring)
-    const rimBack=rim.clone(); rimBack.position.x=-(DEPTH/2+0.02); wheel.add(rimBack);
+    const rimBack=rim.clone();
+    rimBack.position.x=-(DEPTH/2+0.02);
+    wheel.add(rimBack);
 
-    // Pegs (little gold cylinders along the front edge)
-    const N=20, TAU=Math.PI*2, STEP=TAU/N;
+    // Pegs
+    const N=20,TAU=Math.PI*2,STEP=TAU/N;
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
     const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.88,roughness:.35});
     const pegs=new THREE.Group();
     for(let i=0;i<N;i++){
-      const a=i*STEP, y=Math.sin(a)*(R-0.04), z=Math.cos(a)*(R-0.04);
+      const a=i*STEP,y=Math.sin(a)*(R-0.04),z=Math.cos(a)*(R-0.04);
       const p=new THREE.Mesh(pegGeo,pegMat);
-      p.position.set(DEPTH/2+0.20, y, z); // on the front edge
+      p.position.set(DEPTH/2+0.2,y,z);
       p.rotation.y=Math.PI/2;
       pegs.add(p);
     }
     wheel.add(pegs);
 
-    // Values around the wheel (Price-is-Right sequence)
+    // Number plates
     const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const labels=seq.map(v=>v.toFixed(2));
-
-    // Plates (face cards) arranged in a circle around X
     const plates=new THREE.Group();
     const plateGeo=new THREE.PlaneGeometry(1.10,0.55);
 
     function plateTex(v,idx){
-      const c=document.createElement('canvas'); c.width=768; c.height=384;
+      const c=document.createElement('canvas');c.width=768;c.height=384;
       const g=c.getContext('2d');
       const is100=v==='1.00',isG=(v==='0.05'||v==='0.15'),dark=!is100&&!isG&&(idx%2===0);
       const bg=is100?'#b90b0b':isG?'#1b7f3a':(dark?'#121212':'#f1f1f1');
       const fg=(is100||isG||dark)?'#f7f7f7':'#151515';
-      g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
-      g.strokeStyle='#d5b55c'; g.lineWidth=44; g.strokeRect(30,30,c.width-60,c.height-60);
-      g.fillStyle=fg; g.font='900 210px Inter,Arial,Helvetica,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-      g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+6);
-      const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.needsUpdate=true; return t;
+      g.fillStyle=bg;g.fillRect(0,0,c.width,c.height);
+      g.strokeStyle='#d5b55c';g.lineWidth=44;g.strokeRect(30,30,c.width-60,c.height-60);
+      g.fillStyle=fg;g.font='900 210px Inter,Arial';g.textAlign='center';g.textBaseline='middle';
+      g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)),c.width/2,c.height/2+6);
+      const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;
     }
 
     const plateRadius=R-0.55;
     for(let i=0;i<N;i++){
-      const a=i*STEP + STEP/2;
-      const y=Math.sin(a)*plateRadius, z=Math.cos(a)*plateRadius;
-      const m=new THREE.Mesh(plateGeo, new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide}));
-      m.position.set(0, y, z);
-      // Make the card face the camera (along +X) with a slight outward tilt
-      m.rotation.y = Math.atan2(z, plateRadius) + Math.PI/2;
-      m.rotation.z = 0;
-      m.position.x = DEPTH/2 + 0.06; // slightly proud of the rim
+      const a=i*STEP+STEP/2,y=Math.sin(a)*plateRadius,z=Math.cos(a)*plateRadius;
+      const m=new THREE.Mesh(plateGeo,new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide}));
+      m.position.set(DEPTH/2+0.06,y,z);
+      m.rotation.y=Math.atan2(z,plateRadius)+Math.PI/2;
       plates.add(m);
     }
     wheel.add(plates);
 
-    // Red flapper (sticks out from front)
     const flapper=new THREE.Mesh(
-      new THREE.PlaneGeometry(0.50,0.28),
+      new THREE.PlaneGeometry(0.5,0.28),
       new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.55,side:THREE.DoubleSide})
     );
     flapper.rotation.y=Math.PI/2;
-    flapper.position.set(DEPTH/2+0.30, 0, R*0.03);
+    flapper.position.set(DEPTH/2+0.32,0,R*0.03);
     scene.add(flapper);
 
     // HUD
     function drawHUD(v){
       const g=hud.getContext('2d'),w=hud.width,h=hud.height;
-      g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
-      g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
-      g.fillStyle='#ffe26a'; g.font='700 88px "DM Mono",ui-monospace,monospace';
-      g.textAlign='center'; g.textBaseline='middle'; g.fillText((v||0).toFixed(2), w/2, h/2);
+      g.clearRect(0,0,w,h);
+      g.fillStyle='#07090b';g.fillRect(0,0,w,h);
+      g.strokeStyle='#222';g.lineWidth=6;g.strokeRect(4,4,w-8,h-8);
+      g.fillStyle='#ffe26a';g.font='700 88px "DM Mono",monospace';
+      g.textAlign='center';g.textBaseline='middle';g.fillText((v||0).toFixed(2),w/2,h/2);
     }
     drawHUD(0);
 
-    // Responsive
-    function size(){
-      const r=mount.getBoundingClientRect();
-      renderer.setSize(r.width, Math.max(460,r.height), false);
-      camera.aspect = r.width / Math.max(460,r.height);
-      camera.updateProjectionMatrix();
-    }
-    size(); addEventListener('resize', size);
-
-    // === Physics (rotate around X) ===
+    // Spin physics
     let angX=0,vel=0,spinning=false;
     const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012;
 
-    function setAngle(a){ angX=a; wheel.rotation.x=a; }
+    function setAngle(a){angX=a;wheel.rotation.x=a;}
+    function startSpin(v){vel=v;spinning=true;}
+    function stopIfSlow(){if(Math.abs(vel)<VMIN)spinning=false;}
 
-    function startSpin(v){
-      vel=v; spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
-    }
+    spinBtn.onclick=()=>{if(!spinning)startSpin(8);}
+    holdBtn.onclick=()=>{if(spinning)vel*=0.9;}
+    resetBtn.onclick=()=>{spinning=false;vel=0;setAngle(0);drawHUD(0);}
 
-    function stopIfSlow(){
-      if(Math.abs(vel)<VMIN){ spinning=false; spinBtn.disabled=false; holdBtn.disabled=false; resetBtn.disabled=false; }
-    }
-
-    // Buttons
-    spinBtn.onclick=()=>{ if(spinning) return; startSpin(8); };
-    holdBtn.onclick=()=>{ if(!spinning) return; vel*=0.92; };
-    resetBtn.onclick=()=>{ spinning=false; vel=0; setAngle(0); drawHUD(0); };
-
-    // Swipe up/down -> rotate around X
-    const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+    const surf=renderer.domElement,getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
-    function down(e){ if(spinning) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
-    function move(e){ if(!dragging) return; const y=getY(e),t=performance.now(),dy=y-lastY;
-      setAngle(angX + dy*PIX2RAD);
-      const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
-      lastY=y; lastT=t; e.preventDefault();
-    }
-    function up(){ if(!dragging) return; dragging=false;
-      const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-      startSpin(Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1));
-    }
-    surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
-    surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
+    function down(e){if(spinning)return;dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now();e.preventDefault();}
+    function move(e){if(!dragging)return;const y=getY(e),t=performance.now(),dy=y-lastY;
+      setAngle(angX+dy*PIX2RAD);
+      const dt=t-lastT;if(dt>0){samples.push(((dy*PIX2RAD)/(dt/1000)));if(samples.length>6)samples.shift();}
+      lastY=y;lastT=t;e.preventDefault();}
+    function up(){if(!dragging)return;dragging=false;const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
+      startSpin(Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1));}
+    surf.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
+    surf.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
 
-    // Render loop
     function tick(){
       requestAnimationFrame(tick);
-      if(spinning){
-        setAngle(angX + vel*(1/60));
-        vel *= FRICTION;
-        stopIfSlow();
-      }
+      if(spinning){setAngle(angX+vel*(1/60));vel*=FRICTION;stopIfSlow();}
       renderer.render(scene,camera);
     }
     tick();
