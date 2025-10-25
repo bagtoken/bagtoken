@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>$BAG Is Right — Final Studio Wheel</title>
+<title>$BAG Is Right — Perfect Side-On Wheel</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:18px}
@@ -24,9 +24,9 @@
 </head>
 <body>
 <div class="wrap">
-  <h2 style="margin:0 0 10px">🎡 The $BAG Is Right Wheel</h2>
+  <h2 style="margin:0 0 10px">The $BAG Is Right Wheel</h2>
   <div class="board">
-    <div class="marquee">SWIPE UP/DOWN TO SPIN • FINAL STUDIO SIDE-ON 3D WHEEL • Robust CDN→local loader</div>
+    <div class="marquee">SWIPE UP/DOWN TO SPIN • PERFECT SIDE-ON 3D WHEEL • Robust CDN→local loader</div>
     <div class="stage">
       <div id="mount"></div>
       <canvas id="hud" width="220" height="130"></canvas>
@@ -53,6 +53,7 @@
   function init(){
     const mount=document.getElementById('mount'),hud=document.getElementById('hud');
     const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),resetBtn=document.getElementById('resetBtn');
+    const msg=document.getElementById('msg');
 
     const scene=new THREE.Scene();
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
@@ -61,17 +62,18 @@
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
 
-    // 🔧 FINAL CAMERA POSITION
+    // ---- CAMERA (side-on, looking at +X) ----
     const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.01,200);
-    camera.position.set(13.5,2.1,0);  // pulled back and raised
-    camera.lookAt(0,0.4,0);
+    camera.position.set(11.5,1.5,0);
+    camera.lookAt(0,0,0);
     scene.add(camera);
 
-    // Lighting
+    // ---- LIGHTS ----
     scene.add(new THREE.AmbientLight(0xffffff,.45));
-    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(5,6,5); scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.7); fill.position.set(4,2,-5); scene.add(fill);
+    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(5,5,5); scene.add(key);
+    const fill=new THREE.DirectionalLight(0xffffff,.7); fill.position.set(5,2,-5); scene.add(fill);
 
+    // ---- WHEEL (axis = X) ----
     const R=2.75,DEPTH=1.25;
     const wheel=new THREE.Group(); scene.add(wheel);
 
@@ -90,8 +92,11 @@
     rim.position.x=DEPTH/2+0.02;
     wheel.add(rim);
 
-    const rimBack=rim.clone(); rimBack.position.x=-(DEPTH/2+0.02); wheel.add(rimBack);
+    const rimBack=rim.clone();
+    rimBack.position.x=-(DEPTH/2+0.02);
+    wheel.add(rimBack);
 
+    // ---- PEGS ----
     const N=20,TAU=Math.PI*2,STEP=TAU/N;
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
     const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.88,roughness:.35});
@@ -105,10 +110,13 @@
     }
     wheel.add(pegs);
 
-    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+    // ---- VALUES ----
+    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,
+               0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const labels=seq.map(v=>v.toFixed(2));
     const plates=new THREE.Group();
     const plateGeo=new THREE.PlaneGeometry(1.10,0.55);
+
     function plateTex(v,idx){
       const c=document.createElement('canvas');c.width=768;c.height=384;
       const g=c.getContext('2d');
@@ -121,6 +129,7 @@
       g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)),c.width/2,c.height/2+6);
       const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;
     }
+
     const plateRadius=R-0.55;
     for(let i=0;i<N;i++){
       const a=i*STEP+STEP/2,y=Math.sin(a)*plateRadius,z=Math.cos(a)*plateRadius;
@@ -131,6 +140,7 @@
     }
     wheel.add(plates);
 
+    // ---- FLAPPER (top of front rim) ----
     const flapper=new THREE.Mesh(
       new THREE.PlaneGeometry(0.5,0.28),
       new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.55,side:THREE.DoubleSide})
@@ -139,37 +149,100 @@
     flapper.position.set(DEPTH/2+0.32,0,R*0.03);
     scene.add(flapper);
 
-    // HUD
+    // ---- HUD & GAME STATE ----
+    let total=0, spinsLeft=2;
     function drawHUD(v){
       const g=hud.getContext('2d'),w=hud.width,h=hud.height;
-      g.clearRect(0,0,w,h);g.fillStyle='#07090b';g.fillRect(0,0,w,h);
+      g.clearRect(0,0,w,h);
+      g.fillStyle='#07090b';g.fillRect(0,0,w,h);
       g.strokeStyle='#222';g.lineWidth=6;g.strokeRect(4,4,w-8,h-8);
       g.fillStyle='#ffe26a';g.font='700 88px "DM Mono",monospace';
-      g.textAlign='center';g.textBaseline='middle';g.fillText((v||0).toFixed(2),w/2,h/2);
+      g.textAlign='center';g.textBaseline='middle';g.fillText(v.toFixed(2),w/2,h/2);
     }
     drawHUD(0);
 
+    // ---- RESPONSIVE ----
+    function resize(){
+      const r=mount.getBoundingClientRect();
+      renderer.setSize(r.width,Math.max(460,r.height),false);
+      camera.aspect=r.width/Math.max(460,r.height);
+      camera.updateProjectionMatrix();
+    }
+    resize();addEventListener('resize',resize);
+
+    // ---- PHYSICS (rotate around X) ----
     let angX=0,vel=0,spinning=false;
     const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012;
-    function setAngle(a){angX=a;wheel.rotation.x=a;}
-    function startSpin(v){vel=v;spinning=true;}
-    function stopIfSlow(){if(Math.abs(vel)<VMIN)spinning=false;}
-    spinBtn.onclick=()=>{if(!spinning)startSpin(8);}
-    holdBtn.onclick=()=>{if(spinning)vel*=0.9;}
-    resetBtn.onclick=()=>{spinning=false;vel=0;setAngle(0);drawHUD(0);}
+    const SLOT_ANGLE=TAU/N;
 
+    function setAngle(a){angX=a;wheel.rotation.x=a;}
+
+    function startSpin(v){
+      vel=v;spinning=true;
+      spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=true;
+    }
+
+    function landOnSlot(){
+      const norm=((angX%TAU)+TAU)%TAU;
+      const slotIdx=Math.round(norm/SLOT_ANGLE)%N;
+      const target=slotIdx*SLOT_ANGLE;
+      setAngle(target);
+
+      const landed=seq[slotIdx];
+      total+=landed;spinsLeft--;
+      drawHUD(total);
+
+      if(total>1.00){
+        msg.textContent=`BUST! ${total.toFixed(2)} > 1.00`;
+        msg.className='t lose';
+        spinBtn.disabled=holdBtn.disabled=true;
+      }else if(spinsLeft===0){
+        const won=total===1.00;
+        msg.textContent=won?'WIN! Exactly 1.00!':`Game over – ${total.toFixed(2)}`;
+        msg.className=won?'t win':'t lose';
+        spinBtn.disabled=holdBtn.disabled=true;
+      }else{
+        msg.textContent=`+${landed.toFixed(2)} → ${total.toFixed(2)} (${spinsLeft} left)`;
+        msg.className='t';
+      }
+    }
+
+    function stopIfSlow(){
+      if(Math.abs(vel)<VMIN){
+        spinning=false;
+        spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=false;
+        landOnSlot();
+      }
+    }
+
+    // ---- BUTTONS ----
+    spinBtn.onclick=()=>{if(spinning||spinsLeft===0)return;startSpin(6+Math.random()*5);};
+    holdBtn.onclick=()=>{if(!spinning)return;vel*=0.9;};
+    resetBtn.onclick=()=>{
+      spinning=false;vel=0;setAngle(0);total=0;spinsLeft=2;
+      drawHUD(0);msg.textContent='Spin up to two times to reach 1.00 without going over.';msg.className='t';
+      spinBtn.disabled=holdBtn.disabled=false;
+    };
+
+    // ---- SWIPE ----
     const surf=renderer.domElement,getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
-    function down(e){if(spinning)return;dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now();e.preventDefault();}
-    function move(e){if(!dragging)return;const y=getY(e),t=performance.now(),dy=y-lastY;
+    function down(e){if(spinning||spinsLeft===0)return;dragging=true;samples=[];lastY=getY(e);lastT=performance.now();e.preventDefault();}
+    function move(e){
+      if(!dragging)return;const y=getY(e),t=performance.now(),dy=y-lastY;
       setAngle(angX+dy*PIX2RAD);
-      const dt=t-lastT;if(dt>0){samples.push(((dy*PIX2RAD)/(dt/1000)));if(samples.length>6)samples.shift();}
-      lastY=y;lastT=t;e.preventDefault();}
-    function up(){if(!dragging)return;dragging=false;const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-      startSpin(Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1));}
+      const dt=t-lastT;if(dt>0){samples.push((dy*PIX2RAD)/(dt/1000));if(samples.length>6)samples.shift();}
+      lastY=y;lastT=t;e.preventDefault();
+    }
+    function up(){
+      if(!dragging)return;dragging=false;
+      const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
+      if(Math.abs(v)>0.5)startSpin(Math.sign(v)*Math.min(10,Math.max(2,Math.abs(v)*1.4)));
+    }
     surf.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
     surf.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
 
+    // ---- RENDER LOOP ----
     function tick(){
       requestAnimationFrame(tick);
       if(spinning){setAngle(angX+vel*(1/60));vel*=FRICTION;stopIfSlow();}
