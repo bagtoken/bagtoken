@@ -49,9 +49,7 @@
   (async()=>{try{await load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js');}catch(e){showError('Three.js failed');return;}initWheel();})();
 
   function initWheel(){
-    if(!THREE){showError('Missing THREE');return;}
     const mount=document.getElementById('mount'),hud=document.getElementById('hud');
-    const msg=document.getElementById('msg');
     const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),resetBtn=document.getElementById('resetBtn');
     holdBtn.disabled=true;
 
@@ -64,28 +62,29 @@
     renderer.domElement.style.height='100%';
     mount.appendChild(renderer.domElement);
 
+    // 👉 Camera stands to the right (+X), looking back at the wheel face
     const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.1,100);
-    camera.position.set(0,0,8.4);
+    camera.position.set(6.5, 1.2, 1.8);   // slight angle like the show
     camera.lookAt(0,0,0);
 
     // lights
-    scene.add(new THREE.AmbientLight(0xffffff,0.4));
+    scene.add(new THREE.AmbientLight(0xffffff,0.42));
     const key=new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3,5,7); scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.7); fill.position.set(-3,-4,6); scene.add(fill);
+    const fill=new THREE.DirectionalLight(0xffffff,.7);  fill.position.set(-3,-4,6); scene.add(fill);
 
     // ---------- WHEEL ----------
     const R=2.6, DEPTH=1.1;
     const wheel=new THREE.Group(); scene.add(wheel);
 
-    // Drum axis = X (upright)
+    // Drum axis = X (upright); spin around X
     const drum=new THREE.Mesh(
       new THREE.CylinderGeometry(R,R,DEPTH,96,1,true),
       new THREE.MeshStandardMaterial({color:'#0d0d0d',metalness:.35,roughness:.75,side:THREE.DoubleSide})
     );
-    drum.rotation.z=Math.PI/2; // cylinder axis X
+    drum.rotation.z=Math.PI/2; // align cylinder axis with X
     wheel.add(drum);
 
-    // Front rim and face so it "reads"
+    // Front rim + face
     const rim=new THREE.Mesh(
       new THREE.TorusGeometry(R+0.03,0.08,16,80),
       new THREE.MeshStandardMaterial({color:'#111',metalness:.85,roughness:.28})
@@ -135,11 +134,8 @@
       const y=Math.sin(a)*(R-0.55), z=Math.cos(a)*(R-0.55);
       const mat=new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide});
       const plate=new THREE.Mesh(plateGeo,mat);
-      // Mount directly on the front face, a hair forward
-      plate.position.set(DEPTH/2+0.04, y, z);
-      // Keep perfectly front-facing: normal +X
-      plate.rotation.y = -Math.PI/2; // Plane’s +Z → +X
-      // Do NOT rotate around X by 'a' (that was causing edge-on); keep flat
+      plate.position.set(DEPTH/2+0.04, y, z);   // slightly in front of face
+      plate.rotation.y = -Math.PI/2;            // face toward +X (camera side)
       plates.add(plate);
     }
     wheel.add(plates);
@@ -164,7 +160,8 @@
     function size(){
       const r=mount.getBoundingClientRect();
       renderer.setSize(r.width,Math.max(460,r.height),false);
-      camera.aspect=r.width/Math.max(460,r.height); camera.updateProjectionMatrix();
+      camera.aspect=r.width/Math.max(460,r.height);
+      camera.updateProjectionMatrix();
     }
     size(); addEventListener('resize', size);
 
@@ -178,7 +175,7 @@
     }
     drawHUD(0);
 
-    // ---------- Spin physics (around X!) ----------
+    // ---------- Spin physics (around X) ----------
     let angX=-Math.PI/2, vel=0, spinning=false;
     const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
     function setAngle(a){ angX=a; wheel.rotation.x=a; }
@@ -187,7 +184,7 @@
     function startSpin(v){ vel=v; spinning=true; }
     document.getElementById('spinBtn').onclick=()=> startSpin(6);
 
-    // swipe
+    // swipe input
     const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
     function down(e){ if(spinning) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
@@ -215,11 +212,9 @@
     }
     animate();
 
-    // reset button (simple)
-    resetBtn.onclick=()=>{ vel=0; spinning=false; setAngle(-Math.PI/2); };
-
-    // HOLD button placeholder (kept for layout)
-    holdBtn.onclick=()=>{};
+    // reset
+    document.getElementById('resetBtn').onclick=()=>{ vel=0; spinning=false; setAngle(-Math.PI/2); };
+    document.getElementById('holdBtn').onclick=()=>{}; // placeholder
   }
 })();
 </script>
