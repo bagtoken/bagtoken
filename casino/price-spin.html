@@ -52,7 +52,7 @@
     E.innerHTML = `<div><b>3D failed to start</b><br><div style="opacity:.9;margin-top:6px">${html}</div></div>`;
   }
   function load(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(new Error('load-failed:'+src)); document.head.appendChild(s); }); }
-  function when(fn){ let tries=0; (function tick(){ if (window.THREE){ fn(); return; } if (++tries>200){ showError('THREE never loaded. If you use CSP, allow cdn.jsdelivr.net or host /vendor/three.min.js'); return; } setTimeout(tick,50); })(); }
+  function when(fn){ let tries=0; (function tick(){ if (window.THREE){ fn(); return; } if (++tries>200){ showError('THREE never loaded. Allow cdn.jsdelivr.net / unpkg.com or host /vendor/three.min.js'); return; } setTimeout(tick,50); })(); }
 
   (async()=>{
     try{ await load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js'); }
@@ -66,14 +66,13 @@
     when(()=> initWheelSide3D());
   })();
 
-  /* ---------- SIDE-ON wheel (the look from your Image #2) ---------- */
+  /* ---------- SIDE-ON wheel ---------- */
   function initWheelSide3D(){
     // WebGL sanity
     const test=document.createElement('canvas');
     const gl=test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
     if(!gl){ showError('WebGL is disabled or unavailable in this browser.'); return; }
 
-    // Values around the real wheel ring
     const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const labels=seq.map(v=>v.toFixed(2)), N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
@@ -83,10 +82,10 @@
     const spinBtn=document.getElementById('spinBtn'), holdBtn=document.getElementById('holdBtn'), resetBtn=document.getElementById('resetBtn');
     holdBtn.disabled = true;
 
-    // THREE aliases
+    // THREE
     const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
            CylinderGeometry,TorusGeometry,PlaneGeometry,CanvasTexture,Vector3,
-           DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace} = THREE;
+           DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace,BoxGeometry} = THREE;
 
     // Scene / renderer
     const scene=new Scene(); scene.background=new Color('#091913');
@@ -95,9 +94,9 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     mount.appendChild(renderer.domElement);
 
-    // Camera: SIDE-ON (drum visible from the side). This is the image #2 look.
+    // Camera (side-on)
     const camera=new PerspectiveCamera(38,1,0.1,100);
-    camera.position.set(0,0,9);     // pull back a bit
+    camera.position.set(0,0,9);
     camera.lookAt(0,0,0);
 
     // Lights
@@ -106,28 +105,26 @@
     const rimL=new DirectionalLight(0xfff0cc,0.7); rimL.position.set(0,-6,6); scene.add(rimL);
     scene.add(new AmbientLight(0xffffff,0.35));
 
-    // Wheel parts (axis = X so the plates roll vertically when you swipe up/down)
-    const R=2.75, DEPTH=1.20;
+    // Wheel geometry
+    const R=2.75, DEPTH=1.20, OUT=R+0.06; // OUT puts plates/pegs slightly OUTSIDE the drum so they are visible
     const wheel=new Group(); scene.add(wheel);
 
-    // Drum (dark metal)
     const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
-                        new MeshStandardMaterial({color:'#121212',metalness:.55,roughness:.55}));
-    drum.rotation.z=Math.PI/2; // axis along X
+                        new MeshStandardMaterial({color:'#141414',metalness:.55,roughness:.55}));
+    drum.rotation.z=Math.PI/2;
     wheel.add(drum);
 
-    // Outer rim ring (glossy)
     const rimFront=new Mesh(new TorusGeometry(R+0.05,0.08,14,64),
                             new MeshStandardMaterial({color:'#0f0f0f',metalness:.85,roughness:.25}));
     rimFront.rotation.y=Math.PI/2; rimFront.position.z=DEPTH/2+0.02; wheel.add(rimFront);
 
-    // Pegs (little gold cylinders along the front edge)
-    const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.30,12);
+    // Pegs (moved out to OUT+)
+    const pegGeo=new CylinderGeometry(0.06,0.06,0.30,12);
     const pegMat=new MeshStandardMaterial({color:'#d7b75f',metalness:.85,roughness:.35});
     const pegs=new Group();
     for(let i=0;i<N;i++){
-      const a=i*STEP+STEP*0.4; // slight offset so they sit between plates
-      const y=Math.sin(a)*R, z=Math.cos(a)*R;
+      const a=i*STEP+STEP*0.4;
+      const y=Math.sin(a)*OUT, z=Math.cos(a)*OUT;
       const p=new Mesh(pegGeo,pegMat);
       p.position.set(DEPTH/2+0.18, y, z);
       p.rotation.y=Math.PI/2;
@@ -135,7 +132,7 @@
     }
     wheel.add(pegs);
 
-    // Plate texture (gold frame, white/black alternation, green 5/15, red 100)
+    // Plate texture
     function plateTex(v, idx){
       const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
       const is100=v==='1.00', isG=(v==='0.05'||v==='0.15'); const dark=!is100 && !isG && (idx%2===0);
@@ -148,24 +145,23 @@
       const t=new CanvasTexture(c); t.anisotropy=8; return t;
     }
 
-    // Plates arranged around the barrel, facing outward
+    // Plates (moved out to OUT, DoubleSide so they never vanish at glancing angles)
     const plates=new Group(), plateGeo=new PlaneGeometry(1.2,0.60);
     for(let i=0;i<N;i++){
       const a=i*STEP+STEP/2;
-      const y=Math.sin(a)*(R-0.52);
-      const z=Math.cos(a)*(R-0.52);
-      const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i)}));
+      const y=Math.sin(a)*OUT, z=Math.cos(a)*OUT;
+      const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
       m.position.set(0,y,z);
       const n=new Vector3(0,y,z).normalize();
-      m.lookAt(n.x,n.y,n.z); // face outward
+      m.lookAt(n.x,n.y,n.z);
       plates.add(m);
     }
     wheel.add(plates);
 
     // Red flapper (front)
-    const flap=new Mesh(new THREE.BoxGeometry(0.06,0.34,0.02),
+    const flap=new Mesh(new BoxGeometry(0.06,0.34,0.02),
                         new MeshStandardMaterial({color:'#e23a21',metalness:.5,roughness:.5}));
-    flap.position.set(DEPTH/2+0.11, 0, R-0.05);
+    flap.position.set(DEPTH/2+0.11, 0, OUT-0.11);
     scene.add(flap);
 
     // Size / resize
@@ -188,7 +184,7 @@
     }
     drawHUD(0);
 
-    /* ---------- Physics & input (rotate around X; swipe up/down) ---------- */
+    /* ---------- Physics & input ---------- */
     let angX=-Math.PI/2, vel=0, spinning=false, spin1=null, total=0, done=false;
     const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
 
