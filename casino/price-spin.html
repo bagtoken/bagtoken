@@ -97,19 +97,19 @@
     camera.position.set(0,0,8.6);
     camera.lookAt(0,0,0);
 
-    // lights beefed up a touch so the drum reads
+    // lights
     const key=new DirectionalLight(0xffffff,1.05); key.position.set(3,6,8); scene.add(key);
     const fill=new DirectionalLight(0xffffff,.75); fill.position.set(-5,2,6); scene.add(fill);
     const rimL=new DirectionalLight(0xfff0cc,.8); rimL.position.set(0,-6,6); scene.add(rimL);
     scene.add(new AmbientLight(0xffffff,.38));
 
-    // ---------- WHEEL (upright drum; axis = X so numbers roll vertically) ----------
+    // ---------- WHEEL (upright drum; axis = X so numbers move vertically) ----------
     const R=2.75, DEPTH=1.2;
     const wheel=new Group(); scene.add(wheel);
 
-    // drum body (rotate around Z to align cylinder's axis to X)
+    // drum body (cylinder axis → X)
     const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
-                        new MeshStandardMaterial({color:'#111',metalness:.5,roughness:.6}));
+                        new MeshStandardMaterial({color:'#111',metalness:.5,roughness:.6,side:DoubleSide}));
     drum.rotation.z=Math.PI/2; wheel.add(drum);
 
     // front rim ring
@@ -117,21 +117,12 @@
                        new MeshStandardMaterial({color:'#111',metalness:.85,roughness:.28}));
     rim.rotation.y=Math.PI/2; rim.position.x=DEPTH/2+0.02; wheel.add(rim);
 
-    // front face disk so the wheel reads from head-on
+    // front face disk
     const frontFace=new Mesh(new CircleGeometry(R-0.02,128),
                        new MeshStandardMaterial({color:'#0f241b',metalness:.25,roughness:.55,side:DoubleSide}));
     frontFace.rotation.y=Math.PI/2;
     frontFace.position.x=DEPTH/2+0.015;
     wheel.add(frontFace);
-
-    // grooves between slices (subtle)
-    const grooves=new Group();
-    for(let i=0;i<N;i++){
-      const ring=new Mesh(new TorusGeometry(R-0.02,0.002,8,16,STEP-0.02),
-                          new MeshBasicMaterial({color:'#214d39',side:DoubleSide}));
-      ring.rotation.y=Math.PI/2; ring.rotation.x=i*STEP+STEP/2; grooves.add(ring);
-    }
-    wheel.add(grooves);
 
     // pegs around front rim
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
@@ -139,7 +130,7 @@
     const pegs=new Group();
     for(let i=0;i<N;i++){
       const a=i*STEP, y=Math.sin(a)*(R-0.02), z=Math.cos(a)*(R-0.02);
-      const p=new Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.20,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
+      const p=new Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.22,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
     }
     wheel.add(pegs);
 
@@ -153,37 +144,37 @@
       g.strokeStyle='#d5b55c'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
       g.fillStyle=fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
       g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+8);
-      const t=new CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+      const t=new CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.needsUpdate = true;        /* ← ensure it uploads */
+      return t;
     }
 
-    // number plates arranged around YZ circle; make them look toward +X (camera side) to avoid back-face culling
+    // number plates: place them just in front of the drum and make them face the camera
     const plates=new Group(), plateGeo=new PlaneGeometry(1.1,0.55);
     for(let i=0;i<N;i++){
-      const a=i*STEP+STEP/2, y=Math.sin(a)*(R-0.55), z=Math.cos(a)*(R-0.55);
-      const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
-      m.position.set(0,y,z);
-      // Make the plate face slightly toward camera (+X) while staying tangential
-      m.lookAt(5, y, z);
+      const a=i*STEP+STEP/2;
+      const y=Math.sin(a)*(R-0.55), z=Math.cos(a)*(R-0.55);
+      const mat=new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide});
+      const m=new Mesh(plateGeo,mat);
+      m.position.set(DEPTH/2+0.03, y, z);     // ← forward of the drum face
+      m.lookAt(0,0,10);                        // ← front faces toward camera
       plates.add(m);
     }
     wheel.add(plates);
 
-    // center cap + logo
-    const hub=new Mesh(new CircleGeometry(0.9,64),
-                       new MeshStandardMaterial({color:'#0b0f10',metalness:.5,roughness:.5,side:DoubleSide}));
-    hub.rotation.y=Math.PI/2; hub.position.set(DEPTH/2+0.06,0,0); wheel.add(hub);
-
+    // center logo
     (function(){
       const cv=document.createElement('canvas'); cv.width=256; cv.height=256;
       const g=cv.getContext('2d'); g.fillStyle='#0b0f10'; g.fillRect(0,0,256,256);
       g.fillStyle='#ffd34d'; g.font='800 60px Inter,Arial'; g.textAlign='center';
       g.fillText('THE $BAG IS RIGHT',128,132);
-      const tex=new CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+      const tex=new CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate=true;
       const logo=new Mesh(new PlaneGeometry(1.9,1.9), new MeshBasicMaterial({map:tex,transparent:true,side:DoubleSide}));
       logo.position.set(DEPTH/2+0.061,0,0); wheel.add(logo);
     })();
 
-    // right-side red flapper
+    // flapper
     const flapper=new Mesh(new PlaneGeometry(0.5,0.28),
                            new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
     flapper.rotation.z=Math.PI/2; flapper.position.set(DEPTH/2+0.27,0,R*0.02); scene.add(flapper);
