@@ -3,16 +3,30 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>$BAG Is Right — 3D Wheel (front/side switch)</title>
+<title>The $BAG Is Right Wheel — 3D + Blinking Value Overlay</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:18px}
   .board{background:linear-gradient(180deg,#0c2218,#091a13);border:1px solid #244b35;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:10px;padding:8px;margin-bottom:8px}
-  .stage{position:relative;height:72vh;min-height:460px;max-height:84vh;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px dashed #2c6a49}
+  .stage{position:relative;height:72vh;min-height:520px;max-height:84vh;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px dashed #2c6a49}
   #mount{position:absolute;inset:0}
-  #hud{position:absolute;right:10px;top:10px;width:min(42vw,180px);height:min(24vw,110px);z-index:3}
-  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.55);z-index:5}
+  /* Big forward-facing value */
+  .valueOverlay{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:min(60vw,440px); height:min(26vw,160px);
+    display:grid; place-items:center; z-index:5;
+    border-radius:12px; background:rgba(5,8,9,.55);
+    box-shadow:inset 0 0 0 4px #0f1512, 0 10px 24px rgba(0,0,0,.28);
+  }
+  .valueOverlay .digits{
+    font-family: "DM Mono", ui-monospace, monospace;
+    font-weight: 900; font-size: clamp(40px, 9vw, 110px);
+    letter-spacing:.04em; line-height:1; color:#ffe26a; text-shadow:0 2px 0 #161a18;
+  }
+  .blink { animation: blink .55s steps(1,end) infinite; }
+  @keyframes blink { 50% { opacity:.15 } }
+  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.5);z-index:10}
   #err b{color:#ffb3b3}
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
   .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer}
@@ -26,12 +40,19 @@
 <div class="wrap">
   <h2 style="margin:0 0 10px">🎡 The $BAG Is Right Wheel</h2>
   <div class="board">
-    <div class="marquee">SWIPE UP/DOWN TO SPIN • UPRIGHT 3D WHEEL • use <code>?view=front</code> or <code>?view=side</code></div>
+    <div class="marquee">SWIPE UP/DOWN TO SPIN • UPRIGHT 3D WHEEL • Big blinking number overlay while spinning</div>
+
     <div class="stage">
-      <div id="mount"></div>
-      <canvas id="hud" width="220" height="130"></canvas>
+      <div id="mount" aria-label="3D wheel"></div>
+
+      <!-- BIG forward-facing value that blinks while spinning -->
+      <div class="valueOverlay" aria-live="polite">
+        <div id="bigVal" class="digits">0.00</div>
+      </div>
+
       <div id="err"></div>
     </div>
+
     <div class="row">
       <button id="spinBtn" class="btn spin">SPIN</button>
       <button id="holdBtn" class="btn hold">HOLD</button>
@@ -42,194 +63,195 @@
 </div>
 
 <script>
+/* Load Three.js with fallback notice */
 (async()=>{
   const E=document.getElementById('err');
-  const showError=m=>{E.style.display='flex';E.innerHTML=`<div><b>3D failed</b><br>${m}</div>`;}
-
-  // robust loader
+  const showError=(m)=>{E.style.display='flex';E.innerHTML=`<div><b>3D failed</b><br>${m}</div>`;};
   try{await import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js');}
-  catch{try{await import('https://unpkg.com/three@0.158.0/build/three.min.js');}catch{showError('Could not load three.min.js');return;}}
-
-  init();
-
-  function init(){
-    const qs=new URLSearchParams(location.search);
-    const VIEW=(qs.get('view')||'front').toLowerCase(); // 'front' | 'side'
-
-    const mount=document.getElementById('mount'),hud=document.getElementById('hud');
-    const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),resetBtn=document.getElementById('resetBtn');
-    const msg=document.getElementById('msg');
-
-    const scene=new THREE.Scene();
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true, powerPreference:'high-performance'});
-    renderer.outputColorSpace=THREE.SRGBColorSpace;
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
-    mount.appendChild(renderer.domElement);
-
-    // Camera presets (these were the two looks we used)
-    const camera=new THREE.PerspectiveCamera(44,1,0.01,200);
-    const CAMS={
-      front(){ camera.position.set(7.4,0.28,0.0); camera.lookAt(0,0,0); },
-      side(){  camera.position.set(11.0,1.6,0.0); camera.lookAt(0,0.3,0); }
-    };
-    (CAMS[VIEW]||CAMS.front)();
-
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff,.45));
-    const key=new THREE.DirectionalLight(0xffffff,1.05); key.position.set(5,5,7); scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.7);  fill.position.set(-5,1,-6); scene.add(fill);
-    const back=new THREE.DirectionalLight(0xfff0cc,.5);  back.position.set(0,-6,6); scene.add(back);
-
-    // Wheel geometry
-    const R=2.75, DEPTH=1.25, TAU=Math.PI*2;
-    const wheel=new THREE.Group(); scene.add(wheel);
-
-    // drum (axis = X so swipe up/down spins vertically)
-    const drum=new THREE.Mesh(
-      new THREE.CylinderGeometry(R,R,DEPTH,128,1,true),
-      new THREE.MeshStandardMaterial({color:'#0f0f10',metalness:.45,roughness:.75})
-    );
-    drum.rotation.z=Math.PI/2; wheel.add(drum);
-
-    // rims
-    const rimMat=new THREE.MeshStandardMaterial({color:'#111',metalness:.88,roughness:.28});
-    const rimF=new THREE.Mesh(new THREE.TorusGeometry(R+0.03,0.08,16,96),rimMat);
-    rimF.rotation.y=Math.PI/2; rimF.position.x= DEPTH/2+0.02; wheel.add(rimF);
-    const rimB=rimF.clone(); rimB.position.x=-(DEPTH/2+0.02); wheel.add(rimB);
-
-    // pegs
-    const N=20, STEP=TAU/N;
-    const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
-    const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.88,roughness:.35});
-    const pegs=new THREE.Group();
-    for(let i=0;i<N;i++){
-      const a=i*STEP, y=Math.sin(a)*(R-0.04), z=Math.cos(a)*(R-0.04);
-      const p=new THREE.Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.2,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
-    }
-    wheel.add(pegs);
-
-    // value plates
-    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-    const labels=seq.map(v=>v.toFixed(2));
-    const plates=new THREE.Group(); wheel.add(plates);
-
-    function plateTex(v,idx){
-      const c=document.createElement('canvas'); c.width=768; c.height=384; const g=c.getContext('2d');
-      const is100=v==='1.00', isG=(v==='0.05'||v==='0.15'), dark=!is100&&!isG&&(idx%2===0);
-      const bg=is100?'#b90b0b':isG?'#1b7f3a':(dark?'#121212':'#f1f1f1');
-      const fg=(is100||isG||dark)?'#f7f7f7':'#151515';
-      g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
-      g.strokeStyle='#d5b55c'; g.lineWidth=44; g.strokeRect(30,30,c.width-60,c.height-60);
-      g.fillStyle=fg; g.font='900 210px Inter,Arial'; g.textAlign='center'; g.textBaseline='middle';
-      g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+6);
-      const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.needsUpdate=true; return t;
-    }
-
-    const plateGeo=new THREE.PlaneGeometry(1.10,0.55);
-    const plateR=R-0.55;
-    for(let i=0;i<N;i++){
-      const a=i*STEP+STEP/2, y=Math.sin(a)*plateR, z=Math.cos(a)*plateR;
-      const m=new THREE.Mesh(plateGeo,new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide}));
-      m.position.set(DEPTH/2+0.06,y,z);
-      // face the camera in both views
-      const yaw=Math.atan2(z,plateR)+Math.PI/2;
-      m.rotation.y=yaw;
-      plates.add(m);
-    }
-
-    // flapper
-    const flap=new THREE.Mesh(
-      new THREE.PlaneGeometry(0.5,0.28),
-      new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.55,side:THREE.DoubleSide})
-    );
-    flap.rotation.y=Math.PI/2; flap.position.set(DEPTH/2+0.32,0,R*0.03); scene.add(flap);
-
-    // HUD
-    function drawHUD(v){
-      const g=hud.getContext('2d'),w=hud.width,h=hud.height;
-      g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
-      g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
-      const fs=Math.min(88,Math.max(44,Math.floor(h*0.7)));
-      g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",monospace`;
-      g.textAlign='center'; g.textBaseline='middle'; g.fillText((v||0).toFixed(2),w/2,h/2+2);
-    }
-    drawHUD(0);
-
-    // physics
-    let angX=0,vel=0,spinning=false, spin1=null,total=0,done=false;
-    const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012;
-    function setAngle(a){angX=a;wheel.rotation.x=a;}
-
-    // helpers
-    const STEPIDX=TAU/N;
-    function idxFrom(a){ let t=a%TAU; if(t<0)t+=TAU; const i=Math.floor((t+STEPIDX/2)/STEPIDX)%N; return (N-i)%N; }
-    function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
-    function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEPIDX-STEPIDX/2; }
-
-    // spin loop
-    function startSpin(){
-      spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
-      msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
-      const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION; drawHUD(currentVal());
-        if(Math.abs(vel)<VMIN){
-          const target=snapTarget(); const d=((target-angX+Math.PI*3)%TAU)-Math.PI;
-          if(Math.abs(d)>0.0006){ setAngle(angX+d*0.25); requestAnimationFrame(loop); }
-          else{ setAngle(target); spinning=false; onSettle(); }
-        } else requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    }
-
-    function onSettle(){
-      const landed=currentVal();
-      if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return; }
-      total+=landed; drawHUD(total);
-      if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} over 1.00`; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false; return; }
-      if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
-      msg.className= (total>=0.95)?'t win':'t';
-      msg.textContent=(total>=0.95)?`Near 1.00 — 1×`:`Under 1.00 — 0×`; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
-    }
-    function bonus(){
-      vel=5.4; const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION;
-        if(Math.abs(vel)<VMIN){ const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
-          msg.className=extra?'t win':'t'; msg.textContent=extra?`Bonus ${v.toFixed(2)} — +${extra}×`:`Bonus missed — kept 5×`; done=true; resetBtn.disabled=false; }
-        else requestAnimationFrame(loop);
-      }; requestAnimationFrame(loop);
-    }
-
-    // controls
-    spinBtn.onclick=()=>{ if(spinning||done) return; vel= (VIEW==='side'?8:6.6); startSpin(); };
-    holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; vel*=0.4; };
-    resetBtn.onclick=()=>{ spinning=false; spin1=null; total=0; done=false; holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false; setAngle(0); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; };
-
-    // swipe input
-    const surf=renderer.domElement,getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
-    let dragging=false,lastY=0,lastT=0,samples=[];
-    function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
-    function move(e){ if(!dragging) return; const y=getY(e), t=performance.now(), dy=y-lastY;
-      setAngle(angX + dy*PIX2RAD);
-      const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
-      lastY=y; lastT=t; e.preventDefault();
-    }
-    function up(){ if(!dragging) return; dragging=false; const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-      vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1); startSpin();
-    }
-    surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
-    surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
-
-    // responsive
-    function size(){
-      const r=mount.getBoundingClientRect();
-      const w=Math.max(1,Math.floor(r.width)), h=Math.max(460,Math.floor(r.height));
-      renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
-      (CAMS[VIEW]||CAMS.front)(); // keep exact framing on rotate/resize
-    }
-    size(); addEventListener('resize', size);
-
-    // render
-    (function tick(){ requestAnimationFrame(tick); renderer.render(scene,camera); })();
-  }
+  catch(e){showError('Could not load three.min.js from CDN.');return;}
+  initWheel();
 })();
+
+function initWheel(){
+  const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
+         CylinderGeometry,TorusGeometry,PlaneGeometry,CanvasTexture,DirectionalLight,AmbientLight,
+         DoubleSide,SRGBColorSpace} = THREE;
+
+  const mount=document.getElementById('mount');
+  const bigVal=document.getElementById('bigVal');
+  const msg=document.getElementById('msg');
+  const spinBtn=document.getElementById('spinBtn');
+  const holdBtn=document.getElementById('holdBtn');
+  const resetBtn=document.getElementById('resetBtn');
+
+  // Scene
+  const scene=new Scene();
+  const renderer=new WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  renderer.outputColorSpace=SRGBColorSpace;
+  mount.appendChild(renderer.domElement);
+
+  // Camera (front-ish, slight parallax so it still feels 3D)
+  const cam=new PerspectiveCamera(40,1,0.01,200);
+  cam.position.set(5.6, 1.2, 7.6);
+  cam.lookAt(0,0.2,0);
+  scene.add(cam);
+
+  // Lights
+  scene.add(new AmbientLight(0xffffff,.5));
+  const key=new DirectionalLight(0xffffff,1.0); key.position.set(6,6,8); scene.add(key);
+  const rim=new DirectionalLight(0xffffff,.55); rim.position.set(-6,1,-7); scene.add(rim);
+
+  // Wheel pieces
+  const R=2.75, DEPTH=1.25, N=20, TAU=Math.PI*2, STEP=TAU/N;
+  const wheel=new Group(); scene.add(wheel);
+
+  // Drum (upright barrel)
+  const drum=new Mesh(
+    new CylinderGeometry(R,R,DEPTH,128,1,true),
+    new MeshStandardMaterial({color:'#0f1011',metalness:.45,roughness:.72})
+  );
+  drum.rotation.z=Math.PI/2; // spin on X
+  wheel.add(drum);
+
+  // Rims
+  const rimMat=new MeshStandardMaterial({color:'#121212',metalness:.88,roughness:.28});
+  const fRim=new Mesh(new TorusGeometry(R+0.03,0.08,16,96),rimMat); fRim.rotation.y=Math.PI/2; fRim.position.x= DEPTH/2+0.02; wheel.add(fRim);
+  const bRim=fRim.clone(); bRim.position.x=-(DEPTH/2+0.02); wheel.add(bRim);
+
+  // Pegs
+  const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
+  const pegMat=new MeshStandardMaterial({color:'#d5b55c',metalness:.9,roughness:.35});
+  for(let i=0;i<N;i++){
+    const a=i*STEP, y=Math.sin(a)*(R-0.04), z=Math.cos(a)*(R-0.04);
+    const p=new Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.18,y,z); p.rotation.y=Math.PI/2; wheel.add(p);
+  }
+
+  // Value layout
+  const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+  const labels=seq.map(v=>v.toFixed(2));
+
+  // Plate textures
+  function plateTex(v,i){
+    const c=document.createElement('canvas'); c.width=768; c.height=384; const g=c.getContext('2d');
+    const is100=v==='1.00', isG=(v==='0.05'||v==='0.15'), dark=!is100&&!isG&&(i%2===0);
+    const bg=is100?'#b90b0b':isG?'#1b7f3a':(dark?'#121212':'#f3f3f3');
+    const fg=(is100||isG||dark)?'#fafafa':'#121212';
+    g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
+    g.strokeStyle='#d5b55c'; g.lineWidth=44; g.strokeRect(30,30,c.width-60,c.height-60);
+    g.fillStyle=fg; g.font='900 210px Inter,Arial'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+6);
+    const t=new CanvasTexture(c); t.colorSpace=SRGBColorSpace; t.needsUpdate=true; return t;
+  }
+
+  // Plates (slightly in front, facing camera)
+  const plateRadius=R-0.56, plateGeo=new PlaneGeometry(1.10,0.55);
+  for(let i=0;i<N;i++){
+    const a=i*STEP+STEP/2, y=Math.sin(a)*plateRadius, z=Math.cos(a)*plateRadius;
+    const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
+    m.position.set(DEPTH/2+0.061, y, z);
+    m.rotation.y=Math.atan2(z,plateRadius)+Math.PI/2;
+    wheel.add(m);
+  }
+
+  // Flapper (thin)
+  const flap=new Mesh(new PlaneGeometry(0.48,0.26), new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.55,side:DoubleSide}));
+  flap.rotation.y=Math.PI/2; flap.position.set(DEPTH/2+0.31,0,R*0.03); scene.add(flap);
+
+  // Helpers
+  function size(){
+    const r=mount.getBoundingClientRect();
+    const w=Math.max(320,Math.floor(r.width)), h=Math.max(520,Math.floor(r.height));
+    renderer.setSize(w,h,false);
+    cam.aspect=w/h; cam.updateProjectionMatrix();
+  }
+  size(); addEventListener('resize', size);
+
+  const TAU=Math.PI*2, STEP=TAU/N;
+  let angX=0, vel=0, spinning=false, spin1=null, total=0, done=false;
+  const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
+
+  function setAngle(a){ angX=a; wheel.rotation.x=a; }
+  function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
+  function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
+  function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEP-STEP/2; }
+
+  // BTN wiring
+  spinBtn.onclick = ()=>{ if(spinning||done) return; vel=6.6; startSpin(); };
+  holdBtn.onclick = ()=>{ if(spinning) vel*=0.85; };
+  resetBtn.onclick= ()=> reset();
+
+  // Swipe input (vertical)
+  const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+  let dragging=false,lastY=0,lastT=0,samples=[];
+  function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
+  function move(e){ if(!dragging) return; const y=getY(e), t=performance.now(), dy=y-lastY;
+    setAngle(angX + dy*PIX2RAD);
+    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
+    lastY=y; lastT=t; e.preventDefault();
+  }
+  function up(){ if(!dragging) return; dragging=false;
+    const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
+    vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1);
+    startSpin();
+  }
+  surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
+  surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
+
+  // Overlay control
+  function setBlink(on){
+    bigVal.classList.toggle('blink', !!on);
+  }
+  function setBig(v){
+    bigVal.textContent = (v||0).toFixed(2);
+  }
+  setBig(0); setBlink(false);
+
+  function startSpin(){
+    spinning=true; setBlink(true);
+    msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
+  }
+
+  function onSettle(){
+    const landed=currentVal();
+    setBig(landed); setBlink(false);
+
+    if(spin1==null){ // after first spin
+      spin1=landed; total=landed;
+      msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`;
+      return;
+    }
+    total+=landed; setBig(total);
+    if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; return; }
+    if(total===1.00){ done=true; msg.className='t win'; msg.textContent='Exact 1.00 — 5×!'; return; }
+    if(total>=0.95){ done=true; msg.className='t win'; msg.textContent='Nice! 0.95+'; }
+    else { done=true; msg.className='t'; msg.textContent='Under 0.95'; }
+  }
+
+  function reset(){
+    spinning=false; vel=0; spin1=null; total=0; done=false;
+    setAngle(0); setBig(0); setBlink(false);
+    msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.';
+  }
+
+  // Main loop
+  (function loop(){
+    requestAnimationFrame(loop);
+    if(spinning){
+      setAngle(angX + vel*(1/60));
+      vel *= FRICTION;
+      setBig(currentVal()); // live update while spinning (blinking)
+      if(Math.abs(vel)<VMIN){
+        // snap to clean slot
+        const target=snapTarget();
+        const d=((target-angX+Math.PI*3)%TAU)-Math.PI;
+        if(Math.abs(d)>0.0007){ setAngle(angX + d*0.28); }
+        else{ setAngle(target); spinning=false; onSettle(); }
+      }
+    }
+    renderer.render(scene,cam);
+  })();
+}
 </script>
 </body>
 </html>
