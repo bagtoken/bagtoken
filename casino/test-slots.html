@@ -320,10 +320,11 @@
   </div>
 </section>
 
-<!-- ✅ AUDIO SYSTEM (robust MP3 loader + HTMLAudio fallback) -->
+<!-- ✅ AUDIO SYSTEM (slots MP3s in /assets/sounds/) -->
 <script>
 (function(){
-  const BASE = '/assets/'; // ← change if your MP3s live elsewhere
+  // Your files live here:
+  const BASE = '/assets/sounds/';
 
   const FILES = {
     win:     BASE + 'slot-machine-payout.mp3',
@@ -332,180 +333,118 @@
     spin:    BASE + 'slots_spinning.mp3'
   };
 
-  // Cache-bust to avoid stale SW/CDN copies
-  const BUST = () => (Date.now() >>> 12); // changes every ~4s
-  const withBust = (u)=> `${u}${u.includes('?') ? '&' : '?'}v=${BUST()}`;
+  const bust = () => '?v=' + (Date.now() >>> 12); // beat SW/CDN
 
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
   const BUFFERS = { win:null, scratch:null, lose:null, spin:null };
-  const TAGS    = { win:null, scratch:null, lose:null, spin:null }; // HTMLAudio fallbacks
-  let spinSrc = null, spinGain = null; // WebAudio loop handle
-  let spinTag = null;                  // HTMLAudio loop handle (fallback)
-
-  function log(){ try{ console.log('[BAG audio]', ...arguments); }catch{} }
-  function warn(){ try{ console.warn('[BAG audio]', ...arguments); }catch{} }
+  let spinSrc=null, spinGain=null, spinTag=null;
 
   function getAC(){
     if (AC && AC.state!=='closed') return AC;
-    if (!AudioCtx) { warn('No WebAudio context — will use HTMLAudio fallback'); return null; }
+    if (!AudioCtx) return null;
     try{
       AC = new AudioCtx({ latencyHint:'interactive', sampleRate:44100 });
-      MASTER = AC.createGain(); MASTER.gain.value = 0.35; MASTER.connect(AC.destination);
+      MASTER = AC.createGain();
+      MASTER.gain.value = 0.32; // master volume
+      MASTER.connect(AC.destination);
       return AC;
-    }catch(e){ warn('WebAudio init failed:', e); return null; }
+    }catch{ return null; }
   }
 
   async function resume(){
     const ac = getAC(); if (!ac) return;
-    if (ac.state === 'suspended'){
-      try{ await ac.resume(); log('AudioContext resumed'); }catch(e){ warn('Resume failed', e); }
-    }
+    if (ac.state==='suspended'){ try{ await ac.resume(); }catch{} }
   }
 
   // ---------- HTMLAudio fallback ----------
+  const TAGS = {};
   function getTag(key){
     if (TAGS[key]) return TAGS[key];
     const a = new Audio();
-    a.src = withBust(FILES[key]);
     a.preload = 'auto';
-    a.crossOrigin = 'anonymous'; // safe for same-origin too
-    a.load();
+    a.playsInline = true;
+    a.crossOrigin = 'anonymous';
+    a.src = FILES[key] + bust();
     TAGS[key] = a;
     return a;
   }
-
-  async function playTagOnce(key, vol=1){
+  async function playTag(key, vol=1){
     try{
-      const a = getTag(key); a.currentTime = 0; a.volume = Math.max(0, Math.min(1, vol));
+      const a = getTag(key);
+      a.currentTime = 0;
+      a.volume = Math.max(0, Math.min(1, vol));
       await a.play();
-      log('HTMLAudio play', key);
-    }catch(e){ warn('HTMLAudio play failed', key, e); }
+      return true;
+    }catch{ return false; }
   }
 
-  function startSpinTag(){
-    try{
-      if (spinTag && !spinTag.paused) { return { stop: stopSpinTag }; }
-      spinTag = getTag('spin');
-      spinTag.loop = true; spinTag.volume = 0.22; spinTag.currentTime = 0;
-      spinTag.play().then(()=>log('HTMLAudio spin loop started')).catch(e=>warn('Spin tag play failed', e));
-      return { stop: stopSpinTag };
-    }catch(e){ warn('Spin tag start err', e); return { stop(){} }; }
-  }
-  function stopSpinTag(){ try{ if (spinTag){ spinTag.pause(); log('HTMLAudio spin loop stopped'); } }catch{} }
-
-  // ---------- WebAudio path ----------
-  async function fetchArrayBuffer(url){
-    const u = withBust(url);
-    try{
-      const r = await fetch(u, { mode:'cors', cache:'no-store' });
-      if (!r.ok) throw new Error('HTTP '+r.status);
-      return await r.arrayBuffer();
-    }catch(e){
-      warn('Fetch failed for', u, e);
-      return null;
-    }
-  }
-
-  async function loadBuffer(key, url){
+  // ---------- WebAudio loaders ----------
+  async function loadBuffer(key){
     if (BUFFERS[key]) return BUFFERS[key];
     const ac = getAC(); if (!ac) return null;
-    const arr = await fetchArrayBuffer(url); if (!arr) return null;
     try{
-      const buf = await ac.decodeAudioData(arr);
+      const r = await fetch(FILES[key] + bust(), { cache:'no-store', mode:'cors' });
+      if (!r.ok) throw 0;
+      const arr = await r.arrayBuffer();
+      const buf = await ac.decodeAudioData(arr.slice(0));
       BUFFERS[key] = buf;
-      log('Decoded buffer', key);
       return buf;
-    }catch(e){
-      warn('Decode failed', key, e);
-      return null;
-    }
+    }catch{ return null; }
   }
 
-  function playOneShot(buf, gain=1){
-    const ac = getAC(); if (!ac || !buf || ac.state!=='running') return false;
+  function playOneShot(buf, vol=1){
+    const ac=getAC(); if (!ac || !buf || ac.state!=='running') return false;
     try{
       const src = ac.createBufferSource();
       const g = ac.createGain();
-      g.gain.value = Math.max(0, Math.min(1, gain));
-      src.buffer = buf; src.connect(g).connect(MASTER);
+      g.gain.value = Math.max(0, Math.min(1, vol));
+      src.buffer = buf;
+      src.connect(g).connect(MASTER);
       src.start();
       src.onended = ()=>{ try{ src.disconnect(); g.disconnect(); }catch{} };
       return true;
-    }catch(e){ warn('OneShot failed', e); return false; }
+    }catch{ return false; }
   }
 
-  function startSpinLoop(buf){
-    const ac = getAC(); if (!ac || !buf || ac.state!=='running') return { stop(){} };
-    try{
-      spinSrc = ac.createBufferSource();
-      spinGain= ac.createGain(); spinGain.gain.value = 0.22;
-      spinSrc.buffer = buf; spinSrc.loop = true;
-      spinSrc.connect(spinGain).connect(MASTER);
-      spinSrc.start();
-      log('WebAudio spin loop started');
-      return { stop: stopSpinLoop };
-    }catch(e){ warn('Spin loop start failed', e); return { stop(){} }; }
-  }
-  function stopSpinLoop(){
-    try{
-      if (spinSrc){ spinSrc.stop(); spinSrc.disconnect(); spinSrc = null; }
-      if (spinGain){ spinGain.disconnect(); spinGain = null; }
-      log('WebAudio spin loop stopped');
-    }catch(e){ warn('Spin loop stop err', e); }
-  }
+  // ---------- Public SFX (same names your code already calls) ----------
+  async function sWin(){ await resume(); const b=await loadBuffer('win'); if (b && playOneShot(b,1.0)) return; await playTag('win',1.0); }
+  async function sScratch(){ await resume(); const b=await loadBuffer('scratch'); if (b && playOneShot(b,0.95)) return; await playTag('scratch',0.95); }
+  async function sLose(){ await resume(); const b=await loadBuffer('lose'); if (b && playOneShot(b,0.95)) return; await playTag('lose',0.95); }
 
-  // ---------- Unified public API (keeps your old names) ----------
-  async function sWin(){
-    await resume();
-    const buf = await loadBuffer('win', FILES.win);
-    if (buf && playOneShot(buf, 1.0)) return;
-    await playTagOnce('win', 1.0);
-  }
-  async function sScratch(){
-    await resume();
-    const buf = await loadBuffer('scratch', FILES.scratch);
-    if (buf && playOneShot(buf, 0.95)) return;
-    await playTagOnce('scratch', 0.95);
-  }
-  async function sLose(){
-    await resume();
-    const buf = await loadBuffer('lose', FILES.lose);
-    if (buf && playOneShot(buf, 0.95)) return;
-    await playTagOnce('lose', 0.95);
-  }
   async function spinLoop(){
     await resume();
-    const buf = await loadBuffer('spin', FILES.spin);
-    if (buf){
-      const h = startSpinLoop(buf);
-      return { stop(){ h.stop(); stopSpinTag(); } };
+    const b = await loadBuffer('spin');
+    const ac = getAC();
+    if (b && ac && ac.state==='running'){
+      try{
+        spinSrc = ac.createBufferSource();
+        spinGain= ac.createGain(); spinGain.gain.value = 0.22;
+        spinSrc.buffer = b; spinSrc.loop = true;
+        spinSrc.connect(spinGain).connect(MASTER);
+        spinSrc.start();
+        return { stop(){ try{ spinSrc.stop(); spinSrc.disconnect(); }catch{} try{ spinGain.disconnect(); }catch{} spinSrc=null; spinGain=null; if(spinTag){ spinTag.pause(); } } };
+      }catch{}
     }
-    // fallback
-    const h2 = startSpinTag();
-    return { stop(){ h2.stop(); stopSpinLoop(); } };
+    // Fallback loop
+    spinTag = getTag('spin');
+    spinTag.loop = true; spinTag.volume = 0.22;
+    try{ await spinTag.play(); }catch{}
+    return { stop(){ try{ spinTag && spinTag.pause(); }catch{} try{ spinSrc && spinSrc.stop(); }catch{} } };
   }
 
-  // ---------- Prewarm on first gesture + watchdog ----------
+  // ---------- Unlock + prewarm on first gesture ----------
   async function prewarm(){
     await resume();
-    // kick tiny silent beep to unlock iOS
     try{
-      const ac = getAC();
+      const ac=getAC();
       if (ac && ac.state==='running'){
-        const o = ac.createOscillator(), g=ac.createGain();
+        const o=ac.createOscillator(), g=ac.createGain();
         g.gain.value = 0.0001; o.connect(g).connect(MASTER);
-        const t = ac.currentTime; o.start(t); o.stop(t+0.02);
+        const t=ac.currentTime; o.start(t); o.stop(t+0.02);
       }
     }catch{}
-    // begin loading all buffers in background
-    loadBuffer('win', FILES.win);
-    loadBuffer('scratch', FILES.scratch);
-    loadBuffer('lose', FILES.lose);
-    loadBuffer('spin', FILES.spin);
-    // also touch HTMLAudio
-    Object.keys(FILES).forEach(k=>getTag(k));
-    log('Audio prewarm queued');
+    ['win','scratch','lose','spin'].forEach(k=>{ loadBuffer(k); getTag(k); });
   }
 
   addEventListener('pointerdown', ()=>{ lastTap=Date.now(); prewarm(); }, { passive:true });
@@ -517,28 +456,18 @@
     }, 1000);
   }
 
-  // expose exactly what your game calls
+  // Expose API
   window.__bagAudio = {
-    chime:  sWin,       // WIN
-    scratch: sScratch,  // SCRATCH (push)
-    thud:   sLose,      // LOSE
+    chime:   sWin,     // WIN
+    scratch: sScratch, // SCRATCH
+    thud:    sLose,    // LOSE
     spinLoop,
-    resume: resume
+    resume
   };
 
-  // Helpful diagnostics in console so you know what's wrong fast:
-  (async ()=>{
-    log('Audio self-check start');
-    // HEAD request to confirm files resolve
-    for (const [k,u] of Object.entries(FILES)){
-      try{
-        const r = await fetch(withBust(u), { method:'HEAD', cache:'no-store' });
-        if (!r.ok) warn(`HEAD ${k} ${u} → ${r.status}`);
-        else log(`HEAD ok: ${k} ${u}`);
-      }catch(e){ warn('HEAD failed', k, u, e); }
-    }
-    log('Audio self-check done. First gesture will unlock & prewarm.');
-  })();
+  // Ensure unlock even if only SPIN is tapped
+  const spinBtn = document.getElementById('spinBtn');
+  if (spinBtn) spinBtn.addEventListener('click', prewarm, { once:true });
 })();
 </script>
 
