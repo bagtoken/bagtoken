@@ -320,58 +320,155 @@
   </div>
 </section>
 
-<!-- ✅ AUDIO SYSTEM (shared-style; slots sounds) -->
+<!-- ✅ AUDIO SYSTEM (slots MP3s in /assets/sounds/ with 4s spin cap) -->
 <script>
 (function(){
+  const BASE = '/assets/sounds/';
+  const FILES = {
+    win:     BASE + 'slot-machine-payout.mp3',
+    scratch: BASE + 'slot-machine-scratch.mp3',
+    lose:    BASE + 'slot-machine-lose.mp3',
+    spin:    BASE + 'slots_spinning.mp3'
+  };
+
+  const MAX_SPIN_MS = 4000; // hard cap for the spin sound
+
+  const bust = () => '?v=' + (Date.now() >>> 12);
+
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null;
+  const BUFFERS = { win:null, scratch:null, lose:null, spin:null };
+  const TAGS = {};
+  let spinSrc=null, spinGain=null, spinTag=null, spinTimer=null;
+
   function getAC(){
     if (AC && AC.state!=='closed') return AC;
     if (!AudioCtx) return null;
-    AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint:'interactive', sampleRate:44100 });
-    MASTER = AC.createGain(); MASTER.gain.value = .22; MASTER.connect(AC.destination);
-    return AC;
+    try{
+      AC = new AudioCtx({ latencyHint:'interactive', sampleRate:44100 });
+      MASTER = AC.createGain(); MASTER.gain.value = 0.32; MASTER.connect(AC.destination);
+      return AC;
+    }catch{ return null; }
   }
-  async function resume(){ const ac=getAC(); if(!ac) return; if (ac.state==='suspended'){ try{ await ac.resume(); }catch(e){} } }
-  window.restartAudio = async function(){ await resume(); ping(); };
-  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); ping(); }, {passive:true});
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
+
+  // HTMLAudio fallback
+  function getTag(key){
+    if (TAGS[key]) return TAGS[key];
+    const a = new Audio();
+    a.preload = 'auto'; a.playsInline = true; a.crossOrigin = 'anonymous';
+    a.src = FILES[key] + bust();
+    TAGS[key] = a;
+    return a;
+  }
+  async function playTag(key, vol=1){
+    try{
+      const a = getTag(key);
+      a.currentTime = 0; a.volume = Math.max(0, Math.min(1, vol));
+      await a.play(); return true;
+    }catch{ return false; }
+  }
+
+  // WebAudio loaders
+  async function loadBuffer(key){
+    if (BUFFERS[key]) return BUFFERS[key];
+    const ac = getAC(); if (!ac) return null;
+    try{
+      const r = await fetch(FILES[key] + bust(), { cache:'no-store', mode:'cors' });
+      if (!r.ok) throw 0;
+      const arr = await r.arrayBuffer();
+      const buf = await ac.decodeAudioData(arr.slice(0));
+      BUFFERS[key] = buf; return buf;
+    }catch{ return null; }
+  }
+  function playOneShot(buf, vol=1){
+    const ac=getAC(); if(!ac || !buf || ac.state!=='running') return false;
+    try{
+      const src = ac.createBufferSource();
+      const g = ac.createGain(); g.gain.value = Math.max(0, Math.min(1, vol));
+      src.buffer = buf; src.connect(g).connect(MASTER); src.start();
+      src.onended = ()=>{ try{ src.disconnect(); g.disconnect(); }catch{} };
+      return true;
+    }catch{ return false; }
+  }
+
+  // Public SFX
+  async function sWin(){ await resume(); const b=await loadBuffer('win'); if (b && playOneShot(b,1.0)) return; await playTag('win',1.0); }
+  async function sScratch(){ await resume(); const b=await loadBuffer('scratch'); if (b && playOneShot(b,0.95)) return; await playTag('scratch',0.95); }
+  async function sLose(){ await resume(); const b=await loadBuffer('lose'); if (b && playOneShot(b,0.95)) return; await playTag('lose',0.95); }
+
+  // Spin loop with 4s auto-stop guard
+  async function spinLoop(){
+    await resume();
+    clearSpinTimer();
+
+    const b = await loadBuffer('spin');
+    const ac = getAC();
+    if (b && ac && ac.state==='running'){
+      try{
+        spinSrc = ac.createBufferSource();
+        spinGain= ac.createGain(); spinGain.gain.value = 0.22;
+        spinSrc.buffer = b;
+        spinSrc.loop = true; // loop but we will hard-stop at 4s
+        spinSrc.connect(spinGain).connect(MASTER);
+        spinSrc.start();
+        spinTimer = setTimeout(stopSpin, MAX_SPIN_MS);
+        return { stop: stopSpin };
+      }catch{}
+    }
+    // Fallback
+    spinTag = getTag('spin');
+    spinTag.loop = true; spinTag.volume = 0.22;
+    try{ await spinTag.play(); }catch{}
+    spinTimer = setTimeout(stopSpin, MAX_SPIN_MS);
+    return { stop: stopSpin };
+  }
+
+  function clearSpinTimer(){ if (spinTimer){ clearTimeout(spinTimer); spinTimer=null; } }
+  function stopSpin(){
+    clearSpinTimer();
+    try{ if (spinSrc){ spinSrc.stop(); spinSrc.disconnect(); spinSrc=null; } }catch{}
+    try{ if (spinGain){ spinGain.disconnect(); spinGain=null; } }catch{}
+    try{ if (spinTag){ spinTag.pause(); } }catch{}
+  }
+
+  // Unlock + prewarm on first gesture
+  async function prewarm(){
+    await resume();
+    try{
+      const ac=getAC();
+      if (ac && ac.state==='running'){
+        const o=ac.createOscillator(), g=ac.createGain();
+        g.gain.value=0.0001; o.connect(g).connect(MASTER);
+        const t=ac.currentTime; o.start(t); o.stop(t+0.02);
+      }
+    }catch{}
+    ['win','scratch','lose','spin'].forEach(k=>{ loadBuffer(k); getTag(k); });
+  }
+
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); prewarm(); }, { passive:true });
   addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
-  if(!watchdog){
+  if (!watchdog){
     watchdog = setInterval(async ()=>{
-      const ac=getAC(); if(!ac) return;
-      if(Date.now()-lastTap<30000 && ac.state==='suspended') { await resume(); }
+      const ac = getAC(); if (!ac) return;
+      if (Date.now()-lastTap < 30000 && ac.state==='suspended') await resume();
     }, 1000);
   }
-  function ping(){ try{ const ac=getAC(); if(!ac||ac.state!=='running') return;
-    const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER);
-    const t=ac.currentTime; o.start(t); o.stop(t+.02);
-  }catch{}}
-  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); });
-  }
-  function scratch(){ const ac=getAC(); if(!ac||ac.state!=='running') return;
-    const n=Math.max(1,Math.floor(.08*ac.sampleRate));
-    const b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*.9;
-    const s=ac.createBufferSource(); s.buffer=b; const g=ac.createGain(); g.gain.value=0; s.connect(g).connect(MASTER);
-    const t=ac.currentTime; g.gain.linearRampToValueAtTime(.08,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+.09); s.start(t); s.stop(t+.1);
-  }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
-    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
-    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
-  function spinLoop(){
-    const ac=getAC(); if(!ac||ac.state!=='running') return {stop:()=>{}};
-    let alive=true; const bus=ac.createGain(); bus.gain.value=.18; bus.connect(MASTER);
-    function click(){ if(!alive) return; const o=ac.createOscillator(), g=ac.createGain(); o.type='square'; o.frequency.value=1500+Math.random()*400;
-      const t=ac.currentTime; g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.25,t+.004); g.gain.exponentialRampToValueAtTime(.0001,t+.03);
-      o.connect(g).connect(bus); o.start(t); o.stop(t+.035); }
-    const iv=setInterval(click,70); return { stop(){ alive=false; clearInterval(iv);} };
-  }
-  window.__bagAudio = { chime, scratch, thud, spinLoop, resume: window.restartAudio };
+
+  // Expose API
+  window.__bagAudio = {
+    chime:   sWin,     // WIN
+    scratch: sScratch, // SCRATCH
+    thud:    sLose,    // LOSE
+    spinLoop,
+    resume
+  };
+
+  // Ensure unlock even if only SPIN is tapped
+  document.getElementById('spinBtn')?.addEventListener('click', prewarm, { once:true });
 })();
 </script>
+
 
 <!-- === PRICES (same universal live-first bundle) === -->
 <script>
@@ -1164,7 +1261,7 @@
 
     const plan = buildSpin(sBag);
     const finalRows = plan.grid;
-    await startFastSpin(3000, finalRows);
+    await startFastSpin(4000, finalRows);
     stopSpin();
 
     const verdict = evaluateGrid(finalRows);
