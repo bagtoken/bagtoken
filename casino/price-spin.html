@@ -68,7 +68,6 @@
 
   /* ---------- SIDE-ON wheel ---------- */
   function initWheelSide3D(){
-    // WebGL sanity
     const test=document.createElement('canvas');
     const gl=test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
     if(!gl){ showError('WebGL is disabled or unavailable in this browser.'); return; }
@@ -76,25 +75,21 @@
     const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const labels=seq.map(v=>v.toFixed(2)), N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
-    // DOM
     const mount=document.getElementById('mount'), hud=document.getElementById('hud');
     const msg=document.getElementById('msg');
     const spinBtn=document.getElementById('spinBtn'), holdBtn=document.getElementById('holdBtn'), resetBtn=document.getElementById('resetBtn');
     holdBtn.disabled = true;
 
-    // THREE
     const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
            CylinderGeometry,TorusGeometry,PlaneGeometry,CanvasTexture,Vector3,
            DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace,BoxGeometry} = THREE;
 
-    // Scene / renderer
     const scene=new Scene(); scene.background=new Color('#091913');
     const renderer=new WebGLRenderer({antialias:true,alpha:true});
     renderer.outputColorSpace=SRGBColorSpace;
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     mount.appendChild(renderer.domElement);
 
-    // Camera (side-on)
     const camera=new PerspectiveCamera(38,1,0.1,100);
     camera.position.set(0,0,9);
     camera.lookAt(0,0,0);
@@ -105,9 +100,14 @@
     const rimL=new DirectionalLight(0xfff0cc,0.7); rimL.position.set(0,-6,6); scene.add(rimL);
     scene.add(new AmbientLight(0xffffff,0.35));
 
+    // ----- Build frame (so we can center the entire thing) -----
+    const frame=new Group(); scene.add(frame);
+    // shift left to compensate for pegs/flapper mass toward +X
+    frame.position.x = -0.7;   // tweak if you still see it off-center
+
     // Wheel geometry
-    const R=2.75, DEPTH=1.20, OUT=R+0.06; // OUT puts plates/pegs slightly OUTSIDE the drum so they are visible
-    const wheel=new Group(); scene.add(wheel);
+    const R=2.75, DEPTH=1.20, OUT=R+0.06; // OUT: plates/pegs slightly outside the drum
+    const wheel=new Group(); frame.add(wheel);
 
     const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
                         new MeshStandardMaterial({color:'#141414',metalness:.55,roughness:.55}));
@@ -118,8 +118,8 @@
                             new MeshStandardMaterial({color:'#0f0f0f',metalness:.85,roughness:.25}));
     rimFront.rotation.y=Math.PI/2; rimFront.position.z=DEPTH/2+0.02; wheel.add(rimFront);
 
-    // Pegs (moved out to OUT+)
-    const pegGeo=new CylinderGeometry(0.06,0.06,0.30,12);
+    // Pegs
+    const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.30,12);
     const pegMat=new MeshStandardMaterial({color:'#d7b75f',metalness:.85,roughness:.35});
     const pegs=new Group();
     for(let i=0;i<N;i++){
@@ -145,15 +145,22 @@
       const t=new CanvasTexture(c); t.anisotropy=8; return t;
     }
 
-    // Plates (moved out to OUT, DoubleSide so they never vanish at glancing angles)
+    // Plates (face outward, then rotate around normal so text is upright)
     const plates=new Group(), plateGeo=new PlaneGeometry(1.2,0.60);
     for(let i=0;i<N;i++){
       const a=i*STEP+STEP/2;
       const y=Math.sin(a)*OUT, z=Math.cos(a)*OUT;
+      const n=new Vector3(0,y,z).normalize();
       const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
       m.position.set(0,y,z);
-      const n=new Vector3(0,y,z).normalize();
-      m.lookAt(n.x,n.y,n.z);
+
+      // Face OUTWARD (away from origin)
+      m.lookAt(n.clone().multiplyScalar(2));
+
+      // Make text upright: rotate around its own normal by (π/2 - a)
+      // Top plate (a≈π/2) => rotation ~ 0; bottom (a≈3π/2) => flipped back upright.
+      m.rotateZ(Math.PI/2 - a);
+
       plates.add(m);
     }
     wheel.add(plates);
@@ -162,7 +169,7 @@
     const flap=new Mesh(new BoxGeometry(0.06,0.34,0.02),
                         new MeshStandardMaterial({color:'#e23a21',metalness:.5,roughness:.5}));
     flap.position.set(DEPTH/2+0.11, 0, OUT-0.11);
-    scene.add(flap);
+    frame.add(flap);
 
     // Size / resize
     function size(){
