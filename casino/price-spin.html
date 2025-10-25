@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>$BAG Is Right — Perfect Side-On Wheel</title>
+<title>$BAG Is Right — 3D Wheel (front/side switch)</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:18px}
@@ -12,7 +12,7 @@
   .stage{position:relative;height:72vh;min-height:460px;max-height:84vh;border-radius:12px;overflow:hidden;background:#0b1f16;border:1px dashed #2c6a49}
   #mount{position:absolute;inset:0}
   #hud{position:absolute;right:10px;top:10px;width:min(42vw,180px);height:min(24vw,110px);z-index:3}
-  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.5);z-index:5}
+  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.55);z-index:5}
   #err b{color:#ffb3b3}
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
   .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer}
@@ -24,9 +24,9 @@
 </head>
 <body>
 <div class="wrap">
-  <h2 style="margin:0 0 10px">The $BAG Is Right Wheel</h2>
+  <h2 style="margin:0 0 10px">🎡 The $BAG Is Right Wheel</h2>
   <div class="board">
-    <div class="marquee">SWIPE UP/DOWN TO SPIN • PERFECT SIDE-ON 3D WHEEL • Robust CDN→local loader</div>
+    <div class="marquee">SWIPE UP/DOWN TO SPIN • UPRIGHT 3D WHEEL • use <code>?view=front</code> or <code>?view=side</code></div>
     <div class="stage">
       <div id="mount"></div>
       <canvas id="hud" width="220" height="130"></canvas>
@@ -44,211 +44,190 @@
 <script>
 (async()=>{
   const E=document.getElementById('err');
-  function showError(m){E.style.display='flex';E.innerHTML=`<div><b>3D failed</b><br>${m}</div>`;}
+  const showError=m=>{E.style.display='flex';E.innerHTML=`<div><b>3D failed</b><br>${m}</div>`;}
+
+  // robust loader
   try{await import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js');}
-  catch{showError('Three.js failed');return;}
+  catch{try{await import('https://unpkg.com/three@0.158.0/build/three.min.js');}catch{showError('Could not load three.min.js');return;}}
 
   init();
 
   function init(){
+    const qs=new URLSearchParams(location.search);
+    const VIEW=(qs.get('view')||'front').toLowerCase(); // 'front' | 'side'
+
     const mount=document.getElementById('mount'),hud=document.getElementById('hud');
     const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),resetBtn=document.getElementById('resetBtn');
     const msg=document.getElementById('msg');
 
     const scene=new THREE.Scene();
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
-    renderer.setSize(mount.clientWidth,mount.clientHeight,false);
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true, powerPreference:'high-performance'});
     renderer.outputColorSpace=THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     mount.appendChild(renderer.domElement);
 
-    // ---- CAMERA (side-on, looking at +X) ----
-    const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.01,200);
-    camera.position.set(11.5,1.5,0);
-    camera.lookAt(0,0,0);
-    scene.add(camera);
+    // Camera presets (these were the two looks we used)
+    const camera=new THREE.PerspectiveCamera(44,1,0.01,200);
+    const CAMS={
+      front(){ camera.position.set(7.4,0.28,0.0); camera.lookAt(0,0,0); },
+      side(){  camera.position.set(11.0,1.6,0.0); camera.lookAt(0,0.3,0); }
+    };
+    (CAMS[VIEW]||CAMS.front)();
 
-    // ---- LIGHTS ----
+    // Lights
     scene.add(new THREE.AmbientLight(0xffffff,.45));
-    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(5,5,5); scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.7); fill.position.set(5,2,-5); scene.add(fill);
+    const key=new THREE.DirectionalLight(0xffffff,1.05); key.position.set(5,5,7); scene.add(key);
+    const fill=new THREE.DirectionalLight(0xffffff,.7);  fill.position.set(-5,1,-6); scene.add(fill);
+    const back=new THREE.DirectionalLight(0xfff0cc,.5);  back.position.set(0,-6,6); scene.add(back);
 
-    // ---- WHEEL (axis = X) ----
-    const R=2.75,DEPTH=1.25;
+    // Wheel geometry
+    const R=2.75, DEPTH=1.25, TAU=Math.PI*2;
     const wheel=new THREE.Group(); scene.add(wheel);
 
+    // drum (axis = X so swipe up/down spins vertically)
     const drum=new THREE.Mesh(
       new THREE.CylinderGeometry(R,R,DEPTH,128,1,true),
-      new THREE.MeshStandardMaterial({color:'#0d0d0d',metalness:.4,roughness:.75})
+      new THREE.MeshStandardMaterial({color:'#0f0f10',metalness:.45,roughness:.75})
     );
-    drum.rotation.z=Math.PI/2;
-    wheel.add(drum);
+    drum.rotation.z=Math.PI/2; wheel.add(drum);
 
-    const rim=new THREE.Mesh(
-      new THREE.TorusGeometry(R+0.03,0.08,16,96),
-      new THREE.MeshStandardMaterial({color:'#121212',metalness:.85,roughness:.28})
-    );
-    rim.rotation.y=Math.PI/2;
-    rim.position.x=DEPTH/2+0.02;
-    wheel.add(rim);
+    // rims
+    const rimMat=new THREE.MeshStandardMaterial({color:'#111',metalness:.88,roughness:.28});
+    const rimF=new THREE.Mesh(new THREE.TorusGeometry(R+0.03,0.08,16,96),rimMat);
+    rimF.rotation.y=Math.PI/2; rimF.position.x= DEPTH/2+0.02; wheel.add(rimF);
+    const rimB=rimF.clone(); rimB.position.x=-(DEPTH/2+0.02); wheel.add(rimB);
 
-    const rimBack=rim.clone();
-    rimBack.position.x=-(DEPTH/2+0.02);
-    wheel.add(rimBack);
-
-    // ---- PEGS ----
-    const N=20,TAU=Math.PI*2,STEP=TAU/N;
+    // pegs
+    const N=20, STEP=TAU/N;
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
     const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.88,roughness:.35});
     const pegs=new THREE.Group();
     for(let i=0;i<N;i++){
-      const a=i*STEP,y=Math.sin(a)*(R-0.04),z=Math.cos(a)*(R-0.04);
-      const p=new THREE.Mesh(pegGeo,pegMat);
-      p.position.set(DEPTH/2+0.2,y,z);
-      p.rotation.y=Math.PI/2;
-      pegs.add(p);
+      const a=i*STEP, y=Math.sin(a)*(R-0.04), z=Math.cos(a)*(R-0.04);
+      const p=new THREE.Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.2,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
     }
     wheel.add(pegs);
 
-    // ---- VALUES ----
-    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,
-               0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+    // value plates
+    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const labels=seq.map(v=>v.toFixed(2));
-    const plates=new THREE.Group();
-    const plateGeo=new THREE.PlaneGeometry(1.10,0.55);
+    const plates=new THREE.Group(); wheel.add(plates);
 
     function plateTex(v,idx){
-      const c=document.createElement('canvas');c.width=768;c.height=384;
-      const g=c.getContext('2d');
-      const is100=v==='1.00',isG=(v==='0.05'||v==='0.15'),dark=!is100&&!isG&&(idx%2===0);
+      const c=document.createElement('canvas'); c.width=768; c.height=384; const g=c.getContext('2d');
+      const is100=v==='1.00', isG=(v==='0.05'||v==='0.15'), dark=!is100&&!isG&&(idx%2===0);
       const bg=is100?'#b90b0b':isG?'#1b7f3a':(dark?'#121212':'#f1f1f1');
       const fg=(is100||isG||dark)?'#f7f7f7':'#151515';
-      g.fillStyle=bg;g.fillRect(0,0,c.width,c.height);
-      g.strokeStyle='#d5b55c';g.lineWidth=44;g.strokeRect(30,30,c.width-60,c.height-60);
-      g.fillStyle=fg;g.font='900 210px Inter,Arial';g.textAlign='center';g.textBaseline='middle';
-      g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)),c.width/2,c.height/2+6);
-      const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;
+      g.fillStyle=bg; g.fillRect(0,0,c.width,c.height);
+      g.strokeStyle='#d5b55c'; g.lineWidth=44; g.strokeRect(30,30,c.width-60,c.height-60);
+      g.fillStyle=fg; g.font='900 210px Inter,Arial'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+6);
+      const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.needsUpdate=true; return t;
     }
 
-    const plateRadius=R-0.55;
+    const plateGeo=new THREE.PlaneGeometry(1.10,0.55);
+    const plateR=R-0.55;
     for(let i=0;i<N;i++){
-      const a=i*STEP+STEP/2,y=Math.sin(a)*plateRadius,z=Math.cos(a)*plateRadius;
+      const a=i*STEP+STEP/2, y=Math.sin(a)*plateR, z=Math.cos(a)*plateR;
       const m=new THREE.Mesh(plateGeo,new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide}));
       m.position.set(DEPTH/2+0.06,y,z);
-      m.rotation.y=Math.atan2(z,plateRadius)+Math.PI/2;
+      // face the camera in both views
+      const yaw=Math.atan2(z,plateR)+Math.PI/2;
+      m.rotation.y=yaw;
       plates.add(m);
     }
-    wheel.add(plates);
 
-    // ---- FLAPPER (top of front rim) ----
-    const flapper=new THREE.Mesh(
+    // flapper
+    const flap=new THREE.Mesh(
       new THREE.PlaneGeometry(0.5,0.28),
       new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.55,side:THREE.DoubleSide})
     );
-    flapper.rotation.y=Math.PI/2;
-    flapper.position.set(DEPTH/2+0.32,0,R*0.03);
-    scene.add(flapper);
+    flap.rotation.y=Math.PI/2; flap.position.set(DEPTH/2+0.32,0,R*0.03); scene.add(flap);
 
-    // ---- HUD & GAME STATE ----
-    let total=0, spinsLeft=2;
+    // HUD
     function drawHUD(v){
       const g=hud.getContext('2d'),w=hud.width,h=hud.height;
-      g.clearRect(0,0,w,h);
-      g.fillStyle='#07090b';g.fillRect(0,0,w,h);
-      g.strokeStyle='#222';g.lineWidth=6;g.strokeRect(4,4,w-8,h-8);
-      g.fillStyle='#ffe26a';g.font='700 88px "DM Mono",monospace';
-      g.textAlign='center';g.textBaseline='middle';g.fillText(v.toFixed(2),w/2,h/2);
+      g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
+      g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
+      const fs=Math.min(88,Math.max(44,Math.floor(h*0.7)));
+      g.fillStyle='#ffe26a'; g.font=`700 ${fs}px "DM Mono",monospace`;
+      g.textAlign='center'; g.textBaseline='middle'; g.fillText((v||0).toFixed(2),w/2,h/2+2);
     }
     drawHUD(0);
 
-    // ---- RESPONSIVE ----
-    function resize(){
-      const r=mount.getBoundingClientRect();
-      renderer.setSize(r.width,Math.max(460,r.height),false);
-      camera.aspect=r.width/Math.max(460,r.height);
-      camera.updateProjectionMatrix();
-    }
-    resize();addEventListener('resize',resize);
-
-    // ---- PHYSICS (rotate around X) ----
-    let angX=0,vel=0,spinning=false;
+    // physics
+    let angX=0,vel=0,spinning=false, spin1=null,total=0,done=false;
     const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012;
-    const SLOT_ANGLE=TAU/N;
-
     function setAngle(a){angX=a;wheel.rotation.x=a;}
 
-    function startSpin(v){
-      vel=v;spinning=true;
-      spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=true;
+    // helpers
+    const STEPIDX=TAU/N;
+    function idxFrom(a){ let t=a%TAU; if(t<0)t+=TAU; const i=Math.floor((t+STEPIDX/2)/STEPIDX)%N; return (N-i)%N; }
+    function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
+    function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEPIDX-STEPIDX/2; }
+
+    // spin loop
+    function startSpin(){
+      spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
+      msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
+      const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION; drawHUD(currentVal());
+        if(Math.abs(vel)<VMIN){
+          const target=snapTarget(); const d=((target-angX+Math.PI*3)%TAU)-Math.PI;
+          if(Math.abs(d)>0.0006){ setAngle(angX+d*0.25); requestAnimationFrame(loop); }
+          else{ setAngle(target); spinning=false; onSettle(); }
+        } else requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
     }
 
-    function landOnSlot(){
-      const norm=((angX%TAU)+TAU)%TAU;
-      const slotIdx=Math.round(norm/SLOT_ANGLE)%N;
-      const target=slotIdx*SLOT_ANGLE;
-      setAngle(target);
-
-      const landed=seq[slotIdx];
-      total+=landed;spinsLeft--;
-      drawHUD(total);
-
-      if(total>1.00){
-        msg.textContent=`BUST! ${total.toFixed(2)} > 1.00`;
-        msg.className='t lose';
-        spinBtn.disabled=holdBtn.disabled=true;
-      }else if(spinsLeft===0){
-        const won=total===1.00;
-        msg.textContent=won?'WIN! Exactly 1.00!':`Game over – ${total.toFixed(2)}`;
-        msg.className=won?'t win':'t lose';
-        spinBtn.disabled=holdBtn.disabled=true;
-      }else{
-        msg.textContent=`+${landed.toFixed(2)} → ${total.toFixed(2)} (${spinsLeft} left)`;
-        msg.className='t';
-      }
+    function onSettle(){
+      const landed=currentVal();
+      if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return; }
+      total+=landed; drawHUD(total);
+      if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} over 1.00`; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false; return; }
+      if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
+      msg.className= (total>=0.95)?'t win':'t';
+      msg.textContent=(total>=0.95)?`Near 1.00 — 1×`:`Under 1.00 — 0×`; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false;
+    }
+    function bonus(){
+      vel=5.4; const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION;
+        if(Math.abs(vel)<VMIN){ const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
+          msg.className=extra?'t win':'t'; msg.textContent=extra?`Bonus ${v.toFixed(2)} — +${extra}×`:`Bonus missed — kept 5×`; done=true; resetBtn.disabled=false; }
+        else requestAnimationFrame(loop);
+      }; requestAnimationFrame(loop);
     }
 
-    function stopIfSlow(){
-      if(Math.abs(vel)<VMIN){
-        spinning=false;
-        spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=false;
-        landOnSlot();
-      }
-    }
+    // controls
+    spinBtn.onclick=()=>{ if(spinning||done) return; vel= (VIEW==='side'?8:6.6); startSpin(); };
+    holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; vel*=0.4; };
+    resetBtn.onclick=()=>{ spinning=false; spin1=null; total=0; done=false; holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false; setAngle(0); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; };
 
-    // ---- BUTTONS ----
-    spinBtn.onclick=()=>{if(spinning||spinsLeft===0)return;startSpin(6+Math.random()*5);};
-    holdBtn.onclick=()=>{if(!spinning)return;vel*=0.9;};
-    resetBtn.onclick=()=>{
-      spinning=false;vel=0;setAngle(0);total=0;spinsLeft=2;
-      drawHUD(0);msg.textContent='Spin up to two times to reach 1.00 without going over.';msg.className='t';
-      spinBtn.disabled=holdBtn.disabled=false;
-    };
-
-    // ---- SWIPE ----
+    // swipe input
     const surf=renderer.domElement,getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
-    function down(e){if(spinning||spinsLeft===0)return;dragging=true;samples=[];lastY=getY(e);lastT=performance.now();e.preventDefault();}
-    function move(e){
-      if(!dragging)return;const y=getY(e),t=performance.now(),dy=y-lastY;
-      setAngle(angX+dy*PIX2RAD);
-      const dt=t-lastT;if(dt>0){samples.push((dy*PIX2RAD)/(dt/1000));if(samples.length>6)samples.shift();}
-      lastY=y;lastT=t;e.preventDefault();
+    function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
+    function move(e){ if(!dragging) return; const y=getY(e), t=performance.now(), dy=y-lastY;
+      setAngle(angX + dy*PIX2RAD);
+      const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
+      lastY=y; lastT=t; e.preventDefault();
     }
-    function up(){
-      if(!dragging)return;dragging=false;
-      const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-      if(Math.abs(v)>0.5)startSpin(Math.sign(v)*Math.min(10,Math.max(2,Math.abs(v)*1.4)));
+    function up(){ if(!dragging) return; dragging=false; const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
+      vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1); startSpin();
     }
-    surf.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
-    surf.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
+    surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
+    surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
 
-    // ---- RENDER LOOP ----
-    function tick(){
-      requestAnimationFrame(tick);
-      if(spinning){setAngle(angX+vel*(1/60));vel*=FRICTION;stopIfSlow();}
-      renderer.render(scene,camera);
+    // responsive
+    function size(){
+      const r=mount.getBoundingClientRect();
+      const w=Math.max(1,Math.floor(r.width)), h=Math.max(460,Math.floor(r.height));
+      renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+      (CAMS[VIEW]||CAMS.front)(); // keep exact framing on rotate/resize
     }
-    tick();
+    size(); addEventListener('resize', size);
+
+    // render
+    (function tick(){ requestAnimationFrame(tick); renderer.render(scene,camera); })();
   }
 })();
 </script>
