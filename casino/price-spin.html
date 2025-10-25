@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The $BAG Is Right Wheel — Side-on 3D (auto-centered)</title>
+<title>The $BAG Is Right Wheel — Side-on 3D (centered & upright)</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
@@ -46,7 +46,6 @@
 (function(){
   const E = document.getElementById('err');
   function showError(html){
-    if(!E) return;
     E.style.display='flex';
     E.innerHTML = `<div><b>3D failed to start</b><br><div style="opacity:.9;margin-top:6px">${html}</div></div>`;
   }
@@ -62,10 +61,10 @@
         catch(_3){ showError('Could not load three.min.js from any source.'); return; }
       }
     }
-    when(()=> initWheelSide3D());
+    when(()=> initWheel3D());
   })();
 
-  function initWheelSide3D(){
+  function initWheel3D(){
     const test=document.createElement('canvas');
     const gl=test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
     if(!gl){ showError('WebGL is disabled or unavailable in this browser.'); return; }
@@ -86,10 +85,10 @@
     const renderer=new WebGLRenderer({antialias:true,alpha:true});
     renderer.outputColorSpace=SRGBColorSpace;
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
-    renderer.domElement.style.touchAction='none'; // prevent page scroll while swiping
+    renderer.domElement.style.touchAction='none';
     mount.appendChild(renderer.domElement);
 
-    const camera=new PerspectiveCamera(30,1,0.1,100); // tighter FOV to reduce bulge
+    const camera=new PerspectiveCamera(30,1,0.1,100);
     camera.position.set(0,0,11);
     camera.lookAt(0,0,0);
 
@@ -99,12 +98,13 @@
     const rimL=new DirectionalLight(0xfff0cc,0.7); rimL.position.set(0,-6,6); scene.add(rimL);
     scene.add(new AmbientLight(0xffffff,0.35));
 
-    // ----- Frame to hold everything so we can auto-center -----
-    const frame=new Group(); scene.add(frame);
+    // Root group so we can center everything perfectly
+    const root=new Group(); scene.add(root);
 
-    // Wheel geometry
+    // Wheel constants (axis = X for vertical rolling)
     const R=2.75, DEPTH=1.20, OUT=R+0.06;
-    const wheel=new Group(); frame.add(wheel);
+
+    const wheel=new Group(); root.add(wheel);
 
     const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
                         new MeshStandardMaterial({color:'#141414',metalness:.55,roughness:.55}));
@@ -142,17 +142,22 @@
       const t=new CanvasTexture(c); t.anisotropy=8; return t;
     }
 
-    // Plates (always upright)
-    const plates=new Group(), plateGeo=new PlaneGeometry(1.2,0.60);
+    // Plates: always upright relative to the world when at the front
+    const plates=new Group();
+    const plateGeo=new PlaneGeometry(1.2,0.60);
     for(let i=0;i<N;i++){
       const a=i*STEP+STEP/2;
       const y=Math.sin(a)*OUT, z=Math.cos(a)*OUT;
       const n=new Vector3(0,y,z).normalize();
+
+      // Slice group handles facing out; plane inside is rotated around its normal so text is upright.
+      const sliceG=new Group();
+      sliceG.position.set(0,y,z);
+      sliceG.lookAt(n);           // local +Z faces outward
       const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
-      m.position.set(0,y,z);
-      m.lookAt(n.clone().multiplyScalar(2));   // face outward
-      m.rotateZ(Math.PI/2 - a);                // keep numbers upright
-      plates.add(m);
+      m.rotateZ(-a);              // keeps numbers upright (not upside down)
+      sliceG.add(m);
+      plates.add(sliceG);
     }
     wheel.add(plates);
 
@@ -160,15 +165,16 @@
     const flap=new Mesh(new BoxGeometry(0.06,0.34,0.02),
                         new MeshStandardMaterial({color:'#e23a21',metalness:.5,roughness:.5}));
     flap.position.set(DEPTH/2+0.11, 0, OUT-0.11);
-    frame.add(flap);
+    root.add(flap);
 
-    // ---- Auto-center the whole frame to (0,0,0) ----
-    frame.updateMatrixWorld(true);
-    const box=new Box3().setFromObject(frame);
-    const c=box.getCenter(new Vector3());
-    frame.position.x -= c.x;
-    frame.position.y -= c.y;
-    frame.updateMatrixWorld(true);
+    // ---- Auto-center ALL geometry to (0,0,0) exactly ----
+    root.updateMatrixWorld(true);
+    const b=new Box3().setFromObject(root);
+    const c=b.getCenter(new Vector3());
+    root.position.x -= c.x;
+    root.position.y -= c.y;
+    root.position.z -= c.z;
+    root.updateMatrixWorld(true);
     camera.lookAt(0,0,0);
 
     // Size / resize
