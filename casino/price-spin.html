@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The $BAG Is Right Wheel — Side-on 3D</title>
+<title>The $BAG Is Right Wheel — Side-on 3D (auto-centered)</title>
 <style>
   html,body{margin:0;background:#06120d;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
@@ -43,7 +43,6 @@
 </div>
 
 <script>
-/* ---------- Robust Three.js loader (CDN -> CDN -> local) with on-screen errors ---------- */
 (function(){
   const E = document.getElementById('err');
   function showError(html){
@@ -66,7 +65,6 @@
     when(()=> initWheelSide3D());
   })();
 
-  /* ---------- SIDE-ON wheel ---------- */
   function initWheelSide3D(){
     const test=document.createElement('canvas');
     const gl=test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
@@ -82,16 +80,17 @@
 
     const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
            CylinderGeometry,TorusGeometry,PlaneGeometry,CanvasTexture,Vector3,
-           DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace,BoxGeometry} = THREE;
+           DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace,BoxGeometry,Box3} = THREE;
 
     const scene=new Scene(); scene.background=new Color('#091913');
     const renderer=new WebGLRenderer({antialias:true,alpha:true});
     renderer.outputColorSpace=SRGBColorSpace;
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+    renderer.domElement.style.touchAction='none'; // prevent page scroll while swiping
     mount.appendChild(renderer.domElement);
 
-    const camera=new PerspectiveCamera(38,1,0.1,100);
-    camera.position.set(0,0,9);
+    const camera=new PerspectiveCamera(30,1,0.1,100); // tighter FOV to reduce bulge
+    camera.position.set(0,0,11);
     camera.lookAt(0,0,0);
 
     // Lights
@@ -100,13 +99,11 @@
     const rimL=new DirectionalLight(0xfff0cc,0.7); rimL.position.set(0,-6,6); scene.add(rimL);
     scene.add(new AmbientLight(0xffffff,0.35));
 
-    // ----- Build frame (so we can center the entire thing) -----
+    // ----- Frame to hold everything so we can auto-center -----
     const frame=new Group(); scene.add(frame);
-    // shift left to compensate for pegs/flapper mass toward +X
-    frame.position.x = -0.7;   // tweak if you still see it off-center
 
     // Wheel geometry
-    const R=2.75, DEPTH=1.20, OUT=R+0.06; // OUT: plates/pegs slightly outside the drum
+    const R=2.75, DEPTH=1.20, OUT=R+0.06;
     const wheel=new Group(); frame.add(wheel);
 
     const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,128,1,true),
@@ -145,7 +142,7 @@
       const t=new CanvasTexture(c); t.anisotropy=8; return t;
     }
 
-    // Plates (face outward, then rotate around normal so text is upright)
+    // Plates (always upright)
     const plates=new Group(), plateGeo=new PlaneGeometry(1.2,0.60);
     for(let i=0;i<N;i++){
       const a=i*STEP+STEP/2;
@@ -153,14 +150,8 @@
       const n=new Vector3(0,y,z).normalize();
       const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTex(labels[i],i),side:DoubleSide}));
       m.position.set(0,y,z);
-
-      // Face OUTWARD (away from origin)
-      m.lookAt(n.clone().multiplyScalar(2));
-
-      // Make text upright: rotate around its own normal by (π/2 - a)
-      // Top plate (a≈π/2) => rotation ~ 0; bottom (a≈3π/2) => flipped back upright.
-      m.rotateZ(Math.PI/2 - a);
-
+      m.lookAt(n.clone().multiplyScalar(2));   // face outward
+      m.rotateZ(Math.PI/2 - a);                // keep numbers upright
       plates.add(m);
     }
     wheel.add(plates);
@@ -170,6 +161,15 @@
                         new MeshStandardMaterial({color:'#e23a21',metalness:.5,roughness:.5}));
     flap.position.set(DEPTH/2+0.11, 0, OUT-0.11);
     frame.add(flap);
+
+    // ---- Auto-center the whole frame to (0,0,0) ----
+    frame.updateMatrixWorld(true);
+    const box=new Box3().setFromObject(frame);
+    const c=box.getCenter(new Vector3());
+    frame.position.x -= c.x;
+    frame.position.y -= c.y;
+    frame.updateMatrixWorld(true);
+    camera.lookAt(0,0,0);
 
     // Size / resize
     function size(){
