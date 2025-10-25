@@ -62,29 +62,29 @@
     renderer.domElement.style.height='100%';
     mount.appendChild(renderer.domElement);
 
-    // 👉 Camera stands to the right (+X), looking back at the wheel face
+    // Camera to the right (+X), slight angle like the show
     const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.1,100);
-    camera.position.set(6.5, 1.2, 1.8);   // slight angle like the show
+    camera.position.set(6.5, 1.2, 1.8);
     camera.lookAt(0,0,0);
 
-    // lights
+    // Lights
     scene.add(new THREE.AmbientLight(0xffffff,0.42));
     const key=new THREE.DirectionalLight(0xffffff,1.15); key.position.set(3,5,7); scene.add(key);
     const fill=new THREE.DirectionalLight(0xffffff,.7);  fill.position.set(-3,-4,6); scene.add(fill);
 
-    // ---------- WHEEL ----------
+    // Wheel constants
     const R=2.6, DEPTH=1.1;
     const wheel=new THREE.Group(); scene.add(wheel);
 
-    // Drum axis = X (upright); spin around X
+    // Drum (axis X; we spin around X)
     const drum=new THREE.Mesh(
       new THREE.CylinderGeometry(R,R,DEPTH,96,1,true),
       new THREE.MeshStandardMaterial({color:'#0d0d0d',metalness:.35,roughness:.75,side:THREE.DoubleSide})
     );
-    drum.rotation.z=Math.PI/2; // align cylinder axis with X
+    drum.rotation.z=Math.PI/2; // cylinder axis -> X
     wheel.add(drum);
 
-    // Front rim + face
+    // Rim + front face
     const rim=new THREE.Mesh(
       new THREE.TorusGeometry(R+0.03,0.08,16,80),
       new THREE.MeshStandardMaterial({color:'#111',metalness:.85,roughness:.28})
@@ -97,9 +97,10 @@
     );
     face.rotation.y=Math.PI/2; face.position.x=DEPTH/2+0.01; wheel.add(face);
 
-    // Pegs (gold bars)
+    // Sequence + pegs
     const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
     const N=seq.length, TAU=Math.PI*2, STEP=TAU/N;
+
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
     const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.85,roughness:.35});
     const pegs=new THREE.Group();
@@ -109,10 +110,10 @@
     }
     wheel.add(pegs);
 
-    // Number plates — FRONT-FACING (normal +X), slightly in front of face
+    // Plates (fixed): wrap evenly, face +X, rotate around Z by angle 'a'
     const labels=seq.map(v=>v.toFixed(2));
     const plates=new THREE.Group();
-    const plateGeo=new THREE.PlaneGeometry(1.30,0.70);
+    const plateGeo=new THREE.PlaneGeometry(1.22,0.66); // tuned to avoid overlap
 
     function plateTex(v, idx){
       const c=document.createElement('canvas'); c.width=768; c.height=384;
@@ -130,12 +131,22 @@
     }
 
     for(let i=0;i<N;i++){
-      const a=i*STEP+STEP/2;
-      const y=Math.sin(a)*(R-0.55), z=Math.cos(a)*(R-0.55);
-      const mat=new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide});
-      const plate=new THREE.Mesh(plateGeo,mat);
-      plate.position.set(DEPTH/2+0.04, y, z);   // slightly in front of face
-      plate.rotation.y = -Math.PI/2;            // face toward +X (camera side)
+      const a = i * STEP;                         // equal spacing
+      const y = Math.sin(a) * (R - 0.36);         // radius tuned so plates sit on the face
+      const z = Math.cos(a) * (R - 0.36);
+
+      const mat = new THREE.MeshBasicMaterial({ map: plateTex(labels[i],i), side: THREE.DoubleSide });
+      const plate = new THREE.Mesh(plateGeo, mat);
+
+      // Sit just in front of the front face
+      plate.position.set(DEPTH/2 + 0.045, y, z);
+
+      // Face the camera (+X)
+      plate.rotation.y = -Math.PI/2;
+
+      // Follow the circular arc (rotate around Z by angle a)
+      plate.rotation.z = a;
+
       plates.add(plate);
     }
     wheel.add(plates);
@@ -156,7 +167,7 @@
       new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:THREE.DoubleSide}));
     flapper.rotation.z=Math.PI/2; flapper.position.set(DEPTH/2+0.28,0,R*0.02); scene.add(flapper);
 
-    // ---------- Sizing ----------
+    // Sizing
     function size(){
       const r=mount.getBoundingClientRect();
       renderer.setSize(r.width,Math.max(460,r.height),false);
@@ -165,7 +176,7 @@
     }
     size(); addEventListener('resize', size);
 
-    // ---------- HUD ----------
+    // HUD
     function drawHUD(v){
       const g=hud.getContext('2d'), w=hud.width, h=hud.height;
       g.clearRect(0,0,w,h); g.fillStyle='#07090b'; g.fillRect(0,0,w,h);
@@ -175,16 +186,16 @@
     }
     drawHUD(0);
 
-    // ---------- Spin physics (around X) ----------
+    // Spin physics (around X)
     let angX=-Math.PI/2, vel=0, spinning=false;
     const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
     function setAngle(a){ angX=a; wheel.rotation.x=a; }
     setAngle(-Math.PI/2);
 
     function startSpin(v){ vel=v; spinning=true; }
-    document.getElementById('spinBtn').onclick=()=> startSpin(6);
+    spinBtn.onclick=()=> startSpin(6);
 
-    // swipe input
+    // Swipe input
     const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
     function down(e){ if(spinning) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
@@ -200,7 +211,7 @@
     surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
     surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
 
-    // animation
+    // Animate
     function animate(){
       requestAnimationFrame(animate);
       if(spinning){
@@ -212,9 +223,9 @@
     }
     animate();
 
-    // reset
-    document.getElementById('resetBtn').onclick=()=>{ vel=0; spinning=false; setAngle(-Math.PI/2); };
-    document.getElementById('holdBtn').onclick=()=>{}; // placeholder
+    // Buttons
+    resetBtn.onclick=()=>{ vel=0; spinning=false; setAngle(-Math.PI/2); };
+    holdBtn.onclick=()=>{}; // placeholder for game logic
   }
 })();
 </script>
