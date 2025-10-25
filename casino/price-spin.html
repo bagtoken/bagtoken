@@ -57,24 +57,30 @@
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
 
+    // Camera - directly in front
     const camera=new THREE.PerspectiveCamera(45,mount.clientWidth/mount.clientHeight,0.01,200);
-    camera.position.set(0,0,8); camera.lookAt(0,0,0);
+    camera.position.set(0,0.4,10);
+    camera.lookAt(0,0.2,0);
     scene.add(camera);
 
-    scene.add(new THREE.AmbientLight(0xffffff,.4));
-    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(3,5,7); scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.8); fill.position.set(-3,-5,7); scene.add(fill);
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff,.45));
+    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(3,5,8); scene.add(key);
+    const fill=new THREE.DirectionalLight(0xffffff,.8); fill.position.set(-3,-4,7); scene.add(fill);
 
-    const R=2.5, DEPTH=1.1;
+    // Wheel constants
+    const R=2.8, DEPTH=1.1;
     const wheel=new THREE.Group(); scene.add(wheel);
 
+    // Drum (Z axis spin)
     const drum=new THREE.Mesh(
       new THREE.CylinderGeometry(R,R,DEPTH,96,1,true),
       new THREE.MeshStandardMaterial({color:'#0d0d0d',metalness:.35,roughness:.75})
     );
-    drum.rotation.x=Math.PI/2; // axis = Z now
+    drum.rotation.x=Math.PI/2;
     wheel.add(drum);
 
+    // Front face
     const face=new THREE.Mesh(
       new THREE.CircleGeometry(R-0.02,128),
       new THREE.MeshStandardMaterial({color:'#0f241b',metalness:.25,roughness:.55})
@@ -82,6 +88,7 @@
     face.position.z=DEPTH/2+0.01;
     wheel.add(face);
 
+    // Rim
     const rim=new THREE.Mesh(
       new THREE.TorusGeometry(R+0.03,0.08,16,80),
       new THREE.MeshStandardMaterial({color:'#111',metalness:.85,roughness:.28})
@@ -89,23 +96,26 @@
     rim.position.z=DEPTH/2+0.02;
     wheel.add(rim);
 
+    // Segments + Pegs
     const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-    const N=seq.length, TAU=Math.PI*2, STEP=TAU/N;
+    const N=seq.length,TAU=Math.PI*2,STEP=TAU/N;
 
     const pegGeo=new THREE.CylinderGeometry(0.06,0.06,0.32,12);
     const pegMat=new THREE.MeshStandardMaterial({color:'#d5b55c',metalness:.85,roughness:.35});
     const pegs=new THREE.Group();
     for(let i=0;i<N;i++){
-      const a=i*STEP, x=Math.cos(a)*(R-0.03), y=Math.sin(a)*(R-0.03);
+      const a=i*STEP,x=Math.cos(a)*(R-0.03),y=Math.sin(a)*(R-0.03);
       const p=new THREE.Mesh(pegGeo,pegMat);
-      p.position.set(x,y,DEPTH/2+0.22); p.rotation.x=Math.PI/2; pegs.add(p);
+      p.position.set(x,y,DEPTH/2+0.22);
+      p.rotation.x=Math.PI/2;
+      pegs.add(p);
     }
     wheel.add(pegs);
 
+    // Plates (number tiles)
     const labels=seq.map(v=>v.toFixed(2));
     const plates=new THREE.Group();
     const plateGeo=new THREE.PlaneGeometry(1.05,0.55);
-
     function plateTex(v,idx){
       const c=document.createElement('canvas');c.width=768;c.height=384;
       const g=c.getContext('2d');
@@ -118,19 +128,17 @@
       g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)),c.width/2,c.height/2+6);
       const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.needsUpdate=true;return t;
     }
-
     const plateRadius=R-0.55;
     for(let i=0;i<N;i++){
-      const a=i*STEP;
-      const x=Math.cos(a)*plateRadius;
-      const y=Math.sin(a)*plateRadius;
+      const a=i*STEP,x=Math.cos(a)*plateRadius,y=Math.sin(a)*plateRadius;
       const plate=new THREE.Mesh(plateGeo,new THREE.MeshBasicMaterial({map:plateTex(labels[i],i),side:THREE.DoubleSide}));
       plate.position.set(x,y,DEPTH/2+0.05);
-      plate.lookAt(0,0,8); // face toward camera
+      plate.lookAt(0,0,8);
       plates.add(plate);
     }
     wheel.add(plates);
 
+    // Flapper
     const flapper=new THREE.Mesh(
       new THREE.PlaneGeometry(0.5,0.28),
       new THREE.MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:THREE.DoubleSide})
@@ -148,17 +156,16 @@
     }
     drawHUD(0);
 
-    // Spin physics (Z-axis now)
-    let angZ=0, vel=0, spinning=false;
+    // Spin physics (Z-axis)
+    let angZ=0,vel=0,spinning=false;
     const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012;
     function setAngle(a){angZ=a;wheel.rotation.z=a;}
     function startSpin(v){vel=v;spinning=true;}
 
-    // Buttons
     spinBtn.onclick=()=>startSpin(8);
     resetBtn.onclick=()=>{spinning=false;vel=0;setAngle(0);};
 
-    // Drag up/down to spin
+    // Swipe
     const surf=renderer.domElement,getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
     let dragging=false,lastY=0,lastT=0,samples=[];
     function down(e){if(spinning)return;dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now();e.preventDefault();}
@@ -171,7 +178,7 @@
     surf.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
     surf.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
 
-    // Render
+    // Render loop
     function tick(){
       requestAnimationFrame(tick);
       if(spinning){setAngle(angZ+vel*(1/60));vel*=FRICTION;if(Math.abs(vel)<VMIN)spinning=false;}
