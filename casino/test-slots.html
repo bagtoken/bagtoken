@@ -348,7 +348,7 @@
   </div>
 </div>
 
-<!-- ✅ AUDIO SYSTEM (slots MP3s in /assets/sounds/ with 4s spin cap) -->
+<!-- ✅ AUDIO SYSTEM -->
 <script>
 (function(){
   const BASE = '/assets/sounds/';
@@ -1127,183 +1127,266 @@
 })();
 </script>
 
-<!-- ===== SLOTS GAME CORE (3×3, rows win 1.25×, BAG row 2.00×, diagonals scratch 1.00×) ===== -->
+<!-- ===================== Reels & Odds + Spin (RESTORED WORKING CORE) ===================== -->
 <script>
 (function(){
-  const symbols = ['🍒','🍋','⭐','7️⃣','BAR']; // 'BAR' will render as BAG tile in DOM
-  const ROWS = 3, COLS = 3, VISIBLE = 3;
-  const STRIP_LEN = 24; // per reel
-  const SPIN_MS = 1800;
+  const strips=[...document.querySelectorAll('.strip')];
+  const spinBtn=document.getElementById('spinBtn');
+  const spinText=document.getElementById('spinText');
 
-  const strips = [[],[],[]];
-  for (let c=0;c<COLS;c++){
-    const s=[];
-    while(s.length<STRIP_LEN){
-      s.push(symbols[(Math.random()*symbols.length)|0]);
+  const SYMS = [
+    {k:'BAG',     html:'<span class="tile tile--bar">BAG</span>'},
+    {k:'MONEY',   emoji:'💰'},
+    {k:'DIAMOND', emoji:'💎'},
+    {k:'COIN',    emoji:'🪙'},
+    {k:'CHERRY',  emoji:'🍒'},
+    {k:'SEVEN',   emoji:'7️⃣'},
+    {k:'LOCK',    emoji:'🔒'}
+  ];
+  const NON_BAG_POOL = SYMS.filter(s => s.k !== 'BAG');
+
+  const MULT_WIN = 1.25;
+  const MULT_JP  = 2.00;
+
+  const LIVE = { P_JP: 0.02, P_WIN: 0.42 };
+  const DEMO = { P_JP: 0.03, P_WIN: 0.46 };
+
+  const P = (window.__BAG_FORCE_DEMO === true) ? DEMO : LIVE;
+  const SCRATCH_IN_LOSE = (window.__BAG_FORCE_DEMO === true) ? 0.11 : 0.10;
+
+  const ROWS=3, CELL_H=88;
+  function cell(sym){
+    const d=document.createElement('div');
+    d.className='cell';
+    if (sym.html) d.innerHTML = sym.html; else d.textContent = sym.emoji;
+    return d;
+  }
+  function fillStrip(el, arr){ el.innerHTML=''; arr.forEach(s=>el.appendChild(cell(s))); }
+  function randomSym(){ return SYMS[(Math.random()*SYMS.length)|0]; }
+  function randFrom(a){ return a[(Math.random()*a.length)|0]; }
+
+  strips.forEach(s=>{
+    fillStrip(s, [randomSym(),randomSym(),randomSym()]);
+    s.style.transform='translateY(0)';
+  });
+
+  function blankGrid(){ return [[null,null,null],[null,null,null],[null,null,null]]; }
+  function rowPay(g,r){
+    const a=g[r][0]?.k,b=g[r][1]?.k,c=g[r][2]?.k;
+    if(!a||!b||!c) return null;
+    if(a===b && b===c) return a==='BAG'?'jackpot':'win';
+    return null;
+  }
+  function diagPay(g){
+    const a=g[0][0]?.k,b=g[1][1]?.k,c=g[2][2]?.k;
+    const d=g[0][2]?.k,e=g[1][1]?.k,f=g[2][0]?.k;
+    const d1=a&&b&&c && a===b && b===c;
+    const d2=d&&e&&f && d===e && e===f;
+    return (d1||d2)?'scratch':null;
+  }
+  function anyRowPay(g){ for(let r=0;r<3;r++){ const p=rowPay(g,r); if(p) return p; } return null; }
+  function anyRowPayExcept(g, allowedRows){
+    for(let r=0;r<3;r++){
+      if(allowedRows && allowedRows.includes(r)) continue;
+      if(rowPay(g,r)) return true;
     }
-    strips[c]=s;
+    return false;
   }
 
-  const $ = (sel)=>document.querySelector(sel);
-  const reelsEl = $('#reels');
-  const stripsEls = Array.from(reelsEl.querySelectorAll('.strip'));
-  const spinBtn = $('#spinBtn');
-  const text = $('#spinText');
+  function fillRandomConstrained(g, opts){
+    const allowedRows = opts?.allowedRowPays || [];
+    const allowDiag   = !!opts?.allowDiagPay;
 
-  function cellHTML(sym){
-    if (sym==='BAR'){
-      return `<span class="tile tile--bar">BAG</span>`;
+    for(let r=0;r<3;r++){
+      for(let c=0;c<3;c++){
+        if(g[r][c]) continue;
+        let placed=false, tries=0;
+        while(!placed && tries++<16){
+          const cand=randomSym();
+          g[r][c]=cand;
+
+          const rp = rowPay(g,r);
+          const rpOk = !rp || (allowedRows.includes(r) && rp);
+
+          const anyOtherRowPay = anyRowPayExcept(g, allowedRows);
+          const dp = diagPay(g);
+          const dpOk = !dp || (allowDiag && dp==='scratch');
+
+          if(rpOk && !anyOtherRowPay && dpOk){
+            placed=true;
+          } else {
+            g[r][c]=null;
+          }
+        }
+        if(!placed){
+          g[r][c]=randomSym();
+        }
+      }
     }
-    return sym;
+    return g;
   }
 
-  function renderStrips(){
-    stripsEls.forEach((el, col)=>{
-      const frag = document.createDocumentFragment();
-      const div = document.createElement('div');
-      div.innerHTML = strips[col].map(s=> `<div class="cell">${cellHTML(s)}</div>`).join('');
-      frag.appendChild(div);
-      el.innerHTML='';
-      el.appendChild(frag);
-      el.style.transform = 'translateY(0px)';
+  function buildSpin(stakeBag){
+    const r = Math.random();
+    let bucket = 'lose';
+    if (r < P.P_JP) bucket = 'jackpot';
+    else if (r < P.P_JP + P.P_WIN) bucket = 'win';
+
+    let g=blankGrid();
+
+    if(bucket==='jackpot'){
+      const line=(Math.random()*3)|0;
+      g[line]=[SYMS[0],SYMS[0],SYMS[0]];
+      g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
+
+    } else if(bucket==='win'){
+      const line=(Math.random()*3)|0;
+      const s=randFrom(NON_BAG_POOL);
+      g[line]=[s,s,s];
+      g=fillRandomConstrained(g,{ allowedRowPays:[line], allowDiagPay:false });
+
+    } else {
+      if(Math.random() < SCRATCH_IN_LOSE){
+        const s=randFrom(SYMS);
+        if(Math.random()<0.5){ g[0][0]=s; g[1][1]=s; g[2][2]=s; }
+        else                 { g[0][2]=s; g[1][1]=s; g[2][0]=s; }
+        g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:true });
+      } else {
+        g=fillRandomConstrained(g,{ allowedRowPays:[], allowDiagPay:false });
+      }
+    }
+    return { grid:g, stake: stakeBag };
+  }
+
+  function evaluateGrid(rows){
+    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='jackpot') return { outcome:'jackpot', mult:2.00 }; }
+    for(let r=0;r<3;r++){ if(rowPay(rows,r)==='win')     return { outcome:'win',     mult:1.25 }; }
+    if(diagPay(rows)==='scratch') return { outcome:'scratch', mult:1.00 };
+    return { outcome:'lose', mult:0.00 };
+  }
+
+  function startFastSpin(durationMs, finalRows){
+    const loopers = strips.map((strip, idx) => {
+      fillStrip(strip, Array.from({length:3},()=>randomSym()));
+      strip.style.transition = 'transform 80ms linear';
+      let spinning = true, tickTimer = null;
+
+      function tick(){ if(!spinning) return; strip.style.transform = `translateY(-${CELL_H}px)`; strip.addEventListener('transitionend', onEnd, {once:true}); }
+      function onEnd(){
+        const children = [...strip.children];
+        if(children.length){ strip.removeChild(children[0]); strip.appendChild(cell(randomSym())); }
+        strip.style.transition='none'; strip.style.transform='translateY(0)'; strip.getBoundingClientRect();
+        strip.style.transition='transform 80ms linear';
+        if(spinning) tickTimer=setTimeout(tick,60);
+      }
+      tick();
+
+      return { stopAbrupt(){
+        spinning=false; if(tickTimer) clearTimeout(tickTimer);
+        strip.style.transition='none';
+        const col=[ finalRows[0][idx], finalRows[1][idx], finalRows[2][idx] ];
+        fillStrip(strip,col); strip.style.transform='translateY(0)';
+      }};
     });
-  }
-  renderStrips();
 
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function currentCurrency(){ const el = document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
-  function stakeBag(){
-    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
-    if(!q) return 0;
-    const {bagUsd,xrpUsd}=PR();
-    return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
+    return new Promise(resolve=>{ setTimeout(()=>{ loopers.forEach(l=>l.stopAbrupt()); resolve(); }, durationMs); });
   }
-  function stakeUsd(){
-    const direct=parseFloat(document.getElementById('usdBet')?.value||'');
-    if(Number.isFinite(direct)&&direct>0) return direct;
-    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
-    const {bagUsd,xrpUsd}=PR();
-    if(currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+
+  function playSpin(){ try{ if(window.__bagAudio){ __bagAudio.resume && __bagAudio.resume(); window.__spinHandle=__bagAudio.spinLoop(); } }catch{} }
+  function stopSpin(){ try{ window.__spinHandle && window.__spinHandle.stop(); }catch{} }
+  function sWin(){ try{ window.__bagAudio && __bagAudio.chime(); }catch{} }
+  function sScratch(){ try{ window.__bagAudio && __bagAudio.scratch(); }catch{} }
+  function sLose(){ try{ window.__bagAudio && __bagAudio.thud(); }catch{} }
+
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  function currentStakeBag(){
+    const qtyEl = document.getElementById('betQty');
+    const q = parseFloat(qtyEl?.value||0) || 0;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
+    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
+    if (cur==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+  function currentStakeUsd(){
+    const usdEl = document.getElementById('usdBet');
+    const direct = parseFloat(usdEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return direct;
+    const qtyEl = document.getElementById('betQty');
+    const q = parseFloat(qtyEl?.value||0) || 0;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
+    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
+    if (cur==='BAG') return bagUsd>0 ? q*bagUsd : 0;
     return xrpUsd>0 ? q*xrpUsd : 0;
   }
 
-  function setLast(s){ window.__SLOTS_LAST__=s; const el=document.getElementById('lastLbl'); if(el) el.textContent=s; }
+  window.__SLOTS_LAST__ = window.__SLOTS_LAST__ || '—';
+  function setLast(s){ try{ window.__SLOTS_LAST__ = s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{} }
 
-  function evalBoard(board){
-    // board[r][c] with symbols ('BAR' for BAG)
-    const rowMatch=(r)=> board[r][0]===board[r][1] && board[r][1]===board[r][2];
-    const diag1 = board[0][0]===board[1][1] && board[1][1]===board[2][2];
-    const diag2 = board[0][2]===board[1][1] && board[1][1]===board[2][0];
+  let spinningNow = false;
 
-    // Jackpot if ANY row === 'BAR','BAR','BAR'
-    for(let r=0;r<ROWS;r++){
-      if (rowMatch(r) && board[r][0]==='BAR') return { kind:'jackpot', row:r };
-    }
-    // Win if any row is three-of-a-kind (but not BAR)
-    for(let r=0;r<ROWS;r++){
-      if (rowMatch(r) && board[r][0]!=='BAR') return { kind:'win', row:r, sym:board[r][0] };
-    }
-    // Scratch if any diagonal three-of-a-kind (any symbol)
-    if (diag1 || diag2) return { kind:'scratch' };
-    return { kind:'lose' };
-  }
+  spinBtn.addEventListener('click', async ()=>{
+    if (spinningNow || spinBtn.disabled) return;
+    spinningNow = true;
 
-  function showOutcome(kind, mult, subtext){
-    const t = document.getElementById('spinText');
-    if (!t) return;
-    t.className = 't';
-    if (kind==='jackpot'||kind==='win'){ t.classList.add('win'); }
-    else if (kind==='scratch'){ t.classList.add('scratch'); }
-    else { t.classList.add('lose'); }
-    t.textContent = kind==='jackpot' ? 'JACKPOT!'
-                : kind==='win'      ? 'WIN'
-                : kind==='scratch'  ? 'Scratch (push)'
-                : 'Lose';
+    const sBag = currentStakeBag();
+    const sUsd = currentStakeUsd();
 
-    try{
-      if (kind==='jackpot'||kind==='win'){
-        window.__bagAudio && window.__bagAudio.chime && window.__bagAudio.chime();
-        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:(kind==='jackpot'?'JACKPOT':'WIN'), subtext, duration:(kind==='jackpot'?5600:4200), sound:false });
-      } else if (kind==='scratch'){
-        window.__bagAudio && window.__bagAudio.scratch && window.__bagAudio.scratch();
+    if (!sessionActive()) { alert('Start a session at The Cage'); spinningNow=false; return; }
+    if (sUsd < 1){ alert('Minimum $1 stake'); spinningNow=false; return; }
+    if (!(sBag > 0)) { alert('Enter a stake first'); spinningNow=false; return; }
+
+    if (!spend(sBag)) { alert('Insufficient balance'); spinningNow=false; return; }
+
+    spinBtn.disabled=true; spinText.className='t'; spinText.textContent='Spinning…';
+    try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
+    playSpin();
+
+    const plan = buildSpin(sBag);
+    const finalRows = plan.grid;
+    await startFastSpin(4000, finalRows);
+    stopSpin();
+
+    const verdict = evaluateGrid(finalRows);
+    const mult = verdict.mult;
+
+    if(mult>0){
+      if(mult===1.00){
+        sScratch();
+        credit(sBag*1.00);
+        spinText.className='t scratch'; spinText.textContent='Scratch — 1.00×';
+        setLast('Scratch');
+        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'SCRATCH', subtext:`+0 BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.00).toFixed(2)}`, duration:2200, sound:false });
+      } else if(mult===1.25){
+        sWin();
+        credit(sBag*1.25);
+        spinText.className='t win'; spinText.textContent='WIN — 1.25×';
+        setLast('Win 1.25×');
+        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, sound:false });
       } else {
-        window.__bagAudio && window.__bagAudio.thud && window.__bagAudio.thud();
+        sWin();
+        credit(sBag*2.00);
+        spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
+        setLast('Jackpot 2×');
+        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, sound:false });
       }
-    }catch{}
-  }
-
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function winSubtext(mult, lockedBag, lockedUsd){
-    const gainBag = lockedBag*(mult-1);
-    const fromUsd = lockedUsd;
-    const toUsd   = lockedUsd*mult;
-    return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(fromUsd)} → ${fmtUsd(toUsd)}`;
-  }
-
-  function spin(){
-    const MIN_USD=1, MAX_USD=2000;
-    const sBagNow = stakeBag();
-    const sUsdNow = stakeUsd();
-
-    if (!window.__bagSession || !__bagSession.active || !__bagSession.active()){ alert('Start a session at The Cage'); return; }
-    if (sUsdNow < MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); return; }
-    if (sUsdNow > MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); return; }
-    if (!(sBagNow>0)){ alert('Enter a stake first'); return; }
-    if (!__bagSession.spend(sBagNow)){ alert('Insufficient balance'); return; }
-
-    const lockedBag = sBagNow, lockedUsd = sUsdNow;
-    setLast('Spinning…');
-    text.textContent = 'Spinning…';
-    text.className = 't';
-
-    let stopper = null;
-    (async ()=>{ try{ const h = await (window.__bagAudio && window.__bagAudio.spinLoop && window.__bagAudio.spinLoop()); stopper = h && h.stop ? h.stop : null; }catch{} })();
-
-    spinBtn.disabled = true;
-
-    // Choose a middle index per reel; scroll so top = mid-1, thus middle row == mid
-    const targets = [];
-    for (let c=0;c<COLS;c++){
-      const midIdx = (Math.random()*STRIP_LEN)|0;
-      targets.push(midIdx);
-      const topIdx = (midIdx - 1 + STRIP_LEN) % STRIP_LEN;   // top visible cell
-      const px = -(topIdx * 88);
-      requestAnimationFrame(()=>{ stripsEls[c].style.transform = `translateY(${px}px)`; });
+    } else {
+      sLose();
+      spinText.className='t lose'; spinText.textContent='Lose — try again';
+      setLast('Lose');
     }
 
-    setTimeout(()=>{
-      if (typeof stopper==='function') try{ stopper(); }catch{}
-      // Build 3×3 board matching the visible rows exactly: [top, middle, bottom]
-      const board = [[],[],[]];
-      for (let c=0;c<COLS;c++){
-        const mid = targets[c];
-        const top = (mid - 1 + STRIP_LEN) % STRIP_LEN;
-        const bot = (mid + 1) % STRIP_LEN;
-        board[0][c] = strips[c][top];
-        board[1][c] = strips[c][mid];
-        board[2][c] = strips[c][bot];
-      }
+    window.dispatchEvent(new CustomEvent('bag:slotsResult', {
+      detail: { mult, scratch: mult===1.00, jackpot: mult===2.00, stakeBag: sBag }
+    }));
 
-      const res = evalBoard(board);
-      const mult = res.kind==='jackpot' ? 2.00
-                 : res.kind==='win'     ? 1.25
-                 : res.kind==='scratch' ? 1.00
-                 : 0.00;
+    spinBtn.disabled=false;
+    spinningNow = false;
+  });
 
-      if (mult>0){
-        const credit = lockedBag*mult;
-        try{ __bagSession && __bagSession.credit && __bagSession.credit(credit); }catch{}
-      }
-
-      showOutcome(res.kind, mult, winSubtext(mult, lockedBag, lockedUsd));
-      setLast(res.kind==='jackpot'?'Jackpot 2×':res.kind==='win'?'Win 1.25×':res.kind==='scratch'?'Scratch':'Lose');
-
-      spinBtn.disabled = false;
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    }, SPIN_MS + 50);
-  }
-
-  spinBtn?.addEventListener('click', spin);
 })();
 </script>
 
