@@ -222,127 +222,140 @@
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
   const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
-  const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
-  const liveDot=document.getElementById('liveDot'), liveBAG=document.getElementById('liveBAG'), liveXRP=document.getElementById('liveXRP'),
-        liveNote=document.getElementById('liveNote'), liveConv=document.getElementById('liveConv');
+
+  // Reuse shared object if present
+  const PRICES = (window.__PRICES__ = window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+
+  // Lazy element lookup (works even if this runs in <head>)
+  function els(){
+    return {
+      liveDot:  document.getElementById('liveDot'),
+      liveBAG:  document.getElementById('liveBAG'),
+      liveXRP:  document.getElementById('liveXRP'),
+      liveNote: document.getElementById('liveNote'),
+      liveConv: document.getElementById('liveConv'),
+    };
+  }
+
   function fmt(n){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:6}):'—'; }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k,ttl){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } }
-  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){ const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
-    try{ const u=new URL(url,location.origin); u.searchParams.set('_ts',Date.now()); return fetch(u.toString(),{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
-    finally{ setTimeout(()=>clearTimeout(id),0); } }
+
+  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{
+      const u=new URL(url, location.origin);
+      u.searchParams.set('_ts', String(Date.now()));
+      return fetch(u.toString(),{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal});
+    } finally { setTimeout(()=>clearTimeout(id),0); }
+  }
+
   function updateLine(){
-    if(liveBAG) liveBAG.textContent=fmt(PRICES.bagUsd);
-    if(liveXRP) liveXRP.textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
-    if(liveDot) liveDot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
-    if(liveNote) liveNote.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    const {liveDot,liveBAG,liveXRP,liveNote,liveConv} = els();
+
+    if(liveBAG)  liveBAG.textContent = fmt(PRICES.bagUsd);
+    if(liveXRP)  liveXRP.textContent = Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
+    if(liveDot)  liveDot.className   = (PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
+    if(liveNote) liveNote.textContent= (PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+
     if(liveConv){
       if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
-        liveConv.textContent=`1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
-      } else liveConv.textContent='1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
     }
+
+    // Notify stake wire / HUD
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
+
   async function fetchXrpUsdLive(){
-    try{ const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); if(!r.ok) throw 0;
-      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; } }catch{} return false;
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v=(await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+    }catch{}
+    return false;
   }
+
   function parseXrpAmount(a){ if(a==null) return null; if(typeof a==='string') return Number(a)/1_000_000; if(typeof a==='object'&&a.currency==='XRP') return Number(a.value); return null; }
   function parseIouAmount(a){ if(!a||typeof a!=='object') return null; return Number(a.value); }
+
   async function fetchBagViaAMMLive(){
     const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
     const xrpPerBag=await new Promise(resolve=>{
       const ws=new WebSocket('wss://s1.ripple.com'); const t=setTimeout(()=>{ try{ws.close();}catch{} resolve(null); },8000);
-      ws.onopen=()=>ws.send(JSON.stringify(req));
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
       ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
-      ws.onmessage=ev=>{ try{ const msg=JSON.parse(ev.data); if(msg.id!==1||!msg.result||!msg.result.amm) return;
-        clearTimeout(t); try{ws.close();}catch{}; const amm=msg.result.amm;
-        const bagBal=parseIouAmount(amm.amount), xrpBal=parseXrpAmount(amm.amount2);
-        if(!(bagBal>0) || !(xrpBal>0)) return resolve(null); const price=xrpBal/bagBal; if(!(price>0) || !isFinite(price)) return resolve(null); resolve(price);
-      }catch{ resolve(null); } };
+      ws.onmessage=ev=>{
+        try{
+          const msg=JSON.parse(ev.data);
+          if(msg.id!==1||!msg.result||!msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm=msg.result.amm;
+          const bagBal=parseIouAmount(amm.amount), xrpBal=parseXrpAmount(amm.amount2);
+          if(!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price=xrpBal/bagBal;
+          if(!(price>0) || !isFinite(price)) return resolve(null);
+          resolve(price);
+        }catch{ resolve(null); }
+      };
     });
-    if(!(xrpPerBag>0)) return false; if(!(PRICES.xrpUsd>0)) return false;
-    PRICES.bagUsd=PRICES.xrpUsd*xrpPerBag; PRICES.source='live-amm';
-    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd}); cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd}); return true;
-  }
-  function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
-  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
-    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
-    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; } if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok; }
-  async function refresh(){ const gotX=await fetchXrpUsdLive(); const gotB=await fetchBagViaAMMLive(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } updateLine(); }
-  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
-  addEventListener('storage', (e)=>{ if([VIEW_CACHE_KEY,XRP_KEY,LAST_LIVE_KEY].includes(e.key)){ if(!loadLast()) loadView(); updateLine(); } });
-})();
-</script>
-
-<!-- Universal Stake Wire (same API across games) -->
-<script>
-(function(global){
-  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
-  function getCur(root){ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
-  function priceFor(cur){ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd : xrpUsd; }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function computeSessionMaxUsd(cur,minUsd,maxUsd){
-    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
-    const bagBal=Number(sess.bag)||0; let unitsAvail;
-    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
-    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
-    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+    if(!(xrpPerBag>0)) return false;
+    if(!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+    PRICES.source='live-amm';
+    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    return true;
   }
 
-  function init(opts){
-    const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
-      presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
-    const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
-          unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
-    const STATE={lastEdited:'qty', lastCur:null, syncing:false};
-    function paintUnits(){ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); }
-    function rUsd(){ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-    function rQty(){ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-    function wUsd(u){ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; }
-    function wQty(q){ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; }
-    function renderLimits(){ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
-      const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
-      limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; }
-    function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
-      if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
-    function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
-      if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
-    function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
-      if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
-
-    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-    STATE.lastCur=getCur(curToggle);
-    curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-    if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
-
-    if(presets){
-      const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
-      const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
-      const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
-      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
-          usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
-          usd=clamp(usd); setActive(btn); applyUsd(usd);
-        });
-      });
-      const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
-        if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
-      addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
+  function loadLast(){
+    const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS);
+    if(v && Number(v.bagUsd)>0){
+      PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd;
+      PRICES.source='last-live'; return true;
     }
-    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+    return false;
   }
-  global.BAGStakeWire={ init };
-})(window);
+
+  function loadView(){
+    const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS);
+    let ok=false;
+    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
+    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
+    if(ok && PRICES.source==='—') PRICES.source='last-live';
+    return ok;
+  }
+
+  async function refresh(){
+    const gotX=await fetchXrpUsdLive();
+    const gotB=await fetchBagViaAMMLive();
+    if(!(gotX&&gotB)){ if(!loadLast()) loadView(); }
+    updateLine();
+  }
+
+  // Initial & periodic refresh
+  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
+
+  // Paint once body exists (fixes first render)
+  document.addEventListener('DOMContentLoaded', updateLine);
+
+  // Cross-tab/cache sync
+  addEventListener('storage', (e)=>{
+    if([VIEW_CACHE_KEY,XRP_KEY,LAST_LIVE_KEY].includes(e.key)){
+      if(!loadLast()) loadView();
+      updateLine();
+    }
+  });
+})();
 </script>
 </head>
 
-  <body>
+<body>
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
@@ -481,7 +494,7 @@
   </div>
 </div>
 
-    <!-- DEMO / LIVE SESSION — exact $2,000 seed (parity with Poker) -->
+<!-- DEMO / LIVE SESSION — exact $2,000 seed (parity with Poker) -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
@@ -627,7 +640,7 @@
   document.getElementById('usdBet')?.addEventListener('input', repaint);
   document.getElementById('betQty')?.addEventListener('input', repaint);
   document.getElementById('curToggle')?.addEventListener('change', repaint);
-})();
+})(window);
 </script>
 
 <!-- Init universal stake wire -->
@@ -657,7 +670,7 @@
 })();
 </script>
 
-    <!-- DICE game logic (come-out / point with locked stake) -->
+<!-- DICE game logic (come-out / point with locked stake) -->
 <script>
 (function(){
   const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
