@@ -117,6 +117,87 @@
   .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
   .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
   .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
+
+  /* --- Blackjack WIN readout (Dice-style) --- */
+  #bj-win-readout{
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 10px 24px var(--shadow);
+    color: var(--fg);
+  }
+  #bj-win-readout .row{display:flex;justify-content:space-between;gap:12px;margin:8px 0}
+  #bj-win-readout .title{font-weight:800;letter-spacing:.2px}
+  #bj-win-readout .muted{color:var(--muted)}
+  #bj-win-readout .note{color:var(--muted);font-size:.92rem;margin-top:10px;line-height:1.45}
+
+  /* --- Rules pill (stationary, right-aligned above footer) --- */
+  /* If you wrap the button in: <div class="rules-row"> ... </div>, this aligns to game width */
+  .rules-row{
+    max-width:1080px;
+    margin:14px auto 0;
+    padding:0 16px;
+    display:flex;
+    justify-content:flex-end;
+  }
+  /* Pill styles (no fixed positioning) */
+  .rules-fab{
+    position: static;
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-weight: 900;
+    letter-spacing: .2px;
+    border: 1px solid #2b6a48;
+    background:#15261c;
+    color:#e9efe9;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .rules-fab:hover{ filter: brightness(1.05); }
+  .rules-fab:active{ transform: translateY(1px); }
+  .rules-fab:focus-visible{ outline:2px solid #e9efe9; outline-offset:2px; }
+
+  /* Fallback: if no .rules-row wrapper exists, keep the pill stationary and visually right-aligned within page gutters */
+  .rules-fab:not(:where(.rules-row *)){
+    display:inline-flex;
+    margin:14px 16px 0 auto;      /* pushes it to the right edge with same 16px page padding */
+  }
+
+  /* --- Rules overlay modal --- */
+  .rules-overlay{
+    position: fixed; inset: 0;
+    display: none;               /* toggled by JS */
+    place-items: center;
+    z-index: 3000;
+    backdrop-filter: blur(6px);
+    background: rgba(0,0,0,.45);
+    padding: 18px;
+  }
+  .rules-modal{
+    width: min(680px, 92vw);
+    max-height: min(78vh, 840px);
+    overflow:auto;
+    background: linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px var(--shadow);
+    color: var(--fg);
+    padding: 18px;
+    position:relative;
+  }
+  .rules-modal h3{ margin: 0 0 10px; }
+  .rules-modal ul{ margin: 10px 0; padding-left: 20px; }
+  .rules-modal .rules-note{ margin-top: 10px; color: var(--muted); }
+
+  .rules-close{
+    position:absolute; top:8px; right:12px;
+    border:0; background:transparent; color:#e9efe9;
+    font-size:24px; line-height:1; cursor:pointer;
+  }
+  .rules-close:hover{ filter:brightness(1.15); }
 </style>
 
 <!-- SHARED OVERLAY / SESSION + QUICK AMOUNTS -->
@@ -225,7 +306,8 @@
 
         <div class="divider"></div>
 
-        <div class="callout mono">Blackjack pays <b>2.00×</b> · Regular win pays <b>1.25×</b> · Push returns stake.</div>
+        <!-- NEW: Blackjack WIN readout (Dice-style) -->
+        <div id="bj-win-readout" aria-live="polite"></div>
       </div>
     </div>
 
@@ -279,13 +361,14 @@
     <ul>
       <li><b>Goal:</b> Beat the dealer by getting as close to 21 as possible without going over</li>
       <li><b>Card Values:</b> Numbers = face value; J/Q/K = 10; A = 1 or 11</li>
-      <li><b>Blackjack:</b> Ace + 10-value card pays <b>3:2</b></li>
+      <li><b>Blackjack:</b> Ace + 10-value card pays <b>2.00×</b></li>
+      <li><b>Regular Win:</b> Higher total than dealer without busting pays <b>1.25×</b></li>
       <li><b>Hit:</b> Take another card</li>
       <li><b>Stand:</b> Keep your total</li>
-      <li><b>Double Down:</b> Double your bet, take exactly one final card</li>
+      <li><b>Double Down:</b> Double your stake, take exactly one final card</li>
       <li><b>Split:</b> If your first two cards are a pair, you may split <b>on the first hand only</b></li>
-      <li><b>Bust:</b> Over 21 is an automatic loss</li>
-      <li><b>Dealer:</b> Hits until 17 or higher</li>
+      <li><b>Push:</b> Same total as dealer — stake returned</li>
+      <li><b>Dealer:</b> Hits soft 17 (H17)</li>
     </ul>
     <div class="rules-note">House visuals and payouts shown on this page apply. Push returns stake.</div>
   </div>
@@ -632,7 +715,7 @@
   async function refreshPrices(){
     let liveOk = false;
     const gotX = await fetchXrpUsdLive();
-    const gotBag = await fetchBagViaAMMLive();
+       const gotBag = await fetchBagViaAMMLive();
     liveOk = gotX && gotBag;
     if (!liveOk){
       if (!loadLastLiveBundle()) loadViewCache();
@@ -1088,9 +1171,92 @@
 })();
 </script>
 
+<!-- BLACKJACK WIN READOUT MODULE (Surrender & Jackpot REMOVED) -->
+<script>
+(function(w){
+  const nfBAG = new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
+  const nfUSD = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const BJ = {
+    el:null,
+    rules:{            // tweak here if needed
+      regular:1.25,    // regular win
+      blackjack:2.00   // natural 21
+    },
+    state:{stakeBag:0, usdPerBag:0},
+
+    init(el, opts={}){
+      this.el = typeof el==='string' ? document.querySelector(el) : el;
+      if (opts.rules) this.rules = Object.assign({}, this.rules, opts.rules);
+      this.render();
+    },
+    update({stakeBag, usdPerBag}={}){
+      if (typeof stakeBag==='number') this.state.stakeBag = stakeBag;
+      if (typeof usdPerBag==='number') this.state.usdPerBag = usdPerBag;
+      this.render();
+    },
+    amt(bag){ const usd = (bag||0) * (this.state.usdPerBag||0);
+      return `${nfBAG.format(bag||0)} BAG (${nfUSD.format(usd)})`; },
+
+    render(){
+      if (!this.el) return;
+      const s = this.state.stakeBag||0, r=this.rules;
+      const blackjack = s * r.blackjack;
+      const regular   = s * r.regular;
+      const doubled   = s * r.regular * 2;   // double-down win
+      const split     = s * r.regular;       // per hand
+
+      this.el.innerHTML = `
+        <div class="row"><div class="title">BLACKJACK WIN (natural 21):</div><div>${this.amt(blackjack)}</div></div>
+        <div class="row"><div class="title">Regular WIN:</div><div>${this.amt(regular)}</div></div>
+        <div class="row"><div>Double-down WIN:</div><div>${this.amt(doubled)}</div></div>
+        <div class="row"><div>Split hand WIN <span class="muted">(per hand)</span>:</div><div>${this.amt(split)}</div></div>
+        <div class="row"><div>Push <span class="muted">(stake returned)</span>:</div><div>${this.amt(s)}</div></div>
+        <div class="row"><div>Bust / Dealer blackjack <span class="muted">(lose)</span>:</div><div>${this.amt(0)}</div></div>
+        <div class="row"><div>Hand in progress <span class="muted">(no payout yet)</span>:</div><div>Stake held</div></div>
+
+        <div class="note">
+          Blackjack pays ${r.blackjack.toFixed(2)}× · Regular win pays ${r.regular.toFixed(2)}× ·
+          Push returns stake · Double-down doubles stake before resolution.
+        </div>`;
+    }
+  };
+
+  w.BAGBJ = {
+    init: (el, opts)=>BJ.init(el, opts),
+    update: (data)=>BJ.update(data),
+    setRules: (rules)=>{ BJ.rules = Object.assign({}, BJ.rules, rules); BJ.render(); }
+  };
+})(window);
+
+// Boot + wiring: recalc on stake/price changes
+document.addEventListener('DOMContentLoaded', ()=>{
+  BAGBJ.init('#bj-win-readout');
+  const upd = ()=>{
+    const PR = window.__PRICES__ || { bagUsd:0, xrpUsd:0 };
+    const cur = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+    const qty = parseFloat(document.getElementById('betQty')?.value || '0') || 0;
+    let stakeBag = 0;
+    if (cur === 'BAG'){
+      stakeBag = qty;
+    } else {
+      if (PR.bagUsd>0 && PR.xrpUsd>0) stakeBag = qty * (PR.xrpUsd/PR.bagUsd);
+    }
+    BAGBJ.update({ stakeBag, usdPerBag: PR.bagUsd||0 });
+  };
+  upd();
+  addEventListener('bag:hudRefresh', upd);
+  addEventListener('bag:pricesUpdated', upd);
+  document.getElementById('betQty')?.addEventListener('input', upd);
+  document.querySelector('#curToggle')?.addEventListener('change', upd);
+});
+</script>
+
 <!-- GAME CORE -->
 <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
+// Keep WIN box in sync with live rules
+try{ BAGBJ && BAGBJ.setRules && BAGBJ.setRules({ blackjack: CFG.mBJ, regular: CFG.mWIN }); }catch{}
 
 let shoe=[];
 function buildShoe(){ const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣']; const t=[]; for(let d=0;d<CFG.decks;d++) for(const r of R) for(const s of S) t.push({r,s}); for(let i=t.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [t[i],t[j]]=[t[j],t[i]]; } shoe=t; }
