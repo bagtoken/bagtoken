@@ -1261,33 +1261,34 @@
 
     spinBtn.disabled = true;
 
-    // pick targets per reel so middle row shows results
+    // Choose a middle index per reel; scroll so top = mid-1, thus middle row == mid
     const targets = [];
     for (let c=0;c<COLS;c++){
-      const idx = (Math.random()*STRIP_LEN)|0;
-      targets.push(idx);
-      const px = -((idx-1+STRIP_LEN)%STRIP_LEN) * 88; // align middle row
+      const midIdx = (Math.random()*STRIP_LEN)|0;
+      targets.push(midIdx);
+      const topIdx = (midIdx - 1 + STRIP_LEN) % STRIP_LEN;   // top visible cell
+      const px = -(topIdx * 88);
       requestAnimationFrame(()=>{ stripsEls[c].style.transform = `translateY(${px}px)`; });
     }
 
     setTimeout(()=>{
       if (typeof stopper==='function') try{ stopper(); }catch{}
-      // Build 3x3 board centered on target index (rows: top/mid/bot)
+      // Build 3×3 board matching the visible rows exactly: [top, middle, bottom]
       const board = [[],[],[]];
       for (let c=0;c<COLS;c++){
-        const idx = targets[c];
-        const top = strips[c][(idx-2+STRIP_LEN)%STRIP_LEN];
-        const mid = strips[c][(idx-1+STRIP_LEN)%STRIP_LEN];
-        const bot = strips[c][(idx+0)%STRIP_LEN];
-        board[0][c]=top; board[1][c]=mid; board[2][c]=bot;
+        const mid = targets[c];
+        const top = (mid - 1 + STRIP_LEN) % STRIP_LEN;
+        const bot = (mid + 1) % STRIP_LEN;
+        board[0][c] = strips[c][top];
+        board[1][c] = strips[c][mid];
+        board[2][c] = strips[c][bot];
       }
 
       const res = evalBoard(board);
-      let mult = 0;
-      if (res.kind==='jackpot') mult=2.00;
-      else if (res.kind==='win') mult=1.25;
-      else if (res.kind==='scratch') mult=1.00;
-      else mult=0.00;
+      const mult = res.kind==='jackpot' ? 2.00
+                 : res.kind==='win'     ? 1.25
+                 : res.kind==='scratch' ? 1.00
+                 : 0.00;
 
       if (mult>0){
         const credit = lockedBag*mult;
