@@ -6,7 +6,6 @@
   const DEMO_BAL_KEY  = '__bag_demo_bag_v2'; // BAG balance
   const DEMO_INIT_KEY = '__bag_demo_init_v2';// seed marker
   const START_USD     = 2000;                // EXACT $2,000
-  const MIN_USD       = 1, MAX_USD = 2000;
 
   function getBag(){
     try{
@@ -15,19 +14,29 @@
     }catch{ return 0; }
   }
   function setBag(v){
+    try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{}
+  }
+
+  // read helper: supports both {t,v:{bagUsd}} and {bagUsd}
+  function readCacheKey(key){
     try{
-      localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0)));
-    }catch{}
+      const raw = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!raw) return null;
+      // wrapper {t, v}
+      if (raw && typeof raw === 'object' && raw.v && typeof raw.v === 'object'){
+        return raw.v;
+      }
+      // plain object
+      return raw;
+    }catch{ return null; }
   }
 
   // Find a BAG/USD price even before first websocket tick
   function getCachedBagUsd(){
     try{
-      // ✅ cache objects are stored plain (no ".v" wrapper)
-      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      const lastLive = readCacheKey('bag_last_live_v1');
       if (lastLive?.bagUsd > 0) return Number(lastLive.bagUsd);
-
-      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      const viewCache = readCacheKey('bag_prices_v8');
       if (viewCache?.bagUsd > 0) return Number(viewCache.bagUsd);
     }catch{}
     return 0;
@@ -43,7 +52,7 @@
     if (bagUsd > 0){
       setBag(START_USD / bagUsd);
       localStorage.setItem(DEMO_INIT_KEY,'1');
-      // Let UI know a demo session exists and HUD should refresh
+      // Tell the page we’re in demo and have a balance
       window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail:{ mode:'demo' } }));
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
       return true;
@@ -56,36 +65,19 @@
     mode: 'demo',
     active: ()=> true,
     get:    ()=> ({ addr:'demo', bag:getBag(), ts:Date.now(), mode:'demo' }),
-    spend:  (bag)=>{
-      const b=getBag();
-      if(!(bag>0) || b<bag) return false;
-      setBag(b-bag);
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-      return true;
-    },
-    credit: (bag)=>{
-      if(!(bag>0)) return false;
-      setBag(getBag()+bag);
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-      return true;
-    }
+    spend:  (bag)=>{ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    credit: (bag)=>{ if(!(bag>0)) return false; setBag(getBag()+bag); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
   };
 
   function enableDemo(){
-    try{
-      Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true});
-    }catch{
-      window.__BAG_FORCE_DEMO=true;
-    }
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
 
     // Seed immediately if possible, else after first price update
-    const seeded = ensureSeedNowOrWhenReady();
-    addEventListener('bag:pricesUpdated', ()=>{
-      if(!localStorage.getItem(DEMO_INIT_KEY)) ensureSeedNowOrWhenReady();
-    });
+    ensureSeedNowOrWhenReady();
+    addEventListener('bag:pricesUpdated', ()=>{ if(!localStorage.getItem(DEMO_INIT_KEY)) ensureSeedNowOrWhenReady(); });
 
-    // expose a simple helper for pages that want a status line
+    // Optional status helper
     window.__bagDemoHelpers = {
       fmt(n){
         if(!Number.isFinite(n)) return '—';
@@ -94,9 +86,7 @@
         if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
         return n.toLocaleString(undefined,{maximumFractionDigits:10});
       },
-      fmtUsd(n){
-        return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-      },
+      fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); },
       renderStatus(el){
         if(!el) return;
         const bag = getBag();
