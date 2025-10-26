@@ -266,6 +266,9 @@
           Rows are 3 paylines (top / middle / bottom). Two diagonals return <b>Scratch</b> (1.00×). Any three-of-a-kind on a row is a <b>Win</b> (1.25×) except <b>BAG&nbsp;BAG&nbsp;BAG</b>, which is <b>Jackpot</b> (2.00×). Jackpot on any row trumps diagonals.
         </div>
       </div>
+
+      <!-- 🔹 WINBOX container -->
+      <div data-winbox class="winbox" style="margin-top:12px"></div>
     </div>
 
     <!-- RIGHT: Cabinet -->
@@ -530,6 +533,10 @@
         liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
       }
     }
+
+    // 🔹 Expose USD-per-BAG for Winbox
+    try{ window.__BAG_USD = PRICES.bagUsd || 0; }catch{}
+
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
@@ -712,6 +719,7 @@
       if (usd && px>0){ writeQty(usd / px); } else if(!usd){ writeQty(''); }
       renderLimits();
       STATE.syncing = false;
+      try{ window.dispatchEvent(new CustomEvent('bag:stakeChanged')); }catch{}
     }
     function syncFromQty(){
       if(STATE.syncing) return;
@@ -722,6 +730,7 @@
       if (qty && px>0){ writeUsd(qty * px); } else if(!qty){ writeUsd(''); }
       renderLimits();
       STATE.syncing = false;
+      try{ window.dispatchEvent(new CustomEvent('bag:stakeChanged')); }catch{}
     }
     function convertOnCurrencyChange(prevCur, nextCur){
       const pxPrev = priceFor(prevCur);
@@ -731,6 +740,7 @@
       if(!(usd>0)) usd = (qtyPrev>0 && pxPrev>0) ? qtyPrev*pxPrev : 0;
       if (usd>0 && pxNext>0){ writeUsd(usd); writeQty(usd/pxNext); }
       renderLimits();
+      try{ window.dispatchEvent(new CustomEvent('bag:stakeChanged')); }catch{}
     }
 
     // Input events
@@ -820,9 +830,10 @@
   });
 </script>
 
-<!-- ░░░ NEW: Wire payout preview (SLOTS) ░░░ -->
+<!-- ░░░ NEW: Wire payout preview (SLOTS) + WINBOX stake feed ░░░ -->
 <script>
-/* Wire payout preview for Slots (Scratch 1.00× · Win 1.25× · Jackpot 2.00×) */
+/* Wire payout preview for Slots (Scratch 1.00× · Win 1.25× · Jackpot 2.00×)
+   Also feeds Winbox with current stake. */
 (function(){
   const MULT_SCR = 1.00, MULT_WIN = 1.25, MULT_JP = 2.00;
 
@@ -858,6 +869,17 @@
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fmtBag(n){ const x=Number(n)||0; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
 
+  function pushWinboxStakeOnly(){
+    try{
+      const sBag = readStakeBAG();
+      window.__BAG_WINBOX_STATE = {
+        stake: sBag || 0,
+        // slots multipliers zeroed until result happens
+        lineMult: 0, bonusMult: 0, jackpotMult: 0
+      };
+    }catch{}
+  }
+
   function paint(){
     const sUsd = readStakeUSD();
     const sBag = readStakeBAG();
@@ -866,6 +888,9 @@
     if (paySCR) paySCR.textContent = dash ? '—' : `${fmtBag(sBag*MULT_SCR)} BAG (${fmtUsd(sUsd*MULT_SCR)})`;
     if (payWIN) payWIN.textContent = dash ? '—' : `${fmtBag(sBag*MULT_WIN)} BAG (${fmtUsd(sUsd*MULT_WIN)})`;
     if (payJP)  payJP.textContent  = dash ? '—' : `${fmtBag(sBag*MULT_JP)} BAG (${fmtUsd(sUsd*MULT_JP)})`;
+
+    // feed Winbox stake on each change
+    pushWinboxStakeOnly();
   }
 
   ['input','change'].forEach(ev=>{
@@ -875,6 +900,7 @@
   });
   addEventListener('bag:pricesUpdated', paint);
   addEventListener('bag:hudRefresh', paint);
+  addEventListener('bag:stakeChanged', paint);
 
   paint();
 })();
@@ -1138,6 +1164,27 @@
     return g;
   }
 
+  function currentStakeBag(){
+    const qtyEl = document.getElementById('betQty');
+    const q = parseFloat(qtyEl?.value||0) || 0;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
+    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
+    if (cur==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+  function currentStakeUsd(){
+    const usdEl = document.getElementById('usdBet');
+    const direct = parseFloat(usdEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return direct;
+    const qtyEl = document.getElementById('betQty');
+    const q = parseFloat(qtyEl?.value||0) || 0;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
+    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
+    if (cur==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+    return xrpUsd>0 ? q*xrpUsd : 0;
+  }
+
   function buildSpin(stakeBag){
     const r = Math.random();
     let bucket = 'lose';
@@ -1214,27 +1261,6 @@
   function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
   function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
 
-  function currentStakeBag(){
-    const qtyEl = document.getElementById('betQty');
-    const q = parseFloat(qtyEl?.value||0) || 0;
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
-    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
-    if (cur==='BAG') return q;
-    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
-    return 0;
-  }
-  function currentStakeUsd(){
-    const usdEl = document.getElementById('usdBet');
-    const direct = parseFloat(usdEl?.value||'');
-    if (Number.isFinite(direct) && direct>0) return direct;
-    const qtyEl = document.getElementById('betQty');
-    const q = parseFloat(qtyEl?.value||0) || 0;
-    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value?.toUpperCase() || 'XRP';
-    const {bagUsd,xrpUsd} = (window.__PRICES__||{});
-    if (cur==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
-
   // HUD "Last:" helper
   window.__SLOTS_LAST__ = window.__SLOTS_LAST__ || '—';
   function setLast(s){ try{ window.__SLOTS_LAST__ = s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{} }
@@ -1245,8 +1271,12 @@
     if (spinningNow || spinBtn.disabled) return;
     spinningNow = true;
 
+    // current stake
     const sBag = currentStakeBag();
     const sUsd = currentStakeUsd();
+
+    // push pre-spin state to Winbox (stake only)
+    try{ window.__BAG_WINBOX_STATE = { stake: sBag||0, lineMult:0, bonusMult:0, jackpotMult:0 }; }catch{}
 
     if (!sessionActive()) { alert('Start a session at The Cage'); spinningNow=false; return; }
     if (sUsd < 1){ alert('Minimum $1 stake'); spinningNow=false; return; }
@@ -1273,24 +1303,32 @@
         credit(sBag*1.00);
         spinText.className='t scratch'; spinText.textContent='SCRATCH — 1.00×';
         setLast('Scratch');
+        // Winbox: scratch is push; no multipliers
+        try{ window.__BAG_WINBOX_STATE = { stake:sBag, lineMult:0, bonusMult:0, jackpotMult:0 }; }catch{}
         BAGOverlay.showWin({ message:'SCRATCH', subtext:`+0 BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.00).toFixed(2)}`, duration:2200, sound:false });
       } else if(mult===1.25){
         sWin();
         credit(sBag*1.25);
         spinText.className='t win'; spinText.textContent='WIN — 1.25×';
         setLast('Win 1.25×');
+        // Winbox: row three-of-a-kind (non-BAG)
+        try{ window.__BAG_WINBOX_STATE = { stake:sBag, lineMult:1.25, bonusMult:0, jackpotMult:0 }; }catch{}
         BAGOverlay.showWin({ message:'WIN', subtext:`+${(sBag*0.25).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*1.25).toFixed(2)}`, duration:4200, sound:false });
       } else {
         sWin();
         credit(sBag*2.00);
         spinText.className='t win'; spinText.textContent='JACKPOT — 2.00×';
         setLast('Jackpot 2×');
+        // Winbox: jackpot
+        try{ window.__BAG_WINBOX_STATE = { stake:sBag, lineMult:0, bonusMult:0, jackpotMult:2.00 }; }catch{}
         BAGOverlay.showWin({ message:'JACKPOT', subtext:`+${(sBag*1.00).toLocaleString(undefined,{maximumFractionDigits:6})} BAG · $${sUsd.toFixed(2)} → $${(sUsd*2.00).toFixed(2)}`, duration:6200, sound:false });
       }
     } else {
       sLose();
       spinText.className='t lose'; spinText.textContent='Lose — try again';
-      setLast('Scratch'); // last action display can remain; set to something if desired
+      setLast('Lose');
+      // Winbox: loss state
+      try{ window.__BAG_WINBOX_STATE = { stake:sBag, lineMult:0, bonusMult:0, jackpotMult:0 }; }catch{}
     }
 
     window.dispatchEvent(new CustomEvent('bag:slotsResult', {
@@ -1513,6 +1551,137 @@ if ('serviceWorker' in navigator) {
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;"> 𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
+
+<!-- WINBOX: one-paste drop-in -->
+<style>
+  .winbox{background:#0b1b13;border:1px solid #173524;border-radius:14px;padding:14px 16px;color:#f5f7f4;font:14px/1.5 system-ui,Segoe UI,Roboto,Arial}
+  .winbox h4{margin:0 0 8px 0;font-size:16px;letter-spacing:.5px;color:#ffe175}
+  .winrow{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed #173524}
+  .winrow:last-child{border-bottom:none}.winlabel{opacity:.92}
+  .winamt{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .muted{color:#aeb7af}.danger{color:#e25b5b}.ok{color:#2fbf6b}
+  .note{display:block;margin-top:8px;color:#aeb7af;font-size:12px}
+</style>
+<script>
+(function(){
+  function $(q){return document.querySelector(q)}
+  function fmt(n,d=6){const p=Math.abs(n)<1?d:Math.min(d,6);return (n||0).toLocaleString(undefined,{maximumFractionDigits:p})}
+  class WinPanel{
+    constructor(el,{title,currency='BAG',usd=()=>0}={}){
+      this.el = el; this.currency=currency; this.usd=usd; this.schema=[]; this.state={};
+      el.innerHTML=`<h4>${title||'$BAG WIN READOUT'}</h4><div class="winrows"></div><div class="note"></div>`;
+      this.rowsEl=el.querySelector('.winrows'); this.noteEl=el.querySelector('.note');
+    }
+    setSchema(sc){this.schema=sc||[]; this.render()}
+    update(s){this.state=Object.assign({},this.state,s||{}); this.render()}
+    _stake(spec){const s=this.state;if(typeof spec==='function')return +spec(s)||0;if(typeof spec==='number')return spec;
+      if(typeof spec==='string'){let v=s;for(const k of spec.split('.')){v=v?.[k];if(v==null)return 0}return +v||0}
+      return +s.stake||0}
+    _mult(m){return typeof m==='function'? +m(this.state)||0 : +m||0}
+    _pair(v){const a=`${fmt(v)} ${this.currency}`;const u=this.usd(v);return u?`${a} ($${fmt(u,2)})`:a}
+    render(){const s=this.state,f=document.createDocumentFragment();let note='';
+      this.schema.forEach(line=>{
+        if(line.when && !line.when(s)) return;
+        const label=typeof line.label==='function'?line.label(s):(line.label||'');
+        if(line.type==='status'){const txt=line.text? (typeof line.text==='function'?line.text(s):line.text):'—';
+          const r=document.createElement('div');r.className='winrow';
+          r.innerHTML=`<div class="winlabel muted">${label}</div><div class="winamt muted">${txt}</div>`; f.append(r); return;}
+        const base=this._stake(line.stake ?? 'stake'); let out=0, cls='winrow';
+        if(line.calc){out=+line.calc(s,base)||0; cls+=' ok'}
+        else if(line.type==='payout'){out=base*this._mult(line.multiplier); cls+=' ok'}
+        else if(line.type==='loss'){cls+=' danger'}
+        const r=document.createElement('div'); r.className=cls;
+        r.innerHTML=`<div class="winlabel">${label}</div><div class="winamt">${this._pair(out)}</div>`;
+        f.append(r); if(line.note){const t=typeof line.note==='function'?line.note(s):line.note; if(t)note=t;}
+      });
+      this.rowsEl.replaceChildren(f); this.noteEl.textContent=note||'';}
+  }
+
+  // ---- built-in schemas for 7 games ----
+  const betAmt = key => s => (s.bets && +s.bets[key])||0;
+  const SCHEMAS = {
+    dice: s=>[
+      {type:'payout',label:()=>`Come-out WIN (7 or 11):`,stake:'stake',multiplier:x=>s.payouts?.comeout??1.25,when:()=>s.phase==='comeout'},
+      {type:'payout',label:`Point WIN (roll point before 7):`,stake:'stake',multiplier:x=>s.payouts?.point??1.00,when:()=>s.point>0},
+      {type:'payout',label:`JACKPOT (random upgrade on any WIN):`,stake:'stake',multiplier:x=>s.payouts?.jackpot??2.00,when:()=>!!s.jackpotEnabled},
+      {type:'loss',label:`SEVEN OUT / CRAPS (lose):`,stake:'stake'},
+      {type:'status',label:'Point',text:()=>s.point?`${s.point} — Stake held`:'—'},
+      {type:'status',label:'Rules',text:'Pass Line: 7/11 win • 2/3/12 craps • others set point'}
+    ],
+    blackjack: s=>[
+      {type:'payout',label:'Blackjack (natural 21)',stake:'stake',multiplier:()=>s.cfg?.blackjack??1.5},
+      {type:'payout',label:'Standard WIN',stake:'stake',multiplier:()=>s.cfg?.win??1.0},
+      {type:'status',label:'Push',text:'Stake returned'},
+      {type:'loss',label:'Player Bust (lose)',stake:'stake'},
+      {type:'loss',label:'Dealer Blackjack (lose)',stake:'stake'},
+      {type:'status',label:'Notes',text:()=>`Dealer stands on ${s.cfg?.dealerStands||'all 17'}`}
+    ],
+    roulette: s=>[
+      {type:'payout',label:'Straight (1) • 35×', stake:betAmt('straight'),multiplier:35,when:()=>betAmt('straight')(s)>0},
+      {type:'payout',label:'Split (2) • 17×',   stake:betAmt('split'),  multiplier:17,when:()=>betAmt('split')(s)>0},
+      {type:'payout',label:'Street (3) • 11×',  stake:betAmt('street'), multiplier:11,when:()=>betAmt('street')(s)>0},
+      {type:'payout',label:'Corner (4) • 8×',   stake:betAmt('corner'), multiplier:8, when:()=>betAmt('corner')(s)>0},
+      {type:'payout',label:'Line (6) • 5×',     stake:betAmt('line'),   multiplier:5, when:()=>betAmt('line')(s)>0},
+      {type:'payout',label:'Dozen/Column • 2×', stake:betAmt('dozen'),  multiplier:2, when:()=>betAmt('dozen')(s)>0},
+      {type:'payout',label:'Even-Money • 1×',   stake:betAmt('even'),   multiplier:1, when:()=>betAmt('even')(s)>0},
+      {type:'status',label:'Layout',text:'American wheel (0 & 00)'}
+    ],
+    plinko: s=>[
+      {type:'payout',label:()=>`Hit Slot • ×${s.multiplier||2}`,stake:'stake',multiplier:()=>s.multiplier||2},
+      {type:'loss',label:'Miss Slot (lose)',stake:'stake'},
+      {type:'status',label:'Mode',text:()=>s.mode||'standard'}
+    ],
+    slots: s=>[
+      {type:'payout',label:'Line Win',stake:'stake',multiplier:()=>s.lineMult||1.0,when:()=>!!s.lineMult},
+      {type:'payout',label:'Bonus / Free Spins',stake:'stake',multiplier:()=>s.bonusMult||0,when:()=>!!s.bonusMult},
+      {type:'payout',label:'Jackpot',stake:'stake',multiplier:()=>s.jackpotMult||0,when:()=>!!s.jackpotMult},
+      {type:'loss',label:'No Line (lose)',stake:'stake'}
+    ],
+    poker: s=>[
+      {type:'payout',label:()=>`${s.handName||'Made Hand'}`,stake:'stake',multiplier:()=>s.handMult||1.0,when:()=>!!s.handMult},
+      {type:'loss',label:'Opponent Wins (lose)',stake:'stake'},
+      {type:'status',label:'Notes',text:'House uses standard 5-card rules'}
+    ],
+    wheel: s=>[
+      {type:'payout',label:()=>`Wedge WIN • ×${s.wedgeMult||2}`,stake:'stake',multiplier:()=>s.wedgeMult||2},
+      {type:'loss',label:'Other Wedge (lose)',stake:'stake'},
+      {type:'status',label:'Spin',text:()=>s.wedgeName?`Landed: ${s.wedgeName}`:'—'}
+    ]
+  };
+
+  function detectGame(){
+    const t=(document.title||'').toLowerCase();
+    if(t.includes('blackjack'))return 'blackjack';
+    if(t.includes('roulette')) return 'roulette';
+    if(t.includes('plinko'))   return 'plinko';
+    if(t.includes('poker'))    return 'poker';
+    if(t.includes('slots'))    return 'slots';
+    if(t.includes('wheel'))    return 'wheel';
+    return 'dice';
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    const host = document.querySelector('[data-winbox]'); if(!host) return;
+    const game = detectGame();
+    const usd = n => (window.__BAG_USD ? n*window.__BAG_USD : 0);
+    const titles = {dice:'$BAG DICE',blackjack:'$BAG BLACKJACK',roulette:'$BAG ROULETTE',plinko:'$BAG PLINKO',poker:'$BAG POKER',slots:'$BAG SLOTS',wheel:'$BAG WHEEL'};
+    const panel = new WinPanel(host,{title:titles[game],usd});
+    panel.setSchema(SCHEMAS[game]({}));
+
+    // watch global state: set window.__BAG_WINBOX_STATE anywhere, we’ll pick it up
+    let lastJSON='';
+    setInterval(()=>{
+      const s = window.__BAG_WINBOX_STATE || {};
+      const key = JSON.stringify(s);
+      if(key!==lastJSON){
+        lastJSON=key;
+        panel.setSchema(SCHEMAS[game](s)); // schema can react to state (e.g., point/mode)
+        panel.update(s);
+      }
+    }, 150);
+  });
+})();
+</script>
 
 </body>
 </html>
