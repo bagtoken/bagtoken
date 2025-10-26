@@ -123,6 +123,60 @@
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
+
+<!-- 🔌 Lightweight per-game adapter (can be moved to /js/bag-game-config.js) -->
+<script>
+/* Lightweight adapter for per-game terminology & payouts */
+(function (w) {
+  const DEF = {
+    labels: { win:'Win', lose:'Scratch', push:'Push', blackjack:'Blackjack' },
+    payouts: { WIN: 1.25, PUSH: 1.00, BJ: 2.00 } // page default: 1.25 win, 2.00 BJ
+  };
+  const REG = {
+    blackjack: {
+      labels: { lose:'Scratch', win:'Win', push:'Push', blackjack:'Blackjack' },
+      payouts:{ WIN:1.25, PUSH:1.00, BJ:2.00 }
+    },
+    poker: {
+      labels: { lose:'Scratch', win:'Win', push:'Push' },
+      payouts:{ WIN:2.00, PUSH:1.00 }
+    }
+  };
+  function getGameId(){
+    const root = document.getElementById('tableBoard') || document.body;
+    return (root?.dataset?.game || w.__BAG_GAME__ || 'blackjack').toLowerCase();
+  }
+  function merge(a,b){ return Object.assign({}, a, b || {}); }
+  const API = {
+    game(){ return getGameId(); },
+    labels(over={}){ const id=getGameId(); return merge(DEF.labels, merge(REG[id]?.labels, over)); },
+    payouts(over={}){ const id=getGameId(); return merge(DEF.payouts, merge(REG[id]?.payouts, over)); },
+    term(key){ return API.labels()[key] || key; },
+    payMult(kind){ return API.payouts()[String(kind).toUpperCase()] || 0; }
+  };
+  w.BAGGame = API;
+
+  // Paint dynamic payout text on load
+  function paintPayoutCopy(){
+    const win = API.payMult('WIN');
+    const push = API.payMult('PUSH');
+    const bj   = API.payMult('BJ');
+    const c = document.getElementById('payoutCallout');
+    if (c){
+      c.innerHTML = `Blackjack pays <b>${bj.toFixed(2)}×</b> · Regular win pays <b>${win.toFixed(2)}×</b> · Push returns stake.`;
+    }
+    const r = document.getElementById('bjRule');
+    if (r){
+      r.textContent = `${bj.toFixed(2)}×`;
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', paintPayoutCopy);
+  } else {
+    paintPayoutCopy();
+  }
+})(window);
+</script>
 </head>
 <body>
 
@@ -225,7 +279,7 @@
 
         <div class="divider"></div>
 
-        <div class="callout mono">Blackjack pays <b>2.00×</b> · Regular win pays <b>1.25×</b> · Push returns stake.</div>
+        <div class="callout mono" id="payoutCallout">Blackjack pays <b>2.00×</b> · Regular win pays <b>1.25×</b> · Push returns stake.</div>
       </div>
     </div>
 
@@ -233,7 +287,8 @@
     <div class="panel pad">
       <div class="marquee">$BAG BLACKJACK TABLE</div>
       <div class="felt" id="feltBoard">
-        <div class="table" id="tableBoard">
+        <!-- data-game declares the page identity for the adapter -->
+        <div class="table" id="tableBoard" data-game="blackjack">
           <div class="hand" id="dealer">
             <div class="label">Dealer</div><div class="total" id="dealerTotal">0</div>
             <div class="cards" id="dealerCards"></div>
@@ -279,7 +334,7 @@
     <ul>
       <li><b>Goal:</b> Beat the dealer by getting as close to 21 as possible without going over</li>
       <li><b>Card Values:</b> Numbers = face value; J/Q/K = 10; A = 1 or 11</li>
-      <li><b>Blackjack:</b> Ace + 10-value card pays <b>3:2</b></li>
+      <li><b>Blackjack:</b> Ace + 10-value card pays <b id="bjRule">2.00×</b></li>
       <li><b>Hit:</b> Take another card</li>
       <li><b>Stand:</b> Keep your total</li>
       <li><b>Double Down:</b> Double your bet, take exactly one final card</li>
@@ -388,7 +443,7 @@
 
     const o=ac.createOscillator(), og=ac.createGain(); o.type='square';
     o.frequency.setValueAtTime(2100,t); o.frequency.exponentialRampToValueAtTime(900,t+0.05);
-    og.gain.setValueAtTime(0.0001,t); og.gain.linearRampToValueAtTime(0.18,t+0.005); og.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
+    og.gain.setValueAtTime(0.0001,t); og.gain.linearRampToValueAtTime(0.18,t+0.005); og.gain.exponentialRampToValueAtTime(0.08,t+0.08);
     o.connect(og).connect(outNode()); o.start(t); o.stop(t+0.09);
   }
   function tock(){
@@ -422,7 +477,6 @@
   window.__playStand = async function(){ try{ await resume(); }catch{} tock(); if (poolStand) poolStand.play(); };
   window.__playLose  = async function(){ try{ await resume(); }catch{} heavyThud(); if (poolLose) poolLose.play(); };
 
-  // Keep audio awake for overlay like Dice
   addEventListener('bag:overlayShow', ()=>setTimeout(window.__bagAudio.resume,100));
   addEventListener('bag:overlayHide', ()=>setTimeout(window.__bagAudio.resume,100));
 })();
@@ -1088,9 +1142,14 @@
 })();
 </script>
 
-<!-- GAME CORE -->
+<!-- GAME CORE (labels & payouts pulled from BAGGame) -->
 <script>
-const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
+const CFG = {
+  decks:1, hitSoft17:true, allowDouble:true, allowSplit:true,
+  get mBJ(){  return BAGGame.payMult('BJ');  },
+  get mWIN(){ return BAGGame.payMult('WIN'); },
+  get mPUSH(){return BAGGame.payMult('PUSH');}
+};
 
 let shoe=[];
 function buildShoe(){ const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣']; const t=[]; for(let d=0;d<CFG.decks;d++) for(const r of R) for(const s of S) t.push({r,s}); for(let i=t.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [t[i],t[j]]=[t[j],t[i]]; } shoe=t; }
@@ -1278,24 +1337,27 @@ function settle(override){
     const doubled = h._dbl===true; const stake = base*(doubled?2:1);
 
     if(override==='blackjack'){
-      const mult=CFG.mBJ; credit += stake*mult; last('Blackjack 2×'); flash('win');
+      const mult=CFG.mBJ; credit += stake*mult;
+      last(BAGGame.term('blackjack') + ' ' + mult.toFixed(2) + '×'); flash('win');
       try{ BAGOverlay.showWin({ message:'BLACKJACK', subtext: winSubtext(mult), duration:5600, sound:true }); }catch{}
       return;
     }
     if(override==='push-bj'){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push'); return;
+      credit += stake*CFG.mPUSH; last(BAGGame.term('push')); flash('push'); return;
     }
     if(pv>21){
-      last('Scratch'); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}; return;
+      last(BAGGame.term('lose')); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}; return;
     }
     if(dv>21 || pv>dv){
       const mult = (isBJ(h)&&!doubled&&!STATE.split)?CFG.mBJ:CFG.mWIN;
-      credit += stake*mult; last(mult===CFG.mBJ?'Blackjack 2×':'Win 1.25×'); flash('win');
+      credit += stake*mult;
+      last((mult===CFG.mBJ? BAGGame.term('blackjack') : BAGGame.term('win')) + ' ' + mult.toFixed(2) + '×');
+      flash('win');
       try{ BAGOverlay.showWin({ message:(mult===CFG.mBJ?'BLACKJACK':'WIN'), subtext: winSubtext(mult), duration:(mult===CFG.mBJ?5600:4200), sound:true }); }catch{}
     } else if(pv===dv){
-      credit += stake*CFG.mPUSH; last('Push'); flash('push');
+      credit += stake*CFG.mPUSH; last(BAGGame.term('push')); flash('push');
     } else {
-      last('Scratch'); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}
+      last(BAGGame.term('lose')); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}
     }
   }
   if(STATE.split){ STATE.player.forEach(resolve); } else { resolve(STATE.player); }
