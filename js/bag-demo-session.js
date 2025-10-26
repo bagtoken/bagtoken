@@ -3,22 +3,20 @@
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
 
-  const DEMO_BAL_KEY  = '__bag_demo_bag_v2'; // demo BAG balance (shared across games)
-  const DEMO_INIT_KEY = '__bag_demo_init_v2';// seed marker
-  const START_USD     = 2000;                // exact $2,000
+  const DEMO_BAL_KEY  = '__bag_demo_bag_v2'; // shared demo BAG balance
+  const DEMO_INIT_KEY = '__bag_demo_init_v2';// seed flag
+  const START_USD     = 2000;                // seed to $2,000
+  const FALLBACK_BAG_USD = 0.02;            // if no price, assume $0.02/BAG (=> 100,000 BAG)
 
-  // Helpers: load/save demo BAG
-  function getBag(){
-    try{
-      const n = Number(localStorage.getItem(DEMO_BAL_KEY));
-      return Number.isFinite(n) && n > 0 ? n : 0;
-    }catch{ return 0; }
-  }
-  function setBag(v){
+  // --- storage helpers ---
+  const getBag = () => {
+    try{ const n = Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; }
+  };
+  const setBag = (v) => {
     try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{}
-  }
+  };
 
-  // Try to find a BAG/USD price before first live tick
+  // --- cached pricing (for first paint) ---
   function getCachedBagUsd(){
     try{
       const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
@@ -29,25 +27,23 @@
     return 0;
   }
 
-  // Seed the shared practice balance to $2,000 worth of BAG
-  function ensureSeedNowOrWhenReady(){
-    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live   = Number(window.__PRICES__?.bagUsd||0);
+  // --- seed to $2,000 worth of BAG (with fallback) ---
+  function seedToStart(){
+    const live   = Number(window.__PRICES__?.bagUsd || 0);
     const cached = getCachedBagUsd();
-    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
-    if (bagUsd>0){
-      setBag(START_USD / bagUsd);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      try{
-        window.dispatchEvent(new CustomEvent('bag:sessionStarted',{detail:{mode:'demo'}}));
-        window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-      }catch{}
-      return true;
-    }
-    return false;
+    const bagUsd = (live>0 ? live : (cached>0 ? cached : FALLBACK_BAG_USD));
+    if (!(bagUsd>0)) return false;
+    const bagAmt = START_USD / bagUsd;
+    setBag(bagAmt);
+    localStorage.setItem(DEMO_INIT_KEY, '1');
+    try{
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { mode:'demo' }}));
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    }catch{}
+    return true;
   }
 
-  // Idempotent demo session object (now includes mode:'demo')
+  // --- demo session object (with mode, events) ---
   const demoSession = {
     mode: 'demo',
     active: ()=> true,
@@ -68,31 +64,46 @@
   };
 
   function enableDemo(){
-    // Do not override an existing live session set by another game/page
-    try{
-      if (window.__bagSession && window.__bagSession.mode === 'live') {
-        window.__BAG_FORCE_DEMO = false;
-        window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-        return;
-      }
-    }catch{}
+    // If another game/page already owns a live session, do NOT override.
+    if (window.__bagSession && window.__bagSession.mode === 'live'){
+      window.__BAG_FORCE_DEMO = false;
+      window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+      return;
+    }
 
-    // Mark this page as demo unless someone explicitly forced live
+    // Mark page as demo
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
     catch{ window.__BAG_FORCE_DEMO = true; }
 
-    // Only define __bagSession if not already a demo session
-    if (!window.__bagSession || window.__bagSession.mode !== 'demo') {
+    // Attach session if not already a demo
+    if (!window.__bagSession || window.__bagSession.mode !== 'demo'){
       window.__bagSession = demoSession;
     }
 
-    // Seed immediately if we can, else wait for first price update
-    const seeded = ensureSeedNowOrWhenReady();
-    addEventListener('bag:pricesUpdated', ()=>{
-      if(!localStorage.getItem(DEMO_INIT_KEY)) ensureSeedNowOrWhenReady();
-    });
+    // Seed immediately if needed; else retry when prices arrive
+    if (!localStorage.getItem(DEMO_INIT_KEY)){
+      if (!seedToStart()){
+        // If no price yet, retry a few times, then hard fallback
+        let tries = 0, max = 15; // ~7.5s @ 500ms
+        const iv = setInterval(()=>{
+          if (seedToStart() || ++tries>=max){
+            clearInterval(iv);
+            if (!localStorage.getItem(DEMO_INIT_KEY)){
+              // last-resort: force fallback seed
+              const bagAmt = START_USD / FALLBACK_BAG_USD;
+              setBag(bagAmt);
+              localStorage.setItem(DEMO_INIT_KEY,'1');
+              try{
+                window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { mode:'demo' }}));
+                window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+              }catch{}
+            }
+          }
+        }, 500);
+      }
+    }
 
-    // Optional tiny helper for a status line (Practice: X BAG · Y XRP · $Z)
+    // Optional status line helper
     window.__bagDemoHelpers = {
       fmt(n){
         if(!Number.isFinite(n)) return '—';
@@ -117,14 +128,10 @@
 
   function enableLive(){
     window.__BAG_FORCE_DEMO = false;
-    // Do not touch an existing live session object if another game/page owns it
-    if (!window.__bagSession || window.__bagSession.mode !== 'live') {
-      // leave as-is; your live session bootstrapper should attach __bagSession
-    }
+    // Leave __bagSession to your live bootstrapper
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  // Respect ?live=1 on this page; otherwise enable demo — BUT without clobbering a live session
   if (forceLive) enableLive(); else enableDemo();
 
   // Keep a status label (if present) fresh
@@ -132,5 +139,14 @@
     const el = document.getElementById('sessionStatus');
     if (window.__BAG_FORCE_DEMO && window.__bagDemoHelpers && el) window.__bagDemoHelpers.renderStatus(el);
   });
+
+  // Helpful console breadcrumb
+  try{
+    console.debug('[bag-demo] mode=%s, seeded=%s, BAG=%o',
+      (window.__BAG_FORCE_DEMO?'demo':'live'),
+      !!localStorage.getItem(DEMO_INIT_KEY),
+      getBag()
+    );
+  }catch{}
 })();
 </script>
