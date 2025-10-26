@@ -127,6 +127,16 @@
   .rules-modal{max-width:680px;width:100%;background:#0b1b13;border:1px solid #173524;border-radius:16px;padding:18px}
   .rules-close{position:absolute;right:22px;top:16px;border:0;background:transparent;color:#e9efe9;font-size:22px;cursor:pointer}
   .rules-note{margin-top:10px;color:#a8b5ab}
+
+  /* —— Win Readout (Dice-parity) —— */
+  #pk-win-readout{
+    background: var(--panel2); border:1px solid var(--line); border-radius:14px;
+    padding:16px; box-shadow:0 10px 24px var(--shadow); color:var(--fg);
+  }
+  #pk-win-readout .row{display:flex; justify-content:space-between; gap:12px; margin:8px 0}
+  #pk-win-readout .title{font-weight:800; letter-spacing:.2px}
+  #pk-win-readout .muted{color:var(--muted)}
+  #pk-win-readout .note{color:var(--muted); font-size:.92rem; margin-top:10px; line-height:1.45}
 </style>
 
  <!-- SHARED OVERLAY / SESSION + QUICK AMOUNTS (same assets as Blackjack/Dice) -->
@@ -135,7 +145,7 @@
 <script src="/js/bag-quick-amounts.js"></script>
 </head>
 
- <body>
+<body>
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
@@ -148,7 +158,7 @@
   <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
 </section>
 
-  <section class="game-teaser" aria-labelledby="game-teaser-title">
+<section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
 
     <!-- LEFT: Controls / Session / Prices -->
@@ -180,7 +190,7 @@
             </div>
           </div>
 
-          <!-- Quick-picks (same driver as Blackjack/Dice) -->
+          <!-- Quick-picks -->
           <div
             class="preset-chips"
             id="usdPresets"
@@ -237,6 +247,9 @@
         <div class="divider"></div>
 
         <div class="callout mono">5-Card Draw vs CPU · Win returns <b>2.00×</b> · Push returns <b>1.00×</b> · One draw only.</div>
+
+        <!-- WIN READOUT (Dice-parity) -->
+        <div id="pk-win-readout" class="winbox" aria-live="polite"></div>
       </div>
     </div>
 
@@ -278,7 +291,7 @@
   </div>
 </section>
 
-  <!-- AUDIO (same pattern as Blackjack so SFX line up across the floor) -->
+<!-- AUDIO (same pattern as Blackjack so SFX line up across the floor) -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -376,7 +389,7 @@
 })();
 </script>
 
-  <!-- CARD FACTORY (shared across games) -->
+<!-- CARD FACTORY (shared across games) -->
 <script>
 (function(){
   const ROOT = '/assets/cards';
@@ -445,7 +458,7 @@
 })();
 </script>
 
-  <!-- PRICES (AMM-first, last-live fallback, cache sync) -->
+<!-- PRICES (AMM-first, last-live fallback, cache sync) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -573,7 +586,7 @@
 })();
 </script>
 
-  <!-- UNIVERSAL STAKE WIRE (same API as Blackjack) -->
+<!-- UNIVERSAL STAKE WIRE (same API as Blackjack) -->
 <script>
 (function(global){
   const PR = ()=>global.__PRICES__ || { bagUsd:0, xrpUsd:0 };
@@ -725,7 +738,7 @@
   });
 </script>
 
-  <!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice/Blackjack -->
+<!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice/Blackjack -->
 <script>
 (function(){
   const qs = new URLSearchParams(location.search);
@@ -862,7 +875,7 @@
 })();
 </script>
 
-  <!-- HUD updater (parity with BJ, adapted to Poker IDs) -->
+<!-- HUD updater (parity with BJ, adapted to Poker IDs) -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -959,7 +972,88 @@
 })();
 </script>
 
-  <script>
+<script>
+/* ===== Win Readout (Poker) =====
+   Mirrors Dice box. Call updates from stake/price and hand status. */
+(function(w){
+  const nfBAG = new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
+  const nfUSD = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const PKWIN = {
+    el:null,
+    rules:{ win:2.00, push:1.00 }, // tune here once
+    state:{ stakeBag:0, usdPerBag:0, handStatus:'idle' },
+
+    init(el, opts={}){
+      this.el = typeof el==='string' ? document.querySelector(el) : el;
+      if (opts.rules) this.rules = Object.assign({}, this.rules, opts.rules);
+      this.render();
+    },
+    update({stakeBag, usdPerBag, handStatus}={}){
+      if (typeof stakeBag==='number') this.state.stakeBag = stakeBag;
+      if (typeof usdPerBag==='number') this.state.usdPerBag = usdPerBag;
+      if (handStatus) this.state.handStatus = handStatus;
+      this.render();
+    },
+    amt(bag){
+      const usd = (bag||0) * (this.state.usdPerBag||0);
+      return `${nfBAG.format(bag||0)} BAG (${nfUSD.format(usd)})`;
+    },
+    render(){
+      if(!this.el) return;
+      const s = this.state.stakeBag||0, r=this.rules;
+      const win  = s * r.win;
+      const push = s * r.push;
+      const lose = 0;
+
+      const statusLine = (this.state.handStatus==='active')
+        ? `<div class="row"><div>Hand in progress <span class="muted">(no payout yet)</span>:</div><div>Stake held</div></div>`
+        : '';
+
+      this.el.innerHTML = `
+        <div class="row"><div class="title">POKER WIN:</div><div>${this.amt(win)}</div></div>
+        <div class="row"><div>Push <span class="muted">(stake returned)</span>:</div><div>${this.amt(push)}</div></div>
+        <div class="row"><div>Bust / Loss:</div><div>${this.amt(lose)}</div></div>
+        ${statusLine}
+        <div class="note">
+          Win pays ${r.win.toFixed(2)}× · Push returns ${r.push.toFixed(2)}×. Stake shown in BAG with live USD equivalent.
+        </div>`;
+    }
+  };
+
+  w.BAGPKWIN = {
+    init:(el,opts)=>PKWIN.init(el,opts),
+    update:(data)=>PKWIN.update(data),
+    setRules:(rules)=>{ PKWIN.rules = Object.assign({}, PKWIN.rules, rules); PKWIN.render(); }
+  };
+
+  // Auto-wire to your existing stake + price signals
+  function PR(){ return w.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function currentCurrency(){
+    const el=document.querySelector('#curToggle input[name="betCur"]:checked');
+    return el?String(el.value).toUpperCase():'XRP';
+  }
+  function stakeBag(){
+    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+    if(!q) return 0;
+    const {bagUsd,xrpUsd}=PR();
+    return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
+  }
+  function repaint(){ BAGPKWIN.update({ stakeBag: stakeBag(), usdPerBag: PR().bagUsd }); }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    BAGPKWIN.init('#pk-win-readout');
+    repaint();
+  });
+  addEventListener('bag:pricesUpdated', repaint);
+  addEventListener('bag:hudRefresh', repaint);
+  document.getElementById('usdBet')?.addEventListener('input', repaint);
+  document.getElementById('betQty')?.addEventListener('input', repaint);
+  document.getElementById('curToggle')?.addEventListener('change', repaint);
+})(window);
+</script>
+
+<script>
 const PK = { decks:1, mWIN:2.00, mPUSH:1.00 };
 
 const R=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
@@ -1075,6 +1169,9 @@ function startDeal(){
 
   STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow;
 
+  // mark in-progress for readout
+  try{ BAGPKWIN.update({ handStatus:'active' }); }catch{}
+
   clearBoard(); STATE.you=[]; STATE.cpu=[]; STATE.holds=[false,false,false,false,false]; STATE.phase='DEALT';
 
   try{ window.__bagAudio && window.__bagAudio.resume && window.__bagAudio.resume(); }catch{}
@@ -1142,7 +1239,6 @@ function revealCpu(){
       const repl = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
       el.replaceWith(repl);
     }else{
-      // was face-down replacement; ensure reveal
       const r = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
       el.replaceWith(r);
     }
@@ -1170,20 +1266,20 @@ function showdown(){
   let credit=0;
 
   if(cmp>0){
-    // You win (even money return 2.00×)
     credit = STATE.lockedBag*PK.mWIN;
     last('Win 2×'); flash('win');
     try{ BAGOverlay.showWin({ message:'WIN', subtext: winSubtext(PK.mWIN), duration:4200, sound:true }); }catch{}
   } else if(cmp===0){
-    // Push
     credit = STATE.lockedBag*PK.mPUSH;
     last('Push'); flash('push');
   } else {
-    // Lose
     last('Scratch'); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}
   }
 
   if(credit>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(credit);
+
+  // back to idle for readout
+  try{ BAGPKWIN.update({ handStatus:'idle' }); }catch{}
 
   btnDraw.disabled=true; btnDeal.disabled=true; btnAgain.style.display='inline-block';
   STATE.phase='SHOWDOWN';
@@ -1198,13 +1294,14 @@ btnAgain.addEventListener('click', ()=>{
   clearBoard(); STATE={ phase:'IDLE', you:[], cpu:[], lockedBag:0, lockedUsd:0, holds:[false,false,false,false,false] };
   btnDeal.disabled=false; btnDraw.disabled=true; btnAgain.style.display='none';
   setStatus('Place a stake, then Deal'); last('—');
+  try{ BAGPKWIN.update({ handStatus:'idle' }); }catch{}
 });
 
 (function boot(){ buildDeck(); updateBetHud(); })();
 setInterval(()=>{ if(deck.length<10) buildDeck(); }, 2000);
 </script>
 
-  <!-- Rules FAB + Modal -->
+<!-- Rules FAB + Modal -->
 <button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
 <div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
   <div class="rules-modal" role="document">
@@ -1236,7 +1333,7 @@ setInterval(()=>{ if(deck.length<10) buildDeck(); }, 2000);
 })();
 </script>
 
-  <script>
+<script>
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
 </script>
 
@@ -1248,7 +1345,7 @@ if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-wor
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
-  <!-- Disable pinch/double-tap/ctrl+wheel zoom -->
+<!-- Disable pinch/double-tap/ctrl+wheel zoom -->
 <script>
   document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
   document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
