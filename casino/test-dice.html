@@ -81,17 +81,6 @@
   .divider{height:1px;background:#123221;margin:10px 0}
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
 
-  /* Shared gold button style (Connect / Start / etc.) */
-  .btn{
-    min-width:120px;padding:10px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;
-    color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);
-    box-shadow:0 4px 0 #b08a19; transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
-  }
-  .btn:hover{ filter:brightness(1.05); box-shadow:0 4px 0 #b08a19,0 10px 22px rgba(255,225,117,.22) }
-  .btn:active{ transform:translateY(1px); box-shadow:0 3px 0 #9a7315 }
-  .btn:disabled{ opacity:.65; cursor:not-allowed }
-  .btn.alt{ color:#e9efe9; background:#15261c; border:1px solid #2b6a48; box-shadow:none }
-
   #liveDot{margin-right:6px}.ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:var(--lose)}
 
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
@@ -133,9 +122,21 @@
   .tossing{ transition: transform .70s cubic-bezier(.2,.9,.2,1); }
 
   /* HUD pills */
-  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:6px 2px 0; }
+  .hudbar{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap:6px;
+    align-items:center;
+    margin:6px 2px 0;
+  }
   .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
   .hudbar .pill b{ font-weight:800 }
+  .hudbar .pill.balance{
+    grid-column: 1 / -1;
+    font-size:14px;
+    padding:8px 12px;
+    font-weight:800;
+  }
 
   /* Quick Amounts */
   .preset-chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
@@ -149,8 +150,6 @@
   .preset-chip:active{ transform:translateY(1px); box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1); }
   .preset-chip:focus-visible{ outline:2px solid #ffffff; outline-offset:2px; }
   .preset-chip.active{ box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25); }
-  /* Force a wrap after $20 so $50 begins next line */
-  .chip-break{ flex-basis:100%; height:0; padding:0; margin:0; }
 
   /* Win Readout (BJ/Dice parity) */
   #dice-win-readout{
@@ -229,29 +228,22 @@
 })();
 </script>
 
-<!-- AMM-first Pricing (robust DOM re-query) -->
+<!-- AMM-first Pricing (BAG/XRP via XRPL AMM, XRP/USD via Coingecko) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
   const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
   const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
-
+  const liveDot=document.getElementById('liveDot'), liveBAG=document.getElementById('liveBAG'), liveXRP=document.getElementById('liveXRP'),
+        liveNote=document.getElementById('liveNote'), liveConv=document.getElementById('liveConv');
   function fmt(n){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:6}):'—'; }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k,ttl){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } }
   function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){ const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
     try{ const u=new URL(url,location.origin); u.searchParams.set('_ts',Date.now()); return fetch(u.toString(),{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
     finally{ setTimeout(()=>clearTimeout(id),0); } }
-
   function updateLine(){
-    // Re-query every paint so it's safe no matter where this script loads
-    const liveDot=document.getElementById('liveDot');
-    const liveBAG=document.getElementById('liveBAG');
-    const liveXRP=document.getElementById('liveXRP');
-    const liveNote=document.getElementById('liveNote');
-    const liveConv=document.getElementById('liveConv');
-
     if(liveBAG) liveBAG.textContent=fmt(PRICES.bagUsd);
     if(liveXRP) liveXRP.textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
     if(liveDot) liveDot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
@@ -264,7 +256,6 @@
     }
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
-
   async function fetchXrpUsdLive(){
     try{ const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd'); if(!r.ok) throw 0;
       const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; } }catch{} return false;
@@ -292,10 +283,8 @@
     if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
     if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; } if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok; }
   async function refresh(){ const gotX=await fetchXrpUsdLive(); const gotB=await fetchBagViaAMMLive(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } updateLine(); }
-
   (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
   addEventListener('storage', (e)=>{ if([VIEW_CACHE_KEY,XRP_KEY,LAST_LIVE_KEY].includes(e.key)){ if(!loadLast()) loadView(); updateLine(); } });
-  document.addEventListener('DOMContentLoaded', updateLine);
 })();
 </script>
 
@@ -349,8 +338,7 @@
       const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
       const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
       presets.querySelectorAll('button[data-usd]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const v=btn.getAttribute('data-usd'); let usd=0;
+        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
           usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
           usd=clamp(usd); setActive(btn); applyUsd(usd);
         });
@@ -366,7 +354,7 @@
 </script>
 </head>
 
-<body>
+  <body>
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header">
@@ -385,14 +373,14 @@
       <!-- CONNECT -->
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <button id="connectBtn" class="btn" style="min-width:auto;padding:10px 14px;">Connect Xaman</button>
+        <button id="connectBtn" class="btn" style="min-width:auto;padding:10px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);box-shadow:0 4px 0 #b08a19;">Connect Xaman</button>
       </div>
 
       <!-- SESSION -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
+          <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);box-shadow:0 4px 0 #b08a19;">Start Session</button>
           <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
           <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
         </div>
@@ -416,8 +404,6 @@
               <button type="button" class="preset-chip" data-usd="5">$5</button>
               <button type="button" class="preset-chip" data-usd="10">$10</button>
               <button type="button" class="preset-chip" data-usd="20">$20</button>
-              <!-- force wrap here so $50 starts on next line -->
-              <span class="chip-break" aria-hidden="true"></span>
               <button type="button" class="preset-chip" data-usd="50">$50</button>
               <button type="button" class="preset-chip" data-usd="100">$100</button>
               <button type="button" class="preset-chip" data-usd="max">Max</button>
@@ -476,9 +462,10 @@
 
           <div class="roll-row"><button id="rollBtn" class="btn-roll">ROLL</button></div>
 
+          <!-- HUD pills (Balance on its own line) -->
           <div class="hudbar" aria-live="polite" id="diceHud">
+            <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
             <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
-            <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
             <span class="pill">Bet: <b id="betLbl">1</b></span>
             <span class="pill">Last: <b id="lastLbl">—</b></span>
           </div>
@@ -507,7 +494,7 @@
   </div>
 </div>
 
-<!-- DEMO / LIVE SESSION — exact $2,000 seed (parity with Poker) -->
+    <!-- DEMO / LIVE SESSION — exact $2,000 seed (parity with Poker) -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
@@ -683,7 +670,7 @@
 })();
 </script>
 
-<!-- DICE game logic (come-out / point with locked stake) -->
+    <!-- DICE game logic (come-out / point with locked stake) -->
 <script>
 (function(){
   const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
