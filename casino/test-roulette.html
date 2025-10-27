@@ -57,7 +57,8 @@
 
     .game-wrap{
       max-width:1080px;margin:0 auto;display:grid;gap:22px;
-      grid-template-columns:1.12fr .88fr; width:min(1080px,100%); overflow:hidden;
+      /* equal columns for visual symmetry wheel ↔ board */
+      grid-template-columns:1fr 1fr; width:min(1080px,100%); overflow:hidden;
     }
     .game-wrap > *{ min-width:0; }
     @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
@@ -163,12 +164,13 @@
       border:1px solid #244634;border-radius:8px;
       font-weight:900; user-select:none; cursor:pointer;
       transition:transform .05s ease, box-shadow .15s ease;
+      height:var(--rowH); /* hard lock equal heights across all tabs */
     }
     .cell:active{transform:translateY(1px)}
     .cell.selected{outline:2px solid #ffe175; box-shadow:0 0 0 2px #b08a19 inset}
 
     .cell.num .num-inner{
-      position:absolute; inset:6px; display:grid; grid-template-rows:1fr 1fr; border-radius:6px; overflow:hidden;
+      position:absolute; inset:5px; display:grid; grid-template-rows:1fr 1fr; border-radius:6px; overflow:hidden;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
     }
     .cell.num .num-inner .half{ background:#0b0b0b; }
@@ -200,7 +202,7 @@
       width:min(720px,92vw); max-height:min(80vh,880px); overflow:auto; margin:0 auto;
       background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
       border:1px solid var(--line); border-radius:16px; box-shadow:0 24px 60px var(--shadow);
-      color:var(--fg); padding:18px; position:relative;
+      color:#fg; padding:18px; position:relative;
     }
     .rules-close{
       position:absolute; top:8px; right:12px; border:0; background:transparent;
@@ -816,7 +818,7 @@
 })();
 </script>
 
-<!-- Wheel + RNG (9s spin) -->
+<!-- Wheel + RNG with extra bounce -->
 <script>
 (function(){
   const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
@@ -847,11 +849,33 @@
     tk.style.transform = 'rotate('+(i*DEG)+'deg)'; ticksBox.appendChild(tk);
   });
 
+  // Keep explicit angles for stability
+  let ringAngle = 0;
+  let ballAngle = 0;
+
   function ballRadiusPx(){
     const w = ring.clientWidth || 300;
     return Math.max(60, Math.round(w * 0.34));
   }
-  function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
+  function applyTransforms(radius){
+    ring.style.transform = 'rotate('+ringAngle+'deg)';
+    ball.style.transform = 'rotate('+ballAngle+'deg) translate('+radius+'px)';
+  }
+  function resetTransitions(){
+    ring.style.transition = 'none';
+    ball.style.transition = 'none';
+  }
+  function setTransitions(ms){
+    const ease = 'cubic-bezier(.2,.9,.2,1)';
+    ring.style.transition = 'transform '+ms+'ms '+ease;
+    ball.style.transition = 'transform '+ms+'ms '+ease;
+  }
+
+  function placeHome(){ resetTransitions(); applyTransforms(ballRadiusPx()); }
+  placeHome();
+  addEventListener('resize', ()=>applyTransforms(ballRadiusPx()));
+
+  function randIndex(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return Math.floor((a[0] / 0x100000000) * WHEEL.length); }
 
   function stakeBag(){
     const p = window.__PRICES__ || {};
@@ -872,105 +896,120 @@
     return px>0 ? qty*px : 0;
   }
 
-  function getCurrentRotation(el){
-    const st = getComputedStyle(el).transform;
-    if (!st || st==='none') return 0;
-    const v = st.split('(')[1].split(')')[0].split(',');
-    const a = parseFloat(v[0]); const b = parseFloat(v[1]);
-    const deg = Math.round(Math.atan2(b, a) * (180/Math.PI));
-    return deg;
+  function selectedBetsCount(){
+    const b = {
+      straight:(document.getElementById('betStraight').value||'').trim(),
+      rb:document.getElementById('betRB').value,
+      eo:document.getElementById('betEO').value,
+      hl:document.getElementById('betHL').value,
+      dozen:document.getElementById('betDozen').value,
+      col:document.getElementById('betCol').value
+    };
+    let c=0; if(b.straight) c++; if(b.rb) c++; if(b.eo) c++; if(b.hl) c++; if(b.dozen) c++; if(b.col) c++;
+    return Math.max(1,c);
   }
-  function resetTransitions(){ ring.style.transition = 'none'; ball.style.transition = 'none'; }
-  function setTransforms(ringDeg, ballDeg, radius){
-    ring.style.transform = 'rotate('+ringDeg+'deg)';
-    ball.style.transform = 'rotate('+ballDeg+'deg) translate('+radius+'px)';
+
+  function computePayout(hit, stake){
+    const b = {
+      straight:(document.getElementById('betStraight').value||'').trim().toUpperCase(),
+      rb:document.getElementById('betRB').value,
+      eo:document.getElementById('betEO').value,
+      hl:document.getElementById('betHL').value,
+      dozen:document.getElementById('betDozen').value,
+      col:document.getElementById('betCol').value
+    };
+    let win = 0, notes = [];
+    if (b.straight){
+      const v = b.straight;
+      const valid = (v==="00") || (!isNaN(+v) && +v>=0 && +v<=36);
+      if(valid && String(hit)===v){ win += 35*stake; notes.push('Straight 35:1'); }
+    }
+    const colorHit = COLOR[hit];
+    if (b.rb && colorHit && colorHit.toUpperCase()===b.rb){ win += 1*stake; notes.push('RB 1:1'); }
+    if (b.eo && typeof hit==="number" && hit!==0){
+      if((b.eo==="EVEN" && hit%2===0) || (b.eo==="ODD" && hit%2===1)){ win += 1*stake; notes.push('EO 1:1'); }
+    }
+    if (b.hl && typeof hit==="number" && hit!==0){
+      if((b.hl==="LOW" && hit>=1 && hit<=18) || (b.hl==="HIGH" && hit>=19 && hit<=36)){ win += 1*stake; notes.push('HL 1:1'); }
+    }
+    if (b.dozen && typeof hit==="number" && hit!==0){
+      if((b.dozen==="D1" && hit>=1 && hit<=12) || (b.dozen==="D2" && hit>=13 && hit<=24) || (b.dozen==="D3" && hit>=25 && hit<=36)){
+        win += 2*stake; notes.push('Dozen 2:1');
+      }
+    }
+    if (b.col && COLUMN[hit]===b.col){ win += 2*stake; notes.push('Column 2:1'); }
+    return {win, notes};
   }
-  function placeBallHome(){ resetTransitions(); setTransforms(0, 0, ballRadiusPx()); }
-  placeBallHome();
-  addEventListener('resize', ()=>{
-    const ringDeg = getCurrentRotation(ring);
-    const ballDeg = getCurrentRotation(ball);
-    setTransforms(ringDeg, ballDeg, ballRadiusPx());
-  });
 
   let spinning=false;
 
-  document.getElementById('spinBtn').addEventListener('click', async ()=>{
+  spinBtn.addEventListener('click', async ()=>{
     if (spinning) return;
     const sBag = stakeBag(), sUsd = stakeUsd();
     if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
     if (!window.__BAG_FORCE_DEMO){ if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) return; }
 
     spinning = true;
-    const btn = document.getElementById('spinBtn');
-    btn.disabled = true; spinText.className='t'; spinText.textContent='Spinning…';
+    spinBtn.disabled = true; spinText.className='t'; spinText.textContent='Spinning…';
 
     try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
     try{ window.__bagAudio?.startSpinLoop?.(); }catch{}
 
-    const seed = randSeed(); const idx = Math.floor((seed / 0x100000000) * WHEEL.length); const hit = WHEEL[idx];
-    const DURATION_MS = 9000; const revs = 16;
-    const targetDeg = 360*revs + (360 - idx*(360/WHEEL.length));
+    const idx = randIndex();
+    const hit = WHEEL[idx];
 
-    /* Force a reliable CSS transition, Safari-safe */
+    const revs = 16;
+    const dur  = 9000;
+    const pocketDeg = 360 / WHEEL.length;
+
+    const targetRing = ringAngle + 360*revs + (360 - idx*pocketDeg);
+    const targetBall = ballAngle - (360*revs + 540 + (360 - idx*pocketDeg));
+
     const baseR = ballRadiusPx();
-    const startRing = getCurrentRotation(ring);
-    const startBall = getCurrentRotation(ball);
+    setTransitions(dur);
+    ringAngle = targetRing;
+    ballAngle = targetBall;
+    applyTransforms(baseR);
 
-    resetTransitions();
-    setTransforms(startRing, startBall, baseR);
+    // beefier bounce: higher start amplitude with exponential decay + end taps
+    const t0 = performance.now();
+    let raf;
+    function bounce(){
+      const t = performance.now() - t0;
+      const p = Math.min(1, t / dur);
 
-    requestAnimationFrame(()=>{
-      ring.style.transition = 'transform '+DURATION_MS+'ms cubic-bezier(.2,.9,.2,1)';
-      ball.style.transition = 'transform '+DURATION_MS+'ms cubic-bezier(.2,.9,.2,1)';
-      requestAnimationFrame(()=>{
-        setTransforms(startRing + targetDeg, startBall - (targetDeg + 540), baseR);
-      });
-    });
+      // Exponential decay from a larger amplitude
+      const amp0 = 26;                         // start amplitude (px)
+      const amp  = amp0 * Math.exp(-3*p);      // smooth damping
+      const freq = 12 + 10*(1-p);              // slows down over time
+      let r = baseR + Math.sin(t/1000*freq*2*Math.PI) * amp;
 
-    setTimeout(()=>{
-      resetTransitions();
-      try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
-
-      const b = {
-        straight:(document.getElementById('betStraight').value||'').trim().toUpperCase(),
-        rb:document.getElementById('betRB').value,
-        eo:document.getElementById('betEO').value,
-        hl:document.getElementById('betHL').value,
-        dozen:document.getElementById('betDozen').value,
-        col:document.getElementById('betCol').value
-      };
-
-      function computePayout(hit, stake){
-        let win=0, notes=[];
-        if (b.straight){
-          const v=b.straight; const valid=(v==="00")||(!isNaN(+v)&&+v>=0&&+v<=36);
-          if(valid && String(hit)===v){ win+=35*stake; notes.push('Straight 35:1'); }
-        }
-        const colorH = COLOR[hit];
-        if (b.rb && colorH && colorH.toUpperCase()===b.rb){ win += 1*stake; notes.push('RB 1:1'); }
-        if (b.eo && typeof hit==="number" && hit!==0){
-          if((b.eo==="EVEN" && hit%2===0) || (b.eo==="ODD" && hit%2===1)){ win += 1*stake; notes.push('EO 1:1'); }
-        }
-        if (b.hl && typeof hit==="number" && hit!==0){
-          if((b.hl==="LOW" && hit>=1 && hit<=18) || (b.hl==="HIGH" && hit>=19 && hit<=36)){ win += 1*stake; notes.push('HL 1:1'); }
-        }
-        if (b.dozen && typeof hit==="number" && hit!==0){
-          if((b.dozen==="D1" && hit>=1 && hit<=12) || (b.dozen==="D2" && hit>=13 && hit<=24) || (b.dozen==="D3" && hit>=25 && hit<=36)){
-            win += 2*stake; notes.push('Dozen 2:1');
-          }
-        }
-        if (b.col && typeof hit==="number" && COLUMN[hit]===b.col){ win += 2*stake; notes.push('Column 2:1'); }
-        return {win, notes};
+      // Add quick rim taps near the end (subtle)
+      if (p > 0.82){
+        const k = (p-0.82)/0.18;                // 0..1
+        const tap = (1-Math.min(1,k)) * 6;      // fades out
+        r += Math.sign(Math.sin(t*0.05)) * tap;
       }
 
-      const {win, notes} = computePayout(hit, sBag);
-      const selections = [
-        b.straight && 'S', b.rb && 'RB', b.eo && 'EO', b.hl && 'HL', b.dozen && 'D', b.col && 'C'
-      ].filter(Boolean).length || 1;
-      const net = win - sBag * selections;
+      resetTransitions();
+      applyTransforms(r);
+      setTransitions(Math.max(0, dur - t));
 
+      if (p < 1) { raf = requestAnimationFrame(bounce); }
+    }
+    raf = requestAnimationFrame(bounce);
+
+    setTimeout(()=>{
+      cancelAnimationFrame(raf);
+      resetTransitions();
+      applyTransforms(baseR);
+
+      try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
+
+      const {win, notes} = computePayout(hit, sBag);
+      const net = win - sBag * selectedBetsCount();
       document.getElementById('lastLbl').textContent = String(hit);
+
       if (net > 0){
         try{ window.__bagAudio && window.__bagAudio.chime(); }catch{}
         window.__bagSession?.credit?.(win);
@@ -985,13 +1024,8 @@
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
       }
 
-      /* Lock final angle so resize keeps position */
-      const finalRing = getCurrentRotation(ring) % 360;
-      const finalBall = getCurrentRotation(ball) % 360;
-      setTransforms(finalRing, finalBall, baseR);
-
-      btn.disabled = false; spinning = false;
-    }, DURATION_MS + 60);
+      spinBtn.disabled = false; spinning = false;
+    }, dur + 120);
   });
 })();
 </script>
@@ -1028,11 +1062,8 @@
   addEventListener('bag:sessionToppedUp', render);
   addEventListener('bag:sessionSpent', render);
   render();
-})();
-</script>
 
-<script>
-(function(){
+  // Rules pill wiring
   const pill = document.getElementById('rulesPill');
   const modal = document.getElementById('rulesModal');
   const close = document.getElementById('rulesClose');
