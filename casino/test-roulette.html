@@ -1,3 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Charset FIRST to prevent mojibake -->
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <title>$BAG Roulette</title>
+
+  <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+  <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+  <script>window.__BAG_FORCE_DEMO = true;</script>
+  <link rel="preload" href="/assets/sounds/roulettewheel.mp3" as="audio" />
+
+  <style>
+    *{box-sizing:border-box}
+    :root{
+      --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+      --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+      --padL:max(12px, env(safe-area-inset-left));
+      --padR:max(12px, env(safe-area-inset-right));
+      --vwpx:100vw;
+      --rowH:56px; /* unified row height for numbers and zero row */
+    }
+    @media (max-width:560px){ :root{ --rowH:48px; } }
+
+    html,body{
+      margin:0;background:var(--bg);color:var(--fg);
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;
+      -webkit-text-size-adjust:100%; touch-action:manipulation; overscroll-behavior:contain;
+      width:100%; max-width:100%; overflow-x:hidden;
+    }
+    img{display:block;max-width:100%;height:auto}
+    button,input{font-size:16px}
+
+    .back-casino{
+      position:fixed;top:18px;left:18px;z-index:1000;
+      background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
+      color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
+      box-shadow:0 4px 0 #b08a19;transition:all .15s ease
+    }
+    .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+
+    .game-header{text-align:center;padding:36px 10px 14px}
+    .game-header img.hero-img{margin:0 auto 10px;width:min(420px,90vw)}
+    .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+
+    .game-teaser{
+      padding:10px 12px 60px; padding-left:var(--padL); padding-right:var(--padR);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+        radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+      border-top:1px solid #131313;border-bottom:1px solid #131313;
+      overflow:hidden;
+    }
+
+    .game-wrap{
+      max-width:1080px;margin:0 auto;display:grid;gap:22px;
+      grid-template-columns:1.12fr .88fr; width:min(1080px,100%); overflow:hidden;
+    }
+    .game-wrap > *{ min-width:0; }
+    @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
+
+    .panel{
+      background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+      border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow); min-width:0;
+    }
+    .mock{padding:14px}
+
+    .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+    .stake-box{padding:14px}
+    .stack{display:grid;gap:10px}
+    .choice{display:flex;gap:10px;flex-wrap:wrap}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+    .chip input{accent-color:#2fbf6b}
+    .mono{font-variant-numeric:tabular-nums}
+    .micro{font-size:.85rem;color:#aeb7af}
+    .muted{color:#cfd6cf}
+    .divider{height:1px;background:#123221;margin:10px 0}
+
+    .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+    .payout-grid{display:grid;gap:4px}
+    .payout-grid .row{display:flex;justify-content:space-between}
+    .payout-grid .lab{color:#cfd6cf}
+    .payout-grid .val{font-variant-numeric:tabular-nums}
+
+    .slots-wrap{display:grid;gap:12px; min-width:0;}
+    .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #25433a;border-radius:12px;padding:8px}
+    .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px; max-width:100%}
+
+    /* -------- Wheel shell -------- */
+    .wheel-wrap{ background:#091a13;border:1px solid #24533a;border-radius:16px;padding:12px; overflow:hidden; max-width:100%; margin-inline:auto; width:min(760px,100%); position:relative; }
+    .wheel{position:relative;aspect-ratio:1;border-radius:14px; background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.06), transparent 60%); width:100%; height:auto; display:block; overflow:hidden; contain:layout paint;}
+    .veneer{position:absolute; inset:2% 2%; border-radius:50%; background:
+        radial-gradient(circle at 50% 50%, rgba(255,255,255,.08), rgba(0,0,0,.42) 72%),
+        conic-gradient(#7b5029, #5e3a1b 25%, #7b5029 50%, #5e3a1b 75%, #7b5029);
+      box-shadow:inset 0 0 0 10px #b8844f, inset 0 0 0 18px #8d5b2e, 0 10px 24px rgba(0,0,0,.35);}
+    .chrome{ position:absolute; inset:9% 9%; border-radius:50%; background: radial-gradient(circle at 50% 48%, #444, #111 70%); box-shadow: inset 0 0 0 2px #000, 0 1px 6px #000a; }
+
+    /* SVG ring fills the same inset as the former .ring */
+    .svg-wrap{ position:absolute; inset:12% 12%; }
+    svg#wheelSvg{ width:100%; height:100%; display:block; }
+
+    .ticks{ position:absolute; inset:12% 12%; border-radius:50%; overflow:hidden; pointer-events:none; }
+    .ticks::before{ content:""; position:absolute; inset:-2px; border-radius:50%; box-shadow: inset 0 0 0 2px #000, inset 0 0 0 10px rgba(255,255,255,.06); }
+    .tick{ position:absolute; left:50%; top:50%; width:2px; height:22px; background:#d0a45a; transform-origin:0 210px; border-radius:2px; opacity:.5 }
+
+    .bowl{position:absolute; inset:28% 28%; border-radius:50%; background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 72%); box-shadow:0 8px 16px var(--shadow);}
+    .bowl::after{ content:""; position:absolute; inset:28% 28%; border-radius:50%; background: radial-gradient(circle at 50% 40%, #f0d49b, #9c6f36 72%); box-shadow:inset 0 6px 12px rgba(0,0,0,.35); }
+
+    .ball{
+      position:absolute; width:18px; height:18px; background:#eee; border-radius:50%; box-shadow:0 1px 4px #000a;
+      left:50%; top:50%; margin:-9px; transform-origin:0 0; transform:rotate(0deg) translate(120px); will-change: transform;
+    }
+
+    .spin-row{display:flex;justify-content:center}
+    .btn-spin{
+      width:min(380px,92%);padding:16px 22px;margin-top:4px;
+      font-size:1.15rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;border:0;border-radius:14px;
+      color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+      box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35);
+      transition:transform .06s ease, box-shadow .2s ease, filter .2s ease; cursor:pointer;
+    }
+    .btn-spin:disabled{opacity:.65;cursor:not-allowed}
+
+    .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
+    .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
+
+    .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; justify-content:center; }
+    .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+    /* -------- Bets table -------- */
+    .felt{
+      background:linear-gradient(180deg,#0e2a1d,#0a2016);
+      border:1px solid #1b3b2c;border-radius:12px;padding:10px;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+      overflow:hidden;
+    }
+    .felt-scale{ width:100%; display:flex; justify-content:center; overflow:hidden; }
+    .felt-inner{ width:720px; max-width:100%; transform-origin: top center; margin-inline:auto; }
+    @media (max-width:760px){ .felt-inner{ width:640px; } }
+    @media (max-width:680px){ .felt-inner{ width:580px; } }
+    @media (max-width:620px){ .felt-inner{ width:520px; } }
+    @media (max-width:560px){ .felt-inner{ width:480px; } }
+    @media (max-width:480px){ .felt-inner{ width:440px; } }
+    @media (max-width:440px){ .felt-inner{ width:400px; } }
+
+    .felt-grid{
+      display:grid; gap:6px;
+      grid-template-rows: var(--rowH) auto auto auto;
+      grid-template-areas:
+        "zero"
+        "nums"
+        "cols"
+        "outside";
+    }
+    .zero-row{ grid-area: zero; display:grid; grid-template-columns:1fr 1fr; gap:6px; position:relative; z-index:2; }
+    .zero-row .cell{ height:var(--rowH); }
+
+    .nums{ grid-area: nums; display:grid; grid-template-columns:repeat(3, 1fr); grid-auto-rows:var(--rowH); gap:6px; position:relative; z-index:1; }
+    .cols{ grid-area: cols; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .outside{ grid-area: outside; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+
+    .cell{
+      position:relative; display:grid; place-items:center;
+      border:1px solid #244634;border-radius:8px;
+      font-weight:900; user-select:none; cursor:pointer;
+      transition:transform .05s ease, box-shadow .15s ease;
+    }
+    .cell:active{transform:translateY(1px)}
+    .cell.selected{outline:2px solid #ffe175; box-shadow:0 0 0 2px #b08a19 inset}
+
+    .cell.num .num-inner{
+      position:absolute; inset:6px; display:grid; grid-template-rows:1fr 1fr; border-radius:6px; overflow:hidden;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+    }
+    .cell.num .num-inner .half{ background:#0b0b0b; }
+    .cell.num.red   .num-inner .half{ background:linear-gradient(180deg,#8f1a1a,#6e1414); }
+    .cell.num.black .num-inner .half{ background:linear-gradient(180deg,#141414,#0a0a0a); }
+    .cell.num.green .num-inner .half{ background:linear-gradient(180deg,#0f4b2d,#0b3823); }
+    .cell.num .num-inner .half:first-child{ box-shadow:inset 0 -1px 0 rgba(255,255,255,.08); }
+    .cell.num .label{
+      position:absolute; inset:0; display:grid; place-items:center;
+      color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6);
+      font-variant-numeric:tabular-nums;
+    }
+
+    .cols .cell, .outside .cell{ background:#0f251b; color:#e7efe9 }
+
+    .felt-note{ font-size:12px; color:#cfe0d6; text-align:center; margin-top:6px; }
+
+    /* Rules pill + modal */
+    .rules-pill{
+      position:fixed; right:16px; bottom:16px; z-index:1500;
+      padding:10px 14px; border-radius:999px; font-weight:800;
+      border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
+      box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      cursor:pointer;
+    }
+    .rules-pill:hover{ filter:brightness(1.05); }
+    .rules-modal{ display:none; position:fixed; inset:0; z-index:2000; padding:18px; backdrop-filter: blur(6px); background: rgba(0,0,0,.45); }
+    .rules-modal > div{
+      width:min(720px,92vw); max-height:min(80vh,880px); overflow:auto; margin:0 auto;
+      background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+      border:1px solid var(--line); border-radius:16px; box-shadow:0 24px 60px var(--shadow);
+      color:var(--fg); padding:18px; position:relative;
+    }
+    .rules-close{
+      position:absolute; top:8px; right:12px; border:0; background:transparent;
+      color:#e9efe9; font-size:24px; line-height:1; cursor:pointer;
+    }
+  </style>
+</head>
+
+  <body>
+
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+
+<section class="game-header">
+  <img class="hero-img" src="/assets/bag-roulette-1024.png" alt="$BAG Roulette" loading="lazy" decoding="async">
+  <h2>🎲 $BAG ROULETTE</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">
+    💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+  </p>
+</section>
+
+<section class="game-teaser" aria-labelledby="game-teaser-title">
+  <div class="game-wrap">
+
+    <!-- LEFT: stake + prices + payouts + bets -->
+    <div class="panel mock" id="bagRouletteDemo">
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
+      </div>
+
+      <div class="section-title">Stake &amp; Prices</div>
+
+      <div class="stake-box">
+        <div class="stack">
+          <div>
+            <div class="micro">Amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;align-items:center;gap:6px">
+                <input id="usdBet" class="mono" type="tel" inputmode="decimal" enterkeyhint="done" pattern="[0-9.]*"
+                       min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="micro" aria-hidden="true">USD</span>
+              </div>
+            </div>
+            <div class="choice" id="usdPresets" style="margin-top:8px">
+              <button type="button" class="chip" data-usd="1">$1</button>
+              <button type="button" class="chip" data-usd="2">$2</button>
+              <button type="button" class="chip" data-usd="5">$5</button>
+              <button type="button" class="chip" data-usd="10">$10</button>
+              <button type="button" class="chip" data-usd="20">$20</button>
+              <button type="button" class="chip" data-usd="50">$50</button>
+              <button type="button" class="chip" data-usd="100">$100</button>
+              <button type="button" class="chip" data-usd="2000">MAX</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet currency</div>
+            <div class="choice" id="curToggle">
+              <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+              <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div>
+                <input id="betQty" class="mono" type="tel" inputmode="decimal" enterkeyhint="done"
+                       min="0" step="any" value="1" aria-label="Stake units"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="unit">XRP</span>
+              </div>
+            </div>
+            <div class="micro" id="betLimits" style="margin-top:6px" aria-live="polite"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="micro">Live prices</div>
+          <div class="muted mono" aria-live="polite">
+            <span id="liveDot" class="warn">●</span>
+            <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
+            <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG &asymp; — XRP · 1 XRP &asymp; — BAG</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="callout mono" id="payoutBox">
+        <div class="payout-grid">
+          <div class="row"><div class="lab"><strong>Straight</strong> (35:1):</div><div class="val" id="payStraight">—</div></div>
+          <div class="row"><div class="lab"><strong>Dozen</strong> (2:1):</div><div class="val" id="payDozen">—</div></div>
+          <div class="row"><div class="lab"><strong>Column</strong> (2:1):</div><div class="val" id="payColumn">—</div></div>
+          <div class="row"><div class="lab"><strong>Red/Black</strong> (1:1):</div><div class="val" id="payRB">—</div></div>
+          <div class="row"><div class="lab"><strong>Even/Odd</strong> (1:1):</div><div class="val" id="payEO">—</div></div>
+          <div class="row"><div class="lab"><strong>High/Low</strong> (1:1):</div><div class="val" id="payHL">—</div></div>
+        </div>
+        <div class="micro" style="margin-top:6px;opacity:.85;">
+          Practice mode enabled — on-ledger play wires in after QA.
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-title">Bets</div>
+
+      <div class="felt">
+        <div class="felt-scale">
+          <div class="felt-inner">
+            <div class="felt-grid">
+              <div class="zero-row" id="zeroRow"></div>
+              <div class="nums" id="feltNums"></div>
+              <div class="cols" id="colBets"></div>
+              <div class="outside" id="outsideBets">
+                <div class="cell" data-type="HL" data-val="LOW">1&ndash;18</div>
+                <div class="cell" data-type="EO" data-val="EVEN">EVEN</div>
+                <div class="cell" data-type="RB" data-val="RED">RED</div>
+                <div class="cell" data-type="RB" data-val="BLACK">BLACK</div>
+                <div class="cell" data-type="EO" data-val="ODD">ODD</div>
+                <div class="cell" data-type="HL" data-val="HIGH">19&ndash;36</div>
+              </div>
+              <div class="felt-note">Dozens &amp; Columns multiply with RB/EO/HL (stake per selection)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden controls (selections) -->
+      <div style="display:none">
+        <input id="betStraight">
+        <select id="betRB"><option value=""></option><option>RED</option><option>BLACK</option></select>
+        <select id="betEO"><option value=""></option><option>EVEN</option><option>ODD</option></select>
+        <select id="betHL"><option value=""></option><option value="LOW">1&ndash;18</option><option value="HIGH">19&ndash;36</option></select>
+        <select id="betDozen"><option value=""></option><option value="D1">1&ndash;12</option><option value="D2">13&ndash;24</option><option value="D3">25&ndash;36</option></select>
+        <select id="betCol"><option value=""></option><option value="C1">Column 1</option><option value="C2">Column 2</option><option value="C3">Column 3</option></select>
+      </div>
+    </div>
+
+    <!-- RIGHT: single wheel -->
+    <div class="slots-wrap">
+      <div class="marquee">$BAG ROULETTE</div>
+      <div class="cabinet">
+        <div class="wheel-wrap" aria-label="Roulette wheel">
+          <div class="wheel">
+            <div class="veneer"></div>
+            <div class="chrome"></div>
+
+            <!-- SVG-based wheel -->
+            <div class="svg-wrap">
+              <svg id="wheelSvg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                <g id="ringG"></g>
+              </svg>
+            </div>
+
+            <div class="ticks" id="ticks"></div>
+            <div class="bowl"></div>
+            <div id="ball" class="ball"></div>
+          </div>
+        </div>
+
+        <div class="spin-row">
+          <button id="spinBtn" class="btn-spin" aria-label="Spin the wheel">SPIN</button>
+        </div>
+
+        <div class="hudbar" aria-live="polite">
+          <span class="pill">Mode: <b id="modeLbl">DEMO</b></span>
+          <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
+          <span class="pill">Bet: <b id="betLbl">—</b></span>
+          <span class="pill">Last: <b id="lastLbl">—</b></span>
+        </div>
+
+        <p class="micro" style="text-align:center;margin-top:6px;opacity:.7;color:#aeb7af;">
+          🔊 If you don’t hear sound: tap SPIN once, turn off Silent mode, and raise volume.
+        </p>
+
+        <div class="result" role="status" aria-live="polite">
+          <div class="t" id="spinText">Tap SPIN</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Rules pill + modal -->
+  <button class="rules-pill" id="rulesPill" aria-controls="rulesModal" aria-expanded="false">
+    📜 <b>Rules</b>
+  </button>
+
+  <div class="rules-modal" id="rulesModal" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+    <div>
+      <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
+      <h3 id="rulesTitle">American Roulette — Complete Rules</h3>
+      <ul style="margin:0 0 6px;padding-left:18px;color:#cfd6cf">
+        <li>Wheel layout: numbers <b>1–36</b> (18 red, 18 black) plus <b>0</b> and <b>00</b> (green).</li>
+        <li>Sequence: authentic American order.</li>
+        <li>Payouts:
+          <ul style="margin:6px 0;padding-left:18px">
+            <li><b>Straight</b> (single number) — <b>35:1</b></li>
+            <li><b>Dozen</b> (1–12, 13–24, 25–36) — <b>2:1</b></li>
+            <li><b>Column</b> (C1/C2/C3) — <b>2:1</b></li>
+            <li><b>Red/Black</b>, <b>Even/Odd</b>, <b>Low/High</b> — <b>1:1</b></li>
+          </ul>
+        </li>
+        <li>Zeros (0/00) are not red, black, even, odd, low, or high.</li>
+        <li>Minimum $1 · Maximum $2,000 stake (USD equivalent). Payouts settle in <b>$BAG</b>.</li>
+        <li>Multiple bet types may be selected simultaneously; each bet uses your chosen stake.</li>
+        <li>Dozens/Columns may be combined with RB/EO/HL (stake per selection).</li>
+      </ul>
+      <p class="micro" style="margin-top:8px">Practice mode is active on this page. Ledger play wires in after QA.</p>
+    </div>
+  </div>
+</section>
+
+    <!-- Dev-safe error overlay (shows top-right if any JS error fires) -->
+<script>
+(function(){
+  const box=document.createElement('div');
+  box.style.cssText='position:fixed;top:8px;right:8px;z-index:99999;background:#1a2b22;color:#ffe175;border:1px solid #3b5;max-width:min(80vw,560px);font:12px/1.4 monospace;padding:8px 10px;border-radius:8px;display:none;white-space:pre-wrap';
+  document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(box));
+  function show(msg){ box.style.display='block'; box.textContent=msg; }
+  window.addEventListener('error', e=>show('JS Error: '+(e.message||e.error))); 
+  window.addEventListener('unhandledrejection', e=>show('Promise Rejection: '+(e.reason&&e.reason.message?e.reason.message:e.reason)));
+})();
+</script>
+
 <!-- Audio driver -->
 <script>
 (function(){
@@ -43,10 +480,15 @@
 })();
 </script>
 
-<!-- Anti-zoom niceties -->
+<!-- Safer anti-zoom (no weird "this" references) -->
 <script>
 (function(){
-  document.addEventListener('touchend', (e)=>{const n=Date.now(); if(!this._t)n; if(n-(this._t||0)<300) e.preventDefault(); this._t=n;},{passive:false});
+  let lastTap=0;
+  document.addEventListener('touchend', (e)=>{
+    const n=Date.now();
+    if (n-lastTap<300) { e.preventDefault(); }
+    lastTap=n;
+  }, {passive:false});
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev,(e)=>e.preventDefault(),{passive:false}));
   document.addEventListener('wheel',(e)=>{ if(e.ctrlKey) e.preventDefault(); },{passive:false});
 })();
@@ -424,28 +866,28 @@
   const ticksBox = document.getElementById('ticks');
 
   const DEG = 360 / WHEEL.length;
-  const cx=500, cy=500, rOuter=470, rInner=320; // donut band (fills neatly inside chrome)
+  const cx=500, cy=500, rOuter=470, rInner=320; // donut band
   const labelR = (rOuter+rInner)/2 + 4;
 
   function polar(xc,yc,r,angDeg){ const a=(Math.PI/180)*angDeg; return [xc + r*Math.cos(a), yc + r*Math.sin(a)]; }
   function arcPath(xc,yc,r,a0,a1){
     const large = (a1-a0)>180 ? 1 : 0;
-    const p0 = polar(xc,yc,r,a0), p1 = polar(xc,yc,r,a1);
+    const p1 = polar(xc,yc,r,a1);
     return `A ${r} ${r} 0 ${large} 1 ${p1[0]} ${p1[1]}`;
   }
   function slicePath(a0,a1){
-    const p0o = polar(cx,cy,rOuter,a0), p1o = polar(cx,cy,rOuter,a1);
-    const p1i = polar(cx,cy,rInner,a1), p0i = polar(cx,cy,rInner,a0);
+    const p0o = polar(cx,cy,rOuter,a0), p0i = polar(cx,cy,rInner,a0);
     const outer = `M ${p0o[0]} ${p0o[1]} ${arcPath(cx,cy,rOuter,a0,a1)}`;
+    const p1i = polar(cx,cy,rInner,a1);
     const inner = `L ${p1i[0]} ${p1i[1]} ${arcPath(cx,cy,rInner,a1,a0).replace(' 1 ',' 0 ')}`;
     return `${outer} L ${p0i[0]} ${p0i[1]} ${inner} Z`;
   }
 
-  // Build symmetric wedges + labels
+  // Build wedges + labels (use hex colors in SVG)
   ringG.innerHTML = '';
   for(let i=0;i<WHEEL.length;i++){
-    const a0 = -90 + i*DEG;           // start angle (top at -90deg)
-    const a1 = a0 + DEG;              // end angle
+    const a0 = -90 + i*DEG;
+    const a1 = a0 + DEG;
     const val = WHEEL[i];
     const col = COLOR[val] || 'black';
     const fill = col==='red' ? '#cf2b2b' : (col==='black' ? '#141414' : '#1b7b3a');
@@ -457,7 +899,6 @@
     path.setAttribute('stroke-width', '2');
     ringG.appendChild(path);
 
-    // Divider tick on edge
     const divTick = document.createElementNS('http://www.w3.org/2000/svg','line');
     const t0 = polar(cx,cy,rOuter,a0);
     const t1 = polar(cx,cy,rOuter-18,a0);
@@ -468,26 +909,26 @@
     divTick.setAttribute('opacity','0.55');
     ringG.appendChild(divTick);
 
-    // Label (upright)
+    // Label with upright text
     const mid = a0 + DEG/2;
     const [lx, ly] = polar(cx,cy,labelR, mid);
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('transform', `translate(${lx},${ly}) rotate(${mid})`);
+
     const txtBG = document.createElementNS('http://www.w3.org/2000/svg','rect');
     txtBG.setAttribute('x', -18); txtBG.setAttribute('y', -12);
     txtBG.setAttribute('rx', 6); txtBG.setAttribute('ry', 6);
     txtBG.setAttribute('width', 36); txtBG.setAttribute('height', 24);
-    txtBG.setAttribute('fill', 'rgba(0,0,0,0.25)');
-    txtBG.setAttribute('stroke', 'rgba(0,0,0,0.45)');
-    txtBG.setAttribute('stroke-width', '1');
+    txtBG.setAttribute('fill', '#000'); txtBG.setAttribute('fill-opacity','0.25');
+    txtBG.setAttribute('stroke', '#000'); txtBG.setAttribute('stroke-opacity','0.45'); txtBG.setAttribute('stroke-width', '1');
 
     const t = document.createElementNS('http://www.w3.org/2000/svg','text');
     t.setAttribute('text-anchor','middle');
     t.setAttribute('dominant-baseline','middle');
-    t.setAttribute('fill','#fff');
+    t.setAttribute('fill','#ffffff');
     t.setAttribute('font-weight','800');
     t.setAttribute('font-size','16');
-    t.setAttribute('transform', `rotate(${-mid})`); // keep upright
+    t.setAttribute('transform', `rotate(${-mid})`);
     t.textContent = String(val);
 
     g.appendChild(txtBG);
@@ -495,10 +936,9 @@
     ringG.appendChild(g);
   }
 
-  // Outer ticks ring (decor)
+  // Decorative ticks
   if (ticksBox){
     ticksBox.innerHTML = '';
-    const R = (document.querySelector('.svg-wrap')?.clientWidth || 300)/2; // only used for sizing shadows
     for(let i=0;i<WHEEL.length;i++){
       const d=document.createElement('div');
       d.className='tick';
@@ -507,16 +947,35 @@
     }
   }
 
-  // Ball mechanics
+  // Helpers for transforms on SVG/HTML
+  function getRotationDeg(el){
+    const st = getComputedStyle(el).transform;
+    if (!st || st==='none') return 0;
+    const m = st.match(/matrix\(([^)]+)\)/);
+    if (!m) return 0;
+    const p = m[1].split(',').map(Number);
+    const a=p[0], b=p[1];
+    return Math.round(Math.atan2(b,a)*(180/Math.PI));
+  }
+  function resetTransitions(){ ringG.style.transition = 'none'; ball.style.transition = 'none'; }
+  function setTransforms(ringDeg, ballDeg, radius){
+    ringG.style.transform = `rotate(${ringDeg}deg)`;
+    ball.style.transform  = `rotate(${ballDeg}deg) translate(${radius}px)`;
+  }
   function ballRadiusPx(){
     const wrap = document.querySelector('.svg-wrap');
     const w = wrap ? wrap.clientWidth : 300;
-    // match just inside rOuter/overall size (12% inset + svg)
     return Math.round(w * 0.34);
   }
+  function placeBallHome(){ resetTransitions(); setTransforms(0, 0, ballRadiusPx()); }
+  placeBallHome();
+  addEventListener('resize', ()=>{
+    const ringDeg = getRotationDeg(ringG);
+    const ballDeg = getRotationDeg(ball);
+    setTransforms(ringDeg, ballDeg, ballRadiusPx());
+  });
 
   function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
-
   function stakeBag(){
     const p = window.__PRICES__ || {};
     const c = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
@@ -532,27 +991,6 @@
     const px = (c==='BAG') ? (p.bagUsd||0) : (p.xrpUsd||0);
     return px>0 ? qty*px : 0;
   }
-
-  function getCurrentRotation(el){
-    const st = getComputedStyle(el).transform;
-    if (!st || st==='none') return 0;
-    const v = st.split('(')[1].split(')')[0].split(',');
-    const a = parseFloat(v[0]); const b = parseFloat(v[1]);
-    const deg = Math.round(Math.atan2(b, a) * (180/Math.PI));
-    return deg;
-  }
-  function resetTransitions(){ ringG.style.transition = 'none'; ball.style.transition = 'none'; }
-  function setTransforms(ringDeg, ballDeg, radius){
-    ringG.style.transform = `rotate(${ringDeg}deg)`;
-    ball.style.transform = `rotate(${ballDeg}deg) translate(${radius}px)`;
-  }
-  function placeBallHome(){ resetTransitions(); setTransforms(0, 0, ballRadiusPx()); }
-  placeBallHome();
-  addEventListener('resize', ()=>{
-    const ringDeg = getCurrentRotation(ringG);
-    const ballDeg = getCurrentRotation(ball);
-    setTransforms(ringDeg, ballDeg, ballRadiusPx());
-  });
 
   let spinning=false;
 
@@ -573,10 +1011,9 @@
     const DURATION_MS = 9000; const revs = 16;
     const targetDeg = 360*revs + (360 - idx*(360/WHEEL.length));
 
-    /* Reliable CSS transition */
     const baseR = ballRadiusPx();
-    const startRing = getCurrentRotation(ringG);
-    const startBall = getCurrentRotation(ball);
+    const startRing = getRotationDeg(ringG);
+    const startBall = getRotationDeg(ball);
 
     resetTransitions();
     setTransforms(startRing, startBall, baseR);
@@ -590,9 +1027,7 @@
     });
 
     setTimeout(()=>{
-      // stop the main spin loop sound
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
-      // quick end-bounce sequence: small inward hops with decaying amplitude
       const bounces = [
         {dr:-10, ddeg:  4, t:90},
         {dr: +7, ddeg: -3, t:110},
@@ -601,14 +1036,10 @@
       ];
       let i=0;
       function doBounce(prevRingDeg, prevBallDeg){
-        if (i>=bounces.length){
-          finalize();
-          return;
-        }
+        if (i>=bounces.length){ finalize(); return; }
         const step = bounces[i++];
         ringG.style.transition = `transform ${step.t}ms ease-out`;
         ball.style.transition  = `transform ${step.t}ms ease-out`;
-        // subtle tick
         try{ window.__bagAudio && window.__bagAudio.thud(); }catch{}
         setTransforms(prevRingDeg, prevBallDeg + step.ddeg, baseR + step.dr);
         setTimeout(()=> doBounce(prevRingDeg, prevBallDeg + step.ddeg), step.t+10);
@@ -670,16 +1101,15 @@
           spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
         }
 
-        /* Lock final angle so resize keeps position */
-        const finalRing = getCurrentRotation(ringG) % 360;
-        const finalBall = getCurrentRotation(ball) % 360;
+        const finalRing = getRotationDeg(ringG) % 360;
+        const finalBall = getRotationDeg(ball) % 360;
         setTransforms(finalRing, finalBall, baseR);
 
         btn.disabled = false; spinning = false;
       }
 
-      const endRing = getCurrentRotation(ringG);
-      const endBall = getCurrentRotation(ball);
+      const endRing = getRotationDeg(ringG);
+      const endBall = getRotationDeg(ball);
       doBounce(endRing, endBall);
 
     }, DURATION_MS + 40);
