@@ -52,7 +52,8 @@
     border-top:1px solid #131313;border-bottom:1px solid #131313}
   .game-wrap{
     max-width:1080px;margin:0 auto;
-    display:grid;grid-template-columns:1.12fr .88fr;gap:22px
+    display:grid;grid-template-columns:1.12fr .88fr;gap:22px;
+    width:min(1080px,100%);         /* ✅ clamp grid to viewport */
   }
   @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
 
@@ -77,12 +78,12 @@
   .payout-grid .lab{color:#cfd6cf}
   .payout-grid .val{font-variant-numeric:tabular-nums}
 
-  .slots-wrap{display:grid;gap:12px}
+  .slots-wrap{display:grid;gap:12px; min-width:0;}  /* ✅ prevent min-content overflow */
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #25433a;border-radius:12px;padding:8px}
-  .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
+  .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px; max-width:100%}
 
   /* -------- Roulette wheel -------- */
-  .wheel-wrap{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px}
+  .wheel-wrap{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px; overflow:hidden; max-width:100%}
   .wheel{position:relative;aspect-ratio:1;border-radius:12px;background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.06), transparent 60%)}
   .wood{position:absolute;inset:6% 6% 6% 6%;border-radius:50%;
     background:
@@ -153,6 +154,25 @@
 
   /* Footer center */
   .footer{ text-align:center; width:100%; margin:0 auto; }
+
+  /* -------- Floating Rules pill -------- */
+  .rules-pill{
+    position:fixed; right:14px; bottom:14px; z-index:1000;
+    background:#0a1e15; color:#e9efe9; border:1px solid #244330;
+    border-radius:999px; padding:10px 14px; font-weight:900; letter-spacing:.02em;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+    display:flex; align-items:center; gap:8px; cursor:pointer;
+  }
+  .rules-pill b{ color:#ffe175 }
+  .rules-modal{
+    position:fixed; inset:auto 10px 72px 10px; z-index:1001;
+    background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line); border-radius:16px; box-shadow:0 18px 48px var(--shadow);
+    padding:14px; display:none;
+  }
+  .rules-modal.open{ display:block; }
+  .rules-modal h3{ margin:0 0 8px; font-size:1.05rem; }
+  .rules-modal .micro{ color:#cfd6cf }
 </style>
 
 <script src="/js/bag-overlay.js"></script>
@@ -348,17 +368,21 @@
       </div>
     </div>
 
-    <!-- How it plays -->
-    <div class="panel" style="padding:16px">
-      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
-      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
-        <li>American wheel with <b>double zero (00)</b>; sequence verified.</li>
-        <li>Bet types: <b>Straight, Red/Black, Even/Odd, High/Low, Dozen, Column</b>.</li>
-        <li>Payouts: Straight <b>35:1</b> · Dozen/Column <b>2:1</b> · RB/EO/HL <b>1:1</b>.</li>
-      </ul>
-      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA.</p>
-    </div>
+  </div>
 
+  <!-- Floating Rules pill + modal -->
+  <button class="rules-pill" id="rulesPill" aria-controls="rulesModal" aria-expanded="false">
+    📜 <b>Rules</b>
+  </button>
+
+  <div class="rules-modal" id="rulesModal" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+    <h3 id="rulesTitle">How it plays</h3>
+    <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+      <li>American wheel with <b>double zero (00)</b>; sequence verified</li>
+      <li>Bet types: <b>Straight, Red/Black, Even/Odd, High/Low, Dozen, Column</b></li>
+      <li>Payouts: Straight <b>35:1</b> · Dozen/Column <b>2:1</b> · RB/EO/HL <b>1:1</b></li>
+    </ul>
+    <p class="micro" style="margin-top:8px">Practice mode enabled — on-ledger play wires in after QA</p>
   </div>
 </section>
 
@@ -387,10 +411,10 @@
     return { stop(){ alive=false; clearInterval(iv);} };
   }
   function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+    [880,1320,1760].forEach((f,i)=>{ const o=getAC().createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=getAC().createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
       o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
-  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=getAC().createGain(); o.type='sine';
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=getAC().createOscillator(), g=getAC().createGain(); o.type='sine';
     const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
     g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
@@ -820,7 +844,7 @@
   function scaleFelt(){
     const base = 680;
     const hostWidth = scaleHost.parentElement.clientWidth || base;
-    const s = Math.max(0.55, Math.min(1, hostWidth / base));
+    const s = Math.max(0.40, Math.min(1, hostWidth / base));  // ✅ tighter clamp for tiny phones
     scaleHost.style.transform = `scale(${s})`;
   }
   addEventListener('resize', scaleFelt);
@@ -1340,6 +1364,23 @@ if ('serviceWorker' in navigator) {
   renderLast(null);
 
   let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
+
+  // ---- Rules pill wiring ----
+  const pill = document.getElementById('rulesPill');
+  const modal = document.getElementById('rulesModal');
+  if (pill && modal){
+    function toggle(open){
+      if(open===undefined) open = !modal.classList.contains('open');
+      modal.classList.toggle('open', open);
+      pill.setAttribute('aria-expanded', String(open));
+    }
+    pill.addEventListener('click', ()=>toggle());
+    document.addEventListener('click', (e)=>{
+      if(!modal.classList.contains('open')) return;
+      if(e.target===pill || modal.contains(e.target)) return;
+      toggle(false);
+    }, {capture:true});
+  }
 })();
 </script>
 
