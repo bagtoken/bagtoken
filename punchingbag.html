@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="format-detection" content="telephone=no"/>
+<title>$BAG Punch — Just for Fun</title>
+
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);--warn:#e8a85c;--loss:#e25b5b
+  }
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:6px 0 14px}
+  .pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-weight:700;white-space:nowrap}
+  .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,rgba(255,225,117,.06),transparent 40%),var(--panel);
+        border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 18px var(--shadow);padding:16px}
+  /* Bag stage */
+  .stage{position:relative;aspect-ratio:1/1;background:radial-gradient(60% 60% at 50% 30%,#13271c,#0c1d14 70%);border:1px solid var(--line);
+         border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;user-select:none;touch-action:manipulation}
+  .chain{position:absolute;top:0;left:50%;width:2px;height:24%;transform:translateX(-50%);background:linear-gradient(#5a6a60,#2b3a31)}
+  .bag{position:relative;width:min(70%,380px);aspect-ratio:1/2.1;border-radius:42%/18%;
+       background:linear-gradient(175deg,#163724 0%,#0e281b 55%,#0a1e14 100%);
+       border:2px solid #143122; box-shadow:0 20px 40px rgba(0,0,0,.55); transform-origin:50% -10%;}
+  .strap{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:26%;height:26px;border-radius:6px;
+         background:linear-gradient(#1b3827,#0e2318);border:2px solid #143122}
+  .logo{position:absolute;left:50%;top:32%;transform:translateX(-50%);width:44%;height:20%;
+        border-radius:10px;background:linear-gradient(180deg,rgba(255,225,117,.12),transparent 55%),
+        radial-gradient(120% 160% at 50% 0%,rgba(255,225,117,.08),transparent 50%),#0f251a;border:1px solid #173c29}
+  .hit{animation: sway .22s ease-out}
+  @keyframes sway{0%{transform:rotate(0deg)}40%{transform:rotate(var(--amp,8deg))}100%{transform:rotate(0deg)}}
+
+  /* Meter and readouts */
+  .meter{height:12px;background:#0b1611;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .meter>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#2fbf6b,#ffe175)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{appearance:none;border:0;border-radius:10px;padding:12px 14px;font-weight:800;cursor:pointer}
+  .btn{background:var(--green);color:#09150e;border:1px solid #1c7444}
+  .btn-ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  .muted{color:var(--muted);font-size:13px}
+  .big{font-size:28px;font-weight:900;letter-spacing:.3px}
+  .readouts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .tile{padding:10px;border:1px dashed var(--line);border-radius:10px;text-align:center}
+  .cta{position:absolute;inset:auto 0 12px 0;text-align:center;font-weight:800;opacity:.85}
+  .ring{position:absolute;border-radius:50%;border:2px solid rgba(255,225,117,.45);transform:translate(-50%,-50%);
+        left:50%;top:54%;width:20px;height:20px;opacity:0;pointer-events:none}
+  .ring.r1{animation: ring .35s ease-out}
+  @keyframes ring{0%{opacity:.9;transform:translate(-50%,-50%) scale(.3)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="pill">BAG Punch</div>
+    <div class="pill">No stakes. Just swing</div>
+  </div>
+
+  <div class="grid">
+    <!-- Left: Bag -->
+    <div class="card">
+      <div class="stage" id="stage">
+        <div class="chain"></div>
+        <div class="bag" id="bag">
+          <div class="strap"></div>
+          <div class="logo"></div>
+        </div>
+        <div class="ring" id="ring"></div>
+        <div class="cta" id="cta">Tap the bag</div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="meter"><i id="meter"></i></div>
+      <div class="big" id="headline" style="text-align:center;margin:10px 0 0">Ready</div>
+    </div>
+
+    <!-- Right: Controls & Stats -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <button class="btn" id="start5">Start 5s Challenge</button>
+        <button class="btn-ghost" id="freestyle">Freestyle</button>
+      </div>
+      <div style="height:10px"></div>
+      <div class="readouts">
+        <div class="tile"><div class="muted">Punches</div><div id="punches" class="big">0</div></div>
+        <div class="tile"><div class="muted">Combo</div><div id="combo" class="big">0</div></div>
+        <div class="tile"><div class="muted">Power</div><div id="power" class="big">0</div></div>
+        <div class="tile"><div class="muted">Best Score</div><div id="best" class="big">0</div></div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="row">
+        <button class="btn-ghost" id="share">Share</button>
+        <button class="btn-ghost" id="resetBest">Reset Best</button>
+      </div>
+      <div style="height:10px"></div>
+      <div class="muted">
+        5-second challenge rewards clean rhythm more than spam. Ideal cadence lands around 165 ms between taps.  
+        Freestyle mode runs forever for stress relief
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const bag = $('#bag'), stage = $('#stage'), ring = $('#ring');
+  const meter = $('#meter'), headline = $('#headline'), cta = $('#cta');
+  const punchesEl = $('#punches'), comboEl = $('#combo'), powerEl = $('#power'), bestEl = $('#best');
+  const start5 = $('#start5'), freestyleBtn = $('#freestyle'), shareBtn = $('#share'), resetBest = $('#resetBest');
+
+  // State
+  let mode = 'idle';          // 'idle' | 'challenge' | 'free'
+  let startTime = 0;
+  let duration = 5000;
+  let raf = 0;
+  let taps = [];
+  let lastStamp = 0;
+  let punches = 0;
+  let combo = 0, bestCombo = 0;
+  let best = Number(localStorage.getItem('__bag_punch_best')||'0')||0;
+  bestEl.textContent = best.toString();
+
+  function resetRound(){
+    cancelAnimationFrame(raf);
+    taps = []; lastStamp = 0; punches = 0; combo = 0; bestCombo = 0;
+    punchesEl.textContent = '0';
+    comboEl.textContent = '0';
+    powerEl.textContent = '0';
+    setMeter(0);
+    cta.style.opacity = 0.85;
+  }
+
+  function setMeter(p){ meter.style.width = `${Math.max(0,Math.min(1,p))*100}%`; }
+  function vibe(ms){ if (navigator.vibrate) try{navigator.vibrate(ms);}catch(e){} }
+
+  // Simple synthesized thud via Web Audio
+  const audioCtx = (window.AudioContext||window.webkitAudioContext) ? new (window.AudioContext||window.webkitAudioContext)() : null;
+  function thud(){
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(220,t0);
+    o.frequency.exponentialRampToValueAtTime(60,t0+0.09);
+    g.gain.setValueAtTime(0.9,t0);
+    g.gain.exponentialRampToValueAtTime(0.001,t0+0.12);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t0); o.stop(t0+0.13);
+  }
+
+  function ringFlash(){
+    ring.classList.remove('r1');
+    void ring.offsetWidth; // reflow
+    ring.classList.add('r1');
+  }
+
+  function hit(ev){
+    if (mode==='idle') return;
+    const now = performance.now();
+    const dt = now - lastStamp; // ms since last hit
+    lastStamp = now;
+
+    // ignore impossible burst taps
+    if (dt > 0 && dt < 28) return;
+
+    // animate bag sway with amplitude based on speed
+    const amp = Math.max(4, Math.min(14, 22 - (dt||999)/16)); // deg
+    bag.style.setProperty('--amp', (Math.random()<0.5?'-':'') + amp + 'deg');
+    bag.classList.remove('hit'); void bag.offsetWidth; bag.classList.add('hit');
+
+    ringFlash();
+    thud();
+    vibe(10);
+
+    punches++;
+    punchesEl.textContent = String(punches);
+
+    // combo when within sweet band
+    if (dt>0 && dt>=120 && dt<=200) combo++;
+    else combo = 1;
+    if (combo>bestCombo) bestCombo = combo;
+    comboEl.textContent = String(combo);
+
+    // track cadence samples for scoring
+    if (dt>0 && dt<800) taps.push(dt);
+    if (taps.length>120) taps.shift();
+
+    // live meter in challenge shows time progress, freestyle uses power
+    if (mode==='free'){
+      const p = livePower(); // 0..1
+      setMeter(p);
+      powerEl.textContent = String(Math.round(p*100));
+      headline.textContent = `Freestyle • Combo ${bestCombo}`;
+    }
+  }
+
+  function livePower(){
+    if (!taps.length) return 0;
+    // score from cadence closeness to 165ms with triangle weighting
+    const target = 165, spread = 85;
+    let score=0;
+    for (const dt of taps){
+      const diff = Math.abs(dt-target);
+      const w = Math.max(0, 1 - diff/spread);
+      score += w;
+    }
+    const norm = Math.min(1, score / 60);
+    return norm;
+  }
+
+  function tick(){
+    if (mode!=='challenge') return;
+    const t = performance.now() - startTime;
+    const p = Math.min(1, t/duration);
+    setMeter(p);
+    if (t < duration){ raf = requestAnimationFrame(tick); return; }
+    finish();
+  }
+
+  function finish(){
+    mode = 'idle';
+    cta.style.opacity = 0.85;
+    const power = livePower(); // 0..1
+    const score = Math.round(power*1000);
+    powerEl.textContent = String(Math.round(power*100));
+    headline.textContent = `Score ${score} • ${punches} punches • Best combo ${bestCombo}`;
+    if (score > best){
+      best = score;
+      localStorage.setItem('__bag_punch_best', String(best));
+      bestEl.textContent = String(best);
+      headline.textContent += ' • New Best';
+      vibe(30);
+    }
+  }
+
+  function startChallenge(){
+    resetRound();
+    mode = 'challenge';
+    cta.style.opacity = 0;
+    startTime = performance.now();
+    headline.textContent = 'Go';
+    raf = requestAnimationFrame(tick);
+  }
+
+  function startFreestyle(){
+    resetRound();
+    mode = 'free';
+    cta.style.opacity = 0;
+    headline.textContent = 'Freestyle';
+    setMeter(0);
+  }
+
+  // Events
+  stage.addEventListener('pointerdown', hit);
+  bag.addEventListener('pointerdown', hit);
+
+  start5.addEventListener('click', ()=>{
+    if (audioCtx && audioCtx.state==='suspended') audioCtx.resume();
+    startChallenge();
+  });
+  freestyleBtn.addEventListener('click', ()=>{
+    if (audioCtx && audioCtx.state==='suspended') audioCtx.resume();
+    startFreestyle();
+  });
+  shareBtn.addEventListener('click', ()=>{
+    const text = `I just hit ${powerEl.textContent}% power on BAG Punch • Best ${best} • #XRPL #BAG`;
+    if (navigator.share){
+      navigator.share({text}).catch(()=>{});
+    } else {
+      const url = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text);
+      window.open(url,'_blank');
+    }
+  });
+  resetBest.addEventListener('click', ()=>{
+    best = 0; localStorage.removeItem('__bag_punch_best'); bestEl.textContent = '0';
+    headline.textContent = 'Best reset';
+  });
+
+  // Idle headline pulse
+  setMeter(0);
+})();
+</script>
+</body>
+</html>
