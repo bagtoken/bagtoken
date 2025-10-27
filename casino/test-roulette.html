@@ -94,7 +94,7 @@
         conic-gradient(#7b5029, #5e3a1b 25%, #7b5029 50%, #5e3a1b 75%, #7b5029);
       box-shadow:inset 0 0 0 10px #b8844f, inset 0 0 0 18px #8d5b2e, 0 10px 24px rgba(0,0,0,.35);}
     .chrome{ position:absolute; inset:9% 9%; border-radius:50%; background: radial-gradient(circle at 50% 48%, #444, #111 70%); box-shadow: inset 0 0 0 2px #000, 0 1px 6px #000a; }
-    .ring{position:absolute; inset:12% 12%; border-radius:50%; }
+    .ring{position:absolute; inset:12% 12%; border-radius:50%; will-change: transform;}
     .pocket{ position:absolute; left:50%; top:50%; transform-origin:0% 0%; width:46%; height:26px; margin-top:-13px; border-radius:6px 999px 999px 6px; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; font-weight:800; font-size:14px; color:#fff; border:1px solid #0007; text-shadow:0 1px 2px #000c; }
     .pocket.green{background:#1b7b3a}
     .pocket.red{background:#cf2b2b}
@@ -106,7 +106,8 @@
     .bowl{position:absolute; inset:28% 28%; border-radius:50%; background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 72%); box-shadow:0 8px 16px var(--shadow);}
     .bowl::after{ content:""; position:absolute; inset:28% 28%; border-radius:50%; background: radial-gradient(circle at 50% 40%, #f0d49b, #9c6f36 72%); box-shadow:inset 0 6px 12px rgba(0,0,0,.35); }
 
-    .ball{ position:absolute; width:18px; height:18px; background:#eee; border-radius:50%; box-shadow:0 1px 4px #000a; left:50%; top:50%; margin:-9px; transform-origin:0 0; transform:rotate(0deg) translate(120px); }
+    .ball{ position:absolute; width:18px; height:18px; background:#eee; border-radius:50%; box-shadow:0 1px 4px #000a; left:50%; top:50%; margin:-9px;
+      transform-origin:0 0; transform:rotate(0deg) translate(120px); will-change: transform; }
 
     .spin-row{display:flex;justify-content:center}
     .btn-spin{
@@ -124,7 +125,7 @@
     .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; justify-content:center; }
     .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 
-    /* -------- Bets table (responsive, clamped, centered) -------- */
+    /* -------- Bets table (explicit areas so 0/00 stay above) -------- */
     .felt{
       background:linear-gradient(180deg,#0e2a1d,#0a2016);
       border:1px solid #1b3b2c;border-radius:12px;padding:10px;
@@ -140,11 +141,18 @@
     @media (max-width:480px){ .felt-inner{ width:440px; } }
     @media (max-width:440px){ .felt-inner{ width:400px; } }
 
-    .felt-grid{ display:grid; gap:6px; }
-    .zero-row{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-    .nums{ display:grid; grid-template-columns:repeat(3, 1fr); grid-auto-rows:56px; gap:6px; }
-    .cols{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
-    .outside{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .felt-grid{
+      display:grid; gap:6px;
+      grid-template-areas:
+        "zero"
+        "nums"
+        "cols"
+        "outside";
+    }
+    .zero-row{ grid-area: zero; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .nums{ grid-area: nums; display:grid; grid-template-columns:repeat(3, 1fr); grid-auto-rows:56px; gap:6px; }
+    .cols{ grid-area: cols; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .outside{ grid-area: outside; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
     @media (max-width:560px){ .nums{ grid-auto-rows:48px; } }
 
     .cell{
@@ -945,6 +953,7 @@
     const DURATION_MS = 9000; const revs = 16;
     const targetDeg = 360*revs + (360 - idx*(360/WHEEL.length));
 
+    /* Smooth spin using pure CSS transitions */
     ring.style.transition = 'transform '+DURATION_MS+'ms cubic-bezier(.2,.9,.2,1)';
     ball.style.transition = 'transform '+DURATION_MS+'ms cubic-bezier(.2,.9,.2,1)';
 
@@ -952,34 +961,13 @@
     const startBall = getCurrentRotation(ball);
     const baseR = ballRadiusPx();
 
+    /* Set end transforms once; CSS will animate the rotation */
     setTransforms(startRing + targetDeg, startBall - (targetDeg + 540), baseR);
 
-    const t0 = performance.now();
-    let raf;
-    function bounce(){
-      if(!spinning) return;
-      const t = performance.now() - t0;
-      const p = Math.min(1, t / DURATION_MS);
-      const amp = (1 - p) * 12;
-      const freq = 10 + 8*(1-p);
-      const r = baseR + Math.sin(t/1000*freq*2*Math.PI) * amp;
-      const curRing = getCurrentRotation(ring);
-      const curBall = getCurrentRotation(ball);
-      resetTransitions();
-      setTransforms(curRing, curBall, r);
-      ring.style.transition = 'transform '+Math.max(0, DURATION_MS - t)+'ms cubic-bezier(.2,.9,.2,1)';
-      ball.style.transition = 'transform '+Math.max(0, DURATION_MS - t)+'ms cubic-bezier(.2,.9,.2,1)';
-      raf = requestAnimationFrame(bounce);
-    }
-    raf = requestAnimationFrame(bounce);
-
     setTimeout(()=>{
-      cancelAnimationFrame(raf);
-      const finalRing = getCurrentRotation(ring) % 360;
-      const finalBall = getCurrentRotation(ball) % 360;
-      resetTransitions();
-      setTransforms(finalRing, finalBall, baseR);
-
+      /* Lock final transforms and stop audio */
+      ring.style.transition = 'none';
+      ball.style.transition = 'none';
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
 
       const {win, notes} = computePayout(hit, sBag);
@@ -1001,8 +989,13 @@
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
       }
 
+      /* Re-home ball at current angle with fixed radius so resize recalcs cleanly */
+      const finalRing = getCurrentRotation(ring) % 360;
+      const finalBall = getCurrentRotation(ball) % 360;
+      setTransforms(finalRing, finalBall, baseR);
+
       btn.disabled = false; spinning = false;
-    }, DURATION_MS + 120);
+    }, DURATION_MS + 60);
   });
 
   function resetTransitions(){ ring.style.transition = 'none'; ball.style.transition = 'none'; }
