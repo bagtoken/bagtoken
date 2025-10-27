@@ -1,1 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>BAG Roulette</title>
+
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<script>window.__BAG_FORCE_DEMO = true;</script>
+
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --red:#e25b5b;
+    --felt:#0c2319; --felt2:#0f2a1f; --rred:#cf2b2b; --rblack:#141414; --rgreen:#1b7b3a;
+  }
+
+  html,body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;
+    touch-action: manipulation;
+    -webkit-text-size-adjust:100%;
+    overscroll-behavior:contain;
+    max-width:100%;
+    overflow-x:hidden;            /* 🔒 No horizontal scroll */
+  }
+  img{display:block;max-width:100%;height:auto}
+  button,input{font-size:16px}
+
+  .back-casino{
+    position:fixed;top:18px;left:18px;z-index:1000;
+    background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
+    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
+    box-shadow:0 4px 0 #b08a19;transition:all .15s ease
+  }
+  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+
+  .game-header{text-align:center;padding:36px 10px 14px}
+  .game-header img.hero-img{margin:0 auto 10px; width:min(420px,90vw);} /* ✅ centered on mobile */
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+  @media (min-width:900px){
+    .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
+  }
+
+  .game-teaser{padding:10px 16px 60px;background:
+    radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+    border-top:1px solid #131313;border-bottom:1px solid #131313}
+  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
+  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
+
+  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
+  .mock{padding:14px}
+
+  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+  .stake-box{padding:14px}
+  .stack{display:grid;gap:10px}
+  .choice{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+  .chip input{accent-color:#2fbf6b}
+  .mono{font-variant-numeric:tabular-nums}
+  .micro{font-size:.85rem;color:#aeb7af}
+  .muted{color:#cfd6cf}
+  .divider{height:1px;background:#123221;margin:10px 0}
+
+  .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+  .payout-grid{display:grid;gap:4px}
+  .payout-grid .row{display:flex;justify-content:space-between}
+  .payout-grid .lab{color:#cfd6cf}
+  .payout-grid .val{font-variant-numeric:tabular-nums}
+
+  .slots-wrap{display:grid;gap:12px}
+  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #25433a;border-radius:12px;padding:8px}
+  .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
+
+  /* -------- Roulette wheel -------- */
+  .wheel-wrap{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px}
+  .wheel{position:relative;aspect-ratio:1;border-radius:12px;background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.06), transparent 60%)}
+  .wood{position:absolute;inset:6% 6% 6% 6%;border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), rgba(0,0,0,.35) 72%),
+      conic-gradient(from 0deg, #744923, #5e3a1b 25%, #744923 50%, #5e3a1b 75%, #744923 100%);
+    box-shadow:inset 0 0 0 12px #b8844f, inset 0 0 0 20px #8d5b2e;
+  }
+  .ring{position:absolute;inset:10% 10% 10% 10%;border-radius:50%;transform:rotate(0deg)}
+  .pocket{
+    position:absolute;left:50%;top:50%;transform-origin:0% 0%;
+    width:46%;height:26px;margin-top:-13px;border-radius:4px 999px 999px 4px;
+    display:flex;align-items:center;justify-content:flex-end;padding-right:10px;font-weight:800;font-size:14px;color:#fff;
+    border:1px solid #0007;text-shadow:0 1px 2px #000c;
+  }
+  .pocket.green{background:var(--rgreen)}
+  .pocket.red{background:var(--rred)}
+  .pocket.black{background:var(--rblack)}
+  .spindle{position:absolute;inset:27% 27% 27% 27%;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 70%);box-shadow:0 8px 16px var(--shadow);}
+  .ball{
+    position:absolute;width:18px;height:18px;background:#eee;border-radius:50%;box-shadow:0 1px 4px #000a;
+    left:50%;top:50%;margin:-9px;transform-origin:0 0;
+    transform:rotate(0deg) translate(120px);
+  }
+  .marker{position:absolute;left:50%;top:50%;width:3px;height:22px;background:#d2a253;transform-origin:50% 210px;border-radius:2px}
+
+  .spin-row{display:flex;justify-content:center}
+  .btn-spin{
+    width:min(360px,90%);padding:16px 22px;margin-top:2px;
+    font-size:1.15rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;border:0;border-radius:14px;
+    color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+    box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease; cursor:pointer;
+  }
+  .btn-spin:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315,0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn-spin:disabled{opacity:.65;cursor:not-allowed}
+
+  .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
+  .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
+
+  #liveDot{margin-right:6px}
+  .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
+
+  .tile{display:inline-block;line-height:1;font-weight:900;letter-spacing:.06em;}
+  .tile--bar{display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;background:#0b0b0b;color:#fff;border:2px solid #1e1e1e;border-radius:999px;font-size:20px;white-space:nowrap;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 6px rgba(0,0,0,.35);margin:0;max-width:100%;}
+
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+  /* Real roulette felt */
+  .felt{background:linear-gradient(180deg,#0e2a1d,#0a2016);border:1px solid #1b3b2c;border-radius:12px;padding:10px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);}
+  .felt-outer{width:100%; display:flex; justify-content:center;}
+  .felt-scale{
+    transform-origin: top center;
+    /* JS sets scale() so felt always fits — NO SCROLL */
+  }
+  /* Base (design) felt width used for scaling */
+  .felt-grid{ width: 680px; display:grid;grid-template-columns:80px repeat(12, minmax(34px,1fr));gap:6px;align-items:stretch }
+  .felt .cell{
+    display:grid;place-items:center;height:38px;border:1px solid #244634;border-radius:8px;font-weight:900;
+    user-select:none;cursor:pointer;transition:transform .05s ease, box-shadow .15s ease;
+  }
+  .felt .cell:active{transform:translateY(1px)}
+  .felt .cell.num.red{background:#7f1717;color:#fff}
+  .felt .cell.num.black{background:#0b0b0b;color:#fff;border-color:#2b2b2b}
+  .felt .cell.num.selected{outline:2px solid #ffe175; box-shadow:0 0 0 2px #b08a19 inset}
+  .felt .zero-col{display:grid;gap:6px}
+  .felt .zero-col .cell{background:#0f3a26;color:#fff}
+  .felt .outside{grid-column:1 / -1; display:grid; grid-template-columns: repeat(6,1fr); gap:6px; margin-top:6px}
+  .felt .outside .cell{background:#0f251b;color:#e7efe9}
+  .felt .outside .cell.selected{outline:2px solid #ffe175; box-shadow:0 0 0 2px #b08a19 inset}
+  .felt .colBets{grid-column:2 / -1; display:grid; grid-template-columns: repeat(12,1fr); gap:6px}
+  .felt .colBets .cell{background:#0f251b;color:#e7efe9}
+  .felt .lbl{font-size:12px;color:#cfe0d6; text-align:center; margin:6px 0 2px}
+
+  /* Footer center */
+  .footer{ text-align:center; width:100%; margin:0 auto; }
+</style>
+
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+</head>
+
+  <body>
+
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+
+<section class="game-header">
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/bag-roulette-960.webp 960w, /assets/bag-roulette-1024.webp 1024w"
+            sizes="(min-width:900px) 420px, 90vw">
+    <img
+      class="hero-img"
+      src="/assets/bag-roulette-1024.png"
+      srcset="/assets/bag-roulette-960.png 960w, /assets/bag-roulette-1024.png 1024w"
+      sizes="(min-width:900px) 420px, 90vw"
+      alt="$BAG Roulette"
+      loading="lazy" decoding="async">
+  </picture>
+  <h2>🎲 $BAG ROULETTE</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">
+    💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+  </p>
+</section>
+
+    <section class="game-teaser" aria-labelledby="game-teaser-title">
+  <div class="game-wrap">
+
+    <!-- LEFT: Stake, Prices, Bets -->
+    <div class="panel mock" id="bagRouletteDemo">
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn"
+          style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+          Connect Xaman
+        </button>
+      </div>
+
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0;">
+        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#e8a85c">not started</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="startSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;">Start Session</button>
+          <button id="topUpBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;display:none;">Top Up</button>
+          <button id="endSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">End</button>
+        </div>
+      </div>
+
+      <div class="section-title">Stake & Prices</div>
+
+      <div class="stake-box">
+        <div class="stack">
+          <div>
+            <div class="micro">Amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;align-items:center;gap:6px">
+                <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" pattern="[0-9]*"
+                       min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="micro" aria-hidden="true">USD</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet currency</div>
+            <div class="choice" id="curToggle">
+              <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+              <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+            </div>
+          </div>
+
+          <div>
+            <div class="micro">Bet amount</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div>
+                <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done"
+                       min="0" step="any" value="1" aria-label="Stake units"
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                <span class="unit">XRP</span>
+              </div>
+            </div>
+            <div class="micro" id="betLimits" style="margin-top:6px" aria-live="polite"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="micro">Live prices</div>
+          <div class="muted mono" id="liveLine" aria-live="polite">
+            <span id="liveDot" class="warn">●</span>
+            <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
+            <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Payouts preview -->
+      <div class="callout mono" id="payoutBox">
+        <div class="payout-grid">
+          <div class="row"><div class="lab"><strong>Straight</strong> (35:1):</div><div class="val" id="payStraight">—</div></div>
+          <div class="row"><div class="lab"><strong>Dozen</strong> (2:1):</div><div class="val" id="payDozen">—</div></div>
+          <div class="row"><div class="lab"><strong>Column</strong> (2:1):</div><div class="val" id="payColumn">—</div></div>
+          <div class="row"><div class="lab"><strong>Red/Black</strong> (1:1):</div><div class="val" id="payRB">—</div></div>
+          <div class="row"><div class="lab"><strong>Even/Odd</strong> (1:1):</div><div class="val" id="payEO">—</div></div>
+          <div class="row"><div class="lab"><strong>High/Low</strong> (1:1):</div><div class="val" id="payHL">—</div></div>
+        </div>
+        <div class="micro" style="margin-top:6px;opacity:.85;">
+          Practice mode enabled — on-ledger play wires in after QA.
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-title">Bets</div>
+
+      <!-- Felt (auto-scale to avoid scroll) -->
+      <div class="felt-outer">
+        <div class="felt-scale" id="feltScale">
+          <div class="felt" id="felt">
+            <div class="felt-grid">
+              <!-- 0 / 00 column -->
+              <div class="zero-col">
+                <div class="cell num green" data-val="0">0</div>
+                <div class="cell num green" data-val="00">00</div>
+              </div>
+
+              <!-- Numbers 1–36 (3 rows × 12 cols) -->
+              <div id="feltNums" style="grid-column:2 / span 12; display:grid; grid-template-columns: repeat(12,1fr); gap:6px"></div>
+
+              <!-- Column bets -->
+              <div class="colBets" id="colBets"></div>
+
+              <!-- Outside bets -->
+              <div class="outside" id="outsideBets">
+                <div class="cell" data-type="HL" data-val="LOW">1–18</div>
+                <div class="cell" data-type="EO" data-val="EVEN">EVEN</div>
+                <div class="cell" data-type="RB" data-val="RED">RED</div>
+                <div class="cell" data-type="RB" data-val="BLACK">BLACK</div>
+                <div class="cell" data-type="EO" data-val="ODD">ODD</div>
+                <div class="cell" data-type="HL" data-val="HIGH">19–36</div>
+              </div>
+
+              <div class="lbl" style="grid-column:1/-1">Tap numbers or outside areas to set bets (single selection per type).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden controls for engine compatibility -->
+      <div style="display:none">
+        <input id="betStraight" />
+        <select id="betRB"><option value=""></option><option>RED</option><option>BLACK</option></select>
+        <select id="betEO"><option value=""></option><option>EVEN</option><option>ODD</option></select>
+        <select id="betHL"><option value=""></option><option value="LOW">1–18</option><option value="HIGH">19–36</option></select>
+        <select id="betDozen"><option value=""></option><option value="D1">1–12</option><option value="D2">13–24</option><option value="D3">25–36</option></select>
+        <select id="betCol"><option value=""></option><option value="C1">Column 1</option><option value="C2">Column 2</option><option value="C3">Column 3</option></select>
+      </div>
+    </div>
+
+    <!-- RIGHT: Wheel -->
+    <div class="slots-wrap">
+      <div class="marquee">$BAG ROULETTE</div>
+      <div class="cabinet">
+        <div class="wheel-wrap" aria-label="Roulette wheel">
+          <div class="wheel">
+            <div class="wood"></div>
+            <div id="ring" class="ring"></div>
+            <div class="spindle"></div>
+            <div id="ball" class="ball"></div>
+            <div class="marker"></div>
+          </div>
+        </div>
+
+        <div class="spin-row">
+          <button id="spinBtn" class="btn-spin" aria-label="Spin the wheel">SPIN</button>
+        </div>
+
+        <div class="hudbar" aria-live="polite">
+          <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
+        </div>
+
+        <p class="micro" style="text-align:center;margin-top:10px;font-size:12px;opacity:.7;color:#aeb7af;">
+          🔊 If you don’t hear sound: tap SPIN once, turn off Silent mode, and raise volume.
+        </p>
+
+        <div class="result" role="status" aria-live="polite">
+          <div class="t" id="spinText">Tap SPIN</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- How it plays -->
+    <div class="panel" style="padding:16px">
+      <h3 style="margin:0 0 8px;font-size:1.2rem;">How it plays</h3>
+      <ul style="margin:0;padding-left:18px;color:#cfd6cf">
+        <li>American wheel with <b>double zero (00)</b>; sequence verified.</li>
+        <li>Bet types: <b>Straight, Red/Black, Even/Odd, High/Low, Dozen, Column</b>.</li>
+        <li>Payouts: Straight <b>35:1</b> · Dozen/Column <b>2:1</b> · RB/EO/HL <b>1:1</b>.</li>
+      </ul>
+      <p class="micro" style="margin-top:10px">Practice mode enabled — on-ledger play wires in after QA.</p>
+    </div>
+
+  </div>
+</section>
+
+    <script>
+(function(){
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
+
+  function getAC(){ if(AC && AC.state!=='closed') return AC; if(!AudioCtx) return null;
+    AC=new AudioCtx(); MASTER=AC.createGain(); MASTER.gain.value=.22; MASTER.connect(AC.destination); return AC;}
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{await ac.resume();}catch(e){} } }
+
+  addEventListener('pointerdown', ()=>{ lastTap=Date.now(); resume(); }, {passive:true});
+  addEventListener('pointerdown', async ()=>{ if(armed) return; armed=true; await resume();
+    try{ const o=getAC().createOscillator(), g=getAC().createGain(); g.gain.value=.0001; o.connect(g).connect(MASTER); o.start(); o.stop(getAC().currentTime+.02);}catch{} }, {once:true, passive:true});
+  addEventListener('visibilitychange', ()=>{ if(!document.hidden) resume(); });
+  if(!watchdog) watchdog=setInterval(()=>{ const ac=getAC(); if(!ac) return; if(Date.now()-lastTap<30000 && ac.state==='suspended') resume(); },1500);
+
+  function spinLoop(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return {stop:()=>{}};
+    let alive=true; const bus=ac.createGain(); bus.gain.value=.18; bus.connect(MASTER);
+    function click(){ if(!alive) return; const o=ac.createOscillator(), g=ac.createGain(); o.type='square'; o.frequency.value=1500+Math.random()*400;
+      const t=ac.currentTime; g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.25,t+.004); g.gain.exponentialRampToValueAtTime(.0001,t+.03);
+      o.connect(g).connect(bus); o.start(t); o.stop(t+.035); }
+    const iv=setInterval(click,70);
+    return { stop(){ alive=false; clearInterval(iv);} };
+  }
+  function chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+    [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+      o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }
+  function thud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const o=ac.createOscillator(), g=getAC().createGain(); o.type='sine';
+    const t=ac.currentTime; o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(140,t+.22);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.10,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.25);
+    o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
+
+  // Helper: play spin for a fixed ms, then stop
+  async function playSpinFor(ms){
+    const h = spinLoop();
+    await new Promise(r=>setTimeout(r, ms));
+    try{ h.stop(); }catch{}
+  }
+
+  window.__bagAudio = { spinLoop, chime, thud, resume, playSpinFor };
+})();
+</script>
+
+    <script>
+(function(){
+  let lastTouch=0;
+  document.addEventListener('touchend', (e)=>{
+    const now = Date.now();
+    if (now - lastTouch < 300){ e.preventDefault(); }
+    lastTouch = now;
+  }, {passive:false});
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+    document.addEventListener(ev, (e)=>{ e.preventDefault(); }, {passive:false});
+  });
+  document.addEventListener('wheel', (e)=>{ if (e.ctrlKey) e.preventDefault(); }, {passive:false});
+})();
+</script>
+
+    <script>
+(function(){
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+
+  const XRPL_WSS = 'wss://s1.ripple.com';
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';
+  const XRP_KEY        = 'xrp_usd';
+
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k, ttlMs){
+    try{
+      const o=JSON.parse(localStorage.getItem(k)||'null');
+      if(!o) return null;
+      const age = Date.now() - (o.t||0);
+      return age<=ttlMs ? o.v : null;
+    }catch{ return null; }
+  }
+  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl = new AbortController();
+    const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{
+      const u = new URL(url, location.origin);
+      u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(), {
+        ...opts,
+        headers: { Accept:'application/json', ...(opts.headers||{}) },
+        mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+        signal: ctrl.signal
+      });
+    } finally { setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  function updateLiveLine(){
+    if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
+    if (liveXRP)  liveXRP.textContent  = (Number.isFinite(PRICES.xrpUsd) ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—');
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
+    if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  async function fetchXrpUsdLive(){
+    try{
+      const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if(Number(v)>0){
+        PRICES.xrpUsd = Number(v);
+        cacheSet(XRP_KEY, PRICES.xrpUsd);
+        return true;
+      }
+    }catch(_){}
+    return false;
+  }
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
+  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+  async function fetchBagViaAMMLive(){
+    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+    const xrpPerBag = await new Promise((resolve)=>{
+      const ws = new WebSocket(XRPL_WSS);
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
+          const bagBal = parseIouAmount(amm.amount);
+          const xrpBal = parseXrpAmount(amm.amount2);
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price = xrpBal / bagBal;
+          if (!(price>0) || !isFinite(price) ) return resolve(null);
+          resolve(price);
+        }catch{ resolve(null); }
+      };
+    });
+    if (!(xrpPerBag>0)) return false;
+    if (!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
+    PRICES.source = 'live-amm';
+    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    return true;
+  }
+
+  function loadLastLiveBundle(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      PRICES.source = 'last-live';
+      return true;
+    }
+    return false;
+  }
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    let ok = false;
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      ok = true;
+    }
+    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok = true; }
+    if (ok && PRICES.source==='—') PRICES.source = 'last-live';
+    return ok;
+  }
+
+  async function refreshPrices(){
+    let liveOk = false;
+    const gotX = await fetchXrpUsdLive();
+    const gotBag = await fetchBagViaAMMLive();
+    liveOk = gotX && gotBag;
+    if (!liveOk){
+      if (!loadLastLiveBundle()) loadViewCache();
+    }
+    updateLiveLine();
+  }
+
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+
+  window.addEventListener('storage', (e)=>{
+    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      if (!loadLastLiveBundle()) loadViewCache();
+      updateLiveLine();
+    }
+  });
+})();
+</script>
+
+    <script>
+(function(){
+  const usdBetEl = document.getElementById('usdBet');
+  const betQtyEl = document.getElementById('betQty');
+  const curToggle = document.getElementById('curToggle');
+  const unitSpan  = document.querySelector('.unit');
+  const limitsEl  = document.getElementById('betLimits');
+
+  const pStraight = document.getElementById('payStraight');
+  const pDozen = document.getElementById('payDozen');
+  const pColumn = document.getElementById('payColumn');
+  const pRB = document.getElementById('payRB');
+  const pEO = document.getElementById('payEO');
+  const pHL = document.getElementById('payHL');
+
+  const MIN_USD = 1, MAX_USD = 2000;
+
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const selectedCur = () => (curToggle?.querySelector('input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+  const priceFor = (cur) => (cur==='BAG'? PR().bagUsd : PR().xrpUsd) || 0;
+
+  function fmt(n,max=6){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function qty(){ const v=parseFloat(betQtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+
+  function stakeUsd(){
+    const direct = parseFloat(usdBetEl?.value||'');
+    if (Number.isFinite(direct) && direct>0) return Math.min(MAX_USD, direct);
+    const px = priceFor(selectedCur());
+    return (px>0 && qty()>0) ? qty()*px : 0;
+  }
+
+  function stakeBag(){
+    const q = qty();
+    const {bagUsd,xrpUsd} = PR();
+    if (selectedCur()==='BAG') return q;
+    if (bagUsd>0 && xrpUsd>0) return q * (xrpUsd/bagUsd);
+    return 0;
+  }
+
+  function renderLimits(){
+    const sUsd = stakeUsd()||0;
+    const warn = (sUsd>0 && sUsd<MIN_USD) ? ` · <span style="color:#e8a85c">Min $${MIN_USD.toFixed(2)}</span>` :
+                 (sUsd>MAX_USD) ? ` · <span style="color:#e8a85c">Max $${MAX_USD.toFixed(2)}</span>` : '';
+    if (limitsEl) limitsEl.innerHTML = `Limits: $${MIN_USD.toFixed(2)}–$${MAX_USD.toFixed(2)} · Your stake ≈ ${usd(sUsd)}${warn}`;
+  }
+
+  function renderPayouts(){
+    const sUsd = stakeUsd()||0, sBag = stakeBag()||0;
+    const showDash = !(sUsd>0 && sBag>0);
+    const row = (mult)=> showDash ? '—' : `${fmt(sBag*mult)} BAG (${usd(sUsd*mult)})`;
+    if (pStraight) pStraight.textContent = row(35);
+    if (pDozen)   pDozen.textContent   = row(2);
+    if (pColumn)  pColumn.textContent  = row(2);
+    if (pRB)      pRB.textContent      = row(1);
+    if (pEO)      pEO.textContent      = row(1);
+    if (pHL)      pHL.textContent      = row(1);
+  }
+
+  function updateUsdFromBet(){
+    const px = priceFor(selectedCur());
+    const usdVal = (px>0 ? qty()*px : 0);
+    usdBetEl.value = usdVal>0 ? usdVal.toFixed(2) : '';
+    renderLimits(); renderPayouts();
+  }
+  function updateBetFromUsd(){
+    const px = priceFor(selectedCur());
+    let u = parseFloat(usdBetEl.value||'');
+    if (!Number.isFinite(u) || u<=0 || px<=0){ renderLimits(); renderPayouts(); return; }
+    u = Math.min(MAX_USD, Math.max(0, u));
+    const units = Math.floor((u/px) * 1e6)/1e6;
+    betQtyEl.value = units || '';
+    renderLimits(); renderPayouts();
+  }
+
+  function installUsdPresets(){
+    const flexRow = usdBetEl.closest('div')?.parentElement;
+    const hostBlock = flexRow?.parentElement;
+    if(!flexRow || !hostBlock) return;
+    if(hostBlock.querySelector('#usdPresets')) return;
+
+    const presets = [1,2,5,10,20,50,100,'MAX'];
+    const wrap = document.createElement('div');
+    wrap.id = 'usdPresets';
+    wrap.className = 'choice';
+    wrap.style.marginTop = '8px';
+
+    presets.forEach(p => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip';
+      btn.textContent = (p==='MAX') ? 'MAX' : `$${p}`;
+      btn.dataset.usd = (p==='MAX') ? String(2000) : String(p);
+      btn.addEventListener('click', () => {
+        usdBetEl.value = btn.dataset.usd;
+        updateBetFromUsd();
+        usdBetEl.dispatchEvent(new Event('input', {bubbles:true}));
+      });
+      wrap.appendChild(btn);
+    });
+
+    hostBlock.appendChild(wrap);
+  }
+
+  usdBetEl.addEventListener('input', updateBetFromUsd);
+  betQtyEl.addEventListener('input', updateUsdFromBet);
+  curToggle.addEventListener('change', ()=>{
+    if (unitSpan) unitSpan.textContent = selectedCur();
+    updateUsdFromBet();
+  });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    if (usdBetEl.value) updateBetFromUsd(); else updateUsdFromBet();
+  });
+
+  if (unitSpan) unitSpan.textContent = selectedCur();
+  updateUsdFromBet();
+  renderLimits();
+  renderPayouts();
+  installUsdPresets();
+
+  window.__bagStake = { usd: ()=>stakeUsd(), bag: ()=>stakeBag(), minUsd: 1, maxUsd: 2000 };
+})();
+</script>
+
+    <script>
+(function(){
+  const feltNums = document.getElementById('feltNums');
+  const colBets = document.getElementById('colBets');
+  const outside = document.getElementById('outsideBets');
+  const scaleHost = document.getElementById('feltScale');
+
+  if(!feltNums || !colBets || !outside || !scaleHost) return;
+
+  // 🔴⚫️ colors
+  const RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+  const BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
+  function colorOf(n){ if(n===0 || n==='00') return 'green'; if(RED.has(n)) return 'red'; return 'black'; }
+
+  // 3 rows × 12 columns
+  const rows = [
+    Array.from({length:12},(_,i)=>3+i*3), // top
+    Array.from({length:12},(_,i)=>2+i*3), // middle
+    Array.from({length:12},(_,i)=>1+i*3)  // bottom
+  ];
+
+  // Build numbers
+  for (let r=0;r<3;r++){
+    for (let c=0;c<12;c++){
+      const n = rows[r][c];
+      const d = document.createElement('div');
+      d.className = `cell num ${colorOf(n)}`;
+      d.textContent = String(n);
+      d.dataset.val = String(n);
+      d.dataset.row = String(r+1);
+      d.dataset.col = String(c+1);
+      feltNums.appendChild(d);
+    }
+  }
+
+  // Column bets (2:1)
+  for (let c=0;c<12;c++){
+    const d = document.createElement('div');
+    d.className = 'cell';
+    d.textContent = '2:1';
+    const topNum = rows[0][c];
+    const colType = (topNum % 3 === 1) ? 'C1' : (topNum % 3 === 2) ? 'C2' : 'C3';
+    d.dataset.type = 'COL';
+    d.dataset.val = colType;
+    colBets.appendChild(d);
+  }
+
+  // State
+  const allNums = () => feltNums.querySelectorAll('.cell.num');
+  const allCols = () => colBets.querySelectorAll('.cell');
+  const allOutside = () => outside.querySelectorAll('.cell');
+
+  let straight='', RB='', EO='', HL='', D='', COL='';
+
+  function syncHidden(){
+    document.getElementById('betStraight').value = straight;
+    document.getElementById('betRB').value = RB;
+    document.getElementById('betEO').value = EO;
+    document.getElementById('betHL').value = HL;
+    document.getElementById('betDozen').value = D;
+    document.getElementById('betCol').value = COL;
+  }
+
+  document.addEventListener('click', (e)=>{
+    const t = e.target;
+    if (!(t && t.classList && t.classList.contains('cell'))) return;
+
+    // Straight
+    if (t.closest('#felt') && t.classList.contains('num')){
+      allNums().forEach(x=>x.classList.remove('selected'));
+      t.classList.add('selected');
+      straight = t.dataset.val || '';
+      const v = straight==='00' ? null : Number(straight);
+      D = (!v || v===0) ? '' : (v<=12?'D1': v<=24?'D2':'D3');
+      COL = (!v || v===0) ? '' : (v%3===1?'C1': v%3===2?'C2':'C3');
+      syncHidden();
+      return;
+    }
+
+    // Columns
+    if (t.closest('#colBets')){
+      allCols().forEach(x=>x.classList.remove('selected'));
+      t.classList.add('selected');
+      COL = String(t.dataset.val||'');
+      syncHidden();
+      return;
+    }
+
+    // Outside (RB / EO / HL)
+    if (t.closest('#outsideBets')){
+      const type = t.dataset.type;
+      const val = t.dataset.val;
+      if (type==='RB'){
+        allOutside().forEach(x=>{ if(x.dataset.type==='RB') x.classList.remove('selected'); });
+        t.classList.add('selected'); RB = val;
+      } else if (type==='EO'){
+        allOutside().forEach(x=>{ if(x.dataset.type==='EO') x.classList.remove('selected'); });
+        t.classList.add('selected'); EO = val;
+      } else if (type==='HL'){
+        allOutside().forEach(x=>{ if(x.dataset.type==='HL') x.classList.remove('selected'); });
+        t.classList.add('selected'); HL = val;
+      }
+      syncHidden();
+      return;
+    }
+  });
+
+  // Dozens row
+  const dozenBar = document.createElement('div');
+  dozenBar.className='outside';
+  dozenBar.innerHTML = `
+    <div class="cell" data-type="DOZEN" data-val="D1">1st 12</div>
+    <div class="cell" data-type="DOZEN" data-val="D2">2nd 12</div>
+    <div class="cell" data-type="DOZEN" data-val="D3">3rd 12</div>
+    <div class="cell" style="grid-column:4 / span 3;opacity:.7;pointer-events:none">Dozens & Columns multiply with RB/EO/HL (stake per selection)</div>
+  `;
+  feltNums.parentElement.appendChild(dozenBar);
+  dozenBar.addEventListener('click', (e)=>{
+    const c = e.target.closest('.cell');
+    if(!c || !c.dataset.type) return;
+    [...dozenBar.querySelectorAll('.cell')].forEach(x=>x.classList.remove('selected'));
+    c.classList.add('selected');
+    D = c.dataset.val||'';
+    syncHidden();
+  });
+
+  // 🔧 Auto-scale felt to fit container width (NO SCROLL)
+  function scaleFelt(){
+    const base = 680; // px design width for felt-grid
+    const hostWidth = scaleHost.parentElement.clientWidth || base;
+    const s = Math.max(0.6, Math.min(1, hostWidth / base));
+    scaleHost.style.transform = `scale(${s})`;
+  }
+  addEventListener('resize', scaleFelt);
+  addEventListener('orientationchange', scaleFelt);
+  setTimeout(scaleFelt, 0);
+})();
+</script>
+
+    <script>
+(function(){
+  // American order with 00
+  const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
+  const COLOR = {}; ["00",0].forEach(n=>COLOR[n]="green");
+  [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
+  [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
+
+  const COLUMN = {};
+  [1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
+  [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
+  [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
+
+  const ring = document.getElementById('ring');
+  const ball = document.getElementById('ball');
+  const spinBtn = document.getElementById('spinBtn');
+  const spinText = document.getElementById('spinText');
+
+  const DEG = 360 / WHEEL.length;
+
+  // Build pockets once
+  WHEEL.forEach((val, i)=>{
+    const el = document.createElement('div');
+    el.className = `pocket ${COLOR[val]||'black'}`;
+    el.style.transform = `rotate(${i*DEG}deg) translate(-2%, -50%)`;
+    el.textContent = String(val);
+    ring.appendChild(el);
+  });
+
+  // Responsive ball radius based on ring size
+  function ballRadiusPx(){
+    const w = ring.clientWidth || 300;
+    return Math.max(60, Math.round(w * 0.34)); // nice path
+  }
+
+  function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
+  function pickIndex(seed){ return Math.floor((seed / 0x100000000) * WHEEL.length); }
+
+  const q = (id)=>document.getElementById(id);
+  function bets(){
+    return {
+      straight: (q('betStraight').value || '').trim().toUpperCase(),
+      rb: q('betRB').value,
+      eo: q('betEO').value,
+      hl: q('betHL').value,
+      dozen: q('betDozen').value,
+      col: q('betCol').value
+    };
+  }
+
+  function computePayout(hit, stake){
+    let win = 0, notes = [];
+    const b = bets();
+
+    if (b.straight){
+      const v = b.straight;
+      const valid = (v==="00") || (!isNaN(+v) && +v>=0 && +v<=36);
+      if(valid && String(hit)===v){ win += 35*stake; notes.push('Straight 35:1'); }
+    }
+    if (b.rb && COLOR[hit] && COLOR[hit].toUpperCase()===b.rb){ win += 1*stake; notes.push('RB 1:1'); }
+    if (b.eo && typeof hit==="number" && hit!==0){
+      if((b.eo==="EVEN" && hit%2===0) || (b.eo==="ODD" && hit%2===1)){ win += 1*stake; notes.push('EO 1:1'); }
+    }
+    if (b.hl && typeof hit==="number" && hit!==0){
+      if((b.hl==="LOW" && hit>=1 && hit<=18) || (b.hl==="HIGH" && hit>=19 && hit<=36)){ win += 1*stake; notes.push('HL 1:1'); }
+    }
+    if (b.dozen && typeof hit==="number" && hit!==0){
+      if((b.dozen==="D1" && hit>=1 && hit<=12) || (b.dozen==="D2" && hit>=13 && hit<=24) || (b.dozen==="D3" && hit>=25 && hit<=36)){
+        win += 2*stake; notes.push('Dozen 2:1');
+      }
+    }
+    if (b.col && COLUMN[hit]===b.col){ win += 2*stake; notes.push('Column 2:1'); }
+    return {win, notes};
+  }
+
+  function stakeBag(){ return (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0; }
+  function stakeUsd(){ return (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0; }
+  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
+  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
+  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
+
+  let spinning = false;
+  let lastBaseRot = 0; // keep continuity if desired
+
+  function playSpin(){ try{ if(window.__bagAudio){ __bagAudio.resume && __bagAudio.resume(); } }catch{} }
+
+  function selectedBetsCount(){
+    const b = bets(); let c=0;
+    if(b.straight) c++; if(b.rb) c++; if(b.eo) c++; if(b.hl) c++; if(b.dozen) c++; if(b.col) c++;
+    return Math.max(1,c);
+  }
+
+  // Reset transforms safely (ensures subsequent spins work)
+  function resetTransitions(){
+    ring.style.transition = 'none';
+    ball.style.transition = 'none';
+  }
+  function setTransforms(ringDeg, ballDeg){
+    ring.style.transform = `rotate(${ringDeg}deg)`;
+    ball.style.transform = `rotate(${ballDeg}deg) translate(${ballRadiusPx()}px)`;
+  }
+
+  // initial ball placement (responsive)
+  function placeBallHome(){ resetTransitions(); setTransforms(0, 0); }
+  placeBallHome();
+  addEventListener('resize', ()=>{ // keep radius in sync on resize
+    const ringDeg = getCurrentRotation(ring);
+    const ballDeg = getCurrentRotation(ball);
+    setTransforms(ringDeg, ballDeg); // same angles, updated radius
+  });
+
+  function getCurrentRotation(el){
+    const st = getComputedStyle(el).transform;
+    if (!st || st==='none') return 0;
+    const v = st.split('(')[1].split(')')[0].split(',');
+    const a = parseFloat(v[0]); const b = parseFloat(v[1]);
+    const deg = Math.round(Math.atan2(b, a) * (180/Math.PI));
+    return deg;
+  }
+
+  spinBtn.addEventListener('click', async ()=>{
+    if (spinning || spinBtn.disabled) return;
+    const sBag = stakeBag(), sUsd = stakeUsd();
+
+    if (!sessionActive() && !window.__BAG_FORCE_DEMO){ alert('Start a session (one-time sign) or use /demo for practice.'); return; }
+    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+    if (!window.__BAG_FORCE_DEMO){ if (!spend(sBag)) return; }
+
+    spinning = true; spinBtn.disabled = true; spinText.className='t'; spinText.textContent='Spinning…';
+    try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
+    playSpin();
+
+    // RESULT
+    const seed = randSeed();
+    const idx = pickIndex(seed);
+    const hit = WHEEL[idx];
+
+    // Spin duration synced to audio clicks
+    const duration = 1600; // ms (≈ length of spin click loop)
+    if (window.__bagAudio && __bagAudio.playSpinFor) { window.__bagAudio.playSpinFor(duration).catch(()=>{}); }
+
+    // Compute target rotation
+    // from current ring position to target; add revs for feel
+    const revs = 3;
+    const targetDeg = 360*revs + (360 - idx*(360/WHEEL.length));
+    // prepare transitions
+    ring.style.transition = `transform ${duration}ms cubic-bezier(.2,.9,.2,1)`;
+    ball.style.transition = `transform ${duration}ms cubic-bezier(.2,.9,.2,1)`;
+
+    // Ball counter-rotates so label remains readable
+    const startRing = getCurrentRotation(ring);
+    const startBall = getCurrentRotation(ball);
+
+    // Apply
+    setTransforms(startRing + targetDeg, startBall - (targetDeg + 360));
+
+    // Finish
+    setTimeout(()=>{
+      // snap to modulo 360 to avoid float creep
+      const finalRing = getCurrentRotation(ring) % 360;
+      const finalBall = getCurrentRotation(ball) % 360;
+      resetTransitions();
+      setTransforms(finalRing, finalBall);
+
+      // Payout
+      const {win, notes} = computePayout(hit, sBag);
+      const net = win - sBag * selectedBetsCount();
+
+      if (net > 0){
+        try{ window.__bagAudio && window.__bagAudio.chime(); }catch{}
+        credit(win);
+        spinText.className='t win';
+        spinText.textContent = `WIN on ${String(hit)} · +${win.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+        BAGOverlay.showWin({ message:'WIN', subtext:`${notes.join(' · ')}`, duration:4000, sound:false });
+      } else if (net === 0){
+        spinText.className='t scratch';
+        spinText.textContent = `PUSH on ${String(hit)} · bets offset`;
+      } else {
+        try{ window.__bagAudio && window.__bagAudio.thud(); }catch{}
+        spinText.className='t lose';
+        spinText.textContent = `Lose on ${String(hit)} — try again`;
+      }
+
+      window.dispatchEvent(new CustomEvent('bag:slotsResult', {
+        detail: { mult: (win>0? (win/(sBag*selectedBetsCount())):0), scratch: net===0, jackpot: false, stakeBag: sBag }
+      }));
+
+      spinBtn.disabled = false; spinning = false;
+    }, duration + 60);
+  });
+})();
+</script>
+
+    <script>
+(function(){
+  const WALLET_KEY = 'bag_wallet_v1';
+  const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
+
+  const btn = document.getElementById('connectBtn');
+  const statusEl = document.getElementById('connectStatus');
+  if (!btn || !statusEl) return;
+
+  const read  = () => { try { return JSON.parse(localStorage.getItem(WALLET_KEY)||'null'); } catch { return null; } };
+  const write = (w) => { try { localStorage.setItem(WALLET_KEY, JSON.stringify(w)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(WALLET_KEY); } catch {} };
+
+  function safeShort(a){ try{ const s = a == null ? '' : String(a); if (!s) return ''; return s.slice(0,6) + '…' + s.slice(-4); }catch{ return ''; } }
+
+  let connectedNow = false;
+  let currentAddr = '';
+
+  function render(){
+    try{
+      if (connectedNow && currentAddr){
+        statusEl.innerHTML = 'Wallet: <span style="color:#2fbf6b">'+safeShort(currentAddr)+'</span>';
+        btn.textContent = 'Disconnect';
+      } else {
+        statusEl.innerHTML = 'Wallet: <span style="color:#e8a85c">not connected</span>';
+        btn.textContent = 'Connect Xaman';
+      }
+    }catch(e){
+      statusEl.textContent = 'Wallet: error'; btn.textContent = 'Connect Xaman';
+    }
+  }
+
+  let xumm = null, ready = false, tries = 0;
+  function initIfSdk(){
+    if (ready) return true;
+    if (typeof window.Xumm === 'function'){
+      xumm = new Xumm(API_KEY);
+      ready = true;
+      xumm.on('success', () => {
+        try{
+          const acct = xumm?.user?.account || null;
+          if (acct){
+            connectedNow = true; currentAddr = String(acct);
+            write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+            window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+            render();
+          }
+        }catch(e){}
+      });
+      xumm.on('ready', () => { render(); });
+      return true;
+    }
+    if (tries++ < 60) setTimeout(initIfSdk, 200);
+    return false;
+  }
+
+  async function connectXaman(){
+    if (!ready && !initIfSdk()){ alert('Loading Xaman… try again in a moment.'); return; }
+    btn.disabled = true;
+    try {
+      const auth = await xumm.authorize();
+      const acct = (xumm && xumm.user && xumm.user.account) || auth?.me?.account || null;
+      if (!acct) throw new Error('No account returned');
+      connectedNow = true; currentAddr = String(acct);
+      write({ address: currentAddr, ts: Date.now(), kind: 'xaman' });
+      window.dispatchEvent(new CustomEvent('bag:walletConnected', { detail: { address: currentAddr }}));
+      render();
+    } catch (e) {
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', async ()=>{
+    if (connectedNow){
+      connectedNow = false; currentAddr = '';
+      clear();
+      window.dispatchEvent(new CustomEvent('bag:walletDisconnected'));
+      render();
+    } else {
+      await connectXaman();
+    }
+  });
+
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) render(); });
+
+  render();
+  initIfSdk();
+})();
+</script>
+
+    <script>
+(function(){
+  const TREASURY = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const SESSION_KEY = 'bag_session_v1';
+  const MIN_DEPOSIT_USD = 1;
+  const MAX_DEPOSIT_USD = 500;
+
+  const $ = s => document.querySelector(s);
+  const statusEl = $('#sessionStatus');
+  const startBtn = $('#startSessionBtn');
+  const topUpBtn = $('#topUpBtn');
+  const endBtn = $('#endSessionBtn');
+
+  const read = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); } catch { return null; } };
+  const write = (v) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch {} };
+  const clear = () => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; if (Math.abs(n) >= 1) return n.toLocaleString(undefined, {maximumFractionDigits:4}); if (Math.abs(n) >= 1e-2) return n.toLocaleString(undefined, {maximumFractionDigits:6}); if (Math.abs(n) >= 1e-4) return n.toLocaleString(undefined, {maximumFractionDigits:8}); return n.toLocaleString(undefined, {maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function sessionActive(){ const s = read(); return !!(s && s.addr && s.bag>0); }
+
+  function render(){
+    const s = read();
+    if (s && s.addr){
+      const bag = Number(s.bag)||0;
+      const usd = (window.__PRICES__?.bagUsd||0) * bag;
+      statusEl.innerHTML =
+        'Session: <span style="color:#2fbf6b">'+fmt(bag)+' BAG</span>' +
+        (usd ? ` <span class="micro" style="opacity:.75">(${fmtUsd(usd)})</span>` : '');
+      startBtn.style.display = 'none';
+      if (topUpBtn) topUpBtn.style.display = 'inline-block';
+      endBtn.style.display = 'inline-block';
+    } else {
+      statusEl.innerHTML = 'Session: <span style="color:#e8a85c">not started</span>';
+      startBtn.style.display = 'inline-block';
+      topUpBtn.style.display = 'none';
+      endBtn.style.display = 'none';
+    }
+  }
+
+  function suggestDepositUsd(){
+    const betEl = document.getElementById('usdBet');
+    const u = betEl && parseFloat(betEl.value) > 0 ? parseFloat(betEl.value) : 5;
+    let usd = Math.max(MIN_DEPOSIT_USD, Math.min(MAX_DEPOSIT_USD, u * 20));
+    if (!Number.isFinite(usd)) usd = MIN_DEPOSIT_USD;
+    return usd;
+  }
+
+  async function waitForTx(txid, timeoutMs=30000){
+    return new Promise(resolve=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, timeoutMs);
+      ws.onopen = ()=> ws.send(JSON.stringify({id:1, command:'tx', transaction: txid, binary:false}));
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if (msg?.result?.hash === txid && msg?.result?.validated){
+            clearTimeout(t); try{ws.close();}catch{}; resolve(msg.result);
+          }
+        }catch{}
+      };
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
+    });
+  }
+
+  async function startSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices — try again in a few seconds.'); return; }
+    const depositUsd = Math.max(1, suggestDepositUsd());
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const w = JSON.parse(localStorage.getItem('bag_wallet_v1')||'null');
+    if (!w || !w.address){ alert('Connect Xaman first'); return; }
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    startBtn.disabled = true; startBtn.textContent = 'Opening…';
+    try{
+      const { created, resolved } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('ROULETTE_SESSION')}}] },
+        options: { submit:true, expire:300 }
+      }, ev => { if (ev?.data && 'signed' in ev.data) return ev; });
+      const res = await resolved;
+      if (!res?.signed) throw new Error('User declined in Xaman');
+      const txid = res.response?.txid || res?.meta?.txid || res?.created?.reference;
+      if (!txid) throw new Error('No txid returned');
+      const validated = await waitForTx(txid, 60000);
+      if (!validated || validated.engine_result !== 'tesSUCCESS'){ throw new Error('Payment not validated on-ledger yet'); }
+      const bag = (depositUsd / PRICES.bagUsd);
+      write({ addr: w.address, bag, ts: Date.now(), tx: txid });
+      render();
+      window.dispatchEvent(new CustomEvent('bag:sessionStarted', { detail: { bag, txid } }));
+      alert('Session started — you’re good to play!');
+    } catch (err){
+      alert('Session not started: ' + (err?.message || 'unknown error — see console'));
+    } finally {
+      startBtn.disabled = false; startBtn.textContent = 'Start Session';
+    }
+  }
+
+  async function topUpSession(){
+    if (!window.Xumm){ alert('Xaman SDK not loaded'); return; }
+    const PRICES = window.__PRICES__ || {};
+    if (!(PRICES.xrpUsd>0 && PRICES.bagUsd>0)){ alert('Waiting for live prices'); return; }
+    const s = read();
+    if (!(s && s.addr)){ alert('Start a session first.'); return; }
+    const depositUsd = suggestDepositUsd();
+    const depositXrp = depositUsd / PRICES.xrpUsd;
+    const drops = Math.round(depositXrp * 1_000_000);
+    const xumm = new Xumm('48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f');
+    if (topUpBtn) { topUpBtn.disabled = true; topUpBtn.textContent = 'Topping up…'; }
+    try{
+      const { created } = await xumm.payload.createAndSubscribe({
+        txjson: { TransactionType:'Payment', Destination: TREASURY, Amount: String(drops),
+          Memos:[{Memo:{MemoType:btoa('BAG'), MemoData:btoa('ROULETTE_TOPUP')}}] },
+        options: { submit:true, expire:300 }
+      }, ()=>{});
+      const resolved = await xumm.payload.get(created.uuid);
+      const txid = resolved?.response?.txid || resolved?.meta?.txid;
+      if (!txid) throw new Error('No txid (cancelled?)');
+      const tx = await waitForTx(txid, 45000);
+      if (!tx || tx.engine_result !== 'tesSUCCESS') throw new Error('Payment not validated');
+      const addBag = (depositUsd / PRICES.bagUsd);
+      const cur = read() || { addr: s.addr, bag: 0 };
+      cur.bag = (Number(cur.bag)||0) + addBag; cur.ts = Date.now(); cur.lastTopUpTx = txid;
+      write(cur); render();
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp', { detail: { addBag, txid } }));
+    } catch(e){
+      alert('Top-up cancelled or failed.');
+    } finally {
+      if (topUpBtn) { topUpBtn.disabled = false; topUpBtn.textContent = 'Top Up'; }
+    }
+  }
+
+  function endSession(){ const s = read(); clear(); render(); window.dispatchEvent(new CustomEvent('bag:sessionEnded', { detail: s || {} })); }
+
+  startBtn?.addEventListener('click', startSession);
+  topUpBtn?.addEventListener('click', topUpSession);
+  endBtn?.addEventListener('click', endSession);
+
+  window.addEventListener('bag:pricesUpdated', render);
+  render();
+
+  window.__bagSession = {
+    active: sessionActive,
+    get: read,
+    set: write,
+    spend(bag){ const s = read(); if(!s) return false; if (s.bag < bag) return false; s.bag = Math.max(0, s.bag - bag); write(s); render(); return true; },
+    credit(bag){ const s = read(); if(!s) return false; s.bag += bag; write(s); render(); return true; }
+  };
+})();
+</script>
+
+    <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+}
+</script>
+
+    <script>
+(function(){
+  const hudbar = document.querySelector('.hudbar');
+  if(!hudbar) return;
+
+  function ensurePill(id, label, beforeEl=null){
+    let el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('span');
+      el.id = id;
+      el.className = 'pill';
+      if(beforeEl) hudbar.insertBefore(el, beforeEl);
+      else hudbar.appendChild(el);
+    }
+    el.dataset.label = label;
+    return el;
+  }
+
+  const balancePill = hudbar.querySelector('#balLbl')?.closest('.pill') || ensurePill('balancePill','Balance');
+  const modePill    = ensurePill('hudMode','Mode', balancePill);
+  const betPill     = ensurePill('hudBet','Bet');
+  const lastPill    = ensurePill('hudLast','Last');
+
+  const fmtBag = n => (Number(n)||0).toLocaleString(undefined,{ maximumFractionDigits:6 });
+  const fmtUsd = n => '$'+(Number(n)||0).toLocaleString(undefined,{ minimumFractionDigits:2, maximumFractionDigits:2 });
+  const sessionObj = () => (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || null;
+  const stakeBag   = () => (window.__bagStake && window.__bagStake.bag && window.__bagStake.bag()) || 0;
+  const stakeUsd   = () => (window.__bagStake && window.__bagStake.usd && window.__bagStake.usd()) || 0;
+
+  function renderMode(){
+    const live = (window.__BAG_FORCE_DEMO !== true);
+    modePill.innerHTML = `Mode: <b>${live?'LIVE':'DEMO'}</b>`;
+  }
+
+  function renderBalance(){
+    const s = sessionObj();
+    const bagBal = s && Number(s.bag) > 0 ? Number(s.bag) : 0;
+    const balLbl = document.getElementById('balLbl');
+    const ccyLbl = document.getElementById('ccyLbl');
+    if (!balLbl || !ccyLbl) return;
+
+    const curEl = document.querySelector('#curToggle input[name="betCur"]:checked');
+    const cur = curEl ? String(curEl.value).toUpperCase() : 'XRP';
+
+    const { bagUsd=0, xrpUsd=0 } = (window.__PRICES__ || {});
+
+    if (cur === 'BAG') {
+      balLbl.textContent = bagBal ? fmtBag(bagBal) : '—';
+      ccyLbl.textContent = 'BAG';
+    } else {
+      const xrpBal = (bagBal && bagUsd>0 && xrpUsd>0) ? bagBal * (bagUsd/xrpUsd) : NaN;
+      balLbl.textContent = Number.isFinite(xrpBal) ? fmtBag(xrpBal) : '—';
+      ccyLbl.textContent = 'XRP';
+    }
+  }
+
+  function renderBet(){
+    const b = stakeBag();
+    const u = stakeUsd();
+    betPill.innerHTML = `Bet: <b>${b>0?fmtBag(b):'—'}</b>` + (b>0&&u>0? ` <span class="micro">(${fmtUsd(u)})</span>`:'');
+  }
+
+  function renderLast(ev){
+    const d = ev && ev.detail ? ev.detail : null;
+    if(!d){
+      lastPill.innerHTML = `Last: <b>—</b>`;
+      return;
+    }
+    let txt='Lose', delta='';
+    if(d.mult>=2.00){ txt='BIG WIN'; delta = ` +${fmtBag(d.stakeBag*(d.mult-1))} BAG`; }
+    else if(d.mult>=1.00){ txt='WIN'; delta = ` +${fmtBag(d.stakeBag*(d.mult-1))} BAG`; }
+    lastPill.innerHTML = `Last: <b>${txt}</b><span class="micro">&nbsp;${delta}</span>`;
+  }
+
+  function paint(){ renderMode(); renderBalance(); renderBet(); }
+
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:walletConnected','bag:walletDisconnected','bag:pricesUpdated']
+    .forEach(ev=>addEventListener(ev, paint));
+
+  addEventListener('bag:slotsResult', (e)=>{ paint(); renderLast(e); });
+
+  ['input','change'].forEach(t=>{
+    document.getElementById('usdBet')?.addEventListener(t, renderBet);
+    document.getElementById('betQty')?.addEventListener(t, renderBet);
+    document.getElementById('curToggle')?.addEventListener(t, renderBet);
+  });
+
+  document.getElementById('curToggle')?.addEventListener('change', renderBalance);
+
+  paint();
+  renderLast(null);
+
+  let tries=0; const iv=setInterval(()=>{ paint(); if(++tries>40){ clearInterval(iv); } }, 500);
+})();
+</script>
+
+    <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6; width:100%; margin:0 auto;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+  <br>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+</footer>
+
+</body>
+</html>
 
