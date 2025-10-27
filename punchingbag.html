@@ -26,7 +26,7 @@
   /* Stage: taller so the whole bag + chain fit */
   .stage{
     position:relative;
-    aspect-ratio:9/16;                 /* tall frame */
+    aspect-ratio:9/16;
     min-height:520px;
     background:radial-gradient(60% 60% at 50% 18%, #13271c, #0c1d14 72%);
     border:1px solid var(--line);
@@ -56,8 +56,7 @@
   /* Fabric texture overlay from assets/ */
   .bag::before{
     content:""; position:absolute; inset:0; pointer-events:none;
-    opacity:.22;                    /* tweak 0.12–0.35 to taste */
-    mix-blend-mode:soft-light;
+    opacity:.22; mix-blend-mode:soft-light;
     background-image: image-set(
       url("assets/bag-received-960.webp")  type("image/webp")  1x,
       url("assets/bag-received-1024.webp") type("image/webp")  2x,
@@ -77,7 +76,7 @@
   /* Badge patch (square target) using assets/bag-received-* */
   .logo{
     position:absolute;left:50%;top:36%;transform:translateX(-50%);
-    width:46%;aspect-ratio:1/1;        /* square */
+    width:46%;aspect-ratio:1/1;
     border-radius:12px;overflow:hidden;
     background-color:#0f251a;border:1px solid #173c29;
     background-repeat:no-repeat;background-position:center;background-size:contain;
@@ -108,7 +107,7 @@
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   button{appearance:none;border:0;border-radius:10px;padding:12px 14px;font-weight:800;cursor:pointer}
   .btn{background:var(--green);color:#09150e;border:1px solid #1c7444}
-  .btn-ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  .btn-ghost{background:transparent;color:#f5f7f4;border:1px solid var(--line)}
   .muted{color:var(--muted);font-size:13px}
   .big{font-size:28px;font-weight:900;letter-spacing:.3px}
   .readouts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -190,19 +189,49 @@
   const start5 = $('#start5'), freestyleBtn = $('#freestyle'), shareBtn = $('#share'), resetBest = $('#resetBest');
   const bell = $('#openingBell');
 
-  // Try to ring the opening bell on entry; if blocked, ring on first tap
+  // Opening bell on entry or first tap
   let bellPlayed = false;
   function playBell(){
     if (bellPlayed) return;
     const p = bell.play();
     if (p && typeof p.then === 'function'){
-      p.then(()=>{ bellPlayed = true; }).catch(()=>{ /* will retry on gesture */ });
+      p.then(()=>{ bellPlayed = true; }).catch(()=>{ /* retry on gesture */ });
     } else {
       bellPlayed = true;
     }
   }
   window.addEventListener('load', playBell, { once:true });
   document.addEventListener('pointerdown', ()=>{ playBell(); }, { once:true, passive:true });
+
+  // Punch sound pool (random, non-repeating; supports overlap)
+  const punchSrcs = [
+    'assets/sounds/punch1.mp3',
+    'assets/sounds/punch2.mp3',
+    'assets/sounds/punch3.mp3',
+    'assets/sounds/punch4.mp3'
+  ];
+  const pools = punchSrcs.map(src => ({
+    i: 0,
+    list: Array.from({length: 3}, () => {
+      const a = new Audio(src);
+      a.preload = 'auto';
+      a.volume = 1.0;
+      return a;
+    })
+  }));
+  let lastSound = -1;
+  function playPunch(){
+    let idx;
+    if (pools.length === 1){ idx = 0; }
+    else {
+      do { idx = Math.floor(Math.random()*pools.length); } while (idx === lastSound);
+    }
+    lastSound = idx;
+    const pool = pools[idx];
+    const a = pool.list[pool.i];
+    pool.i = (pool.i + 1) % pool.list.length;
+    try { a.currentTime = 0; a.play(); } catch(e) {}
+  }
 
   // State
   let mode = 'idle';          // 'idle' | 'challenge' | 'free'
@@ -229,24 +258,9 @@
   function setMeter(p){ meter.style.width = `${Math.max(0,Math.min(1,p))*100}%`; }
   function vibe(ms){ if (navigator.vibrate) try{navigator.vibrate(ms);}catch(e){} }
 
-  // Simple synthesized thud via Web Audio
-  const audioCtx = (window.AudioContext||window.webkitAudioContext) ? new (window.AudioContext||window.webkitAudioContext)() : null;
-  function thud(){
-    if (!audioCtx) return;
-    const t0 = audioCtx.currentTime;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type='sine'; o.frequency.setValueAtTime(220,t0);
-    o.frequency.exponentialRampToValueAtTime(60,t0+0.09);
-    g.gain.setValueAtTime(0.9,t0);
-    g.gain.exponentialRampToValueAtTime(0.001,t0+0.12);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(t0); o.stop(t0+0.13);
-  }
-
   function ringFlash(){
     ring.classList.remove('r1');
-    void ring.offsetWidth; // reflow
+    void ring.offsetWidth;
     ring.classList.add('r1');
   }
 
@@ -254,7 +268,7 @@
     if (mode==='idle') return;
 
     const now = performance.now();
-    const dt = now - lastStamp; // ms since last hit
+    const dt = now - lastStamp;
     lastStamp = now;
     if (dt > 0 && dt < 28) return; // ignore impossible burst taps
 
@@ -264,7 +278,7 @@
     bag.classList.remove('hit'); void bag.offsetWidth; bag.classList.add('hit');
 
     ringFlash();
-    thud();
+    playPunch();
     vibe(10);
 
     punches++;
@@ -332,7 +346,6 @@
     cta.style.opacity = 0;
     startTime = performance.now();
     headline.textContent = 'Go';
-    if (audioCtx && audioCtx.state==='suspended') audioCtx.resume();
     raf = requestAnimationFrame(tick);
   }
 
@@ -342,7 +355,6 @@
     cta.style.opacity = 0;
     headline.textContent = 'Freestyle';
     setMeter(0);
-    if (audioCtx && audioCtx.state==='suspended') audioCtx.resume();
   }
 
   // Events
