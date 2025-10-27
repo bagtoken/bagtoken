@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The $BAG Big Wheel — centered, zoomed, visible plates</title>
+<title>The $BAG Big Wheel — centered, zoomed, visible plates (robust loader)</title>
 <style>
   html,body{margin:0;height:100%;background:#081912;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:16px}
@@ -47,24 +47,23 @@
 </div>
 
 <script>
-/* ----------------------- Three.js loader (CDN → fallback) ----------------------- */
+/* ----------------------- Three.js loader (CDN → CDN → local) ----------------------- */
 (function(){
   const E = document.getElementById('err');
-  const showError = (html)=>{ E.style.display='flex'; E.innerHTML = `<div><b>3D failed to start</b><br><div style="opacity:.9;margin-top:6px">${html}</div></div>`; };
-  const load = (src)=>new Promise((res,rej)=>{const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(); document.head.appendChild(s);});
-  const when = (fn)=>{let n=0;(function tick(){ if(window.THREE){fn();return;} if(++n>160){showError('THREE never loaded.');return;} setTimeout(tick,50); })();};
+  function showError(html){ E.style.display='flex'; E.innerHTML = `<div><b>3D failed to start</b><br><div style="opacity:.9;margin-top:6px">${html}</div></div>`; }
+  function load(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(); document.head.appendChild(s); }); }
+  function when(fn){ let n=0; (function tick(){ if(window.THREE){fn();return;} if(++n>220){showError('THREE never loaded (CSP/network).');return;} setTimeout(tick,50); })(); }
 
   (async()=>{
     try{ await load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js'); }
-    catch(_){
-      try{ await load('https://unpkg.com/three@0.158.0/build/three.min.js'); }
-      catch(_2){ showError('Could not fetch three.min.js'); return; }
-    }
-    when(init);
+    catch(_){ try{ await load('https://unpkg.com/three@0.158.0/build/three.min.js'); }
+      catch(_2){ try{ await load('/vendor/three.min.js'); }
+        catch(_3){ showError('Could not fetch <code>three.min.js</code> from cdn.jsdelivr, unpkg, or <code>/vendor/three.min.js</code>.'); return; } } }
+    when(()=> initBagWheel(showError));
   })();
 
 /* -------------------------------- Main scene ----------------------------------- */
-function init(){
+function initBagWheel(showError){
   const test = document.createElement('canvas');
   const gl = test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
   if(!gl){ showError('WebGL is unavailable in this browser.'); return; }
@@ -100,9 +99,10 @@ function init(){
   camera.lookAt(0,0,0);
 
   // Lights
-  scene.add(new DirectionalLight(0xffffff, 1.0)).position.set(3,6,8);
-  scene.add(new DirectionalLight(0xffffff, .6)).position.set(-5,2,6);
-  scene.add(new AmbientLight(0xffffff,.35));
+  const key = new DirectionalLight(0xffffff, 1.0); key.position.set(3,6,8);
+  const fill = new DirectionalLight(0xffffff, .6); fill.position.set(-5,2,6);
+  const amb = new AmbientLight(0xffffff,.35);
+  scene.add(key,fill,amb);
 
   // Wheel geometry
   const R = 2.75, DEPTH = 1.25;
@@ -134,7 +134,7 @@ function init(){
   }
   wheel.add(pegs);
 
-  // Number plates (now guaranteed visible)
+  // Number plates (DoubleSide + sRGB textures; forced update)
   function plateTex(v, idx){
     const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
     const is100 = v==='1.00', isG=(v==='0.05'||v==='0.15');
@@ -157,11 +157,10 @@ function init(){
   const plateGeo = new PlaneGeometry(plateW,plateH);
   const plates = new Group();
   for(let i=0;i<N;i++){
-    const holder = new Group();
-    holder.rotation.x = i*STEP;                // orbit position
-    const mat = new MeshBasicMaterial({map:plateTex(labels[i],i), side:DoubleSide}); // DoubleSide so they never disappear
+    const holder = new Group(); holder.rotation.x = i*STEP;       // orbit position
+    const mat = new MeshBasicMaterial({map:plateTex(labels[i],i), side:DoubleSide});
     const plate = new Mesh(plateGeo, mat);
-    plate.position.z = R-0.55;                 // push outward near rim
+    plate.position.z = R-0.55;                 // near the rim
     plate.rotation.x = -holder.rotation.x;     // keep text upright
     plates.add(holder); holder.add(plate);
   }
@@ -173,23 +172,22 @@ function init(){
   const flap = new Mesh(new PlaneGeometry(0.52,0.3), new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
   flap.rotation.z = Math.PI/2; flap.position.set(DEPTH/2+0.22,0,R*0.02); scene.add(flap);
 
-  // Sizing / Auto-fit: shows the entire wheel with margin
+  // Auto-fit: always show the whole wheel
   function size(){
     const r=mount.getBoundingClientRect();
     const w=Math.max(1,Math.floor(r.width)), h=Math.max(520,Math.floor(r.height));
     renderer.setSize(w,h,false);
     camera.aspect=w/h;
 
-    // distance to fit 2*R vertically with margin
-    const margin=1.28; // >1 = zoom out a bit
+    const margin=1.32; // zoom-out factor
     const needed = (R*2*margin) / (2*Math.tan((camera.fov*Math.PI/180)/2));
-    camera.position.z = Math.max(needed, 7.5); // never too close
+    camera.position.z = Math.max(needed, 7.2);
     camera.updateProjectionMatrix();
   }
   size(); addEventListener('resize', size);
 
-  // HUD (blink)
-  let blink = false; setInterval(()=>{ blink = !blink; drawHUD(currentVal()); }, 650);
+  // HUD blink
+  let blink=false; setInterval(()=>{ blink=!blink; drawHUD(currentVal()); }, 650);
   function drawHUD(v){
     const g=hud.getContext('2d'), w=hud.width, h=hud.height;
     g.clearRect(0,0,w,h); g.fillStyle= blink ? '#0b0d0f' : '#0a0c0e';
@@ -200,7 +198,7 @@ function init(){
     g.fillText((v||0).toFixed(2),w/2,h/2+2);
   }
 
-  // Physics
+  // Physics / input
   let angX=-Math.PI/2, vel=0, spinning=false, spin1=null, total=0, done=false;
   const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
 
@@ -209,7 +207,6 @@ function init(){
   function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
   function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEP-STEP/2; }
 
-  // Input
   const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
   let dragging=false,lastY=0,lastT=0,samples=[];
   function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
@@ -226,13 +223,13 @@ function init(){
   surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
   surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
 
-  // Buttons
-  spinBtn.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
-  holdBtn.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
-  resetBtn.onclick=reset;
+  const spinBtnEl=spinBtn, holdBtnEl=holdBtn, resetBtnEl=resetBtn;
+  spinBtnEl.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
+  holdBtnEl.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
+  resetBtnEl.onclick=reset;
 
   function startSpin(){
-    spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
+    spinning=true; spinBtnEl.disabled=true; holdBtnEl.disabled=true; resetBtnEl.disabled=true;
     msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
     const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION; drawHUD(currentVal());
       if(Math.abs(vel)<VMIN){
@@ -246,7 +243,7 @@ function init(){
 
   function onSettle(){
     const landed=currentVal();
-    if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return; }
+    if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtnEl.disabled=false; resetBtnEl.disabled=false; spinBtnEl.disabled=false; return; }
     total+=landed; drawHUD(total);
     if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; end(0,'Bust'); return; }
     if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
@@ -260,12 +257,12 @@ function init(){
       if(Math.abs(vel)<VMIN){
         const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
         msg.className=extra?'t win':'t'; msg.textContent= extra?`Bonus hit ${v.toFixed(2)} — +${extra}×`:`Bonus missed — kept base 5×`;
-        done=true; resetBtn.disabled=false;
+        done=true; resetBtnEl.disabled=false;
       } else requestAnimationFrame(loop);
     }; requestAnimationFrame(loop);
   }
-  function end(mult,label){ done=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=false; msg.className=mult?'t win':'t lose'; msg.textContent=mult?`${label} — ${mult.toFixed(2)}×`:`${label} — 0×`; }
-  function reset(){ spinning=false; spin1=null; total=0; done=false; holdBtn.disabled=true; spinBtn.disabled=false; resetBtn.disabled=false; setAngle(-Math.PI/2); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size(); }
+  function end(mult,label){ done=true; spinBtnEl.disabled=true; holdBtnEl.disabled=true; resetBtnEl.disabled=false; msg.className=mult?'t win':'t lose'; msg.textContent=mult?`${label} — ${mult.toFixed(2)}×`:`${label} — 0×`; }
+  function reset(){ spinning=false; spin1=null; total=0; done=false; holdBtnEl.disabled=true; spinBtnEl.disabled=false; resetBtnEl.disabled=false; setAngle(-Math.PI/2); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size(); }
 
   // Render
   function render(){ renderer.render(scene,camera); requestAnimationFrame(render); }
