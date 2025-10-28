@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>GET THE $BAG</title>
 
+<!-- Strict CSP to keep surprise media out -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; block-all-mixed-content">
+
 <!-- SEO -->
 <meta name="description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token. 1T supply. Powered by $XRP.">
 <meta name="keywords" content="BAG,$BAG,XRPL,XRP Ledger,crypto,meme coin,BAG token,getthebag.io">
@@ -30,7 +33,7 @@
 <link rel="manifest" href="/assets/site.webmanifest">
 <meta name="theme-color" content="#0c1a12">
 
-<!-- Modern PWA meta (no deprecated apple-mobile-web-app-capable) -->
+<!-- Modern PWA meta -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="$BAG">
@@ -38,18 +41,35 @@
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
-<!-- Preload casino SFX -->
-<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28h" as="audio" />
+<!-- Preload the ONLY allowed music -->
+<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28x" as="audio" />
 
-<!-- ==== HARD GUARD: rewrite any attempt to play the old file before anything else ==== -->
+<!-- ==== HARD GUARD (runs before anything renders) ==== -->
 <script>
 (() => {
   const BAD = 'here-come-the-money.mp3';
-  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28h';
-
+  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28x';
   const isBad = (u) => !!u && String(u).includes(BAD);
 
-  // 1) Patch Audio constructor
+  // nuke SW + caches once per load (remove after you confirm fix)
+  (async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        regs.forEach(r => r.unregister());
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      sessionStorage.removeItem('__bag_sw_nuked');
+    } catch(_) {}
+  })();
+
+  // Audit log
+  window.__BAG_MEDIA_AUDIT__ = [];
+
+  // Patch Audio constructor
   const NativeAudio = window.Audio;
   function PatchedAudio(src) {
     if (isBad(src)) src = GOOD;
@@ -61,63 +81,95 @@
   Object.defineProperty(PatchedAudio, 'name', { value: 'Audio' });
   window.Audio = PatchedAudio;
 
-  // 2) Patch HTMLMediaElement.src setter
+  // Patch HTMLMediaElement.src setter
   const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
   if (desc && desc.set) {
     const origSet = desc.set;
-    desc.set = function (v) { if (isBad(v)) v = GOOD; return origSet.call(this, v); };
+    desc.set = function(v){ if (isBad(v)) v = GOOD; return origSet.call(this, v); };
     Object.defineProperty(HTMLMediaElement.prototype, 'src', desc);
   }
 
-  // 3) Patch setAttribute('src', ...)
+  // Patch setAttribute('src', ...)
   const _setAttr = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function (name, val) {
+  Element.prototype.setAttribute = function(name, val){
     if (name === 'src' && isBad(val)) val = GOOD;
     return _setAttr.call(this, name, val);
   };
 
-  // 4) Patch play(): if currentSrc is bad, hot-swap before playing
+  // Patch play()
   const _play = HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.play = function () {
+  HTMLMediaElement.prototype.play = function(){
     try {
       const s = this.currentSrc || this.src || '';
       if (isBad(s)) {
+        window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'hot-swap@play', from:s, to:GOOD });
         this.pause();
         this.src = GOOD;
-        try { this.load(); } catch (_) {}
+        try { this.load(); } catch(_) {}
       }
     } catch(_) {}
     return _play.apply(this, arguments);
   };
 
-  // 5) Kill any existing tags already pointed at the bad file
-  window.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('audio,video,source').forEach(m => {
-      const s = m.currentSrc || m.src || m.getAttribute('src') || '';
-      if (isBad(s)) {
-        try {
-          if (m.pause) { m.pause(); m.currentTime = 0; }
-        } catch(_) {}
-        if (m.tagName.toLowerCase() === 'source') {
-          m.setAttribute('src', GOOD);
-        } else if ('src' in m) {
-          m.src = GOOD;
-        }
-        try { m.load && m.load(); } catch(_) {}
-      }
-    });
-  });
-
-  // 6) Firewall event (last line of defense)
+  // Global "play" firewall + audit
   document.addEventListener('play', (ev) => {
     const m = ev.target;
     if (!(m instanceof HTMLMediaElement)) return;
     const s = m.currentSrc || m.src || '';
     if (isBad(s)) {
+      window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'blocked-play', src:s });
       try { m.pause(); m.currentTime = 0; } catch(_) {}
       if (m.src !== GOOD) { m.src = GOOD; try { m.load(); } catch(_) {} }
     }
   }, true);
+
+  // Kill already-present offenders
+  function scrub(root = document){
+    root.querySelectorAll('audio,video,source').forEach(m => {
+      const s = m.currentSrc || m.src || m.getAttribute('src') || '';
+      if (isBad(s)) {
+        window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'scrub', src:s });
+        try { m.pause && m.pause(); m.currentTime = 0; } catch(_) {}
+        if (m.tagName.toLowerCase() === 'source') m.setAttribute('src', GOOD);
+        else if ('src' in m) m.src = GOOD;
+        try { m.load && m.load(); } catch(_) {}
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', () => scrub());
+
+  // MutationObserver: stop any future bad nodes
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (m.type === 'childList') {
+        m.addedNodes.forEach(n => {
+          if (n.nodeType !== 1) return;
+          if (n.matches && n.matches('audio,video,source')) scrub(n.parentNode || document);
+          // same-origin iframes: inject guards
+          if (n.tagName === 'IFRAME') {
+            try {
+              const fdoc = n.contentDocument;
+              if (fdoc && fdoc.location.origin === location.origin) {
+                // inject the same guard into iframe
+                const s = fdoc.createElement('script');
+                s.textContent = '(' + arguments.callee.toString() + ')()';
+                fdoc.documentElement.appendChild(s);
+              }
+            } catch(_) {}
+          }
+          // also scrub inside element subtree
+          scrub(n);
+        });
+      }
+      if (m.type === 'attributes' && m.target && m.target.getAttribute) {
+        if (m.attributeName === 'src') {
+          const s = m.target.getAttribute('src') || '';
+          if (isBad(s)) { m.target.setAttribute('src', GOOD); scrub(document); }
+        }
+      }
+    }
+  }).observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] });
+
 })();
 </script>
 
@@ -230,7 +282,6 @@
   </div>
 </section>
 
-<!-- Casino banner — image links to the Casino hub -->
 <div class="casino-banner">
   <div class="casino-callout" aria-hidden="false">
     <div class="line1">PLAY IN $XRP OR $BAG</div>
@@ -265,7 +316,6 @@
   </picture>
 </div>
 
-<!-- LITE PAPER -->
 <div class="litepaper-wrap">
   <a class="btn-litepaper" target="_blank" rel="noopener"
      href="https://github.com/bagtoken/bagtoken/blob/0edf4607121b2012e318d1b4d5544266260494a2/litepaper.md">
@@ -293,10 +343,10 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- ===== Clean banner SFX (gesture unlock + singleton) ===== -->
+<!-- Banner SFX (gesture unlock + singleton) -->
 <script>
 (function(){
-  const VERSION   = '2025-10-28h';
+  const VERSION   = '2025-10-28x';
   const TARGET_ID = 'bag-casino-img';
   const SRC       = `/assets/sounds/casinomusic.mp3?v=${VERSION}`;
   const THRESHOLD = 0.6;
@@ -339,7 +389,6 @@ if ('serviceWorker' in navigator) {
       sfx.currentTime = 0;
       await sfx.play();
       last = now;
-      if (navigator.vibrate && (navigator.userActivation?.isActive)) navigator.vibrate(10);
     } catch(_) {}
   }
 
@@ -364,7 +413,13 @@ if ('serviceWorker' in navigator) {
   const preloadImg = document.getElementById(TARGET_ID);
   if (preloadImg) preIO.observe(preloadImg);
 
-  window.BAG_SFX = { el: sfx, play: ()=>{ unlocked = true; return sfx.play(); }, pause: ()=>sfx.pause() };
+  // Quick console helpers
+  window.BAG_SFX = {
+    el: sfx,
+    play: ()=>{ unlocked = true; return sfx.play(); },
+    pause: ()=>sfx.pause(),
+    audit: ()=>window.__BAG_MEDIA_AUDIT__
+  };
 })();
 </script>
 
