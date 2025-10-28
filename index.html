@@ -290,50 +290,56 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* ===== $BAG index: casino image scroll SFX — cache-busted, singleton, legacy-kill ===== */
+/* ===== $BAG index — casino SFX: hard kill legacy, singleton, de-dupe, cache-bust ===== */
 (function(){
-  // Cache-bust to defeat SW/CDN/browser audio caching
-  const VERSION = 'v2025-10-28a';
-  const CASINO_SRC = `/assets/sounds/casinomusic.mp3?${VERSION}`;
-  const OLD_SRC_HINT = 'here-come-the-money.mp3';
-
+  const VERSION = 'v2025-10-28b';
+  const TARGET_ID = 'bag-casino-img';
   const THRESHOLD = 0.6;
   const MIN_GAP_MS = 1500;
-  const TARGET_ID = 'bag-casino-img';
 
-  // Kill any stray legacy audio still around
-  try {
-    // Stop our own previous singleton if it exists and has old src
-    if (window.__bagSfx && typeof window.__bagSfx.pause === 'function') {
-      try {
-        if ((window.__bagSfx.src || '').includes(OLD_SRC_HINT)) window.__bagSfx.pause();
-      } catch(_) {}
+  const OLD_HINT = 'here-come-the-money.mp3';
+  const NEW_SRC  = `/assets/sounds/casinomusic.mp3?${VERSION}`;
+
+  /* 0) Global play firewall: kill any play() of the old file or non-singleton audio */
+  document.addEventListener('play', (ev) => {
+    const a = ev.target;
+    if (!(a instanceof HTMLMediaElement)) return;
+    const src = (a.currentSrc || a.src || '');
+    // Stop old file immediately
+    if (src.includes(OLD_HINT)) { try { a.pause(); a.currentTime = 0; } catch(_){} }
+    // If we already have a singleton, prevent other <audio> from playing
+    if (window.__bagSfx && a !== window.__bagSfx) {
+      try { a.pause(); } catch(_){}
     }
-    // Belt-and-suspenders: pause any <audio> tag playing the old file
-    document.querySelectorAll('audio').forEach(a=>{
-      try { if ((a.currentSrc||a.src||'').includes(OLD_SRC_HINT)) a.pause(); } catch(_){}
-    });
-  } catch(_) {}
+  }, true);
 
-  // Reuse a single Audio instance app-wide
+  /* 1) Singleton Audio */
   const sfx = (function(){
     if (window.__bagSfx instanceof Audio) {
-      // Swap to new source to avoid double instances
-      if (window.__bagSfx.src !== new URL(CASINO_SRC, location.href).href) {
-        window.__bagSfx.pause();
-        window.__bagSfx.src = CASINO_SRC;
+      const want = new URL(NEW_SRC, location.href).href;
+      if (window.__bagSfx.src !== want) {
+        try { window.__bagSfx.pause(); } catch(_){}
+        window.__bagSfx.src = want;
         window.__bagSfx.load();
       }
       return window.__bagSfx;
     }
-    const a = new Audio(CASINO_SRC);
+    const a = new Audio(NEW_SRC);
     a.preload = 'auto';
     a.playsInline = true;
     window.__bagSfx = a;
     return a;
   })();
 
-  // Unlock on first interaction
+  /* 2) Kill any lingering <audio> tags with old file */
+  try {
+    document.querySelectorAll('audio, video').forEach(m=>{
+      const src = (m.currentSrc || m.src || '');
+      if (src.includes(OLD_HINT)) { try { m.pause(); m.currentTime = 0; } catch(_){} }
+    });
+  } catch(_){}
+
+  /* 3) Unlock on first interaction */
   let unlocked = false;
   const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','keydown','mousedown'];
   async function tryUnlock(){
@@ -341,15 +347,14 @@ if ('serviceWorker' in navigator) {
     try {
       sfx.muted = true;
       await sfx.play();
-      sfx.pause();
-      sfx.currentTime = 0;
+      sfx.pause(); sfx.currentTime = 0;
       sfx.muted = false;
       unlocked = true;
       UNLOCK_EVENTS.forEach(t=>{
         window.removeEventListener(t, tryUnlock, unlockOpts);
         document.removeEventListener(t, tryUnlock, unlockOpts);
       });
-    } catch(_) {}
+    } catch(_){}
   }
   const unlockOpts = { passive:true, capture:true };
   UNLOCK_EVENTS.forEach(t=>{
@@ -357,34 +362,37 @@ if ('serviceWorker' in navigator) {
     document.addEventListener(t, tryUnlock, unlockOpts);
   });
 
-  // Play when the casino image is in view
+  /* 4) IntersectionObserver — de-dupe and reuse */
+  if (window.__bagIO && typeof window.__bagIO.disconnect === 'function') {
+    try { window.__bagIO.disconnect(); } catch(_){}
+  }
   let lastPlay = 0;
-  const visibleSet = new WeakSet();
+  const seen = new WeakSet();
   async function playIfReady(){
-    const now = performance.now();
     if (!unlocked) return;
+    const now = performance.now();
     if (now - lastPlay < MIN_GAP_MS) return;
     try {
       sfx.currentTime = 0;
       await sfx.play();
       lastPlay = now;
       if (navigator.vibrate) navigator.vibrate(10);
-    } catch(_) {}
+      console.debug('[BAG SFX] playing', sfx.currentSrc);
+    } catch(err) {
+      console.debug('[BAG SFX] play blocked', err && err.name);
+    }
   }
-
   const io = new IntersectionObserver((entries)=>{
     for (const e of entries){
-      const img = e.target;
+      const el = e.target;
       if (e.isIntersecting && e.intersectionRatio >= THRESHOLD){
-        if (!visibleSet.has(img)){
-          visibleSet.add(img);
-          playIfReady();
-        }
+        if (!seen.has(el)){ seen.add(el); playIfReady(); }
       } else {
-        visibleSet.delete(img);
+        seen.delete(el);
       }
     }
   }, { threshold: THRESHOLD });
+  window.__bagIO = io;
 
   function watch(){
     const el = document.getElementById(TARGET_ID);
@@ -393,17 +401,25 @@ if ('serviceWorker' in navigator) {
   watch();
   new MutationObserver(()=>watch()).observe(document.documentElement,{childList:true,subtree:true});
 
-  // Preload early
+  /* 5) Preload early */
   const preIO = new IntersectionObserver((entries)=>{
-    if (entries.some(e=>e.isIntersecting)){
-      sfx.load();
-      preIO.disconnect();
-    }
+    if (entries.some(e=>e.isIntersecting)){ sfx.load(); preIO.disconnect(); }
   }, { rootMargin: '400px' });
   const preloadImg = document.getElementById(TARGET_ID);
   if (preloadImg) preIO.observe(preloadImg);
 
-  // Prevent zoom
+  /* 6) Optional dev nuke: add ?nuke=1 to URL once to clear SW + caches */
+  if (new URLSearchParams(location.search).get('nuke') === '1') {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
+    }
+    if ('caches' in window) { caches.keys().then(keys=>keys.forEach(k=>caches.delete(k))); }
+    localStorage.clear();
+    sessionStorage.clear();
+    console.warn('[BAG] SW and caches cleared');
+  }
+
+  /* 7) Prevent zoom */
   window.addEventListener('wheel', e=>{ if (e.ctrlKey) e.preventDefault(); }, { passive:false });
   ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
     window.addEventListener(ev, e=>e.preventDefault(), { passive:false });
@@ -420,6 +436,7 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
 
 
