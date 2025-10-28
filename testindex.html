@@ -30,7 +30,7 @@
 <link rel="manifest" href="/assets/site.webmanifest">
 <meta name="theme-color" content="#0c1a12">
 
-<!-- Modern PWA meta -->
+<!-- Modern PWA meta (replace deprecated apple-mobile-web-app-capable) -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="$BAG">
@@ -286,6 +286,13 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
+<!-- Service worker kept for PWA -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+}
+</script>
+
 <script>
 /* ===== $BAG index — clean casino SFX (singleton, gesture-unlocked, no debug) ===== */
 (function(){
@@ -296,7 +303,7 @@
   const THRESHOLD = 0.6;
   const MIN_GAP   = 1500;
 
-  // Kill any legacy audio immediately
+  // Stop any legacy old track silently (no breakpoints)
   document.addEventListener('play', (ev) => {
     const el = ev.target;
     if (!(el instanceof HTMLMediaElement)) return;
@@ -317,7 +324,7 @@
     return a;
   })();
 
-  // User-gesture unlock (mobile policy)
+  // User-gesture unlock (required by mobile)
   let unlocked = false;
   const UNLOCK = ['pointerdown','touchstart','mousedown','keydown'];
   async function unlock(){
@@ -349,7 +356,14 @@
     const now = performance.now();
     if (now - lastPlay < MIN_GAP) return;
     try {
-      if (sfx.src !== AUDIO_SRC) sfx.src = AUDIO_SRC; // enforce new track
+      // === FORCE CORRECT FILE ===
+      if (sfx.src && !sfx.src.includes('casinomusic.mp3')) {
+        URL.revokeObjectURL(sfx.src);
+        sfx.removeAttribute('src');
+        sfx.load();
+      }
+      sfx.src = AUDIO_SRC;
+      // === END FORCE ===
       sfx.currentTime = 0;
       await sfx.play();
       lastPlay = now;
@@ -357,7 +371,7 @@
     } catch(_) {}
   }
 
-  // Observe the hero image
+  // Replace any previous observer
   try { window.__bagIO && window.__bagIO.disconnect && window.__bagIO.disconnect(); } catch(_){}
   const io = new IntersectionObserver((entries)=>{
     for (const e of entries){
@@ -378,7 +392,7 @@
   watch();
   new MutationObserver(() => watch()).observe(document.documentElement, { childList:true, subtree:true });
 
-  // Preload when near viewport
+  // Preload near viewport
   const preIO = new IntersectionObserver((entries)=>{
     if (entries.some(e => e.isIntersecting)) {
       try { sfx.load(); } catch(_) {}
@@ -394,7 +408,7 @@
     window.addEventListener(ev, e=>e.preventDefault(), { passive:false });
   });
 
-  // Console helpers
+  // Quick console helpers (no side effects)
   window.BAG_SFX = { el: sfx, play: ()=>{ unlocked=true; return sfx.play(); }, pause: ()=>sfx.pause() };
 })();
 </script>
