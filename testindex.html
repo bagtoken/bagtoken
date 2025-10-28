@@ -315,83 +315,146 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* === Banner SFX: play casinomusic.mp3 on view, impossible for old file to survive === */
+/* $BAG — Casino banner SFX: precise, unlocked, and old-track-proof */
 (function(){
   const TARGET_ID = 'bag-casino-img';
+  const SRC       = '/assets/sounds/casinomusic.mp3?v=2025-10-28c'; // cache-bust
+  const OLD_HINT  = 'here-come-the-money.mp3';
   const THRESHOLD = 0.6;
   const MIN_GAP_MS = 1500;
 
-  const audio = (function(){
-    if (window.__bagSfx instanceof Audio) return window.__bagSfx;
-    const a = new Audio(); a.preload='auto'; a.playsInline = true;
-    window.__bagSfx = a; return a;
+  // 0) Kill any legacy plays of the old file
+  document.addEventListener('play', (ev)=>{
+    const m = ev.target;
+    if (!(m instanceof HTMLMediaElement)) return;
+    const s = (m.currentSrc || m.src || '');
+    if (s.includes(OLD_HINT)) {
+      try { m.pause(); m.currentTime = 0; } catch(_) {}
+      console.warn('[BAG SFX] Blocked legacy audio:', s);
+    }
+  }, true);
+
+  // 1) Quick sanity check that the new file exists (see console)
+  (async ()=>{
+    try {
+      const res = await fetch(SRC, { method:'HEAD', cache:'reload' });
+      console.info('[BAG SFX] HEAD', SRC, res.status, res.ok ? 'OK' : 'NOT OK');
+      if (!res.ok) console.error('[BAG SFX] casinomusic.mp3 not reachable at', SRC);
+    } catch (e) {
+      console.error('[BAG SFX] HEAD failed for', SRC, e);
+    }
   })();
 
-  const { ensureBlob, NEW_URL } = window.__BAG_AUDIO__ || {};
-  let unlocked = false, interacted = false, lastPlay = 0;
-  const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','keydown','mousedown'];
+  // 2) Singleton audio element
+  const sfx = (function(){
+    if (window.__bagSfx instanceof Audio) return window.__bagSfx;
+    const a = new Audio();
+    a.preload = 'auto';
+    a.playsInline = true;
+    a.crossOrigin = 'anonymous'; // harmless if same-origin; helps if file is on CDN with CORS
+    window.__bagSfx = a;
+    return a;
+  })();
 
-  async function tryUnlock(){
+  // 3) Require real user gesture to unlock audio (mobile rules)
+  let unlocked = false;
+  let interacted = false;
+  const UNLOCK_EVENTS = ['pointerdown','touchstart','mousedown','keydown','scroll','wheel'];
+
+  async function unlock(){
     interacted = true;
     if (unlocked) return;
-    try{
-      const url = ensureBlob ? await ensureBlob() : NEW_URL;
-      if (url) audio.src = url;
-      audio.muted = true;
-      await audio.play();
-      audio.pause(); audio.currentTime = 0; audio.muted = false;
+    try {
+      if (!sfx.src) sfx.src = SRC;
+      sfx.muted = true;
+      await sfx.play();          // this "consumes" the user gesture
+      sfx.pause();
+      sfx.currentTime = 0;
+      sfx.muted = false;
       unlocked = true;
-      UNLOCK_EVENTS.forEach(t=>{ window.removeEventListener(t, tryUnlock, opts); document.removeEventListener(t, tryUnlock, opts); });
-    }catch(_){}
+      UNLOCK_EVENTS.forEach(t=>{
+        window.removeEventListener(t, unlock, unlockOpts);
+        document.removeEventListener(t, unlock, unlockOpts);
+      });
+      console.info('[BAG SFX] Unlocked. Ready.');
+    } catch (e) {
+      console.warn('[BAG SFX] Unlock blocked, will retry on next gesture:', e && e.name);
+    }
   }
-  const opts = { passive:true, capture:true };
-  UNLOCK_EVENTS.forEach(t=>{ window.addEventListener(t, tryUnlock, opts); document.addEventListener(t, tryUnlock, opts); });
+  const unlockOpts = { passive:true, capture:true };
+  UNLOCK_EVENTS.forEach(t=>{
+    window.addEventListener(t, unlock, unlockOpts);
+    document.addEventListener(t, unlock, unlockOpts);
+  });
+
+  // 4) IntersectionObserver to trigger play when banner is in view
+  let lastPlay = 0;
+  const seen = new WeakSet();
 
   async function playIfReady(){
     if (!unlocked) return;
     const now = performance.now();
     if (now - lastPlay < MIN_GAP_MS) return;
-    try{
-      const url = ensureBlob ? await ensureBlob() : NEW_URL;
-      if (url && audio.src !== url) audio.src = url;
-      audio.currentTime = 0;
-      await audio.play();
+    try {
+      if (sfx.src !== SRC) sfx.src = SRC; // enforce new track
+      sfx.currentTime = 0;
+      await sfx.play();
       lastPlay = now;
-      if (navigator.vibrate && (navigator.userActivation?.isActive || interacted)) navigator.vibrate(10);
-    }catch(_){}
+      // vibrate only if user activation is present (avoids the console warning)
+      if (navigator.vibrate && (navigator.userActivation?.isActive || interacted)) {
+        navigator.vibrate(10);
+      }
+      console.info('[BAG SFX] Playing:', sfx.currentSrc);
+    } catch (e) {
+      console.warn('[BAG SFX] Play blocked:', e && e.name);
+    }
   }
 
-  if (window.__bagIO && window.__bagIO.disconnect) { try{ window.__bagIO.disconnect(); }catch(_){ } }
-  const seen = new WeakSet();
+  if (window.__bagIO && typeof window.__bagIO.disconnect === 'function') {
+    try { window.__bagIO.disconnect(); } catch(_) {}
+  }
   const io = new IntersectionObserver((entries)=>{
     for (const e of entries){
       const el = e.target;
       if (e.isIntersecting && e.intersectionRatio >= THRESHOLD){
-        if (!seen.has(el)){ seen.add(el); playIfReady(); }
-      } else { seen.delete(el); }
+        if (!seen.has(el)) { seen.add(el); playIfReady(); }
+      } else {
+        seen.delete(el);
+      }
     }
   }, { threshold: THRESHOLD });
   window.__bagIO = io;
 
-  function watch(){ const el = document.getElementById(TARGET_ID); if (el) io.observe(el); }
+  function watch(){
+    const el = document.getElementById(TARGET_ID);
+    if (el) io.observe(el);
+  }
   watch();
-  new MutationObserver(()=>watch()).observe(document.documentElement,{childList:true,subtree:true});
+  new MutationObserver(()=>watch()).observe(document.documentElement, { childList:true, subtree:true });
 
-  // Preload near viewport
+  // 5) Preload when near viewport for snappy start
   const preIO = new IntersectionObserver((entries)=>{
-    if (entries.some(e=>e.isIntersecting)){ ensureBlob && ensureBlob(); preIO.disconnect(); }
-  }, { rootMargin:'400px' });
+    if (entries.some(e=>e.isIntersecting)){
+      try { sfx.src = SRC; sfx.load(); } catch(_) {}
+      preIO.disconnect();
+    }
+  }, { rootMargin: '400px' });
   const preloadImg = document.getElementById(TARGET_ID);
   if (preloadImg) preIO.observe(preloadImg);
 
-  // Prevent pinch-zoom ctrl+wheel
+  // 6) Minimal zoom guards (unchanged)
   window.addEventListener('wheel', e=>{ if (e.ctrlKey) e.preventDefault(); }, { passive:false });
-  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{ window.addEventListener(ev, e=>e.preventDefault(), { passive:false }); });
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', e=>{ const n=Date.now(); if (n-lastTouchEnd<=300) e.preventDefault(); lastTouchEnd=n; }, { passive:false });
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+    window.addEventListener(ev, e=>e.preventDefault(), { passive:false });
+  });
 
-  // Log actual playing source
-  audio.addEventListener('play', ()=>{ try{ console.info('[BAG SFX] playing →', audio.currentSrc); }catch(_){ } });
+  // 7) Expose for quick console testing
+  window.BAG_SFX = {
+    play: async ()=>{ unlocked = true; if (!sfx.src) sfx.src = SRC; return sfx.play(); },
+    pause: ()=> sfx.pause(),
+    src: SRC,
+    el: sfx
+  };
 })();
 </script>
 
