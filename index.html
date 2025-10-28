@@ -290,24 +290,53 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* ===== $BAG index: play on scroll-into-view, first-scroll unlock, no-zoom ===== */
+/* ===== $BAG index: casino image scroll SFX — cache-busted, singleton, legacy-kill ===== */
 (function(){
-  const CASINO_SRC = '/assets/sounds/casinomusic.mp3'; // changed from here-come-the-money.mp3
+  // Cache-bust to defeat SW/CDN/browser audio caching
+  const VERSION = 'v2025-10-28a';
+  const CASINO_SRC = `/assets/sounds/casinomusic.mp3?${VERSION}`;
+  const OLD_SRC_HINT = 'here-come-the-money.mp3';
+
   const THRESHOLD = 0.6;
   const MIN_GAP_MS = 1500;
-
-  // target the banner's <img> by id (robust with <picture>)
   const TARGET_ID = 'bag-casino-img';
 
-  // Create audio (no DOM changes)
-  const sfx = new Audio(CASINO_SRC);
-  sfx.preload = 'auto';
-  sfx.playsInline = true;
+  // Kill any stray legacy audio still around
+  try {
+    // Stop our own previous singleton if it exists and has old src
+    if (window.__bagSfx && typeof window.__bagSfx.pause === 'function') {
+      try {
+        if ((window.__bagSfx.src || '').includes(OLD_SRC_HINT)) window.__bagSfx.pause();
+      } catch(_) {}
+    }
+    // Belt-and-suspenders: pause any <audio> tag playing the old file
+    document.querySelectorAll('audio').forEach(a=>{
+      try { if ((a.currentSrc||a.src||'').includes(OLD_SRC_HINT)) a.pause(); } catch(_){}
+    });
+  } catch(_) {}
 
-  // --- Audio unlock on first user interaction (scroll counts) ---
+  // Reuse a single Audio instance app-wide
+  const sfx = (function(){
+    if (window.__bagSfx instanceof Audio) {
+      // Swap to new source to avoid double instances
+      if (window.__bagSfx.src !== new URL(CASINO_SRC, location.href).href) {
+        window.__bagSfx.pause();
+        window.__bagSfx.src = CASINO_SRC;
+        window.__bagSfx.load();
+      }
+      return window.__bagSfx;
+    }
+    const a = new Audio(CASINO_SRC);
+    a.preload = 'auto';
+    a.playsInline = true;
+    window.__bagSfx = a;
+    return a;
+  })();
+
+  // Unlock on first interaction
   let unlocked = false;
   const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','keydown','mousedown'];
-  async function tryUnlock() {
+  async function tryUnlock(){
     if (unlocked) return;
     try {
       sfx.muted = true;
@@ -316,23 +345,22 @@ if ('serviceWorker' in navigator) {
       sfx.currentTime = 0;
       sfx.muted = false;
       unlocked = true;
-      UNLOCK_EVENTS.forEach(t => {
+      UNLOCK_EVENTS.forEach(t=>{
         window.removeEventListener(t, tryUnlock, unlockOpts);
         document.removeEventListener(t, tryUnlock, unlockOpts);
       });
-    } catch(_) { /* retry on next interaction */ }
+    } catch(_) {}
   }
   const unlockOpts = { passive:true, capture:true };
-  UNLOCK_EVENTS.forEach(t => {
+  UNLOCK_EVENTS.forEach(t=>{
     window.addEventListener(t, tryUnlock, unlockOpts);
     document.addEventListener(t, tryUnlock, unlockOpts);
   });
 
-  // --- Observe the banner image coming into view ---
+  // Play when the casino image is in view
   let lastPlay = 0;
-  const visibleSet = new WeakSet(); // require leave-before-next-play
-
-  async function playIfReady() {
+  const visibleSet = new WeakSet();
+  async function playIfReady(){
     const now = performance.now();
     if (!unlocked) return;
     if (now - lastPlay < MIN_GAP_MS) return;
@@ -344,11 +372,11 @@ if ('serviceWorker' in navigator) {
     } catch(_) {}
   }
 
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
+  const io = new IntersectionObserver((entries)=>{
+    for (const e of entries){
       const img = e.target;
-      if (e.isIntersecting && e.intersectionRatio >= THRESHOLD) {
-        if (!visibleSet.has(img)) {
+      if (e.isIntersecting && e.intersectionRatio >= THRESHOLD){
+        if (!visibleSet.has(img)){
           visibleSet.add(img);
           playIfReady();
         }
@@ -358,19 +386,16 @@ if ('serviceWorker' in navigator) {
     }
   }, { threshold: THRESHOLD });
 
-  function watch() {
+  function watch(){
     const el = document.getElementById(TARGET_ID);
     if (el) io.observe(el);
   }
   watch();
+  new MutationObserver(()=>watch()).observe(document.documentElement,{childList:true,subtree:true});
 
-  // If the image is injected later, observe it
-  const mo = new MutationObserver(() => watch());
-  mo.observe(document.documentElement, { childList:true, subtree:true });
-
-  // --- Preload when near viewport for snappy start ---
-  const preIO = new IntersectionObserver((entries) => {
-    if (entries.some(e => e.isIntersecting)) {
+  // Preload early
+  const preIO = new IntersectionObserver((entries)=>{
+    if (entries.some(e=>e.isIntersecting)){
       sfx.load();
       preIO.disconnect();
     }
@@ -378,13 +403,13 @@ if ('serviceWorker' in navigator) {
   const preloadImg = document.getElementById(TARGET_ID);
   if (preloadImg) preIO.observe(preloadImg);
 
-  // --- Prevent zoom (pinch, Ctrl+wheel, double-tap) ---
-  window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive:false });
-  ['gesturestart','gesturechange','gestureend'].forEach(ev => {
-    window.addEventListener(ev, (e) => e.preventDefault(), { passive:false });
+  // Prevent zoom
+  window.addEventListener('wheel', e=>{ if (e.ctrlKey) e.preventDefault(); }, { passive:false });
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+    window.addEventListener(ev, e=>e.preventDefault(), { passive:false });
   });
   let lastTouchEnd = 0;
-  document.addEventListener('touchend', (e) => {
+  document.addEventListener('touchend', e=>{
     const now = Date.now();
     if (now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
@@ -395,5 +420,6 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
 
