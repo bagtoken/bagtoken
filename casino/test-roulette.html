@@ -225,7 +225,7 @@
   </style>
 </head>
 
-<body>
+  <body>
 
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
@@ -436,7 +436,7 @@
   </div>
 </section>
 
-<script>
+    <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let AC=null, MASTER=null, lastTap=0, watchdog=null, armed=false;
@@ -480,7 +480,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   document.addEventListener('touchend', (e)=>{
     const n = Date.now();
@@ -493,7 +493,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
@@ -613,7 +613,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
   const usdInput   = $('#usdBet');
@@ -702,7 +702,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
   const API_KEY = '48d8a5b2-0f90-4c5a-b5c2-3d7c8fd6113f';
@@ -780,7 +780,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   if (window.__bagSession) return;
   const KEY = 'bag_demo_bag_v2';
@@ -797,8 +797,7 @@
 })();
 </script>
 
-<!-- Bets grid build & selection -->
-<script>
+    <script>
 (function(){
   const feltNums = document.getElementById('feltNums');
   const colBets = document.getElementById('colBets');
@@ -872,15 +871,10 @@
 })();
 </script>
 
-<!-- Wheel build + deterministic animation (precise pocket lock + calibration) -->
-<script>
+    <script>
 (function(){
-  /* ---------- WHEEL + CALIBRATION ---------- */
+  // American sequence
   const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
-  const DEG = 360 / WHEEL.length;                  // 9.4736842105...
-  const MARKER_DEG = 0;                            // ball points right at 0°
-  const CALIBRATION_OFFSET_DEG = 0;                // tweak if your art zero is off (e.g., -1.2 or +1.2)
-
   const COLOR = {}; ["00",0].forEach(n=>COLOR[n]="green");
   [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
   [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
@@ -898,16 +892,23 @@
   const spinText = document.getElementById('spinText');
   if (!svg || !ringG || !clipP || !ball || !spinBtn) return;
 
-  // Geometry: wedges flush with chrome (longer pockets for precision)
-  const cx=500, cy=500, R0=338, R1=492;           // inner/outer radii
-  const labelR = 452;                              // number position
+  // --- Geometry: 0° in SVG-building space is TOP, but CSS rotate(0deg) is RIGHT.
+  // We'll compensate with ANGLE_OFFSET = +90° when aligning pockets to the ball marker.
+  const ANGLE_OFFSET = 90;     // <<< key fix
+  const cx=500, cy=500, R0=338, R1=492;   // inner/outer radii for long wedges
+  const labelR = 452;
+  const DEG = 360 / WHEEL.length;
+  const MARKER_DEG = 0;        // ball sits at 0° (CSS frame → to the RIGHT)
 
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
   clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
 
-  function pol(r, ang){ const a=(ang-90)*Math.PI/180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
+  function pol(r, angTop){ // angTop is measured from TOP, clockwise
+    const a=(angTop-90)*Math.PI/180; // convert to CSS frame
+    return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  }
 
-  // Build ring: wedges + centered numbers
+  // Build wedges + centered numbers
   ringG.innerHTML='';
   for(let i=0;i<WHEEL.length;i++){
     const a0 = i*DEG, a1 = (i+1)*DEG, am = a0 + DEG/2;
@@ -924,12 +925,12 @@
     const [tx, ty] = pol(labelR, am);
     const t = document.createElementNS('http://www.w3.org/2000/svg','text');
     t.setAttribute('x', tx); t.setAttribute('y', ty);
-    t.setAttribute('transform', `rotate(${am} ${tx} ${ty})`);
+    t.setAttribute('transform', `rotate(${am-90} ${tx} ${ty})`); // keep upright relative to wedge
     t.textContent = String(WHEEL[i]);
     ringG.appendChild(t);
   }
 
-  // Deterministic transforms
+  // Deterministic transforms (keep exact floats)
   const state = { ringDeg: 0, ballDeg: 0 };
 
   function ringBoxSize(){ return svg.getBoundingClientRect().width || 300; }
@@ -943,14 +944,10 @@
 
   // initial placement
   requestAnimationFrame(()=> setTransforms(0, 0, ballRadiusPx()));
-
-  // keep radius correct on resize
   addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
 
-  // Spin
+  // Spin engine
   let spinning=false;
-  const norm = (d)=> ((d%360)+360)%360;
-
   function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
 
   function stakeBag(){
@@ -958,7 +955,10 @@
     const c = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
     const qty = Math.max(0, parseFloat(document.getElementById('betQty')?.value||'0'));
     if (c==='BAG') return qty;
-    if (p.bagUsd>0 && p.xrpUsd>0){ return qty * (p.xrpUsd / p.bagUsd); }
+    if (p.bagUsd>0 && p.xrpUsd>0){
+      const bagPerXrp = p.xrpUsd / p.bagUsd;
+      return qty * bagPerXrp;
+    }
     return 0;
   }
   function stakeUsd(){
@@ -971,7 +971,6 @@
 
   document.getElementById('spinBtn').addEventListener('click', async ()=>{
     if (spinning) return;
-
     const sBag = stakeBag(), sUsd = stakeUsd();
     if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
     if (!window.__BAG_FORCE_DEMO){ if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) return; }
@@ -983,24 +982,24 @@
     try{ if (window.__bagAudio && __bagAudio.resume) await __bagAudio.resume(); }catch{}
     try{ window.__bagAudio?.startSpinLoop?.(); }catch{}
 
-    // pick result
     const seed = randSeed();
     const idx = Math.floor((seed / 0x100000000) * WHEEL.length);
     const hit = WHEEL[idx];
 
     const DURATION_MS = 9000;
-    const ringRevs = 16;                 // wheel CW
-    const ballRevs = 24;                 // ball CCW
+    const ringRevs = 16;                   // ring rotations
+    const ballRevs = 24;                   // ball opposite rotations
 
-    // center angle of chosen pocket
-    const pocketCenter = idx*DEG + DEG/2;
+    // --- Pocket center measured from TOP (our SVG build space):
+    const pocketCenterTop = idx*DEG + DEG/2;
 
-    // Targets:
-    //  - Rotate ring so that pocket center aligns under marker at end (apply calibration)
-    //  - Spin ball opposite, then snap to marker visually
+    // --- Convert that to CSS frame (RIGHT=0°). Then align to marker.
+    // CSSAngleOfPocketCenter = pocketCenterTop - 90
+    // Required delta so center hits MARKER_DEG: Δ = MARKER_DEG - CSSAngleOfPocketCenter
+    // That is equivalent to (MARKER_DEG + 90 - pocketCenterTop).
     const rpx = ballRadiusPx();
-    const ringTarget = state.ringDeg + 360*ringRevs + (MARKER_DEG - pocketCenter + CALIBRATION_OFFSET_DEG);
-    const ballTarget = state.ballDeg - 360*ballRevs + MARKER_DEG;
+    const ringTarget = state.ringDeg + 360*ringRevs + (MARKER_DEG + ANGLE_OFFSET - pocketCenterTop);  // <<< fixed
+    const ballTarget = state.ballDeg - 360*ballRevs;
 
     ringG.style.transition = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
     ball.style.transition  = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
@@ -1010,7 +1009,7 @@
     setTimeout(()=>{
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
 
-      // ---- PAYOUTS ----
+      // read selections
       const b = {
         straight:(document.getElementById('betStraight').value||'').trim().toUpperCase(),
         rb:document.getElementById('betRB').value,
@@ -1042,7 +1041,9 @@
       }
 
       const win = computePayout(hit, sBag);
-      const selections = [b.straight&&'S', b.rb&&'RB', b.eo&&'EO', b.hl&&'HL', b.dozen&&'D', b.col&&'C'].filter(Boolean).length || 1;
+      const selections = [
+        b.straight && 'S', b.rb && 'RB', b.eo && 'EO', b.hl && 'HL', b.dozen && 'D', b.col && 'C'
+      ].filter(Boolean).length || 1;
       const net = win - sBag * selections;
 
       document.getElementById('lastLbl').textContent = String(hit);
@@ -1060,18 +1061,17 @@
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
       }
 
-      // ---- Snap exact (no drift) ----
+      // lock precise final ring angle; snap ball to marker and bounce
       ringG.style.transition = 'none';
       ball.style.transition = 'none';
 
+      const norm = (d)=> ((d%360)+360)%360;
       const finalRing = norm(ringTarget);
-      const finalBall = MARKER_DEG;
+      setTransforms(finalRing, MARKER_DEG, rpx);
 
-      setTransforms(finalRing, finalBall, rpx);
-
-      const ballCss = `rotate(${finalBall}deg) translate(${rpx}px)`;
-      ball.style.setProperty('--finalBall', ballCss);
-      ball.style.setProperty('--finalBallDeg', `${finalBall}deg`);
+      const ballFinal = `rotate(${MARKER_DEG}deg) translate(${rpx}px)`;
+      ball.style.setProperty('--finalBall', ballFinal);
+      ball.style.setProperty('--finalBallDeg', `${MARKER_DEG}deg`);
       ball.style.setProperty('--finalBallR', `${rpx}px`);
       ball.classList.remove('bounce'); void ball.offsetWidth; ball.classList.add('bounce');
 
@@ -1081,7 +1081,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
@@ -1115,7 +1115,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){
   const pill = document.getElementById('rulesPill');
   const modal = document.getElementById('rulesModal');
@@ -1129,7 +1129,7 @@
 })();
 </script>
 
-<script>
+    <script>
 (function(){function setVW(){var vw=Math.min(window.innerWidth||0,document.documentElement.clientWidth||0);document.documentElement.style.setProperty('--vwpx',vw+'px');}setVW();addEventListener('resize',setVW);addEventListener('orientationchange',setVW);}());
 </script>
 
