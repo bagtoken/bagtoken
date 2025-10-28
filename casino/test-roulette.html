@@ -906,20 +906,19 @@
     return (w * R) / 1000;
   }
 
-  // Build symmetric wedges + centered numbers (upright relative to ring)
+  // Build symmetric wedges + centered numbers
   ringG.innerHTML='';
   for(let i=0;i<WHEEL.length;i++){
     const a0 = i*DEG, a1 = (i+1)*DEG, am = a0 + DEG/2;
     const [x0,y0] = pol(R1,a0), [x1,y1] = pol(R1,a1);
     const [x2,y2] = pol(R0,a1), [x3,y3] = pol(R0,a0);
-    const largeArc=0;
 
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
     path.setAttribute('d', [
       'M',x0,y0,
-      'A',R1,R1,0,largeArc,1,x1,y1,
+      'A',R1,R1,0,0,1,x1,y1,
       'L',x2,y2,
-      'A',R0,R0,0,largeArc,0,x3,y3,
+      'A',R0,R0,0,0,0,x3,y3,
       'Z'
     ].join(' '));
     const c = COLOR[WHEEL[i]]||'black';
@@ -962,8 +961,12 @@
     setTransforms(ringDeg, ballDeg, ballRadiusPx());
   });
 
-  /* physics: ring determines result; ball animates opposite but ends at 0deg marker */
-  const MARKER_DEG = 0;                 // ball sits at 0° (pointing right) when settled
+  // Angle systems:
+  // - Ring geometry: 0° = top (12 o'clock)
+  // - Ball transform: 0° = right (3 o'clock)
+  const BALL_SETTLE_DEG = 0;   // ball finishes at right in its own space
+  const RING_TARGET_DEG = 90;  // right in ring space (so pocket center sits under the ball)
+
   let spinning=false;
 
   function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
@@ -1008,11 +1011,11 @@
     const ringRevs = 16;                 // ring rotations
     const ballRevs = 24;                 // ball opposite rotations
 
-    // center angle of chosen pocket relative to ring
+    // center angle of chosen pocket (ring space: 0°=top)
     const pocketCenter = idx*DEG + DEG/2;
 
-    // ring must rotate so chosen pocket center sits at MARKER_DEG
-    const ringDelta = 360*ringRevs - (pocketCenter - MARKER_DEG);
+    // ring must rotate so chosen pocket center sits at RING_TARGET_DEG (right in ring space)
+    const ringDelta = 360*ringRevs + (RING_TARGET_DEG - pocketCenter);
 
     // re-evaluate radius at spin time
     const rpx = ballRadiusPx();
@@ -1022,9 +1025,9 @@
     ringG.style.transition = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
     ball.style.transition  = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
 
-    // animate: ring forward, ball opposite; ball ends at MARKER_DEG (0deg)
+    // animate: ring forward, ball opposite; ball ends at BALL_SETTLE_DEG (right)
     requestAnimationFrame(()=>{
-      setTransforms(ringStart + ringDelta, ballStart - 360*ballRevs, rpx);
+      setTransforms(ringStart + ringDelta, ballStart - 360*ballRevs + BALL_SETTLE_DEG, rpx);
     });
 
     setTimeout(()=>{
@@ -1088,7 +1091,7 @@
       const finalRing = (getDeg(ringG)%360+360)%360;
       ringG.style.transform = `rotate(${finalRing}deg)`;
 
-      const finalBallDeg = MARKER_DEG;
+      const finalBallDeg = BALL_SETTLE_DEG;
       const ballFinal = `rotate(${finalBallDeg}deg) translate(${rpx}px)`;
       ball.style.transform = ballFinal;
       ball.style.setProperty('--finalBall', ballFinal);
