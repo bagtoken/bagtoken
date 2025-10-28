@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>GET THE $BAG</title>
 
-<!-- Strict CSP -->
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self';">
-
 <!-- SEO -->
 <meta name="description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token. 1T supply. Powered by $XRP.">
 <meta name="keywords" content="BAG,$BAG,XRPL,XRP Ledger,crypto,meme coin,BAG token,getthebag.io">
@@ -25,12 +21,17 @@
 <meta name="twitter:description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token.">
 <meta name="twitter:image" content="https://getthebag.io/assets/logo-512.png">
 
-<!-- Icons / PWA -->
-<link rel="icon" href="/favicon.ico" type="image/x-icon">
-<link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
-<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon-48x48.png">
-<link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon-180x180.png">
+<!-- Icons / PWA (ABSOLUTE PATHS ONLY) -->
+<link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+<link rel="icon" type="image/png" sizes="16x16"   href="/assets/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32"   href="/assets/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="48x48"   href="/assets/favicon-48x48.png">
+<link rel="icon" type="image/png" sizes="64x64"   href="/assets/favicon-64x64.png">
+<link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon-128x128.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/favicon-192x192.png">
+<link rel="icon" type="image/png" sizes="256x256" href="/assets/favicon-256x256.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/assets/favicon-512x512.png">
+<link rel="apple-touch-icon" sizes="180x180"      href="/assets/favicon-180x180.png">
 <link rel="manifest" href="/assets/site.webmanifest">
 <meta name="theme-color" content="#0c1a12">
 
@@ -41,8 +42,6 @@
 
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-
-<!-- Preload the only allowed music -->
 <link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28Z" as="audio" />
 
 <style>
@@ -106,12 +105,12 @@
 <!-- AUDIO GUARD + CLICK-TO-PLAY -->
 <script>
 (() => {
-  const BAD = 'here-come-the-money.mp3';
+  const BAD  = 'here-come-the-money.mp3';
   const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28Z';
 
   const isBad = (u) => !!u && String(u).includes(BAD);
 
-  // Nuke any caches (one-time during debugging). Safe to remove later.
+  // One-time nuke of SW + caches to prevent stale audio; remove later if desired.
   (async () => {
     try {
       if ('serviceWorker' in navigator) {
@@ -122,7 +121,7 @@
         const keys = await caches.keys();
         await Promise.all(keys.map(k => caches.delete(k)));
       }
-    } catch (_) {}
+    } catch(_) {}
   })();
 
   // Patch Audio constructor
@@ -137,7 +136,7 @@
   Object.defineProperty(PatchedAudio,'name',{value:'Audio'});
   window.Audio = PatchedAudio;
 
-  // Patch media src setter and setAttribute('src')
+  // Patch media src setter + setAttribute('src')
   const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
   if (desc && desc.set){
     const origSet = desc.set;
@@ -175,7 +174,7 @@
     }
   }, true);
 
-  // Create a single audio element for our track
+  // Create the single allowed audio
   const sfx = (function(){
     if (window.__bagSfx instanceof Audio) return window.__bagSfx;
     const a = new Audio(GOOD);
@@ -186,74 +185,21 @@
     return a;
   })();
 
-  let unlocked = false;
-
-  // Click to play — binds to the casino image link AND the whole header as backup
+  // Click-to-play bind (banner + hero)
   function bindClickPlay(){
-    const triggerEls = [
+    const triggers = [
       document.getElementById('bag-casino-img'),
-      document.querySelector('.hero'),
-      document.querySelector('.casino-banner a')
+      document.querySelector('.casino-banner a'),
+      document.querySelector('.hero')
     ].filter(Boolean);
 
-    triggerEls.forEach(el => {
-      el.addEventListener('click', async (e) => {
-        // This is a real user gesture.
-        try {
-          if (!unlocked) {
-            sfx.currentTime = 0;
-            await sfx.play();     // should succeed now
-            unlocked = true;
-            console.info('[BAG SFX] playing GOOD on click:', sfx.currentSrc);
-          } else {
-            sfx.currentTime = 0;
-            await sfx.play();
-          }
-        } catch (err) {
-          console.warn('[BAG SFX] click play blocked:', err && err.name);
-        }
-      }, { capture:true, passive:true });
+    triggers.forEach(el => {
+      el.addEventListener('click', async () => {
+        try { sfx.currentTime = 0; await sfx.play(); } catch(_) {}
+      }, { passive:true, capture:true });
     });
   }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    // Scrub any already-present offenders
-    document.querySelectorAll('audio,video,source').forEach(n => {
-      const s = n.currentSrc || n.src || n.getAttribute('src') || '';
-      if (isBad(s)) {
-        try { n.pause && n.pause(); n.currentTime = 0; } catch(_){}
-        if (n.tagName.toLowerCase() === 'source') n.setAttribute('src', GOOD);
-        else if ('src' in n) n.src = GOOD;
-        try { n.load && n.load(); } catch(_){}
-      }
-    });
-    bindClickPlay();
-  });
-
-  // Guard against anything injected later
-  new MutationObserver((list) => {
-    for (const m of list) {
-      if (m.type === 'childList') {
-        m.addedNodes.forEach(n => {
-          if (n.nodeType !== 1) return;
-          if (n.matches && n.matches('audio,video,source')) {
-            const s = n.currentSrc || n.src || n.getAttribute('src') || '';
-            if (isBad(s)) {
-              try { n.pause && n.pause(); n.currentTime = 0; } catch(_){}
-              if (n.tagName.toLowerCase() === 'source') n.setAttribute('src', GOOD);
-              else if ('src' in n) n.src = GOOD;
-              try { n.load && n.load(); } catch(_){}
-            }
-          }
-        });
-      }
-      if (m.type === 'attributes' && m.target && m.attributeName === 'src') {
-        const s = m.target.getAttribute('src') || '';
-        if (isBad(s)) m.target.setAttribute('src', GOOD);
-      }
-    }
-  }).observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] });
-
+  document.addEventListener('DOMContentLoaded', bindClickPlay);
 })();
 </script>
 </head>
@@ -370,16 +316,6 @@
   <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
-
-<!-- Service worker disabled while we purge caches to kill stale audio -->
-<!-- Re-enable after verified clean -->
-<!--
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-}
-</script>
--->
 
 </body>
 </html>
