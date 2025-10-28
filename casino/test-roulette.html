@@ -94,21 +94,16 @@
         radial-gradient(circle at 50% 50%, rgba(255,255,255,.08), rgba(0,0,0,.42) 72%),
         conic-gradient(#7b5029, #5e3a1b 25%, #7b5029 50%, #5e3a1b 75%, #7b5029);
       box-shadow:inset 0 0 0 10px #b8844f, inset 0 0 0 18px #8d5b2e, 0 10px 24px rgba(0,0,0,.35);}
+    .chrome{ position:absolute; inset:8.75% 8.75%; border-radius:50%; background: radial-gradient(circle at 50% 48%, #444, #111 70%); box-shadow: inset 0 0 0 2px #000, 0 1px 6px #000a; }
 
-    /* chrome ring slightly tighter so the numbered ring can grow */
-    .chrome{ 
-      position:absolute; inset:8% 8%; border-radius:50%;
-      background: radial-gradient(circle at 50% 48%, #444, #111 70%);
-      box-shadow: inset 0 0 0 2px #000, 0 1px 6px #000a;
-    }
-
-    /* SVG ring (thick, flush wedges) */
-    .ringSvg{ position:absolute; inset:10% 10%; width:80%; height:80%; display:block; }
-    .ringSvg #ringG{ transform-origin:50% 50%; }
+    /* SVG ring (thicker, wedges flush with the inner rim) */
+    .ringSvg{ position:absolute; inset:9.5% 9.5%; width:81%; height:81%; display:block; }
+    .ringSvg #ringG{ transform-origin:50% 50%; will-change:transform; }
     .ringSvg text{
       font-family:Inter,system-ui,Arial,sans-serif; font-weight:900; fill:#fff;
       font-size:46px; text-anchor:middle; dominant-baseline:middle;
       stroke:#000; stroke-width:6; paint-order:stroke fill;
+      user-select:none; pointer-events:none;
     }
 
     /* inner bowl */
@@ -118,8 +113,12 @@
       background: radial-gradient(circle at 50% 40%, #f0d49b, #9c6f36 72%); box-shadow:inset 0 6px 12px rgba(0,0,0,.35); }
 
     /* ball */
-    .ball{ position:absolute; width:18px; height:18px; background:#eee; border-radius:50%; box-shadow:0 1px 4px #000a; left:50%; top:50%; margin:-9px;
-      transform-origin:0 0; transform:rotate(0deg) translate(120px); will-change:transform; }
+    .ball{
+      position:absolute; width:18px; height:18px; background:#eee; border-radius:50%;
+      box-shadow:0 1px 4px #000a; left:50%; top:50%; margin:-9px;
+      transform-origin:0 0; transform:rotate(0deg) translate(120px);
+      will-change:transform;
+    }
     .ball.bounce{ animation:ballBounce 700ms ease-out 1; }
     @keyframes ballBounce{
       0%{ transform:var(--finalBall); }
@@ -798,6 +797,7 @@
 })();
 </script>
 
+<!-- Bets grid build & selection -->
 <script>
 (function(){
   const feltNums = document.getElementById('feltNums');
@@ -872,6 +872,7 @@
 })();
 </script>
 
+<!-- Wheel build + deterministic animation (precise pocket lock) -->
 <script>
 (function(){
   const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
@@ -892,21 +893,18 @@
   const spinText = document.getElementById('spinText');
   if (!svg || !ringG || !clipP || !ball || !spinBtn) return;
 
-  // Geometry in SVG units (0..1000). R1 near edge for flush wedges; R0 thicker for long wedges
-  const cx=500, cy=500, R0=320, R1=495;
-  const labelR = 430;
-  const DEG = 360 / WHEEL.length;
+  // Geom: wedges flush with chrome (longer pockets for visual precision)
+  const cx=500, cy=500, R0=338, R1=492;           // inner/outer radii
+  const labelR = 452;                              // number position
+  const DEG = 360 / WHEEL.length;                  // pocket arc
+  const MARKER_DEG = 0;                            // ball sits at 0° (pointing right)
 
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
   clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
 
   function pol(r, ang){ const a=(ang-90)*Math.PI/180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
-  function pxForRadius(R){
-    const w = svg.getBoundingClientRect().width || 0;
-    return (w * R) / 1000;
-  }
 
-  // Build symmetric wedges + centered numbers
+  // Build wedges + centered numbers
   ringG.innerHTML='';
   for(let i=0;i<WHEEL.length;i++){
     const a0 = i*DEG, a1 = (i+1)*DEG, am = a0 + DEG/2;
@@ -914,13 +912,7 @@
     const [x2,y2] = pol(R0,a1), [x3,y3] = pol(R0,a0);
 
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d', [
-      'M',x0,y0,
-      'A',R1,R1,0,0,1,x1,y1,
-      'L',x2,y2,
-      'A',R0,R0,0,0,0,x3,y3,
-      'Z'
-    ].join(' '));
+    path.setAttribute('d', ['M',x0,y0,'A',R1,R1,0,0,1,x1,y1,'L',x2,y2,'A',R0,R0,0,0,0,x3,y3,'Z'].join(' '));
     const c = COLOR[WHEEL[i]]||'black';
     path.setAttribute('fill', c==='red' ? '#cf2b2b' : c==='black' ? '#141414' : '#1b7b3a');
     path.setAttribute('stroke','#000'); path.setAttribute('stroke-width','2');
@@ -928,45 +920,31 @@
 
     const [tx, ty] = pol(labelR, am);
     const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.setAttribute('x', tx);
-    t.setAttribute('y', ty);
+    t.setAttribute('x', tx); t.setAttribute('y', ty);
     t.setAttribute('transform', `rotate(${am} ${tx} ${ty})`);
     t.textContent = String(WHEEL[i]);
     ringG.appendChild(t);
   }
 
-  /* helpers */
+  // ---- deterministic transforms (no rounding drift) ----
+  const state = { ringDeg: 0, ballDeg: 0 }; // keep exact floats
+
   function ringBoxSize(){ return svg.getBoundingClientRect().width || 300; }
-  // Ball runs slightly inside R1 so it sits at the pocket mouth visually
-  function ballRadiusPx(){
-    const BALL_R = R1 - 14; // adjust -10..-18 for closer/further look
-    return Math.max(40, Math.round(pxForRadius(BALL_R)));
-  }
-  function getDeg(el){
-    const st = getComputedStyle(el).transform;
-    if (!st || st==='none') return 0;
-    const v = st.split('(')[1].split(')')[0].split(',');
-    const a = parseFloat(v[0]); const b = parseFloat(v[1]);
-    return Math.round(Math.atan2(b, a) * (180/Math.PI));
-  }
-  function setTransforms(ringDeg, ballDeg, rpx){
-    ringG.style.transform = `rotate(${ringDeg}deg)`;
-    ball.style.transform = `rotate(${ballDeg}deg) translate(${rpx}px)`;
+  function ballRadiusPx(){ return Math.max(60, Math.round(ringBoxSize() * 0.345)); }
+
+  function setTransforms(rDeg, bDeg, rpx){
+    state.ringDeg = rDeg; state.ballDeg = bDeg;
+    ringG.style.transform = `rotate(${rDeg}deg)`;
+    ball.style.transform = `rotate(${bDeg}deg) translate(${rpx}px)`;
   }
 
-  requestAnimationFrame(()=>{ setTransforms(0, 0, ballRadiusPx()); });
-  addEventListener('resize', ()=>{
-    const ringDeg = getDeg(ringG);
-    const ballDeg = getDeg(ball);
-    setTransforms(ringDeg, ballDeg, ballRadiusPx());
-  });
+  // initial placement
+  requestAnimationFrame(()=> setTransforms(0, 0, ballRadiusPx()));
 
-  // Angle systems:
-  // - Ring geometry: 0° = top (12 o'clock)
-  // - Ball transform: 0° = right (3 o'clock)
-  const BALL_SETTLE_DEG = 0;   // ball finishes at right in its own space
-  const RING_TARGET_DEG = 90;  // right in ring space (so pocket center sits under the ball)
+  // keep radius correct on resize, preserve angles
+  addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
 
+  // Spin engine
   let spinning=false;
 
   function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
@@ -1011,24 +989,18 @@
     const ringRevs = 16;                 // ring rotations
     const ballRevs = 24;                 // ball opposite rotations
 
-    // center angle of chosen pocket (ring space: 0°=top)
+    // center angle of chosen pocket relative to ring (0° is at right)
     const pocketCenter = idx*DEG + DEG/2;
 
-    // ring must rotate so chosen pocket center sits at RING_TARGET_DEG (right in ring space)
-    const ringDelta = 360*ringRevs + (RING_TARGET_DEG - pocketCenter);
-
-    // re-evaluate radius at spin time
+    // Targets: rotate ring so pocket center meets marker; spin ball opposite then snap to marker
     const rpx = ballRadiusPx();
-    const ringStart = getDeg(ringG);
-    const ballStart = getDeg(ball);
+    const ringTarget = state.ringDeg + 360*ringRevs + (MARKER_DEG - pocketCenter);
+    const ballTarget = state.ballDeg - 360*ballRevs;
 
     ringG.style.transition = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
     ball.style.transition  = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
 
-    // animate: ring forward, ball opposite; ball ends at BALL_SETTLE_DEG (right)
-    requestAnimationFrame(()=>{
-      setTransforms(ringStart + ringDelta, ballStart - 360*ballRevs + BALL_SETTLE_DEG, rpx);
-    });
+    requestAnimationFrame(()=> setTransforms(ringTarget, ballTarget, rpx));
 
     setTimeout(()=>{
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
@@ -1084,22 +1056,22 @@
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
       }
 
-      // lock final ring; set ball to marker angle and bounce
+      // lock precise final ring angle; snap ball to marker and bounce
       ringG.style.transition = 'none';
       ball.style.transition = 'none';
 
-      const finalRing = (getDeg(ringG)%360+360)%360;
-      ringG.style.transform = `rotate(${finalRing}deg)`;
+      // normalize to [0,360)
+      const norm = (d)=> ((d%360)+360)%360;
+      const finalRing = norm(ringTarget);
+      setTransforms(finalRing, MARKER_DEG, rpx);
 
-      const finalBallDeg = BALL_SETTLE_DEG;
-      const ballFinal = `rotate(${finalBallDeg}deg) translate(${rpx}px)`;
-      ball.style.transform = ballFinal;
+      const ballFinal = `rotate(${MARKER_DEG}deg) translate(${rpx}px)`;
       ball.style.setProperty('--finalBall', ballFinal);
-      ball.style.setProperty('--finalBallDeg', `${finalBallDeg}deg`);
+      ball.style.setProperty('--finalBallDeg', `${MARKER_DEG}deg`);
       ball.style.setProperty('--finalBallR', `${rpx}px`);
       ball.classList.remove('bounce'); void ball.offsetWidth; ball.classList.add('bounce');
 
-      btn.disabled = false; spinning = false;
+      spinning = false; btn.disabled = false;
     }, DURATION_MS + 60);
   });
 })();
