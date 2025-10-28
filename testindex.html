@@ -21,7 +21,7 @@
 <meta name="twitter:description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token.">
 <meta name="twitter:image" content="https://getthebag.io/assets/logo-512.png">
 
-<!-- Icons / PWA (ABSOLUTE PATHS ONLY) -->
+<!-- Icons / PWA (ABSOLUTE PATHS + cache-bust on manifest) -->
 <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
 <link rel="icon" type="image/png" sizes="16x16"   href="/assets/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32"   href="/assets/favicon-32x32.png">
@@ -32,17 +32,17 @@
 <link rel="icon" type="image/png" sizes="256x256" href="/assets/favicon-256x256.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/assets/favicon-512x512.png">
 <link rel="apple-touch-icon" sizes="180x180"      href="/assets/favicon-180x180.png">
-<link rel="manifest" href="/assets/site.webmanifest">
+<link rel="manifest" href="/assets/site.webmanifest?v=2025-10-28C">
 <meta name="theme-color" content="#0c1a12">
 
-<!-- Modern PWA meta -->
+<!-- Modern PWA meta (replace deprecated Apple meta) -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="$BAG">
 
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28Z" as="audio" />
+<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28C" as="audio" />
 
 <style>
   *{box-sizing:border-box}
@@ -102,90 +102,42 @@
   .casino-banner .vault-break + picture{content-visibility:auto;contain-intrinsic-size:1024px 1536px}
 </style>
 
-<!-- AUDIO GUARD + CLICK-TO-PLAY -->
+<!-- AUDIO: kill legacy, click-to-play, and log file availability -->
 <script>
 (() => {
   const BAD  = 'here-come-the-money.mp3';
-  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28Z';
+  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28C';
 
   const isBad = (u) => !!u && String(u).includes(BAD);
 
-  // One-time nuke of SW + caches to prevent stale audio; remove later if desired.
-  (async () => {
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        regs.forEach(r => r.unregister());
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-    } catch(_) {}
-  })();
-
-  // Patch Audio constructor
+  // Patch Audio & media src so BAD never plays
   const NativeAudio = window.Audio;
-  function PatchedAudio(src){
-    if (isBad(src)) src = GOOD;
-    const a = src ? new NativeAudio(src) : new NativeAudio();
-    a.playsInline = true;
-    return a;
-  }
-  PatchedAudio.prototype = NativeAudio.prototype;
-  Object.defineProperty(PatchedAudio,'name',{value:'Audio'});
-  window.Audio = PatchedAudio;
+  function PatchedAudio(src){ if (isBad(src)) src = GOOD; const a = src ? new NativeAudio(src) : new NativeAudio(); a.playsInline = true; return a; }
+  PatchedAudio.prototype = NativeAudio.prototype; Object.defineProperty(PatchedAudio,'name',{value:'Audio'}); window.Audio = PatchedAudio;
 
-  // Patch media src setter + setAttribute('src')
   const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
-  if (desc && desc.set){
-    const origSet = desc.set;
-    desc.set = function(v){ if (isBad(v)) v = GOOD; return origSet.call(this,v); };
-    Object.defineProperty(HTMLMediaElement.prototype,'src',desc);
-  }
+  if (desc && desc.set){ const os = desc.set; desc.set=function(v){ if (isBad(v)) v = GOOD; return os.call(this,v); }; Object.defineProperty(HTMLMediaElement.prototype,'src',desc); }
   const _setAttr = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function(name,val){
-    if (name === 'src' && isBad(val)) val = GOOD;
-    return _setAttr.call(this,name,val);
-  };
-
-  // On any play(), hot-swap if bad
+  Element.prototype.setAttribute = function(name,val){ if (name==='src' && isBad(val)) val = GOOD; return _setAttr.call(this,name,val); };
   const _play = HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.play = function(){
-    try {
-      const s = this.currentSrc || this.src || '';
-      if (isBad(s)) {
-        try { this.pause(); } catch(_){}
-        this.src = GOOD;
-        try { this.load(); } catch(_){}
-      }
-    } catch(_){}
-    return _play.apply(this, arguments);
-  };
+  HTMLMediaElement.prototype.play = function(){ try { const s=this.currentSrc||this.src||''; if (isBad(s)) { try{this.pause();}catch(_){ } this.src=GOOD; try{this.load();}catch(_){ } } } catch(_){ } return _play.apply(this, arguments); };
 
-  // Global "play" firewall
   document.addEventListener('play', (ev) => {
-    const m = ev.target;
-    if (!(m instanceof HTMLMediaElement)) return;
+    const m = ev.target; if (!(m instanceof HTMLMediaElement)) return;
     const s = m.currentSrc || m.src || '';
-    if (isBad(s)) {
-      try { m.pause(); m.currentTime = 0; } catch(_){}
-      if (m.src !== GOOD) { m.src = GOOD; try { m.load(); } catch(_){} }
-    }
+    if (isBad(s)) { try{m.pause();m.currentTime=0;}catch(_){ } if (m.src!==GOOD){ m.src=GOOD; try{m.load();}catch(_){ } } }
   }, true);
 
-  // Create the single allowed audio
-  const sfx = (function(){
-    if (window.__bagSfx instanceof Audio) return window.__bagSfx;
-    const a = new Audio(GOOD);
-    a.preload = 'auto';
-    a.playsInline = true;
-    a.crossOrigin = 'anonymous';
-    window.__bagSfx = a;
-    return a;
+  // Singleton audio + click-to-play
+  const sfx = window.__bagSfx instanceof Audio ? window.__bagSfx : new Audio(GOOD);
+  sfx.preload='auto'; sfx.playsInline=true; sfx.crossOrigin='anonymous'; window.__bagSfx = sfx;
+
+  // Log availability
+  (async () => {
+    try { const r = await fetch(GOOD, { method:'HEAD', cache:'reload' }); console.info('[BAG SFX] HEAD', GOOD, r.status, r.ok?'OK':'NOT OK'); }
+    catch(e){ console.error('[BAG SFX] HEAD failed', e); }
   })();
 
-  // Click-to-play bind (banner + hero)
   function bindClickPlay(){
     const triggers = [
       document.getElementById('bag-casino-img'),
@@ -193,13 +145,13 @@
       document.querySelector('.hero')
     ].filter(Boolean);
 
-    triggers.forEach(el => {
-      el.addEventListener('click', async () => {
-        try { sfx.currentTime = 0; await sfx.play(); } catch(_) {}
-      }, { passive:true, capture:true });
-    });
+    triggers.forEach(el => el.addEventListener('click', async () => {
+      try { sfx.currentTime = 0; await sfx.play(); console.info('[BAG SFX] Playing', sfx.currentSrc); } catch(e){ console.warn('[BAG SFX] Play blocked', e && e.name); }
+    }, { passive:true, capture:true }));
   }
   document.addEventListener('DOMContentLoaded', bindClickPlay);
+
+  // Avoid vibrate warning (call only after user activation if you add it later)
 })();
 </script>
 </head>
