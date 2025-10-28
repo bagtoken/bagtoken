@@ -218,107 +218,132 @@
 <!-- Hidden audio element (attached to DOM for maximum compatibility) -->
 <audio id="bag-sfx" preload="auto" style="display:none"></audio>
 
+<!-- $BAG — bulletproof casino SFX. Replace all prior audio code with this. -->
 <script>
-/* $BAG — Casino banner SFX (DOM audio, robust unlock, multiple triggers) */
 (function(){
-  const TARGET_ID = 'bag-casino-img';
-  const LINK_ID   = 'bag-casino-link';
-  const SRC       = '/assets/sounds/casinomusic.mp3?v=2025-10-28d';
-  const THRESHOLD = 0.6;
-  const MIN_GAP_MS = 1500;
+  const IMG_ID   = 'bag-casino-img';
+  const LINK_ID  = 'bag-casino-link';
+  const MP3_URL  = '/assets/sounds/casinomusic.mp3'; // exact path on your server
+  const THRESH   = 0.6;
+  const MIN_GAP  = 1500;
 
-  const sfx = document.getElementById('bag-sfx');
-  sfx.src = '';            // bind later on first gesture
-  sfx.playsInline = true;  // iOS
-  // sfx.crossOrigin not needed for same-origin
+  // 1) Create a DOM <audio> and keep it around
+  let sfx = document.getElementById('bag-sfx');
+  if (!sfx) {
+    sfx = document.createElement('audio');
+    sfx.id = 'bag-sfx';
+    sfx.preload = 'auto';
+    sfx.playsInline = true;
+    sfx.style.display = 'none';
+    document.body.appendChild(sfx);
+  }
 
-  // 1) Unlock on first real gesture; bind src and perform muted play
   let unlocked = false;
+  let blobURL  = null;
   let lastPlay = 0;
-  const UNLOCK_EVENTS = ['pointerdown','touchstart','mousedown','keydown','scroll','wheel'];
 
+  // 2) Hard kill any legacy “here-come-the-money.mp3”
+  document.addEventListener('play', e=>{
+    const m = e.target;
+    if (m instanceof HTMLMediaElement) {
+      const src = m.currentSrc || m.src || '';
+      if (src.includes('here-come-the-money.mp3')) {
+        try { m.pause(); m.currentTime = 0; } catch(_) {}
+        console.warn('[BAG SFX] killed legacy track');
+      }
+    }
+  }, true);
+
+  // 3) Unlock handler — runs ONLY on a real user gesture
   async function unlockOnce(){
     if (unlocked) return;
-    try{
-      if (sfx.src !== SRC) sfx.src = SRC;
-      await sfx.load?.();
+    try {
+      // fetch during the gesture so browsers allow it
+      const res = await fetch(MP3_URL, { cache: 'reload' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const b = await res.blob();
+      if (blobURL) URL.revokeObjectURL(blobURL);
+      blobURL = URL.createObjectURL(b);
+      sfx.src = blobURL;
+
+      // muted play/pause to consume the gesture
       sfx.muted = true;
-      await sfx.play();        // consumes the gesture
-      sfx.pause(); sfx.currentTime = 0; sfx.muted = false;
+      await sfx.play();
+      sfx.pause();
+      sfx.currentTime = 0;
+      sfx.muted = false;
+
       unlocked = true;
-      UNLOCK_EVENTS.forEach(t=>{
-        window.removeEventListener(t, unlockOnce, opts);
-        document.removeEventListener(t, unlockOnce, opts);
-      });
-      console.info('[BAG SFX] Unlocked and ready:', sfx.src);
-    }catch(e){
-      console.warn('[BAG SFX] Unlock blocked, will retry on next gesture:', e && e.name);
+      offAllUnlock();
+      console.info('[BAG SFX] unlocked; mp3 bound:', MP3_URL, 'size:', b.size, 'bytes');
+    } catch (err) {
+      console.error('[BAG SFX] unlock failed:', err);
+      // stay subscribed — will retry next gesture
     }
   }
-  const opts = { passive:true, capture:true };
-  UNLOCK_EVENTS.forEach(t=>{
-    window.addEventListener(t, unlockOnce, opts);
-    document.addEventListener(t, unlockOnce, opts);
-  });
 
-  // 2) Triggers: scroll-into-view, mouseenter on image, and click on link
-  function canPlayNow(){
+  const UNLOCK_EVENTS = ['pointerdown','touchstart','mousedown','keydown','click','scroll','wheel'];
+  const unlockOpts = { passive: true, capture: true };
+  function onAllUnlock(){ UNLOCK_EVENTS.forEach(t => {
+    window.addEventListener(t, unlockOnce, unlockOpts);
+    document.addEventListener(t, unlockOnce, unlockOpts);
+  });}
+  function offAllUnlock(){ UNLOCK_EVENTS.forEach(t => {
+    window.removeEventListener(t, unlockOnce, unlockOpts);
+    document.removeEventListener(t, unlockOnce, unlockOpts);
+  });}
+  onAllUnlock();
+
+  // 4) Triggers to actually play once unlocked
+  function canPlay(){
     if (!unlocked) return false;
     const now = performance.now();
-    if (now - lastPlay < MIN_GAP_MS) return false;
+    if (now - lastPlay < MIN_GAP) return false;
     lastPlay = now;
     return true;
   }
-
   async function playOnce(){
-    if (!canPlayNow()) return;
-    try{
-      if (sfx.src !== SRC) sfx.src = SRC;
+    if (!canPlay()) return;
+    try {
+      if (sfx.src !== blobURL && blobURL) sfx.src = blobURL;
       sfx.currentTime = 0;
       await sfx.play();
-      if (navigator.vibrate && (navigator.userActivation?.isActive)) navigator.vibrate(10);
-      console.info('[BAG SFX] Playing:', sfx.currentSrc);
-    }catch(e){
-      console.warn('[BAG SFX] Play blocked:', e && e.name);
+      console.info('[BAG SFX] playing:', sfx.currentSrc);
+    } catch (e) {
+      console.warn('[BAG SFX] play blocked:', e && e.name);
     }
   }
 
-  // IntersectionObserver
-  const seen = new WeakSet();
-  const io = new IntersectionObserver((entries)=>{
-    for (const e of entries){
-      if (e.isIntersecting && e.intersectionRatio >= THRESHOLD){
-        if (!seen.has(e.target)){ seen.add(e.target); playOnce(); }
-      } else {
-        seen.delete(e.target);
-      }
+  // IntersectionObserver on the casino image
+  const io = new IntersectionObserver((ents)=>{
+    for (const e of ents) {
+      if (e.isIntersecting && e.intersectionRatio >= THRESH) playOnce();
     }
-  }, { threshold: THRESHOLD });
+  }, { threshold: THRESH });
 
-  function attachIO(){
-    const el = document.getElementById(TARGET_ID);
-    if (el) io.observe(el);
+  function armIO(){
+    const img = document.getElementById(IMG_ID);
+    if (img) io.observe(img);
   }
-  attachIO();
-  new MutationObserver(attachIO).observe(document.documentElement,{childList:true,subtree:true});
+  armIO();
+  new MutationObserver(armIO).observe(document.documentElement, { childList: true, subtree: true });
 
-  // Hover/enter trigger
-  document.addEventListener('mouseenter', (ev)=>{
-    if ((ev.target as HTMLElement)?.id === TARGET_ID) playOnce();
+  // Hover & click triggers
+  document.addEventListener('mouseenter', ev=>{
+    if ((ev.target && (ev.target as HTMLElement).id) === IMG_ID) playOnce();
   }, true);
-
-  // Click trigger on the link — plays immediately, then follows link
   const link = document.getElementById(LINK_ID);
-  if (link){
-    link.addEventListener('click', async ()=>{
-      await playOnce();
-    }, { passive:true });
-  }
+  if (link) link.addEventListener('pointerdown', playOnce, { passive: true });
 
-  // Optional: pause when tab hidden
-  document.addEventListener('visibilitychange', ()=>{
-    if (document.hidden) sfx.pause();
-  });
+  // Optional: pause on tab hide
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) sfx.pause(); });
+
+  // 5) Debug helpers for you in DevTools
+  (window as any).BAG_SFX = {
+    testUnlock: unlockOnce,
+    testPlay:   playOnce,
+    el: sfx
+  };
 })();
 </script>
 
