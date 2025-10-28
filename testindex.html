@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>GET THE $BAG</title>
 
-<!-- Strict CSP to keep surprise media out -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; block-all-mixed-content">
+<!-- Strict CSP -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self';">
 
 <!-- SEO -->
 <meta name="description" content="Utility on Chain. Culture on Brand. XRPL’s heaviest meme. Official $BAG token. 1T supply. Powered by $XRP.">
@@ -41,145 +42,15 @@
 <!-- Perf -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
-<!-- Preload the ONLY allowed music -->
-<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28x" as="audio" />
-
-<!-- ==== HARD GUARD (runs before anything renders) ==== -->
-<script>
-(() => {
-  const BAD = 'here-come-the-money.mp3';
-  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28x';
-  const isBad = (u) => !!u && String(u).includes(BAD);
-
-  // nuke SW + caches once per load (remove after you confirm fix)
-  (async () => {
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        regs.forEach(r => r.unregister());
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-      sessionStorage.removeItem('__bag_sw_nuked');
-    } catch(_) {}
-  })();
-
-  // Audit log
-  window.__BAG_MEDIA_AUDIT__ = [];
-
-  // Patch Audio constructor
-  const NativeAudio = window.Audio;
-  function PatchedAudio(src) {
-    if (isBad(src)) src = GOOD;
-    const a = src ? new NativeAudio(src) : new NativeAudio();
-    a.playsInline = true;
-    return a;
-  }
-  PatchedAudio.prototype = NativeAudio.prototype;
-  Object.defineProperty(PatchedAudio, 'name', { value: 'Audio' });
-  window.Audio = PatchedAudio;
-
-  // Patch HTMLMediaElement.src setter
-  const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
-  if (desc && desc.set) {
-    const origSet = desc.set;
-    desc.set = function(v){ if (isBad(v)) v = GOOD; return origSet.call(this, v); };
-    Object.defineProperty(HTMLMediaElement.prototype, 'src', desc);
-  }
-
-  // Patch setAttribute('src', ...)
-  const _setAttr = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function(name, val){
-    if (name === 'src' && isBad(val)) val = GOOD;
-    return _setAttr.call(this, name, val);
-  };
-
-  // Patch play()
-  const _play = HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.play = function(){
-    try {
-      const s = this.currentSrc || this.src || '';
-      if (isBad(s)) {
-        window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'hot-swap@play', from:s, to:GOOD });
-        this.pause();
-        this.src = GOOD;
-        try { this.load(); } catch(_) {}
-      }
-    } catch(_) {}
-    return _play.apply(this, arguments);
-  };
-
-  // Global "play" firewall + audit
-  document.addEventListener('play', (ev) => {
-    const m = ev.target;
-    if (!(m instanceof HTMLMediaElement)) return;
-    const s = m.currentSrc || m.src || '';
-    if (isBad(s)) {
-      window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'blocked-play', src:s });
-      try { m.pause(); m.currentTime = 0; } catch(_) {}
-      if (m.src !== GOOD) { m.src = GOOD; try { m.load(); } catch(_) {} }
-    }
-  }, true);
-
-  // Kill already-present offenders
-  function scrub(root = document){
-    root.querySelectorAll('audio,video,source').forEach(m => {
-      const s = m.currentSrc || m.src || m.getAttribute('src') || '';
-      if (isBad(s)) {
-        window.__BAG_MEDIA_AUDIT__.push({ when: Date.now(), action:'scrub', src:s });
-        try { m.pause && m.pause(); m.currentTime = 0; } catch(_) {}
-        if (m.tagName.toLowerCase() === 'source') m.setAttribute('src', GOOD);
-        else if ('src' in m) m.src = GOOD;
-        try { m.load && m.load(); } catch(_) {}
-      }
-    });
-  }
-  document.addEventListener('DOMContentLoaded', () => scrub());
-
-  // MutationObserver: stop any future bad nodes
-  new MutationObserver((list) => {
-    for (const m of list) {
-      if (m.type === 'childList') {
-        m.addedNodes.forEach(n => {
-          if (n.nodeType !== 1) return;
-          if (n.matches && n.matches('audio,video,source')) scrub(n.parentNode || document);
-          // same-origin iframes: inject guards
-          if (n.tagName === 'IFRAME') {
-            try {
-              const fdoc = n.contentDocument;
-              if (fdoc && fdoc.location.origin === location.origin) {
-                // inject the same guard into iframe
-                const s = fdoc.createElement('script');
-                s.textContent = '(' + arguments.callee.toString() + ')()';
-                fdoc.documentElement.appendChild(s);
-              }
-            } catch(_) {}
-          }
-          // also scrub inside element subtree
-          scrub(n);
-        });
-      }
-      if (m.type === 'attributes' && m.target && m.target.getAttribute) {
-        if (m.attributeName === 'src') {
-          const s = m.target.getAttribute('src') || '';
-          if (isBad(s)) { m.target.setAttribute('src', GOOD); scrub(document); }
-        }
-      }
-    }
-  }).observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] });
-
-})();
-</script>
+<!-- Preload the only allowed music -->
+<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28Z" as="audio" />
 
 <style>
   *{box-sizing:border-box}
   :root{
     --gold:#ffd700;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
     --green:#2fbf6b;--green2:#34c759;--line:#173524;--shadow:rgba(0,0,0,.35);
-    --red:#e25b5b;
-    --content:1200px;
+    --red:#e25b5b; --content:1200px;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
   img{display:block;max-width:100%;height:auto}
@@ -205,12 +76,12 @@
   .btn-buy{display:inline-block;margin:4px;padding:14px 26px;font-size:1.15rem;font-weight:800;color:#020703;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);border-radius:28px;text-decoration:none;transition:transform .06s ease, filter .2s ease, box-shadow .2s ease; box-shadow:0 6px 0 #b08a19, 0 18px 36px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35)}
   .btn-buy:hover{filter:brightness(1.05);box-shadow:0 6px 0 #b08a19, 0 22px 40px rgba(255,225,117,.26), inset 0 1px 0 rgba(255,255,255,.4)}
   .btn-buy:active{transform:translateY(2px);box-shadow:0 4px 0 #9a7315, 0 12px 24px rgba(255,225,117,.2), inset 0 1px 0 rgba(255,255,255,.3)}
-  .casino-banner { text-align:center; padding: 10px 10px 0; }
-  .casino-banner img { display:block; margin:0 auto 20px; width:100%; height:auto; max-width:720px; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.4); }
+  .casino-banner{text-align:center;padding:10px 10px 0}
+  .casino-banner img{display:block;margin:0 auto 20px;width:100%;height:auto;max-width:720px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
   @media (min-width:1024px){.casino-banner img{max-width:960px}}
-  @media (max-width:768px){.casino-banner img{ max-width:none; width:100%; border-radius:0; box-shadow:none; }}
+  @media (max-width:768px){.casino-banner img{max-width:none;width:100%;border-radius:0;box-shadow:none}}
   .casino-callout{max-width:900px;margin:0 auto 14px;line-height:1.25}
-  .casino-callout .line1{color:var(--gold);font-weight:900;letter-spacing:.12em;font-size:clamp(0.95rem,2.8vw,1.05rem)}
+  .casino-callout .line1{color:var(--gold);font-weight:900;letter-spacing:.12em;font-size:clamp(.95rem,2.8vw,1.05rem)}
   .casino-callout .line2{color:#e9efe9;opacity:.9;margin-top:6px;font-family:"Cinzel",serif;font-weight:700;letter-spacing:.14em;font-size:clamp(1.05rem,3.2vw,1.25rem);text-shadow:0 0 8px rgba(255,215,0,.18)}
   .vault-break{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;margin:22px auto 28px;font-size:1rem;opacity:.85;position:relative}
   .vault-break::before,.vault-break::after{content:"";display:inline-block;vertical-align:middle;width:60px;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:0 12px;opacity:.7}
@@ -227,17 +98,176 @@
   .btn-litepaper{display:inline-block;padding:10px 18px;font-size:.95rem;font-weight:700;color:#000;background:var(--gold);border-radius:18px;text-decoration:none;transition:filter .2s ease}
   .btn-litepaper:hover{filter:brightness(1.05)}
   .legal-disclaimer{max-width:900px;margin:34px auto 0;padding:18px 16px 8px;border-top:1px solid #222;border-bottom:1px solid #222;font-size:.82rem;color:#aaa;text-align:center;line-height:1.45}
-  footer.footer{text-align:center; padding:12px 0 32px; line-height:1.6}
+  footer.footer{text-align:center;padding:12px 0 32px;line-height:1.6}
   @media (min-width:1024px){.hero{padding:8vh 0 2vh}.utility{padding:2vh 0 7vh}}
   .casino-banner .vault-break + picture{content-visibility:auto;contain-intrinsic-size:1024px 1536px}
 </style>
+
+<!-- AUDIO GUARD + CLICK-TO-PLAY -->
+<script>
+(() => {
+  const BAD = 'here-come-the-money.mp3';
+  const GOOD = '/assets/sounds/casinomusic.mp3?v=2025-10-28Z';
+
+  const isBad = (u) => !!u && String(u).includes(BAD);
+
+  // Nuke any caches (one-time during debugging). Safe to remove later.
+  (async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        regs.forEach(r => r.unregister());
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (_) {}
+  })();
+
+  // Patch Audio constructor
+  const NativeAudio = window.Audio;
+  function PatchedAudio(src){
+    if (isBad(src)) src = GOOD;
+    const a = src ? new NativeAudio(src) : new NativeAudio();
+    a.playsInline = true;
+    return a;
+  }
+  PatchedAudio.prototype = NativeAudio.prototype;
+  Object.defineProperty(PatchedAudio,'name',{value:'Audio'});
+  window.Audio = PatchedAudio;
+
+  // Patch media src setter and setAttribute('src')
+  const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
+  if (desc && desc.set){
+    const origSet = desc.set;
+    desc.set = function(v){ if (isBad(v)) v = GOOD; return origSet.call(this,v); };
+    Object.defineProperty(HTMLMediaElement.prototype,'src',desc);
+  }
+  const _setAttr = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name,val){
+    if (name === 'src' && isBad(val)) val = GOOD;
+    return _setAttr.call(this,name,val);
+  };
+
+  // On any play(), hot-swap if bad
+  const _play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function(){
+    try {
+      const s = this.currentSrc || this.src || '';
+      if (isBad(s)) {
+        try { this.pause(); } catch(_){}
+        this.src = GOOD;
+        try { this.load(); } catch(_){}
+      }
+    } catch(_){}
+    return _play.apply(this, arguments);
+  };
+
+  // Global "play" firewall
+  document.addEventListener('play', (ev) => {
+    const m = ev.target;
+    if (!(m instanceof HTMLMediaElement)) return;
+    const s = m.currentSrc || m.src || '';
+    if (isBad(s)) {
+      try { m.pause(); m.currentTime = 0; } catch(_){}
+      if (m.src !== GOOD) { m.src = GOOD; try { m.load(); } catch(_){} }
+    }
+  }, true);
+
+  // Create a single audio element for our track
+  const sfx = (function(){
+    if (window.__bagSfx instanceof Audio) return window.__bagSfx;
+    const a = new Audio(GOOD);
+    a.preload = 'auto';
+    a.playsInline = true;
+    a.crossOrigin = 'anonymous';
+    window.__bagSfx = a;
+    return a;
+  })();
+
+  let unlocked = false;
+
+  // Click to play — binds to the casino image link AND the whole header as backup
+  function bindClickPlay(){
+    const triggerEls = [
+      document.getElementById('bag-casino-img'),
+      document.querySelector('.hero'),
+      document.querySelector('.casino-banner a')
+    ].filter(Boolean);
+
+    triggerEls.forEach(el => {
+      el.addEventListener('click', async (e) => {
+        // This is a real user gesture.
+        try {
+          if (!unlocked) {
+            sfx.currentTime = 0;
+            await sfx.play();     // should succeed now
+            unlocked = true;
+            console.info('[BAG SFX] playing GOOD on click:', sfx.currentSrc);
+          } else {
+            sfx.currentTime = 0;
+            await sfx.play();
+          }
+        } catch (err) {
+          console.warn('[BAG SFX] click play blocked:', err && err.name);
+        }
+      }, { capture:true, passive:true });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Scrub any already-present offenders
+    document.querySelectorAll('audio,video,source').forEach(n => {
+      const s = n.currentSrc || n.src || n.getAttribute('src') || '';
+      if (isBad(s)) {
+        try { n.pause && n.pause(); n.currentTime = 0; } catch(_){}
+        if (n.tagName.toLowerCase() === 'source') n.setAttribute('src', GOOD);
+        else if ('src' in n) n.src = GOOD;
+        try { n.load && n.load(); } catch(_){}
+      }
+    });
+    bindClickPlay();
+  });
+
+  // Guard against anything injected later
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (m.type === 'childList') {
+        m.addedNodes.forEach(n => {
+          if (n.nodeType !== 1) return;
+          if (n.matches && n.matches('audio,video,source')) {
+            const s = n.currentSrc || n.src || n.getAttribute('src') || '';
+            if (isBad(s)) {
+              try { n.pause && n.pause(); n.currentTime = 0; } catch(_){}
+              if (n.tagName.toLowerCase() === 'source') n.setAttribute('src', GOOD);
+              else if ('src' in n) n.src = GOOD;
+              try { n.load && n.load(); } catch(_){}
+            }
+          }
+        });
+      }
+      if (m.type === 'attributes' && m.target && m.attributeName === 'src') {
+        const s = m.target.getAttribute('src') || '';
+        if (isBad(s)) m.target.setAttribute('src', GOOD);
+      }
+    }
+  }).observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] });
+
+})();
+</script>
 </head>
 <body>
 
 <header class="hero">
   <picture>
-    <source type="image/webp" srcset="/assets/logo-256.webp 256w, /assets/logo-512.webp 512w" sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw">
-    <img src="/assets/logo-512.png" srcset="/assets/logo-256.png 256w, /assets/logo-512.png 512w" sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw" alt="$BAG Logo" class="hero-img" width="512" height="512" fetchpriority="high" decoding="async">
+    <source type="image/webp" srcset="/assets/logo-256.webp 256w, /assets/logo-512.webp 512w"
+            sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw">
+    <img src="/assets/logo-512.png"
+         srcset="/assets/logo-256.png 256w, /assets/logo-512.png 512w"
+         sizes="(min-width:1200px) 280px, (max-width:480px) 66vw, 22vw"
+         alt="$BAG Logo" class="hero-img" width="512" height="512"
+         fetchpriority="high" decoding="async">
   </picture>
 
   <h1>💼 GET THE $BAG</h1>
@@ -282,6 +312,7 @@
   </div>
 </section>
 
+<!-- Casino banner -->
 <div class="casino-banner">
   <div class="casino-callout" aria-hidden="false">
     <div class="line1">PLAY IN $XRP OR $BAG</div>
@@ -290,7 +321,9 @@
 
   <a href="/casino/" aria-label="Open $BAG Casino">
     <picture>
-      <source type="image/webp" srcset="/assets/bag-casino-960.webp 960w, /assets/bag-casino-1024.webp 1024w" sizes="(max-width:480px) 92vw, (max-width:768px) 88vw, (max-width:1024px) 80vw, 960px">
+      <source type="image/webp"
+              srcset="/assets/bag-casino-960.webp 960w, /assets/bag-casino-1024.webp 1024w"
+              sizes="(max-width:480px) 92vw, (max-width:768px) 88vw, (max-width:1024px) 80vw, 960px">
       <img id="bag-casino-img"
            src="/assets/bag-casino-1024.png"
            srcset="/assets/bag-casino-960.png 960w, /assets/bag-casino-1024.png 1024w"
@@ -306,7 +339,9 @@
   </div>
 
   <picture>
-    <source type="image/webp" srcset="/assets/bag-casino-poster-960.webp 960w, /assets/bag-casino-poster-1024.webp 1024w" sizes="(max-width:480px) 92vw, (max-width:768px) 88vw, (max-width:1024px) 80vw, 960px">
+    <source type="image/webp"
+            srcset="/assets/bag-casino-poster-960.webp 960w, /assets/bag-casino-poster-1024.webp 1024w"
+            sizes="(max-width:480px) 92vw, (max-width:768px) 88vw, (max-width:1024px) 80vw, 960px">
     <img src="/assets/bag-casino-poster-1024.png"
          srcset="/assets/bag-casino-poster-960.png 960w, /assets/bag-casino-poster-1024.png 1024w"
          sizes="(max-width:480px) 92vw, (max-width:768px) 88vw, (max-width:1024px) 80vw, 960px"
@@ -336,92 +371,15 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
-<!-- Service worker kept for PWA -->
+<!-- Service worker disabled while we purge caches to kill stale audio -->
+<!-- Re-enable after verified clean -->
+<!--
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
 }
 </script>
-
-<!-- Banner SFX (gesture unlock + singleton) -->
-<script>
-(function(){
-  const VERSION   = '2025-10-28x';
-  const TARGET_ID = 'bag-casino-img';
-  const SRC       = `/assets/sounds/casinomusic.mp3?v=${VERSION}`;
-  const THRESHOLD = 0.6;
-  const MIN_GAP   = 1500;
-
-  const sfx = (function(){
-    if (window.__bagSfx instanceof Audio) return window.__bagSfx;
-    const a = new Audio(SRC);
-    a.preload = 'auto';
-    a.playsInline = true;
-    window.__bagSfx = a;
-    return a;
-  })();
-
-  let unlocked = false;
-  const UNLOCK = ['pointerdown','touchstart','mousedown','keydown'];
-  async function unlock(){
-    if (unlocked) return;
-    try {
-      sfx.muted = true;
-      await sfx.play();
-      sfx.pause(); sfx.currentTime = 0; sfx.muted = false;
-      unlocked = true;
-      UNLOCK.forEach(t => {
-        window.removeEventListener(t, unlock, opts);
-        document.removeEventListener(t, unlock, opts);
-      });
-    } catch(_) {}
-  }
-  const opts = { passive:true, capture:true };
-  UNLOCK.forEach(t => { window.addEventListener(t, unlock, opts); document.addEventListener(t, unlock, opts); });
-
-  let last = 0; const seen = new WeakSet();
-  async function playIfReady(){
-    if (!unlocked) return;
-    const now = performance.now();
-    if (now - last < MIN_GAP) return;
-    try {
-      if (sfx.src !== SRC) sfx.src = SRC;
-      sfx.currentTime = 0;
-      await sfx.play();
-      last = now;
-    } catch(_) {}
-  }
-
-  try { window.__bagIO && window.__bagIO.disconnect && window.__bagIO.disconnect(); } catch(_){}
-  const io = new IntersectionObserver((entries)=>{
-    for (const e of entries){
-      const el = e.target;
-      if (e.isIntersecting && e.intersectionRatio >= THRESHOLD) {
-        if (!seen.has(el)) { seen.add(el); playIfReady(); }
-      } else { seen.delete(el); }
-    }
-  }, { threshold: THRESHOLD });
-  window.__bagIO = io;
-
-  function watch(){ const el = document.getElementById(TARGET_ID); if (el) io.observe(el); }
-  watch();
-  new MutationObserver(() => watch()).observe(document.documentElement, { childList:true, subtree:true });
-
-  const preIO = new IntersectionObserver((entries)=>{
-    if (entries.some(e => e.isIntersecting)) { try { sfx.load(); } catch(_){} preIO.disconnect(); }
-  }, { rootMargin: '400px' });
-  const preloadImg = document.getElementById(TARGET_ID);
-  if (preloadImg) preIO.observe(preloadImg);
-
-  // Quick console helpers
-  window.BAG_SFX = {
-    el: sfx,
-    play: ()=>{ unlocked = true; return sfx.play(); },
-    pause: ()=>sfx.pause(),
-    audit: ()=>window.__BAG_MEDIA_AUDIT__
-  };
-})();
-</script>
+-->
 
 </body>
 </html>
