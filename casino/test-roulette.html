@@ -446,7 +446,8 @@
         <li><b>Selections</b>: Straight (single number), Dozens (1–12 / 13–24 / 25–36), Columns (C1/C2/C3), Red/Black, Even/Odd, Low/High.</li>
         <li><b>Stake</b>: Your entered amount is applied <i>per selected bet</i>. Multiple selections use the same base stake each.</li>
         <li><b>Payouts (This game only)</b>: When a selection hits, the win is your stake multiplied by a <b>Pay Scale tier</b>:
-          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b> — with easier bets most likely to land 1.00×–1.25× and straights having the best chance at higher tiers. <b>2.00×</b> is rarest.</li>
+          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b>.
+          Easier bets (Red/Black, Even/Odd, Low/High) most often return <b>1.00×–1.25×</b>; Dozens/Columns are moderate; Straights have the best chance at higher tiers. <b>2.00×</b> is rarest overall.</li>
         <li><b>Zeros</b> (0/00) are neither red/black, even/odd, nor low/high.</li>
         <li>Minimum $1 · Maximum $2,000 stake (USD equivalent). Payouts settle in <b>$BAG</b>. $XRP stakes auto-convert at the live rate.</li>
         <li>Practice mode is active here. On-ledger play wires in after QA.</li>
@@ -607,7 +608,7 @@
 
   function readCache(){
     try{
-      const v = JSON.parse(localStorage.getItem(CACHE_KEY)||'null');
+      const v = JSON.parse(localStorage.getItem('__bag_price_cache_v1')||'null');
       if (v && v.ts && (Date.now()-v.ts) < 60*60*1000 && v.bagUsd>0 && v.xrpUsd>0){
         PRICES.bagUsd = v.bagUsd; PRICES.xrpUsd = v.xrpUsd; PRICES.source='cache'; return true;
       }
@@ -615,7 +616,7 @@
     return false;
   }
   function writeCache(){
-    try{ localStorage.setItem(CACHE_KEY, JSON.stringify({bagUsd:PRICES.bagUsd, xrpUsd:PRICES.xrpUsd, ts:Date.now()})); }catch{}
+    try{ localStorage.setItem('__bag_price_cache_v1', JSON.stringify({bagUsd:PRICES.bagUsd, xrpUsd:PRICES.xrpUsd, ts:Date.now()})); }catch{}
   }
 
   (async function refresh(){
@@ -636,7 +637,7 @@
 })();
 </script>
 
-<!-- 🔁 UNIVERSAL DEMO SESSION (seeds EXACT $2,000 USD) -->
+<!-- UNIVERSAL DEMO SESSION (v2) -->
 <script src="/assets/js/bag-demo-session.js"></script>
 
 <!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS -->
@@ -725,9 +726,9 @@
     });
   })();
 
-  // Listen to universal events so balances light up the moment $2,000 demo seeds
-  window.addEventListener('bag:hudRefresh', ()=>{ updateUsdFromUnits(); renderBalances(); });
+  // React to live prices + universal session refresh events
   window.addEventListener('bag:pricesUpdated', ()=>{ updateUsdFromUnits(); renderBalances(); });
+  window.addEventListener('bag:hudRefresh', renderBalances);     // NEW: universal session event
   window.addEventListener('bag:sessionToppedUp', renderBalances);
   window.addEventListener('bag:sessionSpent', renderBalances);
 
@@ -927,7 +928,7 @@
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
   clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
 
-  // Polar helper: angle from TOP (SVG space), clockwise → convert to CSS frame
+  // Polar helper
   function pol(r, angTop){
     const a=(angTop-90)*Math.PI/180;
     return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
@@ -969,7 +970,6 @@
     ball.style.transform  = `rotate(${bDeg}deg) translate(${rpx}px)`;
   }
 
-  // Initial placement (absolute, no drift)
   requestAnimationFrame(()=> setTransforms(0, MARKER_DEG, ballRadiusPx()));
   addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
 
@@ -997,12 +997,9 @@
     if (spinning) return;
 
     const sBag = stakeBag(), sUsd = stakeUsd();
-    if (sUsd < 1){ alert('Minimum $1 stake'); return; }
-
-    // Always spend from the demo/live session
-    if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))){
-      alert('Insufficient demo balance');
-      return;
+    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
+    if (!window.__BAG_FORCE_DEMO){
+      if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) return;
     }
 
     spinning = true;
@@ -1024,13 +1021,11 @@
     // Center of the winning pocket measured from TOP (SVG space)
     const pocketCenterTop = idx*DEG + DEG/2;
 
-    // ABSOLUTE target: rotate ring so that pocket center lands at the RIGHT marker.
-    const MARKER_DEG = 0;
-    const desiredAbs = MARKER_DEG + 90 - pocketCenterTop;
+    // ABS target for ring: land winner at right marker
+    const desiredAbs = 0 + 90 - pocketCenterTop;
 
     const rpx = ballRadiusPx();
 
-    // Targets (absolute for ring, relative for ball)
     const ringTarget = 360*ringRevs + desiredAbs;
     const ballTarget = state.ballDeg - 360*ballRevs;
 
@@ -1042,7 +1037,7 @@
     setTimeout(()=>{
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
 
-      // ----- READ SELECTIONS -----
+      // Selections
       const b = {
         straight:(document.getElementById('betStraight').value||'').trim().toUpperCase(),
         rb:document.getElementById('betRB').value,
@@ -1052,18 +1047,18 @@
         col:document.getElementById('betCol').value
       };
 
-      // ----- PAY SCALE (Roulette-only) -----
+      // Pay scale
       const TIERS = [1.00, 1.25, 1.50, 1.75, 2.00];
       const DEMO = (window.__BAG_FORCE_DEMO === true);
       function pickTier(betType){
         let w;
-        if (betType === 'OUTSIDE'){ // RB / EO / HL
+        if (betType === 'OUTSIDE'){
           w = DEMO ? [0.44, 0.38, 0.12, 0.05, 0.01]
                    : [0.58, 0.30, 0.08, 0.035, 0.005];
-        } else if (betType === 'MID'){ // Dozen / Column
+        } else if (betType === 'MID'){
           w = DEMO ? [0.40, 0.34, 0.16, 0.07, 0.03]
                    : [0.50, 0.30, 0.12, 0.06, 0.02];
-        } else { // 'INSIDE' (Straight)
+        } else {
           w = DEMO ? [0.38, 0.30, 0.17, 0.10, 0.05]
                    : [0.46, 0.28, 0.14, 0.08, 0.04];
         }
@@ -1072,8 +1067,7 @@
         return TIERS[TIERS.length-1];
       }
 
-      // Helpers
-      const colorH = COLOR[hit]; // 'red'|'black'|'green'
+      const colorH = COLOR[hit];
       const isNum  = (n)=> typeof n==="number" && isFinite(n);
 
       function hitStraight(){
@@ -1106,29 +1100,16 @@
         return COLUMN[hit] === b.col;
       }
 
-      // Compute win: per winning selection, pay (stake × tier)
       const baseStake = sBag;
       let totalWin = 0;
       const notes = [];
 
-      if (hitStraight()){
-        const t = pickTier('INSIDE'); totalWin += baseStake * t; notes.push(`Straight ×${t.toFixed(2)}`);
-      }
-      if (hitRB()){
-        const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`RB ×${t.toFixed(2)}`);
-      }
-      if (hitEO()){
-        const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`EO ×${t.toFixed(2)}`);
-      }
-      if (hitHL()){
-        const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`HL ×${t.toFixed(2)}`);
-      }
-      if (hitDozen()){
-        const t = pickTier('MID'); totalWin += baseStake * t; notes.push(`Dozen ×${t.toFixed(2)}`);
-      }
-      if (hitCol()){
-        const t = pickTier('MID'); totalWin += baseStake * t; notes.push(`Column ×${t.toFixed(2)}`);
-      }
+      if (hitStraight()){ const t = pickTier('INSIDE'); totalWin += baseStake * t; notes.push(`Straight ×${t.toFixed(2)}`); }
+      if (hitRB()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`RB ×${t.toFixed(2)}`); }
+      if (hitEO()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`EO ×${t.toFixed(2)}`); }
+      if (hitHL()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`HL ×${t.toFixed(2)}`); }
+      if (hitDozen()){    const t = pickTier('MID');     totalWin += baseStake * t; notes.push(`Dozen ×${t.toFixed(2)}`); }
+      if (hitCol()){      const t = pickTier('MID');     totalWin += baseStake * t; notes.push(`Column ×${t.toFixed(2)}`); }
 
       document.getElementById('lastLbl').textContent = String(hit);
 
@@ -1144,7 +1125,6 @@
         spinText.textContent = `Lose on ${String(hit)} — try again`;
       }
 
-      // Snap to precise final, no drift; persist state
       const norm = d => ((d % 360) + 360) % 360;
       const finalRing = norm(ringTarget);
 
@@ -1152,7 +1132,6 @@
       ball.style.transition = 'none';
       setTransforms(finalRing, MARKER_DEG, rpx);
 
-      // settle bounce
       const ballFinal = `rotate(${MARKER_DEG}deg) translate(${rpx}px)`;
       ball.style.setProperty('--finalBall', ballFinal);
       ball.style.setProperty('--finalBallDeg', `${MARKER_DEG}deg`);
@@ -1193,8 +1172,8 @@
     document.getElementById('betQty')?.addEventListener(ev, render);
     document.getElementById('curToggle')?.addEventListener(ev, render);
   });
-  addEventListener('bag:hudRefresh', render);
   addEventListener('bag:pricesUpdated', render);
+  addEventListener('bag:hudRefresh', render);       // NEW: universal session event
   addEventListener('bag:sessionToppedUp', render);
   addEventListener('bag:sessionSpent', render);
   render();
