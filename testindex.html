@@ -247,105 +247,125 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- 🔊 Play ONLY when #bag-casino-img is visible. Toggle matches Casino hub and shares bag_sound_pref -->
+<!-- 🔊 Begin only when #bag-casino-img is visible AND user has unlocked. Hub-style toggle. Also unlocks WebAudio for game pages. -->
 <script>
 (function(){
-  const KEY     = 'bag_sound_pref';                 // shared with casino hub
-  const btn     = document.getElementById('soundToggle');
-  const audio   = document.getElementById('casinoAmbience'); // src=/assets/sounds/casinomusic.mp3
-  const target  = document.getElementById('bag-casino-img'); // hero image
-  const THRESH  = 0.2;                              // visibility threshold (easier to hit)
-  let unlocked  = false;                            // user gesture gate
-  let started   = false;                            // start once per visit
-  let playing   = false;
-  let isVisible = false;
-
+  const PREF_KEY   = 'bag_sound_pref';          // shared across pages
+  const UNLOCK_KEY = 'bag_audio_unlocked_v1';   // global unlock flag for other pages (games)
+  const btn    = document.getElementById('soundToggle');
+  const audio  = document.getElementById('casinoAmbience'); // /assets/sounds/casinomusic.mp3
+  const target = document.getElementById('bag-casino-img');
   if (!btn || !audio || !target) return;
 
-  // Audio setup
+  // --- WebAudio context (helps games play full sounds, bypasses iOS mute switch) ---
+  let ctx;
+  function ensureCtx(){
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    return ctx;
+  }
+  async function unlockWebAudio(){
+    try{
+      const c = ensureCtx();
+      if (c && c.state !== 'running') await c.resume();
+      localStorage.setItem(UNLOCK_KEY,'1');
+      window.__BAG_AUDIO_UNLOCKED__ = true;
+    }catch{}
+  }
+  // Expose a tiny bridge if games need it
+  window.__BAG_AUDIO__ = {
+    unlocked: ()=> localStorage.getItem(UNLOCK_KEY)==='1',
+    context:  ()=> ensureCtx(),
+    resume:   ()=> unlockWebAudio()
+  };
+
+  // --- HTMLAudio setup (music) ---
   audio.preload     = 'auto';
   audio.loop        = true;
-  audio.volume      = 0.08;
   audio.playsInline = true;
+  audio.volume      = 0.08;
 
-  // UI
-  function setIcon(){
-    btn.textContent = playing ? '🔊' : '🔇';
-    btn.setAttribute('aria-pressed', String(playing));
+  let unlocked=false, started=false, playing=false, inView=false;
+
+  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
+  async function primeAudioOnce(){
+    // Prime the element so iOS will allow later plays without rejections
+    try{
+      audio.muted = true;
+      await audio.play();
+      audio.pause(); audio.currentTime = 0;
+      audio.muted = false;
+    }catch{}
   }
 
-  async function doPlay(){
-    if (localStorage.getItem(KEY) === 'off') return;
+  async function playIfAllowed(){
+    if (localStorage.getItem(PREF_KEY)==='off') return;
+    if (!unlocked) return;
     try{
       await audio.play();
       playing = true; started = true; setIcon();
-    }catch(_){ /* blocked until real gesture */ }
+    }catch{}
   }
-  function doPause(){
-    try{ audio.pause(); }catch(_){}
+  function pauseNow(){
+    try{ audio.pause(); }catch{}
     playing = false; setIcon();
   }
 
-  // Toggle click
-  btn.addEventListener('pointerdown', (e)=>{
+  // Toggle
+  btn.addEventListener('pointerdown', async (e)=>{
     e.preventDefault();
     if (playing){
-      localStorage.setItem(KEY,'off');
-      doPause();
+      localStorage.setItem(PREF_KEY,'off');
+      pauseNow();
     }else{
-      localStorage.setItem(KEY,'on');
-      unlocked = true; // counts as a gesture
-      if (isVisible || document.visibilityState === 'visible') doPlay();
+      localStorage.setItem(PREF_KEY,'on');
+      unlocked = true;
+      await unlockWebAudio();
+      await primeAudioOnce();
+      if (inView || document.visibilityState === 'visible') playIfAllowed();
       else setIcon();
     }
   }, {passive:false});
 
-  // Gesture unlock once (any user action)
-  const UNLOCK = ['pointerdown','touchstart','mousedown','keydown','wheel','scroll'];
-  function unlockOnce(){
+  // One-time gesture unlock to satisfy autoplay
+  const UNLOCK_EVENTS = ['pointerdown','touchstart','mousedown','keydown','wheel','scroll'];
+  function onFirstUserGesture(){
     if (unlocked) return;
     unlocked = true;
-    if (isVisible && localStorage.getItem(KEY) !== 'off' && !started) doPlay();
+    unlockWebAudio();
+    primeAudioOnce();
+    if (inView) playIfAllowed();
   }
-  UNLOCK.forEach(t => window.addEventListener(t, unlockOnce, {once:true, passive:true, capture:true}));
+  UNLOCK_EVENTS.forEach(t => window.addEventListener(t, onFirstUserGesture, {once:true, passive:true, capture:true}));
 
-  // Also count tapping the hero image or its link as unlock
-  const link = document.querySelector('a[href="/casino/"]');
-  target.addEventListener('pointerdown', unlockOnce, {once:true, passive:true});
-  link && link.addEventListener('pointerdown', unlockOnce, {once:true, passive:true});
-
-  // IntersectionObserver: start when the hero becomes visible
+  // Start when the hero image actually becomes visible
   const io = new IntersectionObserver((entries)=>{
     for (const e of entries){
       if (e.target !== target) continue;
-      isVisible = e.isIntersecting && e.intersectionRatio >= THRESH;
-      if (isVisible){
-        if (unlocked && localStorage.getItem(KEY) !== 'off' && !started) doPlay();
-      }
-      // Do not auto-pause on exit; user controls pause via toggle.
+      inView = e.isIntersecting && e.intersectionRatio >= 0.5;
+      if (inView && !started) playIfAllowed();
     }
-  }, { threshold: [0, THRESH, 0.5, 1] });
+  }, { threshold: [0, 0.5, 1], rootMargin: '100px' });
   io.observe(target);
 
-  // Preload audio when hero is near viewport for instant start
-  const preIO = new IntersectionObserver((entries)=>{
-    if (entries.some(e => e.isIntersecting)) {
-      try { audio.load(); } catch(_) {}
-      preIO.disconnect();
-    }
-  }, { rootMargin: '400px' });
-  preIO.observe(target);
-
-  // Regain focus -> soft resume if user wants sound
+  // Soft resume after tab returns (if user wants sound)
   function softResume(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing && (isVisible || started) && unlocked) doPlay();
+    if (localStorage.getItem(PREF_KEY)!=='off' && unlocked && !playing && (inView || started)){
+      playIfAllowed();
+    }
   }
   window.addEventListener('focus', softResume);
   document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) softResume(); });
 
-  // Respect stored pref icon on load (don’t play yet)
+  // Respect stored pref on load (don’t auto-play until visible & unlocked)
   playing = false;
   setIcon();
+
+  // Also reflect existing unlock if a prior page unlocked WebAudio
+  if (localStorage.getItem(UNLOCK_KEY)==='1'){ unlocked = true; }
+
 })();
 </script>
 
