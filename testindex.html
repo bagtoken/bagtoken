@@ -39,24 +39,21 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
 <!-- Preload casino SFX so first play is instant -->
-<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28f" as="audio" />
+<link rel="preload" href="/assets/sounds/casinomusic.mp3?v=2025-10-28g" as="audio" />
 
 <style>
   *{box-sizing:border-box}
   :root{
     --gold:#ffd700;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
     --green:#2fbf6b;--green2:#34c759;--line:#173524;--shadow:rgba(0,0,0,.35);
-    --red:#e25b5b;
-    --content:1200px;
+    --red:#e25b5b; --content:1200px;
   }
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
   img{display:block;max-width:100%;height:auto}
   button,input{font-size:16px}
 
   .hero,.verify,.utility,.casino-banner,.litepaper-wrap,.legal-disclaimer,footer{
-    max-width:var(--content);
-    margin-left:auto;margin-right:auto;
-    padding-left:16px;padding-right:16px;
+    max-width:var(--content);margin-left:auto;margin-right:auto;padding-left:16px;padding-right:16px;
   }
 
   .hero{text-align:center;padding:6vh 5vw 2vh}
@@ -90,13 +87,8 @@
   @media (max-width:768px){ .casino-banner img{ max-width:none; width:100%; border-radius:0; box-shadow:none; } }
 
   .casino-callout{max-width:900px;margin:0 auto 14px;line-height:1.25}
-  .casino-callout .line1{
-    color:var(--gold);font-weight:900;letter-spacing:.12em;font-size:clamp(0.95rem,2.8vw,1.05rem);
-  }
-  .casino-callout .line2{
-    color:#e9efe9;opacity:.9;margin-top:6px;font-family:"Cinzel",serif;font-weight:700;
-    letter-spacing:.14em;font-size:clamp(1.05rem,3.2vw,1.25rem);text-shadow:0 0 8px rgba(255,215,0,.18);
-  }
+  .casino-callout .line1{color:var(--gold);font-weight:900;letter-spacing:.12em;font-size:clamp(0.95rem,2.8vw,1.05rem)}
+  .casino-callout .line2{color:#e9efe9;opacity:.9;margin-top:6px;font-family:"Cinzel",serif;font-weight:700;letter-spacing:.14em;font-size:clamp(1.05rem,3.2vw,1.25rem);text-shadow:0 0 8px rgba(255,215,0,.18)}
 
   .vault-break{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;margin:22px auto 28px;font-size:1rem;opacity:.85;position:relative}
   .vault-break::before,.vault-break::after{
@@ -127,9 +119,37 @@
     content-visibility: auto;
     contain-intrinsic-size: 1024px 1536px;
   }
+
+  /* Speaker toggle — top right */
+  .audio-toggle{
+    position:fixed; top:14px; right:14px; z-index:9999;
+    background:linear-gradient(180deg,#0f1f17,#0b1b13);
+    border:1px solid #173524; border-radius:12px; padding:10px 12px;
+    display:flex; align-items:center; gap:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+    cursor:pointer; user-select:none;
+  }
+  .audio-toggle svg{width:20px;height:20px;display:block}
+  .audio-toggle span{font-size:.9rem;color:#cfd6cf}
+  .audio-toggle[data-state="off"]{opacity:.8}
+  .audio-toggle:active{transform:translateY(1px)}
 </style>
 </head>
 <body>
+
+<!-- SPEAKER TOGGLE -->
+<button id="audioToggle" class="audio-toggle" type="button" aria-label="Audio toggle" data-state="off">
+  <svg id="icoOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+    <path d="M4 9v6h4l5 4V5L8 9H4z" stroke-width="2"/>
+    <path d="M16 8a5 5 0 010 8" stroke-width="2" />
+    <path d="M18.5 5.5a9 9 0 010 13" stroke-width="2" />
+  </svg>
+  <svg id="icoOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="display:none">
+    <path d="M4 9v6h4l5 4V5L8 9H4z" stroke-width="2"/>
+    <path d="M22 2L2 22" stroke-width="2"/>
+  </svg>
+  <span id="audioLabel">Muted</span>
+</button>
 
 <header class="hero">
   <picture>
@@ -241,7 +261,7 @@
   <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
 </footer>
 
-<!-- PWA SW (safe: your server returns 410 while we phase back in) -->
+<!-- PWA SW (safe) -->
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
@@ -249,14 +269,15 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script>
-/* ===== $BAG index — frontpage ambience: simple, gesture-first, hard-reload src ===== */
+/* ===== $BAG index — ambience with top-right toggle ===== */
 (function(){
-  const VERSION   = '2025-10-28f';
+  const VERSION   = '2025-10-28g';
   const TARGET_ID = 'bag-casino-img';
   const AUDIO_SRC = `/assets/sounds/casinomusic.mp3?v=${VERSION}`;
   const OLD_HINT  = 'here-come-the-money.mp3';
+  const PREF_KEY  = '__bag_audio_pref'; // 'on' | 'off'
 
-  // kill any legacy audio if it sneaks in
+  // Kill legacy audio if it appears
   document.addEventListener('play', (ev) => {
     const el = ev.target;
     if (!(el instanceof HTMLMediaElement)) return;
@@ -264,7 +285,7 @@ if ('serviceWorker' in navigator) {
     if (src.includes(OLD_HINT)) { try { el.pause(); el.currentTime = 0; } catch(_) {} }
   }, true);
 
-  // singleton audio
+  // Singleton audio
   const sfx = (function(){
     if (window.__bagSfx instanceof Audio) return window.__bagSfx;
     const a = new Audio();
@@ -276,44 +297,58 @@ if ('serviceWorker' in navigator) {
     return a;
   })();
 
+  // UI refs
+  const $btn   = document.getElementById('audioToggle');
+  const $icoOn = document.getElementById('icoOn');
+  const $icoOff= document.getElementById('icoOff');
+  const $lbl   = document.getElementById('audioLabel');
+
   let unlocked = false, started = false;
+  let pref = (localStorage.getItem(PREF_KEY) || 'on'); // default ON
+
+  function setUI(state){
+    // state: 'on' | 'off'
+    $btn.dataset.state = state;
+    if (state === 'on') {
+      $icoOn.style.display = '';
+      $icoOff.style.display = 'none';
+      $lbl.textContent = 'On';
+    } else {
+      $icoOn.style.display = 'none';
+      $icoOff.style.display = '';
+      $lbl.textContent = 'Muted';
+    }
+  }
+  setUI(pref);
 
   async function forceSrc(){
-    // Your FORCE RELOAD pattern
     if (sfx.src && !sfx.src.includes('casinomusic.mp3')) {
       try { URL.revokeObjectURL(sfx.src); } catch(_) {}
-      sfx.removeAttribute('src');
-      sfx.load();
+      sfx.removeAttribute('src'); sfx.load();
     }
     sfx.src = AUDIO_SRC;
   }
 
   async function start(){
-    if (started) return;
+    if (started || pref === 'off') return;
     started = true;
     try {
       await forceSrc();
       sfx.currentTime = 0;
       await sfx.play();
-    } catch(_) {
-      started = false; // allow retry
-    }
+    } catch(_) { started = false; }
   }
 
   async function unlockOnce(){
     if (unlocked) return;
     try {
-      // iOS unlock trick
       sfx.muted = true;
       await sfx.play();
-      sfx.pause();
-      sfx.currentTime = 0;
-      sfx.muted = false;
+      sfx.pause(); sfx.currentTime = 0; sfx.muted = false;
       unlocked = true;
-      // as soon as unlocked, start audio
-      start();
+      if (pref === 'on') start();
       removeUnlockers();
-    } catch(_) { /* try again on next gesture */ }
+    } catch(_) { /* retry on next gesture */ }
   }
 
   function removeUnlockers(){
@@ -329,21 +364,40 @@ if ('serviceWorker' in navigator) {
     document.addEventListener(t, unlockOnce, unlockOpts);
   });
 
-  // If image is visible already, nudge start after unlock
+  // Toggle click
+  $btn.addEventListener('click', async ()=>{
+    // Ensure gesture unlock
+    if (!unlocked) await unlockOnce();
+
+    if (pref === 'on') {
+      pref = 'off'; localStorage.setItem(PREF_KEY, 'off');
+      try { sfx.pause(); } catch(_){}
+      setUI('off');
+    } else {
+      pref = 'on'; localStorage.setItem(PREF_KEY, 'on');
+      setUI('on');
+      if (unlocked) start();
+    }
+  });
+
+  // Start when visible and allowed
   const io = new IntersectionObserver((entries)=>{
-    if (entries.some(e => e.isIntersecting)) { if (unlocked) start(); }
+    if (entries.some(e => e.isIntersecting)) { if (unlocked && pref === 'on') start(); }
   }, { threshold: 0.01 });
   const heroImg = document.getElementById(TARGET_ID);
   if (heroImg) io.observe(heroImg);
 
-  // Resume/pause on tab visibility
+  // Resume on visibility
   document.addEventListener('visibilitychange', async ()=>{
     if (document.hidden) { try { sfx.pause(); } catch(_){} }
-    else if (unlocked) { start(); }
+    else if (unlocked && pref === 'on') { start(); }
   });
 
-  // As a final safety, also try once after load (will noop until user gestures)
-  window.addEventListener('load', ()=>{ if (unlocked) start(); }, { once:true });
+  // If user had it OFF, make sure audio is stopped immediately
+  if (pref === 'off') { try { sfx.pause(); } catch(_){} }
+
+  // Final nudge after load
+  window.addEventListener('load', ()=>{ if (unlocked && pref === 'on') start(); }, { once:true });
 })();
 </script>
 
