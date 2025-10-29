@@ -446,8 +446,7 @@
         <li><b>Selections</b>: Straight (single number), Dozens (1–12 / 13–24 / 25–36), Columns (C1/C2/C3), Red/Black, Even/Odd, Low/High.</li>
         <li><b>Stake</b>: Your entered amount is applied <i>per selected bet</i>. Multiple selections use the same base stake each.</li>
         <li><b>Payouts (This game only)</b>: When a selection hits, the win is your stake multiplied by a <b>Pay Scale tier</b>:
-          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b>.
-          Easier bets (Red/Black, Even/Odd, Low/High) most often return <b>1.00×–1.25×</b>; Dozens/Columns are moderate; Straights have the best chance at higher tiers. <b>2.00×</b> is rarest overall.</li>
+          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b> — with easier bets most likely to land 1.00×–1.25× and straights having the best chance at higher tiers. <b>2.00×</b> is rarest.</li>
         <li><b>Zeros</b> (0/00) are neither red/black, even/odd, nor low/high.</li>
         <li>Minimum $1 · Maximum $2,000 stake (USD equivalent). Payouts settle in <b>$BAG</b>. $XRP stakes auto-convert at the live rate.</li>
         <li>Practice mode is active here. On-ledger play wires in after QA.</li>
@@ -637,6 +636,9 @@
 })();
 </script>
 
+<!-- 🔁 UNIVERSAL DEMO SESSION (seeds EXACT $2,000 USD) -->
+<script src="/assets/js/bag-demo-session.js"></script>
+
 <!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS -->
 <script>
 (function(){
@@ -723,6 +725,8 @@
     });
   })();
 
+  // Listen to universal events so balances light up the moment $2,000 demo seeds
+  window.addEventListener('bag:hudRefresh', ()=>{ updateUsdFromUnits(); renderBalances(); });
   window.addEventListener('bag:pricesUpdated', ()=>{ updateUsdFromUnits(); renderBalances(); });
   window.addEventListener('bag:sessionToppedUp', renderBalances);
   window.addEventListener('bag:sessionSpent', renderBalances);
@@ -808,59 +812,6 @@
   });
 
   render(); initIfSdk();
-})();
-</script>
-
-<!-- DEMO SESSION (seed EXACT $2,000) -->
-<script>
-(function(){
-  if (window.__bagSession) return;
-
-  const BAL_KEY   = '__bag_demo_bag_v2';
-  const INIT_KEY  = '__bag_demo_init_v2';
-  const START_USD = 2000;             // exact $2,000 seed
-  const RETRY_MS  = 500;
-  const RETRIES   = 20;               // ~10s
-  const FALLBACK_BAG_USD = 0.02;      // safety fallback if no prices
-
-  function read(){ try{ return JSON.parse(localStorage.getItem(BAL_KEY)||'null'); }catch{return null;} }
-  function writeBag(b){ try{ localStorage.setItem(BAL_KEY, JSON.stringify({bag:b})); }catch{} }
-  function markInit(){ try{ localStorage.setItem(INIT_KEY, String(Date.now())); }catch{} }
-  function inited(){ try{ return !!localStorage.getItem(INIT_KEY); }catch{return false;} }
-
-  async function seed(){
-    // If already initialized and balance exists, keep it
-    if (inited() && read() && typeof read().bag === 'number') return;
-
-    // Wait for price (bagUsd)
-    let bagUsd = 0;
-    for (let i=0;i<RETRIES;i++){
-      const p = window.__PRICES__;
-      if (p && Number(p.bagUsd)>0){ bagUsd = Number(p.bagUsd); break; }
-      await new Promise(r=>setTimeout(r, RETRY_MS));
-    }
-    if (!(bagUsd>0)) bagUsd = FALLBACK_BAG_USD;
-
-    // Convert $2,000 → BAG; keep integer BAG (demo)
-    const bag = Math.max(0, Math.floor(START_USD / bagUsd));
-    writeBag(bag);
-    markInit();
-
-    // notify HUD/balances
-    window.dispatchEvent(new CustomEvent('bag:sessionToppedUp'));
-  }
-
-  const sess = {
-    mode: 'demo',
-    get(){ return read() || {bag:0}; },
-    active(){ return true; },
-    credit(b){ const v=this.get(); v.bag += Number(b)||0; writeBag(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionToppedUp')); return true; },
-    spend(b){ const v=this.get(); if (v.bag < (Number(b)||0)) return false; v.bag -= Number(b)||0; writeBag(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionSpent')); return true; }
-  };
-  window.__bagSession = sess;
-
-  // perform initial seed
-  seed();
 })();
 </script>
 
@@ -1046,9 +997,12 @@
     if (spinning) return;
 
     const sBag = stakeBag(), sUsd = stakeUsd();
-    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
-    if (!window.__BAG_FORCE_DEMO){
-      if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) return;
+    if (sUsd < 1){ alert('Minimum $1 stake'); return; }
+
+    // Always spend from the demo/live session
+    if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))){
+      alert('Insufficient demo balance');
+      return;
     }
 
     spinning = true;
@@ -1071,7 +1025,8 @@
     const pocketCenterTop = idx*DEG + DEG/2;
 
     // ABSOLUTE target: rotate ring so that pocket center lands at the RIGHT marker.
-    const desiredAbs = MARKER_DEG + 90 - pocketCenterTop; // (SVG→CSS +90 applied here)
+    const MARKER_DEG = 0;
+    const desiredAbs = MARKER_DEG + 90 - pocketCenterTop;
 
     const rpx = ballRadiusPx();
 
@@ -1238,6 +1193,7 @@
     document.getElementById('betQty')?.addEventListener(ev, render);
     document.getElementById('curToggle')?.addEventListener(ev, render);
   });
+  addEventListener('bag:hudRefresh', render);
   addEventListener('bag:pricesUpdated', render);
   addEventListener('bag:sessionToppedUp', render);
   addEventListener('bag:sessionSpent', render);
