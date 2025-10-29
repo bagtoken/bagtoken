@@ -144,16 +144,16 @@
     .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
 
     /* Rules FAB */
-    .rules-fab{
+    .rules-pill{
       position:fixed; right:16px; bottom:16px; z-index:1500;
       padding:10px 14px; border-radius:999px; font-weight:800;
       border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
       box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
       cursor:pointer;
     }
-    .rules-fab:hover{ filter:brightness(1.05); }
-    .rules-overlay{ display:none; position:fixed; inset:0; z-index:2000; padding:18px; backdrop-filter: blur(6px); background: rgba(0,0,0,.45); }
-    .rules-modal{
+    .rules-pill:hover{ filter:brightness(1.05); }
+    .rules-modal{ display:none; position:fixed; inset:0; z-index:2000; padding:18px; backdrop-filter: blur(6px); background: rgba(0,0,0,.45); }
+    .rules-modal > div{
       width:min(720px,92vw); max-height:min(80vh,880px); overflow:auto; margin:0 auto;
       background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
       border:1px solid var(--line); border-radius:16px; box-shadow:0 24px 60px var(--shadow);
@@ -182,14 +182,14 @@
   <div class="game-wrap">
     <!-- LEFT: balances + stake + prices + payouts + bets -->
     <div class="panel mock" id="bagRouletteDemo">
-      <!-- Practice balances (always on in demo) -->
+      <!-- Practice balances (mirrors Slots placement) -->
       <div id="practiceBox" class="callout mono" style="margin-top:0;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
         <div><b>Practice Mode</b> · <span id="practiceMode">DEMO</span></div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <span>Balance: <b id="pbBag">—</b> BAG</span>
           <span>≈ <b id="pbXrp">—</b> XRP</span>
           <button id="topUp100" class="chip" type="button" title="Top up by $100">+ $100</button>
-          <button id="resetDemo" class="chip" type="button" title="Reset to $2,000">Reset $2,000</button>
+          <button id="resetDemo" class="chip" type="button" title="Reset $2,000">Reset $2,000</button>
         </div>
       </div>
 
@@ -211,7 +211,7 @@
               <div style="display:flex;align-items:center;gap:6px">
                 <input id="usdBet" class="mono" type="tel" inputmode="decimal" enterkeyhint="done" pattern="[0-9.]*"
                        min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
-                       style="width:140px;background:#0b2217;border:1b solid #1b4a2f;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                       style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="micro" aria-hidden="true">USD</span>
               </div>
             </div>
@@ -359,12 +359,13 @@
 
   </div>
 
-  <!-- Rules FAB + Modal -->
-  <button class="rules-fab" id="rulesFab" aria-controls="rulesOverlay" aria-expanded="false">
+  <!-- Rules pill + modal -->
+  <button class="rules-pill" id="rulesPill" aria-controls="rulesModal" aria-expanded="false">
     📜 <b>Rules</b>
   </button>
-  <div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
-    <div class="rules-modal">
+
+  <div class="rules-modal" id="rulesModal" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+    <div>
       <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
       <h3 id="rulesTitle">American Roulette — Complete Rules</h3>
       <ul style="margin:0 0 6px;padding-left:18px;color:#cfd6cf">
@@ -388,7 +389,7 @@
   </div>
 </section>
 
-<!-- AUDIO -->
+<!-- ===== AUDIO ===== -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -433,16 +434,14 @@
 })();
 </script>
 
-<!-- LIVE PRICES (AMM-first, then cache, then fallback) -->
+<!-- ===== PRICES (AMM-first; cache; fallback) ===== -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
   const FETCH_TIMEOUT_MS = 8000;
-
   const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
   const BAG_CODE = 'BAG';
-
-  const FALLBACK_BAG_USD = 0.02;
+  const FALLBACK_BAG_USD = 0.02, FALLBACK_XRP_USD = 0.50;
   const CACHE_KEY = '__bag_price_cache_v1';
 
   const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—' });
@@ -541,8 +540,8 @@
     let okB = await fetchBAGFromAMM();
     if (!(okX && okB)){
       if (!readCache()){
-        if (!okX){ PRICES.xrpUsd = 0.50; }
-        PRICES.bagUsd = 0.02;
+        PRICES.xrpUsd = okX ? PRICES.xrpUsd : FALLBACK_XRP_USD;
+        PRICES.bagUsd = FALLBACK_BAG_USD;
         PRICES.source = 'fallback';
       }
     } else {
@@ -554,31 +553,30 @@
 })();
 </script>
 
-<!-- DEMO SESSION — always on, seeds to EXACT $2,000 -->
+<!-- ===== DEMO SESSION (seed $2,000) ===== -->
 <script>
 (function(){
   if (window.__bagSession) return;
   const BAL_KEY='__bag_demo_bag_v2';
   const INIT_KEY='__bag_demo_init_v2';
   const START_USD=2000;
-  const FALLBACK_BAG_USD=0.02;
+  const FALLBACK_BAG_USD=0.02, FALLBACK_XRP_USD=0.50;
 
   function read(){ try{ const v=JSON.parse(localStorage.getItem(BAL_KEY)||'null'); if(v&&typeof v.bag==='number') return v; }catch{} return {bag:0}; }
   function write(b){ try{ localStorage.setItem(BAL_KEY, JSON.stringify({bag:b})); }catch{} }
   function seeded(){ try{ return !!JSON.parse(localStorage.getItem(INIT_KEY)||'false'); }catch{ return false; } }
   function markSeeded(){ try{ localStorage.setItem(INIT_KEY,'true'); }catch{} }
 
-  function bagUsd(){ return (window.__PRICES__&&window.__PRICES__.bagUsd)||0; }
-  function xrpUsd(){ return (window.__PRICES__&&window.__PRICES__.xrpUsd)||0; }
+  function bagUsd(){ return (window.__PRICES__&&window.__PRICES__.bagUsd)||FALLBACK_BAG_USD; }
+  function xrpUsd(){ return (window.__PRICES__&&window.__PRICES__.xrpUsd)||FALLBACK_XRP_USD; }
   function bagToXrp(b){ const bu=bagUsd(), xu=xrpUsd(); return (bu>0&&xu>0)? b*bu/xu : 0; }
 
   function seedExact2000(){
-    const px=bagUsd()||FALLBACK_BAG_USD;
-    const bag=Math.floor((START_USD/px)); // whole BAG units
+    const px=bagUsd();
+    const bag=Math.max(0, Math.floor(START_USD/px));
     write(bag);
     markSeeded();
-    render();
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    render(); window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
 
   const sess = {
@@ -586,11 +584,10 @@
     active(){ return true; },
     get(){ return read(); },
     credit(b){ const v=read(); v.bag += Number(b)||0; write(v.bag); render(); window.dispatchEvent(new CustomEvent('bag:sessionToppedUp')); return true; },
-    spend(b){ const v=read(); if (v.bag < (Number(b)||0)) return false; v.bag -= Number(b)||0; write(v.bag); render(); window.dispatchEvent(new CustomEvent('bag:sessionSpent')); return true; }
+    spend(b){ const v=read(); const need=Number(b)||0; if (v.bag < need) return false; v.bag -= need; write(v.bag); render(); window.dispatchEvent(new CustomEvent('bag:sessionSpent')); return true; }
   };
   window.__bagSession = sess;
 
-  // UI render for Practice Balances
   const pbBag=document.getElementById('pbBag');
   const pbXrp=document.getElementById('pbXrp');
   const modeLbl=document.getElementById('modeLbl');
@@ -605,28 +602,19 @@
     if (practiceMode) practiceMode.textContent = 'DEMO';
   }
 
-  // Seed once prices show up, or fall back fast after 1s
-  let seededOnce = seeded();
-  function trySeed(){
-    if (seededOnce) return;
-    if ((window.__PRICES__&&window.__PRICES__.bagUsd>0) || true){
-      seedExact2000(); seededOnce=true;
-    }
-  }
-  setTimeout(trySeed, 1000);
-  window.addEventListener('bag:pricesUpdated', ()=>{ if(!seededOnce && bagUsd()>0){ seedExact2000(); seededOnce=true; } });
+  if (!seeded()) seedExact2000();
+  window.addEventListener('bag:pricesUpdated', ()=>{ if (seeded()) render(); });
 
-  // Top-up and Reset buttons
   document.getElementById('topUp100')?.addEventListener('click', ()=>{
-    const px=bagUsd()||FALLBACK_BAG_USD; const add=Math.floor(100/px); sess.credit(add);
+    const add=Math.floor(100/bagUsd()); sess.credit(add);
   });
-  document.getElementById('resetDemo')?.addEventListener('click', ()=>{ try{ localStorage.removeItem(BAL_KEY); localStorage.removeItem(INIT_KEY); }catch{}; seededOnce=false; trySeed(); });
+  document.getElementById('resetDemo')?.addEventListener('click', ()=>{ try{ localStorage.removeItem(BAL_KEY); localStorage.removeItem(INIT_KEY); }catch{}; seedExact2000(); });
 
   render();
 })();
 </script>
 
-<!-- QUICK AMOUNTS + UNIT/USD SYNC (local, no dependencies) -->
+<!-- ===== QUICK AMOUNTS + USD/UNITS SYNC ===== -->
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
@@ -639,8 +627,8 @@
         payRB=$('#payRB'), payEO=$('#payEO'), payHL=$('#payHL');
 
   function selCur(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
-  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
-  function pxFor(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
+  function P(){ return window.__PRICES__ || { bagUsd:0.02, xrpUsd:0.50, source:'fallback' }; }
+  function pxFor(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0.02) : (p.xrpUsd||0.50); }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
   function usdFmt(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function quantize(ccy, units){ return ccy==='BAG' ? Math.max(0, Math.floor(units)) : Math.max(0, Math.floor((units + 1e-12) * 1e6) / 1e6); }
@@ -659,7 +647,7 @@
 
   function updatePayouts(){
     const bagStake = bagFromUnits();
-    const bagUsd = P().bagUsd||0;
+    const bagUsd = P().bagUsd||0.02;
     const sUsd = bagUsd>0 ? bagStake*bagUsd : 0;
 
     function row(mul){ if(!(bagStake>0 && bagUsd>0)) return '—'; const totBag = bagStake*mul; return fmt(totBag) + ' BAG (' + usdFmt(sUsd*mul) + ')'; }
@@ -690,7 +678,7 @@
 
   usdInput?.addEventListener('input', updateUnitsFromUsd);
   qtyInput?.addEventListener('input', updateUsdFromUnits);
-  curWrap?.addEventListener('change', ()=>{ unitSpan.textContent = selCur(); updateUsdFromUnits(); });
+  curWrap?.addEventListener('change', ()=>{ unitSpan.textContent = selCur(); updateUsdFromUsd(); });
 
   // Local quick amounts
   (function(){
@@ -713,7 +701,7 @@
 })();
 </script>
 
-<!-- Wallet connect (harmless in demo) -->
+<!-- ===== Wallet connect (harmless in demo) ===== -->
 <script>
 (function(){
   const WALLET_KEY = 'bag_wallet_v1';
@@ -792,82 +780,89 @@
 })();
 </script>
 
-<!-- Felt build -->
+<!-- ===== Felt build (bets table) ===== -->
 <script>
 (function(){
-  const feltNums = document.getElementById('feltNums');
-  const colBets = document.getElementById('colBets');
-  const outside = document.getElementById('outsideBets');
-  const zeroRow = document.getElementById('zeroRow');
-  if(!feltNums || !colBets || !outside || !zeroRow) return;
+  function buildFelt(){
+    const feltNums = document.getElementById('feltNums');
+    const colBets = document.getElementById('colBets');
+    const outside = document.getElementById('outsideBets');
+    const zeroRow = document.getElementById('zeroRow');
+    if(!feltNums || !colBets || !outside || !zeroRow) return;
 
-  const RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-  const BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
-  const colorOf = (n)=> (n===0 || n==='00') ? 'green' : (RED.has(n)?'red':'black');
+    const RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+    const colorOf = (n)=> (n===0 || n==='00') ? 'green' : (RED.has(n)?'red':'black');
 
-  function makeNumCell(n){
-    const d=document.createElement('div');
-    d.className='cell num ' + colorOf(n);
-    d.dataset.val=String(n);
-    d.innerHTML = '<div class="num-inner"><div class="half"></div><div class="half"></div></div><div class="label">'+n+'</div>';
-    return d;
+    function makeNumCell(n){
+      const d=document.createElement('div');
+      d.className='cell num ' + colorOf(n);
+      d.dataset.val=String(n);
+      d.innerHTML = '<div class="num-inner"><div class="half"></div><div class="half"></div></div><div class="label">'+n+'</div>';
+      return d;
+    }
+
+    zeroRow.innerHTML=''; zeroRow.appendChild(makeNumCell('0')); zeroRow.appendChild(makeNumCell('00'));
+
+    feltNums.innerHTML='';
+    for(let i=0;i<12;i++){
+      const n1=3+i*3, n2=2+i*3, n3=1+i*3;
+      [n1,n2,n3].forEach(n=> feltNums.appendChild(makeNumCell(n)));
+    }
+
+    colBets.innerHTML='';
+    ['C1','C2','C3'].forEach(c=>{
+      const d=document.createElement('div'); d.className='cell'; d.textContent='2:1'; d.dataset.type='COL'; d.dataset.val=c;
+      colBets.appendChild(d);
+    });
+
+    const allNums = () => feltNums.querySelectorAll('.cell.num, #zeroRow .cell.num');
+    const allCols = () => colBets.querySelectorAll('.cell');
+    const allOutside = () => outside.querySelectorAll('.cell');
+    let straight='', RB='', EO='', HL='', D='', COL='';
+
+    function syncHidden(){
+      document.getElementById('betStraight').value = straight;
+      document.getElementById('betRB').value = RB;
+      document.getElementById('betEO').value = EO;
+      document.getElementById('betHL').value = HL;
+      document.getElementById('betDozen').value = D;
+      document.getElementById('betCol').value = COL;
+    }
+
+    document.addEventListener('click', (e)=>{
+      const t=e.target.closest('.cell'); if(!t) return;
+      if (t.classList.contains('num')){
+        allNums().forEach(x=>x.classList.remove('selected'));
+        t.classList.add('selected');
+        straight = t.dataset.val || '';
+        const v = straight==='00' ? null : Number(straight);
+        D   = (!v||v===0)? '' : (v<=12?'D1' : v<=24?'D2':'D3');
+        COL = (!v||v===0)? '' : (v%3===1?'C1' : v%3===2?'C2':'C3');
+        syncHidden(); return;
+      }
+      if (t.closest('#colBets')){
+        allCols().forEach(x=>x.classList.remove('selected'));
+        t.classList.add('selected'); COL = String(t.dataset.val||''); syncHidden(); return;
+      }
+      if (t.closest('#outsideBets')){
+        const type = t.dataset.type, val = t.dataset.val;
+        if (type==='RB'){ allOutside().forEach(x=>{ if(x.dataset.type==='RB') x.classList.remove('selected'); }); t.classList.add('selected'); RB = val; }
+        else if (type==='EO'){ allOutside().forEach(x=>{ if(x.dataset.type==='EO') x.classList.remove('selected'); }); t.classList.add('selected'); EO = val; }
+        else if (type==='HL'){ allOutside().forEach(x=>{ if(x.dataset.type==='HL') x.classList.remove('selected'); }); t.classList.add('selected'); HL = val; }
+        syncHidden(); return;
+      }
+    });
   }
 
-  zeroRow.innerHTML=''; zeroRow.appendChild(makeNumCell('0')); zeroRow.appendChild(makeNumCell('00'));
-
-  feltNums.innerHTML='';
-  for(let i=0;i<12;i++){
-    const n1=3+i*3, n2=2+i*3, n3=1+i*3;
-    [n1,n2,n3].forEach(n=> feltNums.appendChild(makeNumCell(n)));
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', buildFelt, {once:true});
+  } else {
+    buildFelt();
   }
-
-  colBets.innerHTML='';
-  ['C1','C2','C3'].forEach(c=>{
-    const d=document.createElement('div'); d.className='cell'; d.textContent='2:1'; d.dataset.type='COL'; d.dataset.val=c;
-    colBets.appendChild(d);
-  });
-
-  const allNums = () => feltNums.querySelectorAll('.cell.num, #zeroRow .cell.num');
-  const allCols = () => colBets.querySelectorAll('.cell');
-  const allOutside = () => outside.querySelectorAll('.cell');
-  let straight='', RB='', EO='', HL='', D='', COL='';
-
-  function syncHidden(){
-    document.getElementById('betStraight').value = straight;
-    document.getElementById('betRB').value = RB;
-    document.getElementById('betEO').value = EO;
-    document.getElementById('betHL').value = HL;
-    document.getElementById('betDozen').value = D;
-    document.getElementById('betCol').value = COL;
-  }
-
-  document.addEventListener('click', (e)=>{
-    const t=e.target.closest('.cell'); if(!t) return;
-    if (t.classList.contains('num')){
-      allNums().forEach(x=>x.classList.remove('selected'));
-      t.classList.add('selected');
-      straight = t.dataset.val || '';
-      const v = straight==='00' ? null : Number(straight);
-      D   = (!v||v===0)? '' : (v<=12?'D1' : v<=24?'D2':'D3');
-      COL = (!v||v===0)? '' : (v%3===1?'C1' : v%3===2?'C2':'C3');
-      syncHidden(); return;
-    }
-    if (t.closest('#colBets')){
-      allCols().forEach(x=>x.classList.remove('selected'));
-      t.classList.add('selected'); COL = String(t.dataset.val||''); syncHidden(); return;
-    }
-    if (t.closest('#outsideBets')){
-      const type = t.dataset.type, val = t.dataset.val;
-      if (type==='RB'){ allOutside().forEach(x=>{ if(x.dataset.type==='RB') x.classList.remove('selected'); }); t.classList.add('selected'); RB = val; }
-      else if (type==='EO'){ allOutside().forEach(x=>{ if(x.dataset.type==='EO') x.classList.remove('selected'); }); t.classList.add('selected'); EO = val; }
-      else if (type==='HL'){ allOutside().forEach(x=>{ if(x.dataset.type==='HL') x.classList.remove('selected'); }); t.classList.add('selected'); HL = val; }
-      syncHidden(); return;
-    }
-  });
 })();
 </script>
 
-<!-- THE WHEEL + SPIN -->
+<!-- ===== Wheel + Spin (demo-friendly) ===== -->
 <script>
 (function(){
   const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
@@ -880,99 +875,84 @@
   [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
   [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
 
-  const svg = document.getElementById('ringSvg');
-  const ringG = document.getElementById('ringG');
-  const clipP = document.getElementById('ringClipPath');
-  const ball = document.getElementById('ball');
-  const spinBtn = document.getElementById('spinBtn');
-  const spinText = document.getElementById('spinText');
+  function qs(id){ return document.getElementById(id); }
+  const svg = qs('ringSvg'), ringG = qs('ringG'), clipP = qs('ringClipPath'), ball = qs('ball'), spinBtn = qs('spinBtn'), spinText = qs('spinText');
   if (!svg || !ringG || !clipP || !ball || !spinBtn) return;
 
-  const ANGLE_OFFSET = 90;
+  const ANGLE_OFFSET = 90;   // SVG-top → CSS-right
   const MARKER_DEG   = 0;
 
-  const cx=500, cy=500;
-  const R0=338, R1=492;
-  const labelR = 452;
-  const DEG = 360 / WHEEL.length;
+  const cx=500, cy=500, R0=338, R1=492, labelR=452, DEG=360/WHEEL.length;
 
-  function pol(r, angTop){
-    const a=(angTop-90)*Math.PI/180;
-    return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
-  }
+  function pol(r, angTop){ const a=(angTop-90)*Math.PI/180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
 
-  clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
+  function buildWheel(){
+    clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
+    ringG.innerHTML='';
+    for(let i=0;i<WHEEL.length;i++){
+      const a0 = i*DEG, a1 = (i+1)*DEG, am = a0 + DEG/2;
+      const [x0,y0] = pol(R1,a0), [x1,y1] = pol(R1,a1);
+      const [x2,y2] = pol(R0,a1), [x3,y3] = pol(R0,a0);
 
-  ringG.innerHTML='';
-  for(let i=0;i<WHEEL.length;i++){
-    const a0 = i*DEG, a1 = (i+1)*DEG, am = a0 + DEG/2;
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', `M ${x0} ${y0} A ${R1} ${R1} 0 0 1 ${x1} ${y1} L ${x2} ${y2} A ${R0} ${R0} 0 0 0 ${x3} ${y3} Z`);
+      const c = COLOR[WHEEL[i]]||'black';
+      p.setAttribute('fill', c==='red' ? '#cf2b2b' : c==='black' ? '#141414' : '#1b7b3a');
+      p.setAttribute('stroke','#000'); p.setAttribute('stroke-width','2');
+      ringG.appendChild(p);
 
-    const [x0,y0] = pol(R1,a0), [x1,y1] = pol(R1,a1);
-    const [x2,y2] = pol(R0,a1), [x3,y3] = pol(R0,a0);
-
-    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
-    p.setAttribute('d', `M ${x0} ${y0} A ${R1} ${R1} 0 0 1 ${x1} ${y1} L ${x2} ${y2} A ${R0} ${R0} 0 0 0 ${x3} ${y3} Z`);
-    const c = COLOR[WHEEL[i]]||'black';
-    p.setAttribute('fill', c==='red' ? '#cf2b2b' : c==='black' ? '#141414' : '#1b7b3a');
-    p.setAttribute('stroke','#000'); p.setAttribute('stroke-width','2');
-    ringG.appendChild(p);
-
-    const [tx, ty] = pol(labelR, am);
-    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.setAttribute('x', tx); t.setAttribute('y', ty);
-    t.setAttribute('transform', `rotate(${am-90} ${tx} ${ty})`);
-    t.textContent = String(WHEEL[i]);
-    ringG.appendChild(t);
+      const [tx, ty] = pol(labelR, am);
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', tx); t.setAttribute('y', ty);
+      t.setAttribute('transform', `rotate(${am-90} ${tx} ${ty})`);
+      t.textContent = String(WHEEL[i]);
+      ringG.appendChild(t);
+    }
   }
 
-  const state = { ringDeg: 0, ballDeg: MARKER_DEG };
+  const state = { ringDeg:0, ballDeg:MARKER_DEG };
   function ringBoxSize(){ return svg.getBoundingClientRect().width || 300; }
   function ballRadiusPx(){ return Math.max(60, Math.round(ringBoxSize() * 0.345)); }
   function setTransforms(rDeg, bDeg, rpx){
-    state.ringDeg = rDeg;
-    state.ballDeg = bDeg;
+    state.ringDeg = rDeg; state.ballDeg = bDeg;
     ringG.style.transform = `rotate(${rDeg}deg)`;
     ball.style.transform  = `rotate(${bDeg}deg) translate(${rpx}px)`;
   }
-  requestAnimationFrame(()=> setTransforms(0, MARKER_DEG, ballRadiusPx()));
-  addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
 
-  function sessionActive(){ return !!(window.__bagSession && window.__bagSession.active && window.__bagSession.active()); }
-  function credit(b){ try{ return window.__bagSession && window.__bagSession.credit && window.__bagSession.credit(b); }catch{ return false; } }
-  function spend(b){ try{ return window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(b); }catch{ return false; } }
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
   function stakeBag(){
-    const p = PR();
+    const p = window.__PRICES__ || { bagUsd:0.02, xrpUsd:0.50 };
     const c = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
     const qty = Math.max(0, parseFloat(document.getElementById('betQty')?.value||'0'));
     if (c==='BAG') return qty;
     if (p.bagUsd>0 && p.xrpUsd>0){ return qty * (p.xrpUsd/p.bagUsd); }
-    return 0;
+    // fallback in demo if prices lag
+    return qty * (0.50/0.02);
   }
   function stakeUsd(){
-    const p = PR();
+    const p = window.__PRICES__ || { bagUsd:0.02, xrpUsd:0.50 };
     const qty = Math.max(0, parseFloat(document.getElementById('betQty')?.value||'0'));
     const c = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
-    const px = (c==='BAG') ? (p.bagUsd||0) : (p.xrpUsd||0);
+    const px = (c==='BAG') ? (p.bagUsd||0.02) : (p.xrpUsd||0.50);
     return px>0 ? qty*px : 0;
   }
 
-  function randSeed(){ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
-
-  document.getElementById('spinBtn').addEventListener('click', async ()=>{
-    if (spinBtn.disabled) return;
-
+  function spin(){
     const sBag = stakeBag(), sUsd = stakeUsd();
-    if (sUsd < 1){ alert('Minimum $1 stake'); return; }
-    if (!sessionActive()){ alert('Start a session at The Cage'); return; }
-    if (!spend(sBag)){ alert('Insufficient balance'); return; }
+
+    // In DEMO we always allow the spin and auto-spend
+    if (window.__BAG_FORCE_DEMO !== true){
+      if (sUsd < 1){ alert('Minimum $1 stake'); return; }
+      if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) { alert('Insufficient balance'); return; }
+    } else {
+      // demo spend without blocking
+      try{ window.__bagSession?.spend?.(sBag); }catch{}
+    }
 
     spinBtn.disabled = true; spinText.className='t'; spinText.textContent='Spinning…';
     try{ window.__bagAudio?.resume?.(); window.__bagAudio?.startSpinLoop?.(); }catch{}
 
-    const seed = randSeed();
+    const seed = (crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
     const idx = Math.floor((seed / 0x100000000) * WHEEL.length);
     const hit = WHEEL[idx];
 
@@ -1032,7 +1012,7 @@
       document.getElementById('lastLbl').textContent = String(hit);
       if (net > 0){
         try{ window.__bagAudio?.chime?.(); }catch{}
-        credit(win);
+        window.__bagSession?.credit?.(win);
         spinText.className='t win';
         spinText.textContent = 'WIN on ' + String(hit) + ' · +' + win.toLocaleString(undefined,{maximumFractionDigits:6}) + ' BAG';
       } else if (net === 0){
@@ -1058,14 +1038,27 @@
 
       spinBtn.disabled = false;
     }, DURATION_MS + 60);
-  });
+  }
+
+  function init(){
+    buildWheel();
+    requestAnimationFrame(()=> setTransforms(0, MARKER_DEG, ballRadiusPx()));
+    addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
+    spinBtn.addEventListener('click', spin);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, {once:true});
+  } else {
+    init();
+  }
 })();
 </script>
 
-<!-- HUD -->
+<!-- ===== HUD ===== -->
 <script>
 (function(){
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function PR(){ return window.__PRICES__ || { bagUsd:0.02, xrpUsd:0.50 }; }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
   function cur(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
   function balances(){
@@ -1086,7 +1079,7 @@
     if (balLbl) balLbl.textContent = fmt(c==='XRP'?xrp:bag);
     if (betLbl){ const v=parseFloat(document.getElementById('betQty')?.value||'0'); betLbl.textContent = (c==='BAG'?Math.floor(v):Math.floor(v*1e6)/1e6); }
 
-    // mirror to Practice box too
+    // mirror Practice box too
     const pbBag=document.getElementById('pbBag');
     const pbXrp=document.getElementById('pbXrp');
     if (pbBag) pbBag.textContent = fmt(bag,0);
@@ -1104,18 +1097,18 @@
 })();
 </script>
 
-<!-- Rules modal controls -->
+<!-- ===== Rules modal controls ===== -->
 <script>
 (function(){
-  const fab = document.getElementById('rulesFab');
-  const ov  = document.getElementById('rulesOverlay');
-  const x   = document.getElementById('rulesClose');
-  function open(){ ov.style.display='block'; fab.setAttribute('aria-expanded','true'); }
-  function close(){ ov.style.display='none'; fab.setAttribute('aria-expanded','false'); }
-  fab?.addEventListener('click', open);
-  x?.addEventListener('click', close);
-  ov?.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
-  addEventListener('keydown', (e)=>{ if (e.key==='Escape') close(); });
+  const pill = document.getElementById('rulesPill');
+  const modal = document.getElementById('rulesModal');
+  const close = document.getElementById('rulesClose');
+  function open(){ modal.style.display='block'; pill.setAttribute('aria-expanded','true'); }
+  function hide(){ modal.style.display='none'; pill.setAttribute('aria-expanded','false'); }
+  pill?.addEventListener('click', open);
+  close?.addEventListener('click', hide);
+  modal?.addEventListener('click', (e)=>{ if (e.target===modal) hide(); });
+  addEventListener('keydown', (e)=>{ if (e.key==='Escape') hide(); });
 })();
 </script>
 
