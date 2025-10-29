@@ -623,7 +623,7 @@
   const betLbl     = $('#betLbl');
 
   const payStraight=$('#payStraight'), payDozen=$('#payDozen'), payColumn=$('#payColumn'),
-        payRB=$('#payRB'), payEO=$('#payEO'), payHL=$('#payHL');
+        payRB=$('#payRB'), payEO=$('#payEO'), payHL=$('#payHL']);
 
   function selCur(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
   function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
@@ -897,13 +897,11 @@
   if (!svg || !ringG || !clipP || !ball || !spinBtn) return;
 
   // Geometry
-  // We build wedges measuring angles from TOP in SVG space.
-  // CSS rotate(0deg) points RIGHT, so we need +90° when translating SVG->CSS.
-  const ANGLE_OFFSET = 90;     // fixed SVG→CSS offset
-  const MARKER_DEG   = 0;      // ball rests at CSS 0° (to the RIGHT)
+  const ANGLE_OFFSET = 90;     // SVG→CSS offset
+  const MARKER_DEG   = 0;      // ball rests at CSS 0° (right)
 
   const cx=500, cy=500;
-  const R0=338, R1=492;        // inner/outer ring radii (long wedges)
+  const R0=338, R1=492;        // ring radii (wedges reach rim)
   const labelR = 452;
   const DEG = 360 / WHEEL.length;
 
@@ -911,9 +909,9 @@
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
   clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
 
-  // Polar helper: angle is from TOP (SVG space), clockwise
+  // Polar helper: angle from TOP (SVG), clockwise
   function pol(r, angTop){
-    const a=(angTop-90)*Math.PI/180; // convert to CSS frame for coordinates
+    const a=(angTop-90)*Math.PI/180;
     return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
   }
 
@@ -953,7 +951,7 @@
     ball.style.transform  = `rotate(${bDeg}deg) translate(${rpx}px)`;
   }
 
-  // Initial placement (absolute, no drift)
+  // Initial placement
   requestAnimationFrame(()=> setTransforms(0, MARKER_DEG, ballRadiusPx()));
   addEventListener('resize', ()=> setTransforms(state.ringDeg, state.ballDeg, ballRadiusPx()));
 
@@ -981,9 +979,12 @@
     if (spinning) return;
 
     const sBag = stakeBag(), sUsd = stakeUsd();
-    if (sUsd < 1 && !window.__BAG_FORCE_DEMO){ alert('Minimum $1 stake'); return; }
-    if (!window.__BAG_FORCE_DEMO){
-      if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) return;
+    if (sUsd < 1){ alert('Minimum $1 stake'); return; }
+
+    // ✅ Always spend from session (demo or live)
+    if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) {
+      alert('Insufficient balance');
+      return;
     }
 
     spinning = true;
@@ -1002,17 +1003,15 @@
     const ringRevs = 16;
     const ballRevs = 24;
 
-    // Center of the winning pocket measured from TOP (SVG space)
+    // pocket center from TOP
+    const DEG = 360 / WHEEL.length;
     const pocketCenterTop = idx*DEG + DEG/2;
 
-    // ABSOLUTE target: rotate ring so that pocket center lands at the RIGHT marker.
-    // desiredAbs = MARKER_DEG + ANGLE_OFFSET - pocketCenterTop
-    const desiredAbs = MARKER_DEG + ANGLE_OFFSET - pocketCenterTop;
-
+    // Absolute ring target so pocket lands at marker (right)
+    const desiredAbs = 0 + ANGLE_OFFSET - pocketCenterTop;
     const rpx = ballRadiusPx();
 
-    // Targets (absolute for ring, relative for ball is fine)
-    const ringTarget = 360*ringRevs + desiredAbs; // <-- no addition of current angle
+    const ringTarget = 360*ringRevs + desiredAbs;
     const ballTarget = state.ballDeg - 360*ballRevs;
 
     ringG.style.transition = `transform ${DURATION_MS}ms cubic-bezier(.2,.9,.2,1)`;
@@ -1058,21 +1057,33 @@
       const selections = [
         b.straight && 'S', b.rb && 'RB', b.eo && 'EO', b.hl && 'HL', b.dozen && 'D', b.col && 'C'
       ].filter(Boolean).length || 1;
-      const net = win - sBag * selections;
+      const profit = win - sBag * selections; // net delta after spend
 
       document.getElementById('lastLbl').textContent = String(hit);
-      if (net > 0){
+
+      // Helpers for overlay text
+      const bagUsd = (window.__PRICES__||{}).bagUsd || 0;
+      const fmtBag = (n)=> (Number(n)||0).toLocaleString(undefined,{maximumFractionDigits:6});
+      const fmtUsd = (n)=> '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+
+      if (profit > 0){
         try{ window.__bagAudio?.chime?.(); }catch{}
-        window.__bagSession?.credit?.(win);
+        window.__bagSession?.credit?.(win); // pay total win (stake already deducted)
         spinText.className='t win';
-        spinText.textContent = 'WIN on ' + String(hit) + ' · +' + win.toLocaleString(undefined,{maximumFractionDigits:6}) + ' BAG';
-      } else if (net === 0){
+        spinText.textContent = 'WIN on ' + String(hit) + ' · +' + fmtBag(profit) + ' BAG';
+        // Overlay (profit & total)
+        const sub = `+${fmtBag(profit)} BAG · ${fmtUsd(bagUsd*profit)}  •  Stake×${selections} → ${fmtBag(win)} BAG`;
+        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'WIN', subtext:sub, duration:4200, sound:false });
+      } else if (profit === 0){
         spinText.className='t scratch';
         spinText.textContent = 'PUSH on ' + String(hit) + ' · bets offset';
+        const sub = `Stake returned · ${fmtBag(sBag*selections)} BAG`;
+        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'PUSH', subtext:sub, duration:2400, sound:false });
       } else {
         try{ window.__bagAudio?.thud?.(); }catch{}
         spinText.className='t lose';
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
+        // no overlay on loss (keep it clean)
       }
 
       // Snap to precise final, no drift; persist state
@@ -1083,7 +1094,7 @@
       ball.style.transition = 'none';
       setTransforms(finalRing, MARKER_DEG, rpx);
 
-      // Little settle bounce for the ball
+      // settle bounce
       const ballFinal = `rotate(${MARKER_DEG}deg) translate(${rpx}px)`;
       ball.style.setProperty('--finalBall', ballFinal);
       ball.style.setProperty('--finalBallDeg', `${MARKER_DEG}deg`);
@@ -1146,6 +1157,27 @@
 
 <script>
 (function(){function setVW(){var vw=Math.min(window.innerWidth||0,document.documentElement.clientWidth||0);document.documentElement.style.setProperty('--vwpx',vw+'px');}setVW();addEventListener('resize',setVW);addEventListener('orientationchange',setVW);}());
+</script>
+
+<!-- Lightweight WIN/PUSH overlay fallback (only if BAGOverlay not already present) -->
+<script>
+(function(){
+  if (window.BAGOverlay && typeof window.BAGOverlay.showWin === 'function') return;
+  const root = document.createElement('div');
+  root.style.cssText = 'position:fixed;inset:0;display:none;place-items:center;z-index:3000;backdrop-filter:blur(6px);background:rgba(0,0,0,.35)';
+  const card = document.createElement('div');
+  card.style.cssText = 'min-width:min(420px,92vw);max-width:92vw;border:1px solid #2b6a48;border-radius:16px;padding:18px;background:linear-gradient(180deg,#0b1b13,#0d2217);box-shadow:0 24px 60px rgba(0,0,0,.45);text-align:center;color:#f5f7f4';
+  const h = document.createElement('div');
+  h.style.cssText = 'font-size:28px;font-weight:900;letter-spacing:.5px';
+  const p = document.createElement('div');
+  p.style.cssText = 'margin-top:6px;color:#cfe0d6';
+  card.appendChild(h); card.appendChild(p); root.appendChild(card); document.body.appendChild(root);
+  function showWin({message='WIN', subtext='', duration=3600}={}){
+    h.textContent = message; p.textContent = subtext; root.style.display='grid';
+    setTimeout(()=>{ root.style.display='none'; }, duration);
+  }
+  window.BAGOverlay = { showWin };
+})();
 </script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6; width:100%; margin:0 auto;">
