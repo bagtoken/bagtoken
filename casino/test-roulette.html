@@ -625,7 +625,7 @@
     if (!(okX && okB)){
       if (!readCache()){
         if (!okX){ PRICES.xrpUsd = 0.50; }
-        PRICES.bagUsd = FALLBACK_BAG_USD;
+        PRICES.bagUsd = 0.02; // fallback
         PRICES.source = 'fallback';
       }
     } else {
@@ -654,8 +654,6 @@
   function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
   function pxFor(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
-  function usdFmt(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function quantize(ccy, units){ return ccy==='BAG' ? Math.max(0, Math.floor(units)) : Math.max(0, Math.floor((units + 1e-12) * 1e6) / 1e6); }
 
   function bagFromUnits(){
     const qty = Math.max(0, parseFloat(qtyInput?.value||'0'));
@@ -669,28 +667,22 @@
     return 0;
   }
 
-  function updatePayoutsCard(){
-    // leave as descriptive; bets use scale, no exact dollar preview per type
-  }
-
   function updateUsdFromUnits(){
     const px=pxFor(selCur());
     const qty=Math.max(0, parseFloat(qtyInput.value||'0'));
     const usd = px>0 ? qty*px : 0;
-    usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    document.getElementById('usdBet').value = usd>0 ? usd.toFixed(2) : '';
     betLbl && (betLbl.textContent = String(qtyInput?.value||'0'));
-    updatePayoutsCard();
     renderBalances();
   }
   function updateUnitsFromUsd(){
     const cur = selCur();
     const px  = pxFor(cur);
-    const raw = Math.min(2000, Math.max(0, parseFloat(usdInput.value||'0')));
-    if (!Number.isFinite(raw) || raw<=0 || px<=0) { updatePayoutsCard(); renderBalances(); return; }
-    const units = quantize(cur, raw/px);
-    qtyInput.value = (cur==='BAG') ? String(units) : units.toFixed(6).replace(/\.?0+$/,'');
+    const raw = Math.min(2000, Math.max(0, parseFloat(document.getElementById('usdBet').value||'0')));
+    if (!Number.isFinite(raw) || raw<=0 || px<=0) { renderBalances(); return; }
+    const units = (cur==='BAG') ? Math.max(0, Math.floor(raw/px)) : Math.max(0, Math.floor((raw/px + 1e-12) * 1e6) / 1e6);
+    document.getElementById('betQty').value = (cur==='BAG') ? String(units) : units.toFixed(6).replace(/\.?0+$/,'');
     betLbl && (betLbl.textContent = (cur==='BAG') ? String(units) : String(units));
-    updatePayoutsCard();
     renderBalances();
   }
 
@@ -710,9 +702,9 @@
     if (balXrpEl) balXrpEl.textContent = fmt(xrp,6);
   }
 
-  usdInput?.addEventListener('input', updateUnitsFromUsd);
-  qtyInput?.addEventListener('input', updateUsdFromUnits);
-  curWrap?.addEventListener('change', ()=>{
+  document.getElementById('usdBet')?.addEventListener('input', updateUnitsFromUsd);
+  document.getElementById('betQty')?.addEventListener('input', updateUsdFromUnits);
+  document.getElementById('curToggle')?.addEventListener('change', ()=>{
     unitSpan.textContent = selCur();
     updateUsdFromUnits();
   });
@@ -723,7 +715,7 @@
     row.querySelectorAll('button[data-usd]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const tag = btn.getAttribute('data-usd'); const val = (tag==='2000')?2000:Number(tag||0);
-        usdInput.value = Number(val).toFixed(2);
+        document.getElementById('usdBet').value = Number(val).toFixed(2);
         updateUnitsFromUsd();
         row.querySelectorAll('button[data-usd]').forEach(x=>x.classList.remove('selected'));
         btn.classList.add('selected');
@@ -819,21 +811,56 @@
 })();
 </script>
 
-<!-- DEMO SESSION (BAG) -->
+<!-- DEMO SESSION (seed EXACT $2,000) -->
 <script>
 (function(){
   if (window.__bagSession) return;
-  const KEY = 'bag_demo_bag_v2';
-  function read(){ try{ const v=JSON.parse(localStorage.getItem(KEY)||'null'); return (v&&typeof v.bag==='number')?v:{bag:1000}; }catch{return {bag:1000};} }
-  function write(b){ try{ localStorage.setItem(KEY, JSON.stringify({bag:b})); }catch{} }
+
+  const BAL_KEY   = '__bag_demo_bag_v2';
+  const INIT_KEY  = '__bag_demo_init_v2';
+  const START_USD = 2000;             // exact $2,000 seed
+  const RETRY_MS  = 500;
+  const RETRIES   = 20;               // ~10s
+  const FALLBACK_BAG_USD = 0.02;      // safety fallback if no prices
+
+  function read(){ try{ return JSON.parse(localStorage.getItem(BAL_KEY)||'null'); }catch{return null;} }
+  function writeBag(b){ try{ localStorage.setItem(BAL_KEY, JSON.stringify({bag:b})); }catch{} }
+  function markInit(){ try{ localStorage.setItem(INIT_KEY, String(Date.now())); }catch{} }
+  function inited(){ try{ return !!localStorage.getItem(INIT_KEY); }catch{return false;} }
+
+  async function seed(){
+    // If already initialized and balance exists, keep it
+    if (inited() && read() && typeof read().bag === 'number') return;
+
+    // Wait for price (bagUsd)
+    let bagUsd = 0;
+    for (let i=0;i<RETRIES;i++){
+      const p = window.__PRICES__;
+      if (p && Number(p.bagUsd)>0){ bagUsd = Number(p.bagUsd); break; }
+      await new Promise(r=>setTimeout(r, RETRY_MS));
+    }
+    if (!(bagUsd>0)) bagUsd = FALLBACK_BAG_USD;
+
+    // Convert $2,000 → BAG; keep integer BAG (demo)
+    const bag = Math.max(0, Math.floor(START_USD / bagUsd));
+    writeBag(bag);
+    markInit();
+
+    // notify HUD/balances
+    window.dispatchEvent(new CustomEvent('bag:sessionToppedUp'));
+  }
+
   const sess = {
     mode: 'demo',
-    get(){ return read(); },
+    get(){ return read() || {bag:0}; },
     active(){ return true; },
-    credit(b){ const v=read(); v.bag += Number(b)||0; write(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionToppedUp')); return true; },
-    spend(b){ const v=read(); if (v.bag < (Number(b)||0)) return false; v.bag -= Number(b)||0; write(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionSpent')); return true; }
+    credit(b){ const v=this.get(); v.bag += Number(b)||0; writeBag(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionToppedUp')); return true; },
+    spend(b){ const v=this.get(); if (v.bag < (Number(b)||0)) return false; v.bag -= Number(b)||0; writeBag(v.bag); window.dispatchEvent(new CustomEvent('bag:sessionSpent')); return true; }
   };
   window.__bagSession = sess;
+
+  // perform initial seed
+  seed();
 })();
 </script>
 
