@@ -254,7 +254,7 @@ if ('serviceWorker' in navigator) {
   const btn     = document.getElementById('soundToggle');
   const audio   = document.getElementById('casinoAmbience'); // src=/assets/sounds/casinomusic.mp3
   const target  = document.getElementById('bag-casino-img'); // hero image
-  const THRESH  = 0.55;                             // visibility threshold
+  const THRESH  = 0.2;                              // visibility threshold (easier to hit)
   let unlocked  = false;                            // user gesture gate
   let started   = false;                            // start once per visit
   let playing   = false;
@@ -295,7 +295,6 @@ if ('serviceWorker' in navigator) {
     }else{
       localStorage.setItem(KEY,'on');
       unlocked = true; // counts as a gesture
-      // only auto-start if hero is visible
       if (isVisible || document.visibilityState === 'visible') doPlay();
       else setIcon();
     }
@@ -310,6 +309,11 @@ if ('serviceWorker' in navigator) {
   }
   UNLOCK.forEach(t => window.addEventListener(t, unlockOnce, {once:true, passive:true, capture:true}));
 
+  // Also count tapping the hero image or its link as unlock
+  const link = document.querySelector('a[href="/casino/"]');
+  target.addEventListener('pointerdown', unlockOnce, {once:true, passive:true});
+  link && link.addEventListener('pointerdown', unlockOnce, {once:true, passive:true});
+
   // IntersectionObserver: start when the hero becomes visible
   const io = new IntersectionObserver((entries)=>{
     for (const e of entries){
@@ -320,12 +324,21 @@ if ('serviceWorker' in navigator) {
       }
       // Do not auto-pause on exit; user controls pause via toggle.
     }
-  }, { threshold: THRESH });
+  }, { threshold: [0, THRESH, 0.5, 1] });
   io.observe(target);
 
-  // Regain focus -> soft resume if user wants sound and we've started before
+  // Preload audio when hero is near viewport for instant start
+  const preIO = new IntersectionObserver((entries)=>{
+    if (entries.some(e => e.isIntersecting)) {
+      try { audio.load(); } catch(_) {}
+      preIO.disconnect();
+    }
+  }, { rootMargin: '400px' });
+  preIO.observe(target);
+
+  // Regain focus -> soft resume if user wants sound
   function softResume(){
-    if (localStorage.getItem(KEY) !== 'off' && !playing && (isVisible || started)) doPlay();
+    if (localStorage.getItem(KEY) !== 'off' && !playing && (isVisible || started) && unlocked) doPlay();
   }
   window.addEventListener('focus', softResume);
   document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) softResume(); });
