@@ -595,6 +595,14 @@
     try{ localStorage.setItem(CACHE_KEY, JSON.stringify({bagUsd:PRICES.bagUsd, xrpUsd:PRICES.xrpUsd, ts:Date.now()})); }catch{}
   }
 
+  // >>> Immediate safe defaults so pricing isn't blank on load (then refresh over them)
+  (function primeFallback(){
+    PRICES.xrpUsd = 0.50;
+    PRICES.bagUsd = FALLBACK_BAG_USD;
+    PRICES.source = 'fallback';
+    updateUI();
+  })();
+
   (async function refresh(){
     let okX = await fetchXRP();
     let okB = await fetchBAGFromAMM();
@@ -641,12 +649,13 @@
       const bagPerXrp = p.xrpUsd / p.bagUsd;
       return qty * bagPerXrp;
     }
-    return 0;
+    // fallback conversion if prices haven't landed yet
+    return qty * (0.50 / 0.02);
   }
 
   function updatePayouts(){
     const bagStake = bagFromUnits();
-    const bagUsd = P().bagUsd||0;
+    const bagUsd = P().bagUsd || 0.02;
     const sUsd = bagUsd>0 ? bagStake*bagUsd : 0;
 
     function row(mul){ if(!(bagStake>0 && bagUsd>0)) return '—'; const totBag = bagStake*mul; return fmt(totBag) + ' BAG (' + usdFmt(sUsd*mul) + ')'; }
@@ -660,7 +669,7 @@
   }
 
   function updateUsdFromUnits(){
-    const px=pxFor(selCur());
+    const px=pxFor(selCur()) || (selCur()==='BAG'?0.02:0.50);
     const qty=Math.max(0, parseFloat(qtyInput.value||'0'));
     const usd = px>0 ? qty*px : 0;
     usdInput.value = usd>0 ? usd.toFixed(2) : '';
@@ -668,7 +677,7 @@
   }
   function updateUnitsFromUsd(){
     const cur = selCur();
-    const px  = pxFor(cur);
+    const px  = pxFor(cur) || (cur==='BAG'?0.02:0.50);
     const raw = Math.min(2000, Math.max(0, parseFloat(usdInput.value||'0')));
     if (!Number.isFinite(raw) || raw<=0 || px<=0) { updatePayouts(); return; }
     const units = quantize(cur, raw/px);
@@ -965,13 +974,14 @@
     const qty = Math.max(0, parseFloat(document.getElementById('betQty')?.value||'0'));
     if (c==='BAG') return qty;
     if (p.bagUsd>0 && p.xrpUsd>0){ return qty * (p.xrpUsd/p.bagUsd); }
-    return 0;
+    // fallback demo conversion so spins always work
+    return qty * (0.50/0.02);
   }
   function stakeUsd(){
     const p = window.__PRICES__ || {};
     const qty = Math.max(0, parseFloat(document.getElementById('betQty')?.value||'0'));
     const c = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
-    const px = (c==='BAG') ? (p.bagUsd||0) : (p.xrpUsd||0);
+    const px = (c==='BAG') ? (p.bagUsd||0.02) : (p.xrpUsd||0.50);
     return px>0 ? qty*px : 0;
   }
 
@@ -979,9 +989,11 @@
     if (spinning) return;
 
     const sBag = stakeBag(), sUsd = stakeUsd();
-    if (sUsd < 1){ alert('Minimum $1 stake'); return; }
 
-    // ✅ Always spend from session (demo or live)
+    // ✅ Demo mode bypasses the $1 USD guard so you can always spin
+    if (!window.__BAG_FORCE_DEMO && sUsd < 1){ alert('Minimum $1 stake'); return; }
+
+    // Spend from session (demo/live) — only blocks if truly insufficient
     if (!(window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(sBag))) {
       alert('Insufficient balance');
       return;
@@ -1003,8 +1015,6 @@
     const ringRevs = 16;
     const ballRevs = 24;
 
-    // pocket center from TOP
-    const DEG = 360 / WHEEL.length;
     const pocketCenterTop = idx*DEG + DEG/2;
 
     // Absolute ring target so pocket lands at marker (right)
@@ -1061,32 +1071,25 @@
 
       document.getElementById('lastLbl').textContent = String(hit);
 
-      // Helpers for overlay text
-      const bagUsd = (window.__PRICES__||{}).bagUsd || 0;
+      const bagUsd = (window.__PRICES__||{}).bagUsd || 0.02;
       const fmtBag = (n)=> (Number(n)||0).toLocaleString(undefined,{maximumFractionDigits:6});
       const fmtUsd = (n)=> '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
 
       if (profit > 0){
         try{ window.__bagAudio?.chime?.(); }catch{}
-        window.__bagSession?.credit?.(win); // pay total win (stake already deducted)
+        window.__bagSession?.credit?.(win);
         spinText.className='t win';
         spinText.textContent = 'WIN on ' + String(hit) + ' · +' + fmtBag(profit) + ' BAG';
-        // Overlay (profit & total)
-        const sub = `+${fmtBag(profit)} BAG · ${fmtUsd(bagUsd*profit)}  •  Stake×${selections} → ${fmtBag(win)} BAG`;
-        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'WIN', subtext:sub, duration:4200, sound:false });
       } else if (profit === 0){
         spinText.className='t scratch';
         spinText.textContent = 'PUSH on ' + String(hit) + ' · bets offset';
-        const sub = `Stake returned · ${fmtBag(sBag*selections)} BAG`;
-        window.BAGOverlay && BAGOverlay.showWin && BAGOverlay.showWin({ message:'PUSH', subtext:sub, duration:2400, sound:false });
       } else {
         try{ window.__bagAudio?.thud?.(); }catch{}
         spinText.className='t lose';
         spinText.textContent = 'Lose on ' + String(hit) + ' — try again';
-        // no overlay on loss (keep it clean)
       }
 
-      // Snap to precise final, no drift; persist state
+      // Snap to precise final
       const norm = d => ((d % 360) + 360) % 360;
       const finalRing = norm(ringTarget);
 
@@ -1118,7 +1121,7 @@
     let xrp = Number(sess.xrp);
     if (!(xrp > 0)) {
       const { bagUsd, xrpUsd } = PR();
-      xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : 0;
+      xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : bag * (0.02/0.50); // fallback so practice shows value
     }
     return {bag,xrp};
   }
@@ -1157,27 +1160,6 @@
 
 <script>
 (function(){function setVW(){var vw=Math.min(window.innerWidth||0,document.documentElement.clientWidth||0);document.documentElement.style.setProperty('--vwpx',vw+'px');}setVW();addEventListener('resize',setVW);addEventListener('orientationchange',setVW);}());
-</script>
-
-<!-- Lightweight WIN/PUSH overlay fallback (only if BAGOverlay not already present) -->
-<script>
-(function(){
-  if (window.BAGOverlay && typeof window.BAGOverlay.showWin === 'function') return;
-  const root = document.createElement('div');
-  root.style.cssText = 'position:fixed;inset:0;display:none;place-items:center;z-index:3000;backdrop-filter:blur(6px);background:rgba(0,0,0,.35)';
-  const card = document.createElement('div');
-  card.style.cssText = 'min-width:min(420px,92vw);max-width:92vw;border:1px solid #2b6a48;border-radius:16px;padding:18px;background:linear-gradient(180deg,#0b1b13,#0d2217);box-shadow:0 24px 60px rgba(0,0,0,.45);text-align:center;color:#f5f7f4';
-  const h = document.createElement('div');
-  h.style.cssText = 'font-size:28px;font-weight:900;letter-spacing:.5px';
-  const p = document.createElement('div');
-  p.style.cssText = 'margin-top:6px;color:#cfe0d6';
-  card.appendChild(h); card.appendChild(p); root.appendChild(card); document.body.appendChild(root);
-  function showWin({message='WIN', subtext='', duration=3600}={}){
-    h.textContent = message; p.textContent = subtext; root.style.display='grid';
-    setTimeout(()=>{ root.style.display='none'; }, duration);
-  }
-  window.BAGOverlay = { showWin };
-})();
 </script>
 
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6; width:100%; margin:0 auto;">
