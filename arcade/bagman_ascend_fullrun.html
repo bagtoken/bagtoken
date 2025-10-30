@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>BAGMAN : ASCEND</title>
+
+<!-- PixiJS CDN -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.3.3/dist/pixi.min.js"></script>
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#020703;font-family:"Inter",sans-serif;}
+  #hud{
+    position:absolute;top:0;left:0;width:100%;padding:10px 16px;
+    display:flex;justify-content:space-between;align-items:center;
+    color:#ffe175;font-weight:600;text-shadow:0 0 4px rgba(0,0,0,.6);
+    z-index:10;
+  }
+  #hud span{margin-right:12px;}
+  #jumpBtn{
+    position:absolute;bottom:20px;right:20px;z-index:10;
+    width:80px;height:80px;border:none;border-radius:50%;
+    background:linear-gradient(180deg,#2fbf6b,#249a55);
+    color:#fff;font-weight:700;font-size:14px;
+    box-shadow:0 4px 12px rgba(0,0,0,.5);
+    cursor:pointer;
+  }
+</style>
+</head>
+
+  <body>
+  <div id="hud">
+    <div>
+      <span id="score">Score : 0</span>
+      <span id="mult">x1.0</span>
+    </div>
+  </div>
+  <button id="jumpBtn">JUMP</button>
+
+  <!-- Sounds -->
+  <audio id="sndJump" src="/arcade/assets/sounds/jump.mp3" preload="auto"></audio>
+  <audio id="sndLand" src="/arcade/assets/sounds/land.mp3" preload="auto"></audio>
+  <audio id="sndFall" src="/arcade/assets/sounds/fall.mp3" preload="auto"></audio>
+  <audio id="sndPerfect" src="/arcade/assets/sounds/perfect.mp3" preload="auto"></audio>
+  <audio id="sndCash" src="/arcade/assets/sounds/cashout.mp3" preload="auto"></audio>
+
+    <script>
+/* =====  PIXI APP  ===== */
+const app = new PIXI.Application({resizeTo:window,background:'#74b9ff'});
+document.body.appendChild(app.view);
+
+/* =====  LOAD BAGMAN IMAGE (auto-select)  ===== */
+const canWebp = document.createElement('canvas').toDataURL('image/webp').indexOf('data:image/webp')===0;
+const big = window.innerWidth>900;
+const ext = canWebp?'webp':'png';
+const size = big?'1024':'960';
+const bagmanPath = `/arcade/assets/img/BAGMAN-${size}.${ext}`;
+console.log("Loading:",bagmanPath);
+
+/* =====  SOUNDS  ===== */
+const snd={
+  jump:document.getElementById("sndJump"),
+  land:document.getElementById("sndLand"),
+  fall:document.getElementById("sndFall"),
+  perfect:document.getElementById("sndPerfect"),
+  cash:document.getElementById("sndCash")
+};
+
+/* =====  GLOBALS  ===== */
+let bagman,groundY,velocityY=0,onGround=false;
+let gravity=1.1,jumpPower=22,speed=6;
+let score=0,mult=1;
+let ledgers=[];
+
+/* =====  BACKGROUND  ===== */
+const sky=new PIXI.Graphics();
+sky.beginFill(0x74b9ff).drawRect(0,0,app.screen.width,app.screen.height).endFill();
+app.stage.addChild(sky);
+
+const clouds=new PIXI.TilingSprite(PIXI.Texture.WHITE,app.screen.width,app.screen.height);
+clouds.tint=0xdfe6e9; clouds.alpha=0.3;
+app.stage.addChild(clouds);
+
+/* =====  LEDGER CONTAINER  ===== */
+const platformLayer=new PIXI.Container();
+app.stage.addChild(platformLayer);
+
+/* =====  LOAD BAGMAN  ===== */
+PIXI.Assets.load(bagmanPath).then(tex=>{
+  bagman=new PIXI.Sprite(tex);
+  bagman.anchor.set(0.5,1);
+  bagman.scale.set(0.25);
+  bagman.x=app.screen.width*0.3;
+  bagman.y=app.screen.height-100;
+  groundY=bagman.y;
+  app.stage.addChild(bagman);
+  spawnPlatforms();
+  app.ticker.add(gameLoop);
+});
+
+/* =====  PLATFORM SPAWN  ===== */
+function spawnPlatforms(){
+  platformLayer.removeChildren();
+  for(let i=0;i<8;i++){
+    const g=new PIXI.Graphics();
+    g.beginFill(0xffd700).drawRoundedRect(0,0,160,20,4).endFill();
+    g.x=app.screen.width+ i*260;
+    g.y=app.screen.height-80-Math.random()*200;
+    platformLayer.addChild(g);
+    ledgers.push(g);
+  }
+}
+
+      function gameLoop(delta){
+  // move clouds & ledgers
+  clouds.tilePosition.x -= 0.2*speed;
+  for(let l of ledgers){
+    l.x -= speed;
+    if(l.x<-180){
+      l.x=app.screen.width+Math.random()*400;
+      l.y=app.screen.height-80-Math.random()*200;
+      score+=10; if(score%100===0){mult+=0.1;}
+      document.getElementById("score").textContent="Score : "+score;
+      document.getElementById("mult").textContent="x"+mult.toFixed(1);
+      snd.perfect.currentTime=0; snd.perfect.play();
+    }
+  }
+
+  // jump physics
+  velocityY+=gravity;
+  bagman.y+=velocityY;
+
+  // land on floor
+  if(bagman.y>groundY){
+    bagman.y=groundY;
+    velocityY=0;
+    onGround=true;
+  }
+
+  // collision with ledger top
+  for(let l of ledgers){
+    if(bagman.x>l.x && bagman.x<l.x+160 && bagman.y>l.y && bagman.y<l.y+40 && velocityY>=0){
+      bagman.y=l.y;
+      velocityY=0; onGround=true;
+      snd.land.currentTime=0; snd.land.play();
+    }
+  }
+
+  // simple lean animation
+  if(!onGround){bagman.rotation=velocityY<-5?-0.1:0.2;}
+  else bagman.rotation=0;
+}
+
+/* =====  JUMP ACTION  ===== */
+function jump(){
+  if(onGround){
+    snd.jump.currentTime=0; snd.jump.play();
+    velocityY=-jumpPower;
+    onGround=false;
+  }
+}
+
+/* =====  CONTROLS  ===== */
+document.getElementById("jumpBtn").addEventListener("click",jump);
+window.addEventListener("keydown",e=>{if(e.code==="Space"||e.code==="ArrowUp")jump();});
+</script>
+
+    </body>
+</html>
