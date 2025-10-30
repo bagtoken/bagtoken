@@ -251,14 +251,6 @@
           <!-- Slots-style green quick amounts -->
           <div
             class="choice" id="usdPresets"
-            data-quick-amounts
-            data-target-usd="#usdBet"
-            data-target-qty="#betQty"
-            data-currency-toggle="#curToggle"
-            data-min-usd="1"
-            data-max-usd="2000"
-            data-active-class="active"
-            data-sync-on-price="1"
             role="group" aria-label="Quick bet"
             style="margin-top:8px"
           >
@@ -306,7 +298,7 @@
 
       <div class="divider"></div>
 
-      <!-- Pay scale / notes (using winreadout styles) -->
+      <!-- Pay scale / notes -->
       <div id="bj-win-readout" aria-live="polite" style="background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 10px 24px var(--shadow);">
         <div class="row" style="display:flex;justify-content:space-between;gap:12px;margin:8px 0">
           <div class="title" style="font-weight:800;letter-spacing:.2px"><strong>Pay Scale (This game)</strong>:</div>
@@ -477,19 +469,204 @@
 })();
 </script>
 
-<!-- ======= UNIVERSAL STACK (yours) ======= -->
+<!-- ======= UNIVERSAL STACK (yours, unchanged) ======= -->
 <script src="/js/bag-events.js"></script>
 <script src="/js/bag-game-config.js"></script>
 <script src="/js/bag-hud.js"></script>
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-winreadout.js"></script>
 <script src="/js/bag-demo-session.js"></script>
+<script src="/js/bag-prices.js"></script> <!-- provides window.__PRICES__ + bag:pricesUpdated -->
 
-<!-- Updated / New wires -->
-<script src="/js/bag-prices.js"></script>       <!-- UPDATED -->
-<script src="/js/bag-stake-wire.js"></script>   <!-- UPDATED -->
-<script src="/js/bag-payout-wire.js"></script>  <!-- NEW -->
-<script src="/js/bag-rules.js"></script>        <!-- NEW -->
+<!-- ======= ROULETTE-ONLY SHIMS (inline, no globals clobbered) ======= -->
+
+<!-- roulette-prices: reads __PRICES__ and updates the live line -->
+<script>
+(function(){
+  window.BAG = window.BAG || {};
+  window.BAG.roulette = window.BAG.roulette || {};
+  const S = window.BAG.roulette.state = window.BAG.roulette.state || {};
+
+  const PR = () => (window.__PRICES__ || { bagUsd:0, xrpUsd:0 });
+
+  function conversions(){
+    const p = PR();
+    if (!(p.bagUsd>0 && p.xrpUsd>0)) return { bagPerXrp:0, xrpPerBag:0 };
+    return { bagPerXrp: p.xrpUsd / p.bagUsd, xrpPerBag: p.bagUsd / p.xrpUsd };
+  }
+
+  function renderLiveLine(){
+    const p = PR();
+    const liveBAG = document.getElementById('liveBAG');
+    const liveXRP = document.getElementById('liveXRP');
+    const liveConv = document.getElementById('liveConv');
+    if (liveBAG) liveBAG.textContent = (p.bagUsd||0).toLocaleString(undefined,{maximumFractionDigits:6});
+    if (liveXRP) liveXRP.textContent = (p.xrpUsd||0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+    if (liveConv){
+      const c = conversions();
+      if (c.xrpPerBag>0 && c.bagPerXrp>0){
+        liveConv.textContent = `1 BAG ≈ ${c.xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${c.bagPerXrp.toFixed(6)} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      }
+    }
+  }
+
+  window.addEventListener('bag:pricesUpdated', renderLiveLine);
+  renderLiveLine();
+  S.conversions = conversions; // expose read-only
+})();
+</script>
+
+<!-- roulette-stake: isolates USD↔qty, currency toggle, and quick chips -->
+<script>
+(function(){
+  window.BAG = window.BAG || {};
+  window.BAG.roulette = window.BAG.roulette || {};
+  const S = window.BAG.roulette.state = window.BAG.roulette.state || {};
+
+  const usdInput = document.getElementById('usdBet');
+  const qtyInput = document.getElementById('betQty');
+  const curWrap  = document.getElementById('curToggle');
+  const unitEl   = document.querySelector('.unit');
+  const limitsEl = document.getElementById('betLimits');
+  const presets  = document.getElementById('usdPresets');
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function cur(){ const r=curWrap?.querySelector('input[name="betCur"]:checked'); return (r?.value||'XRP').toUpperCase(); }
+  function pxFor(ccy){ const p=PR(); return ccy==='BAG'? (p.bagUsd||0) : ccy==='XRP'? (p.xrpUsd||0) : 0; }
+  function clampUsd(v){ const n = Math.max(1, Math.min(2000, Number(v)||0)); return Math.round(n*100)/100; }
+
+  function syncFromUsd(){
+    const usd = clampUsd(usdInput.value);
+    const ccy = cur();
+    const px  = pxFor(ccy);
+    if (px>0){
+      const qty = usd/px;
+      qtyInput.value = (ccy==='BAG' ? qty.toFixed(6) : Math.max(0.000001, qty)).toString();
+      unitEl && (unitEl.textContent = ccy);
+    }
+    window.dispatchEvent(new CustomEvent('bag:stake:changed', { detail:{ usd, ccy }}));
+  }
+  function syncFromQty(){
+    const ccy = cur();
+    const px  = pxFor(ccy);
+    const qty = Math.max(0, Number(qtyInput.value)||0);
+    const usd = px>0 ? qty*px : 0;
+    usdInput.value = clampUsd(usd).toFixed(2);
+    unitEl && (unitEl.textContent = ccy);
+    window.dispatchEvent(new CustomEvent('bag:stake:changed', { detail:{ usd, ccy }}));
+  }
+
+  usdInput?.addEventListener('input', syncFromUsd);
+  qtyInput?.addEventListener('input', syncFromQty);
+  curWrap?.addEventListener('change', ()=>{ syncFromUsd(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{ syncFromUsd(); });
+
+  presets?.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-usd]'); if(!btn) return;
+    const v = btn.dataset.usd === 'max' ? 2000 : Number(btn.dataset.usd||'0');
+    usdInput.value = v.toFixed(2);
+    syncFromUsd();
+  });
+
+  // public helpers
+  S.stakeUsd = ()=> Number(usdInput?.value||0);
+  S.stakeQty = ()=> Number(qtyInput?.value||0);
+  S.stakeCur = cur;
+
+  // init
+  syncFromUsd();
+  limitsEl && (limitsEl.textContent = 'Min $1 · Max $2,000 (USD eq.)');
+})();
+</script>
+
+<!-- roulette-payout: win calculation + session credit -->
+<script>
+(function(){
+  window.BAG = window.BAG || {};
+  window.BAG.roulette = window.BAG.roulette || {};
+  const S = window.BAG.roulette.state = window.BAG.roulette.state || {};
+
+  const TIERS = [1.00, 1.25, 1.50, 1.75, 2.00];
+  function pickTier(kind, demo){
+    const w = demo
+      ? (kind==='OUTSIDE' ? [0.44,0.38,0.12,0.05,0.01]
+        : kind==='MID'   ? [0.40,0.34,0.16,0.07,0.03]
+                         : [0.38,0.30,0.17,0.10,0.05])
+      : (kind==='OUTSIDE' ? [0.58,0.30,0.08,0.035,0.005]
+        : kind==='MID'   ? [0.50,0.30,0.12,0.06,0.02]
+                         : [0.46,0.28,0.14,0.08,0.04]);
+    let r = Math.random();
+    for (let i=0;i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
+    return TIERS.at(-1);
+  }
+
+  const COLOR = {}; ["00",0].forEach(n=>COLOR[n]="green");
+  [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
+  [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
+  const COLUMN = {}; [1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
+  [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
+  [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
+
+  function computeWin({hit, sel, baseBag, demo}){
+    const isNum = v => typeof v==='number' && isFinite(v);
+    const notes = [];
+    let win = 0;
+    const add = (kind, label) => { const t=pickTier(kind, demo); win += baseBag*t; notes.push(`${label} ×${t.toFixed(2)}`); };
+
+    // Straight
+    if (sel.straight){
+      const ok = sel.straight==='00' ? hit==="00" : (isNum(hit) && Number(sel.straight)===hit);
+      if (ok) add('INSIDE','Straight');
+    }
+    // Red/Black
+    if (sel.rb && COLOR[hit] && COLOR[hit].toUpperCase()===sel.rb) add('OUTSIDE','RB');
+    // Even/Odd
+    if (sel.eo && isNum(hit) && hit!==0){
+      if ((sel.eo==='EVEN' && hit%2===0) || (sel.eo==='ODD' && hit%2===1)) add('OUTSIDE','EO');
+    }
+    // Low/High
+    if (sel.hl && isNum(hit) && hit!==0){
+      if ((sel.hl==='LOW' && hit>=1 && hit<=18) || (sel.hl==='HIGH' && hit>=19 && hit<=36)) add('OUTSIDE','HL');
+    }
+    // Dozen
+    if (sel.dozen && isNum(hit) && hit!==0){
+      if ((sel.dozen==='D1' && hit<=12) || (sel.dozen==='D2' && hit<=24 && hit>=13) || (sel.dozen==='D3' && hit>=25)) add('MID','Dozen');
+    }
+    // Column
+    if (sel.col && isNum(hit) && hit!==0 && COLUMN[hit]===sel.col) add('MID','Column');
+
+    return { winBag: win, notes };
+  }
+
+  window.addEventListener('bag:roulette:resolve', (e)=>{
+    const d = e.detail||{};
+    const res = computeWin(d);
+    if (res.winBag>0){
+      try{ window.__bagSession?.credit?.(res.winBag); }catch{}
+    }
+    window.dispatchEvent(new CustomEvent('bag:roulette:payout', { detail:{ ...d, ...res }}));
+  });
+
+  window.BAG.roulette.computeWin = computeWin;
+})();
+</script>
+
+<!-- roulette-rules: open/close wiring -->
+<script>
+(function(){
+  const fab   = document.getElementById('rulesFab');
+  const modal = document.getElementById('rulesModal');
+  const close = document.getElementById('rulesClose');
+  function open(){ if (modal) { modal.style.display='grid'; fab?.setAttribute('aria-expanded','true'); } }
+  function hide(){ if (modal) { modal.style.display='none'; fab?.setAttribute('aria-expanded','false'); } }
+  fab?.addEventListener('click', open);
+  close?.addEventListener('click', hide);
+  modal?.addEventListener('click', (e)=>{ if (e.target===modal) hide(); });
+  addEventListener('keydown', (e)=>{ if (e.key==='Escape') hide(); });
+})();
+</script>
 
 <!-- Wallet Connect -->
 <script>
@@ -647,22 +824,11 @@
 })();
 </script>
 
-<!-- Wheel + spin + payout -->
+<!-- Wheel + spin -->
 <script>
 (function(){
   // American sequence (locked)
   const WHEEL = ["00",27,10,25,29,12,8,19,31,18,6,21,33,16,4,23,35,14,2,0,28,9,26,30,11,7,20,32,17,5,22,34,15,3,24,36,13,1];
-
-  // Colors
-  const COLOR = {}; ["00",0].forEach(n=>COLOR[n]="green");
-  [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
-  [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
-
-  // Columns
-  const COLUMN = {};
-  [1,4,7,10,13,16,19,22,25,28,31,34].forEach(n=>COLUMN[n]="C1");
-  [2,5,8,11,14,17,20,23,26,29,32,35].forEach(n=>COLUMN[n]="C2");
-  [3,6,9,12,15,18,21,24,27,30,33,36].forEach(n=>COLUMN[n]="C3");
 
   const svg = document.getElementById('ringSvg');
   const ringG = document.getElementById('ringG');
@@ -675,6 +841,10 @@
   const cx=500, cy=500, R0=338, R1=492, labelR = 452;
   const DEG = 360 / WHEEL.length;
   const MARKER_DEG = 0;
+
+  const COLOR = {}; ["00",0].forEach(n=>COLOR[n]="green");
+  [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>COLOR[n]="red");
+  [2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35].forEach(n=>COLOR[n]="black");
 
   function circlePath(r){ return `M ${cx} ${cy} m -${r},0 a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 -${2*r},0`; }
   clipP.setAttribute('d', circlePath(R1) + ' ' + circlePath(R0));
@@ -728,8 +898,16 @@
     };
   }
 
-  function stakeBag(){ return window.BAGPayoutWire.getStakeBAG(); }
-  function stakeUsd(){ return window.BAGPayoutWire.getStakeUSD(); }
+  function stakeBag(){
+    const S = window.BAG?.roulette?.state;
+    const c  = S?.stakeCur?.() || 'XRP';
+    const q  = S?.stakeQty?.() || 0;
+    const p  = window.__PRICES__ || {};
+    if (c==='BAG') return q;
+    if (p.bagUsd>0 && p.xrpUsd>0) return q * (p.xrpUsd/p.bagUsd); // XRP→BAG
+    return 0;
+  }
+  function stakeUsd(){ return (window.BAG?.roulette?.state?.stakeUsd?.()||0); }
 
   document.getElementById('spinBtn').addEventListener('click', async ()=>{
     if (spinning) return;
@@ -756,7 +934,7 @@
     const ringRevs = 16;
     const ballRevs = 24;
 
-    const pocketCenterTop = idx*DEG + DEG/2;
+    const pocketCenterTop = idx* (360/WHEEL.length) + (360/WHEEL.length)/2;
     const desiredAbs = 0 + 90 - pocketCenterTop;
 
     const rpx = ballRadiusPx();
@@ -770,97 +948,45 @@
     setTimeout(()=>{
       try{ window.__bagAudio?.stopSpinLoop?.(); }catch{}
 
-      const b = currentSelections();
-
-      const TIERS = [1.00, 1.25, 1.50, 1.75, 2.00];
-      const DEMO = (window.__BAG_FORCE_DEMO === true);
-      function pickTier(betType){
-        let w;
-        if (betType === 'OUTSIDE'){
-          w = DEMO ? [0.44, 0.38, 0.12, 0.05, 0.01] : [0.58, 0.30, 0.08, 0.035, 0.005];
-        } else if (betType === 'MID'){
-          w = DEMO ? [0.40, 0.34, 0.16, 0.07, 0.03] : [0.50, 0.30, 0.12, 0.06, 0.02];
-        } else {
-          w = DEMO ? [0.38, 0.30, 0.17, 0.10, 0.05] : [0.46, 0.28, 0.14, 0.08, 0.04];
-        }
-        let r = Math.random();
-        for (let i=0;i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
-        return TIERS[TIERS.length-1];
-      }
-
-      const colorH = COLOR[hit];
-      const isNum  = (n)=> typeof n==="number" && isFinite(n);
-
-      function hitStraight(){
-        if (!b.straight) return false;
-        if (b.straight === '00') return hit === "00";
-        const v = Number(b.straight);
-        return isNum(v) && v>=0 && v<=36 && hit === v;
-      }
-      function hitRB(){
-        if (!b.rb || !colorH) return false;
-        return colorH.toUpperCase() === b.rb;
-      }
-      function hitEO(){
-        if (!b.eo || !isNum(hit) || hit===0) return false;
-        return (b.eo==="EVEN" && hit%2===0) || (b.eo==="ODD" && hit%2===1);
-      }
-      function hitHL(){
-        if (!b.hl || !isNum(hit) || hit===0) return false;
-        return (b.hl==="LOW"  && hit>=1  && hit<=18) ||
-               (b.hl==="HIGH" && hit>=19 && hit<=36);
-      }
-      function hitDozen(){
-        if (!b.dozen || !isNum(hit) || hit===0) return false;
-        return (b.dozen==="D1" && hit>=1  && hit<=12) ||
-               (b.dozen==="D2" && hit>=13 && hit<=24) ||
-               (b.dozen==="D3" && hit>=25 && hit<=36);
-      }
-      function hitCol(){
-        if (!b.col || !isNum(hit) || hit===0) return false;
-        return COLUMN[hit] === b.col;
-      }
-
-      const baseStake = sBag;
-      let totalWin = 0;
-      const notes = [];
-
-      if (hitStraight()){ const t = pickTier('INSIDE'); totalWin += baseStake * t; notes.push(`Straight ×${t.toFixed(2)}`); }
-      if (hitRB()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`RB ×${t.toFixed(2)}`); }
-      if (hitEO()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`EO ×${t.toFixed(2)}`); }
-      if (hitHL()){       const t = pickTier('OUTSIDE'); totalWin += baseStake * t; notes.push(`HL ×${t.toFixed(2)}`); }
-      if (hitDozen()){    const t = pickTier('MID');     totalWin += baseStake * t; notes.push(`Dozen ×${t.toFixed(2)}`); }
-      if (hitCol()){      const t = pickTier('MID');     totalWin += baseStake * t; notes.push(`Column ×${t.toFixed(2)}`); }
+      // Dispatch to the payout shim
+      const sel = currentSelections();
+      const demo = (window.__BAG_FORCE_DEMO === true);
+      window.dispatchEvent(new CustomEvent('bag:roulette:resolve', {
+        detail:{ hit, sel, baseBag: sBag, demo }
+      }));
 
       document.getElementById('lastLbl').textContent = String(hit);
 
-      if (totalWin > 0){
-        try{ window.__bagAudio?.chime?.(); }catch{}
-        window.__bagSession?.credit?.(totalWin);
-        spinText.className='t win';
-        spinText.textContent = `WIN on ${String(hit)} · +${totalWin.toLocaleString(undefined,{maximumFractionDigits:6})} BAG` +
-                               (notes.length ? ` (${notes.join(', ')})` : '');
-      } else {
-        try{ window.__bagAudio?.thud?.(); }catch{}
-        spinText.className='t lose';
-        spinText.textContent = `Lose on ${String(hit)} — try again`;
-      }
-
+      // Snap to final and bounce
       const norm = d => ((d % 360) + 360) % 360;
       const finalRing = norm(ringTarget);
-
       ringG.style.transition = 'none';
       ball.style.transition = 'none';
-      setTransforms(finalRing, MARKER_DEG, rpx);
-
-      const ballFinal = `rotate(${MARKER_DEG}deg) translate(${rpx}px)`;
+      setTransforms(finalRing, 0, rpx);
+      const ballFinal = `rotate(0deg) translate(${rpx}px)`;
       ball.style.setProperty('--finalBall', ballFinal);
-      ball.style.setProperty('--finalBallDeg', `${MARKER_DEG}deg`);
+      ball.style.setProperty('--finalBallDeg', `0deg`);
       ball.style.setProperty('--finalBallR', `${rpx}px`);
       ball.classList.remove('bounce'); void ball.offsetWidth; ball.classList.add('bounce');
 
       spinning = false; btn.disabled = false;
     }, DURATION_MS + 60);
+  });
+
+  // Listen for payout result to update UI + sounds
+  window.addEventListener('bag:roulette:payout', (e)=>{
+    const { hit, winBag, notes } = e.detail || {};
+    const spinText = document.getElementById('spinText');
+    if (winBag>0){
+      try{ window.__bagAudio?.chime?.(); }catch{}
+      spinText.className='t win';
+      spinText.textContent = `WIN on ${String(hit)} · +${(winBag).toLocaleString(undefined,{maximumFractionDigits:6})} BAG` +
+                             (notes?.length ? ` (${notes.join(', ')})` : '');
+    } else {
+      try{ window.__bagAudio?.thud?.(); }catch{}
+      spinText.className='t lose';
+      spinText.textContent = `Lose on ${String(hit)} — try again`;
+    }
   });
 })();
 </script>
@@ -899,13 +1025,6 @@
   addEventListener('bag:sessionSpent', render);
   render();
 })();
-</script>
-
-<!-- Rules wiring (now uses /js/bag-rules.js, kept here as a fallback no-op if not loaded) -->
-<script>
-  window.addEventListener('DOMContentLoaded', () => {
-    if (window.BAGRules && typeof BAGRules.init === 'function') BAGRules.init({ fab:'#rulesFab', modal:'#rulesModal', close:'#rulesClose' });
-  });
 </script>
 
 <script>
