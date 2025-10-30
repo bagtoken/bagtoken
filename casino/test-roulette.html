@@ -1,4 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
   <!-- =========================================================
+       [HEAD] Meta, Title, Preloads, Base Styles
+       ========================================================= -->
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <title>$BAG Roulette</title>
+
+  <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+  <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+  <script>window.__BAG_FORCE_DEMO = true;</script>
+  <link rel="preload" href="/assets/sounds/roulettewheel.mp3" as="audio" />
+
+  <style>
+    /* =========================================================
+       [CSS] Base Theme + Layout
+       ========================================================= */
+    *{box-sizing:border-box}
+    :root{
+      --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+      --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
+      --padL:max(12px, env(safe-area-inset-left));
+      --padR:max(12px, env(safe-area-inset-right));
+      --vwpx:100vw;
+      --rowH:56px;
+    }
+    @media (max-width:560px){ :root{ --rowH:48px; } }
+
+    html,body{
+      margin:0;background:var(--bg);color:var(--fg);
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;
+      -webkit-text-size-adjust:100%; touch-action:manipulation; overscroll-behavior:contain;
+      width:100%; max-width:100%; overflow-x:hidden;
+    }
+    img{display:block;max-width:100%;height:auto}
+    button,input{font-size:16px}
+
+    .back-casino{
+      position:fixed;top:18px;left:18px;z-index:1000;
+      background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%); color:#08130d;text-decoration:none;font-weight:800;
+      padding:8px 14px;border-radius:10px; box-shadow:0 4px 0 #b08a19;transition:all .15s ease
+    }
+    .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+
+    .game-header{text-align:center;padding:36px 10px 14px}
+    .game-header img.hero-img{margin:0 auto 10px;width:min(420px,90vw)}
+    .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+
+    .game-teaser{
+      padding:10px 12px 60px; padding-left:var(--padL); padding-right:var(--padR);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+        radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+      border-top:1px solid #131313;border-bottom:1px solid #131313;
+      overflow:hidden;
+    }
+
+    .game-wrap{
+      max-width:1080px;margin:0 auto;display:grid;gap:22px;
+      grid-template-columns:1.12fr .88fr; width:min(1080px,100%); overflow:hidden;
+    }
+    .game-wrap > *{ min-width:0; }
+    @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
+
+    .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+      border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow); min-width:0; }
+    .mock{padding:14px}
+
+    .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+    .stake-box{padding:14px}
+    .stack{display:grid;gap:10px}
+    .choice{display:flex;gap:10px;flex-wrap:wrap}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+    .chip input{accent-color:#2fbf6b}
+    .mono{font-variant-numeric:tabular-nums}
+    .micro{font-size:.85rem;color:#aeb7af}
+    .muted{color:#cfd6cf}
+    .divider{height:1px;background:#123221;margin:10px 0}
+
+    .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+    .payout-grid{display:grid;gap:6px}
+    .payout-grid .row{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .payout-grid .lab{color:#cfd6cf}
+    .payout-grid .val{font-variant-numeric:tabular-nums}
+
+    .slots-wrap{display:grid;gap:12px; min-width:0;}
+    .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #25433a;border-radius:12px;padding:8px}
+    .cabinet{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px; max-width:100%}
+
+    /* -------- Wheel container -------- */
+    .wheel-wrap{ background:#091a13;border:1px solid #24533a;border-radius:16px;padding:12px; overflow:hidden; max-width:100%; margin-inline:auto; width:min(760px,100%); position:relative; }
+    .wheel{position:relative;aspect-ratio:1;border-radius:14px; width:100%; height:auto; display:block; overflow:hidden; contain:layout paint;}
+    .veneer{position:absolute; inset:2% 2%; border-radius:50%; background:
+        radial-gradient(circle at 50% 50%, rgba(255,255,255,.08), rgba(0,0,0,.42) 72%),
+        conic-gradient(#7b5029, #5e3a1b 25%, #7b5029 50%, #5e3a1b 75%, #7b5029);
+      box-shadow:inset 0 0 0 10px #b8844f, inset 0 0 0 18px #8d5b2e, 0 10px 24px rgba(0,0,0,.35);}
+    .chrome{ position:absolute; inset:8.75% 8.75%; border-radius:50%; background: radial-gradient(circle at 50% 48%, #444, #111 70%); box-shadow: inset 0 0 0 2px #000, 0 1px 6px #000a; }
+
+    .ringSvg{ position:absolute; inset:9.5% 9.5%; width:81%; height:81%; display:block; }
+    .ringSvg #ringG{ transform-origin:50% 50%; will-change:transform; }
+    .ringSvg text{
+      font-family:Inter,system-ui,Arial,sans-serif; font-weight:900; fill:#fff;
+      font-size:46px; text-anchor:middle; dominant-baseline:middle;
+      stroke:#000; stroke-width:6; paint-order:stroke fill;
+      user-select:none; pointer-events:none;
+    }
+
+    .bowl{position:absolute; inset:28% 28%; border-radius:50%;
+      background:radial-gradient(circle at 50% 40%, #d2a253, #8b612d 72%); box-shadow:0 8px 16px var(--shadow);}
+    .bowl::after{ content:""; position:absolute; inset:28% 28%; border-radius:50%;
+      background: radial-gradient(circle at 50% 40%, #f0d49b, #9c6f36 72%); box-shadow:inset 0 6px 12px rgba(0,0,0,.35); }
+
+    .ball{
+      position:absolute; width:18px; height:18px; background:#eee; border-radius:50%;
+      box-shadow:0 1px 4px #000a; left:50%; top:50%; margin:-9px;
+      transform-origin:0 0; transform:rotate(0deg) translate(120px);
+      will-change:transform;
+    }
+    .ball.bounce{ animation:ballBounce 700ms ease-out 1; }
+    @keyframes ballBounce{
+      0%{ transform:var(--finalBall); }
+      30%{ transform:rotate(calc(var(--finalBallDeg) + 6deg)) translate(var(--finalBallR)); }
+      60%{ transform:rotate(calc(var(--finalBallDeg) - 4deg)) translate(calc(var(--finalBallR) - 6px)); }
+      100%{ transform:var(--finalBall); }
+    }
+
+    .spin-row{display:flex;justify-content:center}
+    .btn-spin{
+      width:min(380px,92%);padding:16px 22px;margin-top:4px;
+      font-size:1.15rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;border:0;border-radius:14px;
+      color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+      box-shadow:0 6px 0 #b08a19, 0 16px 32px rgba(255,225,117,.18), inset 0 1px 0 rgba(255,255,255,.35);
+      transition:transform .06s ease, box-shadow .2s ease, filter .2s ease; cursor:pointer;
+    }
+    .btn-spin:disabled{opacity:.65;cursor:not-allowed}
+
+    .result{margin-top:10px;padding:12px;border:1px solid #1b4a2f;border-radius:12px;background:#0b2217;display:flex;align-items:center;gap:10px}
+    .t.win{color:#2fbf6b}.t.lose{color:#e25b5b}.t.scratch{color:#e8a85c}
+
+    .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 6px; justify-content:center; }
+    .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+
+    /* -------- Bets table -------- */
+    .felt{
+      background:linear-gradient(180deg,#0e2a1d,#0a2016);
+      border:1px solid #1b3b2c;border-radius:12px;padding:10px;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+      overflow:hidden;
+    }
+    .felt-scale{ width:100%; display:flex; justify-content:center; overflow:hidden; }
+    .felt-inner{ width:720px; max-width:100%; transform-origin: top center; margin-inline:auto; }
+    @media (max-width:760px){ .felt-inner{ width:640px; } }
+    @media (max-width:680px){ .felt-inner{ width:580px; } }
+    @media (max-width:620px){ .felt-inner{ width:520px; } }
+    @media (max-width:560px){ .felt-inner{ width:480px; } }
+    @media (max-width:480px){ .felt-inner{ width:440px; } }
+    @media (max-width:440px){ .felt-inner{ width:400px; } }
+
+    .felt-grid{
+      display:grid; gap:6px;
+      grid-template-rows: var(--rowH) auto auto auto;
+      grid-template-areas:
+        "zero"
+        "nums"
+        "cols"
+        "outside";
+    }
+    .zero-row{ grid-area: zero; display:grid; grid-template-columns:1fr 1fr; gap:6px; position:relative; z-index:2; }
+    .zero-row .cell{ height:var(--rowH); }
+
+    .nums{ grid-area: nums; display:grid; grid-template-columns:repeat(3, 1fr); grid-auto-rows:var(--rowH); gap:6px; position:relative; z-index:1; }
+    .cols{ grid-area: cols; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .outside{ grid-area: outside; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+
+    .cell{
+      position:relative; display:grid; place-items:center;
+      border:1px solid #244634;border-radius:8px;
+      font-weight:900; user-select:none; cursor:pointer;
+      transition:transform .05s ease, box-shadow .15s ease;
+    }
+    .cell:active{transform:translateY(1px)}
+    .cell.selected{outline:2px solid #ffe175; box-shadow:0 0 0 2px #b08a19 inset}
+
+    .cell.num .num-inner{
+      position:absolute; inset:6px; display:grid; grid-template-rows:1fr 1fr; border-radius:6px; overflow:hidden;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+    }
+    .cell.num .num-inner .half{ background:#0b0b0b; }
+    .cell.num.red   .num-inner .half{ background:linear-gradient(180deg,#8f1a1a,#6e1414); }
+    .cell.num.black .num-inner .half{ background:linear-gradient(180deg,#141414,#0a0a0a); }
+    .cell.num.green .num-inner .half{ background:linear-gradient(180deg,#0f4b2d,#0b3823); }
+    .cell.num .num-inner .half:first-child{ box-shadow:inset 0 -1px 0 rgba(255,255,255,.08); }
+    .cell.num .label{
+      position:absolute; inset:0; display:grid; place-items:center;
+      color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6);
+      font-variant-numeric:tabular-nums;
+    }
+
+    .cols .cell, .outside .cell{ background:#0f251b; color:#e7efe9 }
+    .felt-note{ font-size:12px; color:#cfe0d6; text-align:center; margin-top:6px; }
+
+    /* -------- Rules pill + modal -------- */
+    .rules-pill{
+      position:fixed; right:16px; bottom:16px; z-index:1500;
+      padding:10px 14px; border-radius:999px; font-weight:800;
+      border:1px solid #2b6a48; background:#0e2a1c; color:#e9efe9;
+      box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      cursor:pointer;
+    }
+    .rules-pill:hover{ filter:brightness(1.05); }
+    .rules-modal{ display:none; position:fixed; inset:0; z-index:2000; padding:18px; backdrop-filter: blur(6px); background: rgba(0,0,0,.45); }
+    .rules-modal > div{
+      width:min(720px,92vw); max-height:min(80vh,880px); overflow:auto; margin:0 auto;
+      background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+      border:1px solid var(--line); border-radius:16px; box-shadow:0 24px 60px var(--shadow);
+      color:var(--fg); padding:18px; position:relative;
+    }
+    .rules-close{
+      position:absolute; top:8px; right:12px; border:0; background:transparent;
+      color:#e9efe9; font-size:24px; line-height:1; cursor:pointer;
+    }
+
+    /* -------- Slots-style green USD presets -------- */
+    #usdPresets .chip{
+      border:1px solid var(--green-600);
+      background:var(--green);
+      color:#fff;
+      font-weight:900;
+      letter-spacing:.2px;
+      box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+      transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    }
+    #usdPresets .chip:hover{ filter:brightness(1.03); }
+    #usdPresets .chip:active{ transform:translateY(1px); box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1); }
+    #usdPresets .chip.selected{ box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25); }
+
+    /* -------- Practice balances card (Dice-style base) -------- */
+    .balances{
+      display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
+      background:#0b2017;border:1px solid #214b35;border-radius:12px;padding:10px;margin:10px 0 0 0
+    }
+    .balances .bcell{
+      background:#0a1b13;border:1px solid #1a3c2b;border-radius:10px;padding:10px;text-align:center
+    }
+    .balances .bcell b{font-size:1.05rem}
+
+    /* === Dice-size Practice balances (compact) === */
+    .balances.compact{
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: 6px;
+      padding: 8px;
+      border-radius: 10px;
+      background:#0b2017;
+      border:1px solid #214b35;
+    }
+    .balances.compact .bcell{
+      padding: 8px;
+      border-radius: 8px;
+      background:#0a1b13;
+      border:1px solid #1a3c2b;
+    }
+    .balances.compact .micro{ font-size: .8rem; opacity:.95; }
+    .balances.compact .bcell b{ font-size: .98rem; line-height: 1.2; }
+    @media (max-width:560px){
+      .balances.compact{ gap: 5px; padding: 6px; }
+      .balances.compact .bcell{ padding: 7px; }
+      .balances.compact .bcell b{ font-size: .94rem; }
+    }
+
+    /* -------- Practice (Blackjack-style) -------- */
+    .practice-card{
+      background:#0b2017;border:1px solid #214b35;border-radius:12px;padding:12px;margin:10px 0 0 0
+    }
+    .practice-card .title{
+      font-weight:800;color:#e6efe9;margin:0 0 8px 2px;font-size:1.05rem
+    }
+    .practice-row{
+      display:flex;align-items:baseline;gap:8px;
+      background:#0a1b13;border:1px solid #1a3c2b;border-radius:10px;
+      padding:10px 12px; margin-top:8px
+    }
+    .practice-row .lab{color:#cfe0d6;min-width:48px}
+    .practice-row .val{font-weight:900;font-variant-numeric:tabular-nums}
+    .practice-row .val.green{color:var(--green)}
+    .practice-row .suf{color:#aeb7af;font-weight:700;margin-left:6px}
+
+    /* -------- Win Overlay -------- */
+    .win-overlay{
+      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      z-index:3000; background:radial-gradient(1200px 600px at 50% 50%, rgba(2,7,3,.82), rgba(2,7,3,.60) 60%, rgba(2,7,3,.35));
+      pointer-events:none;
+    }
+    .win-card{
+      background:linear-gradient(180deg,#0f2a1b,#0b1e15);
+      border:1px solid #2a5a3f; border-radius:18px; padding:18px 22px; text-align:center;
+      box-shadow:0 24px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+      transform:scale(.9); opacity:0; will-change:transform,opacity;
+      animation:popIn 380ms cubic-bezier(.2,1,.2,1) forwards;
+    }
+    .win-title{
+      font-weight:900; letter-spacing:.08em; margin:2px 0 8px;
+      color:#ffe175; text-shadow:0 0 18px rgba(255,225,117,.35);
+      font-size:clamp(1.4rem, 4.8vw, 2.2rem);
+    }
+    .win-amt{
+      font-weight:900; color:#e9fff3; font-variant-numeric:tabular-nums;
+      font-size:clamp(1.2rem, 4.2vw, 1.8rem);
+    }
+    .win-note{ color:#cfe6d8; font-size:.9rem; opacity:.9; margin-top:6px; }
+    @keyframes popIn{ to{ transform:scale(1); opacity:1;} }
+    .confetti{ position:absolute; left:50%; top:50%; width:0; height:0; pointer-events:none; }
+    .confetti span{
+      position:absolute; width:10px; height:14px; border-radius:2px; opacity:0;
+      background:linear-gradient(180deg,#ffe175,#f5c94c);
+      box-shadow:0 6px 16px rgba(255,225,117,.35);
+      transform:translate(-50%,-50%) rotate(0deg);
+      animation:drop 1100ms ease-out forwards, spin 1100ms linear forwards;
+    }
+    .confetti span.alt{ background:linear-gradient(180deg,#2fbf6b,#1f9a54); box-shadow:0 6px 16px rgba(47,191,107,.35); }
+    .confetti span.dark{ background:linear-gradient(180deg,#0f2418,#0a1a12); box-shadow:0 6px 16px rgba(0,0,0,.35); }
+    @keyframes drop{
+      0%{ opacity:0; transform:translate(-50%,-50%) translateY(-10px) }
+      10%{ opacity:1 }
+      100%{ transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity:0; }
+    }
+    @keyframes spin{ to{ rotate:360deg; } }
+    @media (prefers-reduced-motion: reduce){
+      .win-card{ animation:none; opacity:1; transform:none }
+      .confetti span{ animation:none; display:none }
+    }
+  </style>
+</head>
+
+  <body>
+  <!-- =========================================================
+       [HEADER] Hero
+       ========================================================= -->
+  <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+
+  <section class="game-header">
+    <img class="hero-img" src="/assets/bag-roulette-1024.png" alt="$BAG Roulette" loading="lazy" decoding="async">
+    <h2>🔴⚫ $BAG ROULETTE</h2>
+    <p class="micro" style="margin-top:4px;opacity:.9;">
+      💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+    </p>
+  </section>
+
+  <!-- =========================================================
+       [MAIN] Left Panel (Practice + Stake) & Right Panel (Wheel)
+       ========================================================= -->
+  <section class="game-teaser" aria-labelledby="game-teaser-title">
+    <div class="game-wrap">
+      <!-- ========== LEFT: Practice + Stake + Prices + Bets ========== -->
+      <div class="panel mock" id="bagRouletteDemo">
+        <!-- Wallet row -->
+        <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
+          <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+          <button id="connectBtn"
+            style="padding:10px 14px;font-weight:800;border:0;border-radius:12px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 4px 0 #b08a19;cursor:pointer;">
+            Connect Xaman
+          </button>
+        </div>
+
+        <!-- Practice (Blackjack-style) -->
+        <div class="practice-card" aria-live="polite">
+          <div class="title">Practice:</div>
+
+          <div class="practice-row">
+            <span class="lab">BAG:</span>
+            <span class="val green mono" id="balBag">—</span>
+            <span class="suf">BAG</span>
+          </div>
+
+          <div class="practice-row">
+            <span class="lab">XRP:</span>
+            <span class="val green mono" id="balXrp">—</span>
+            <span class="suf">XRP</span>
+          </div>
+
+          <div class="practice-row">
+            <span class="lab">USD:</span>
+            <span class="val mono" id="balUsd">—</span>
+          </div>
+        </div>
+        <div class="micro" style="margin-top:6px;opacity:.9">
+          Seeded with <b>$2,000</b> in practice funds.
+        </div>
+
+        <!-- Stake & Prices -->
+        <div class="section-title" style="margin-top:12px">Stake &amp; Prices</div>
+        <div class="stake-box">
+          <div class="stack">
+            <!-- Amount (USD) with presets -->
+            <div>
+              <div class="micro">Amount</div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input id="usdBet" class="mono" type="tel" inputmode="decimal" enterkeyhint="done" pattern="[0-9.]*"
+                         min="0" max="2000" step="0.01" placeholder="0.00" aria-label="Stake in USD"
+                         style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                  <span class="micro" aria-hidden="true">USD</span>
+                </div>
+              </div>
+              <div class="choice" id="usdPresets" style="margin-top:8px">
+                <button type="button" class="chip" data-usd="1">$1</button>
+                <button type="button" class="chip" data-usd="2">$2</button>
+                <button type="button" class="chip" data-usd="5">$5</button>
+                <button type="button" class="chip" data-usd="10">$10</button>
+                <button type="button" class="chip" data-usd="20">$20</button>
+                <button type="button" class="chip" data-usd="50">$50</button>
+                <button type="button" class="chip" data-usd="100">$100</button>
+                <button type="button" class="chip" data-usd="2000">MAX</button>
+              </div>
+            </div>
+
+            <!-- Currency toggle -->
+            <div>
+              <div class="micro">Bet currency</div>
+              <div class="choice" id="curToggle">
+                <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+                <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+              </div>
+            </div>
+
+            <!-- Bet amount (units of selected currency) -->
+            <div>
+              <div class="micro">Bet amount</div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <div>
+                  <input id="betQty" class="mono" type="tel" inputmode="decimal" enterkeyhint="done"
+                         min="0" step="0.000001" value="1" aria-label="Stake units"
+                         style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                  <span class="unit">XRP</span>
+                </div>
+              </div>
+              <div class="micro" id="betLimits" style="margin-top:6px" aria-live="polite">Min $1 · Max $2,000 (USD eq.)</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Live prices -->
+            <div class="micro">Live prices</div>
+            <div class="muted mono" aria-live="polite">
+              <span id="liveDot" class="warn">●</span>
+              <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
+              <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG &asymp; — XRP · 1 XRP &asymp; — BAG</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Pay scale (dynamic amounts) -->
+        <div class="callout mono" id="payoutBox">
+          <div class="payout-grid" id="payoutGrid">
+            <div class="row">
+              <div class="lab"><strong>Pay Scale (This game)</strong>:</div>
+              <div class="val">
+                <span>×1.00</span> · <span>×1.25</span> · <span>×1.50</span> · <span>×1.75</span> · <span>×2.00</span>
+              </div>
+            </div>
+            <div class="row" id="payoutAmounts">
+              <div class="lab"><strong>Your Payouts</strong>:</div>
+              <div class="val" id="payoutVals">+0 BAG (~$0.00) at each tier</div>
+            </div>
+            <div class="row">
+              <div class="lab"><strong>Weighting</strong>:</div>
+              <div class="val">RB/EO/HL favor 1.00×–1.25×; Dozens/Columns moderate; Straight best shot at higher tiers</div>
+            </div>
+          </div>
+          <div class="micro" style="margin-top:6px;opacity:.85;">
+            Practice mode enabled — on-ledger play wires in after QA.
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Bets felt -->
+        <div class="section-title">Bets</div>
+        <div class="felt">
+          <div class="felt-scale">
+            <div class="felt-inner">
+              <div class="felt-grid">
+                <div class="zero-row" id="zeroRow"></div>
+                <div class="nums" id="feltNums"></div>
+                <div class="cols" id="colBets"></div>
+                <div class="outside" id="outsideBets">
+                  <div class="cell" data-type="HL" data-val="LOW">1&ndash;18</div>
+                  <div class="cell" data-type="EO" data-val="EVEN">EVEN</div>
+                  <div class="cell" data-type="RB" data-val="RED">RED</div>
+                  <div class="cell" data-type="RB" data-val="BLACK">BLACK</div>
+                  <div class="cell" data-type="EO" data-val="ODD">ODD</div>
+                  <div class="cell" data-type="HL" data-val="HIGH">19&ndash;36</div>
+                </div>
+                <div class="felt-note">Each selection uses your stake. Selections can be combined.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden controls -->
+        <div style="display:none">
+          <input id="betStraight">
+          <select id="betRB"><option value=""></option><option>RED</option><option>BLACK</option></select>
+          <select id="betEO"><option value=""></option><option>EVEN</option><option>ODD</option></select>
+          <select id="betHL"><option value=""></option><option value="LOW">1&ndash;18</option><option value="HIGH">19&ndash;36</option></select>
+          <select id="betDozen"><option value=""></option><option value="D1">1&ndash;12</option><option value="D2">13&ndash;24</option><option value="D3">25&ndash;36</option></select>
+          <select id="betCol"><option value=""></option><option value="C1">Column 1</option><option value="C2">Column 2</option><option value="C3">Column 3</option></select>
+        </div>
+      </div>
+
+      <!-- ========== RIGHT: Wheel ========== -->
+      <div class="slots-wrap">
+        <div class="marquee">$BAG ROULETTE</div>
+        <div class="cabinet">
+          <div class="wheel-wrap" aria-label="Roulette wheel">
+            <div class="wheel">
+              <div class="veneer"></div>
+              <div class="chrome"></div>
+
+              <!-- Symmetric, clipped SVG ring -->
+              <svg id="ringSvg" class="ringSvg" viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <defs>
+                  <clipPath id="ringClip" clipPathUnits="userSpaceOnUse">
+                    <path id="ringClipPath" fill-rule="evenodd"></path>
+                  </clipPath>
+                </defs>
+                <g id="ringG" clip-path="url(#ringClip)"></g>
+              </svg>
+
+              <div class="bowl"></div>
+              <div id="ball" class="ball"></div>
+            </div>
+          </div>
+
+          <div class="spin-row">
+            <button id="spinBtn" class="btn-spin" aria-label="Spin the wheel">SPIN</button>
+          </div>
+
+          <div class="hudbar" aria-live="polite">
+            <span class="pill">Mode: <b id="modeLbl">DEMO</b></span>
+            <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">XRP</span></span>
+            <span class="pill">Bet: <b id="betLbl">—</b></span>
+            <span class="pill">Last: <b id="lastLbl">—</b></span>
+          </div>
+
+          <p class="micro" style="text-align:center;margin-top:6px;opacity:.7;color:#aeb7af;">
+            🔊 If you don’t hear sound: tap SPIN once, turn off Silent mode, and raise volume.
+          </p>
+
+          <div class="result" role="status" aria-live="polite">
+            <div class="t" id="spinText">Tap SPIN</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rules pill + modal -->
+    <button class="rules-pill" id="rulesPill" aria-controls="rulesModal" aria-expanded="false">
+      ℹ️ <b>Rules</b>
+    </button>
+
+    <div class="rules-modal" id="rulesModal" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+      <div>
+        <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
+        <h3 id="rulesTitle">American Roulette — Complete Rules</h3>
+        <ul style="margin:0 0 6px;padding-left:18px;color:#cfd6cf">
+          <li>Wheel layout: numbers <b>1–36</b> (18 red, 18 black) plus <b>0</b> and <b>00</b> (green). Authentic American order.</li>
+          <li><b>Selections</b>: Straight (single number), Dozens (1–12 / 13–24 / 25–36), Columns (C1/C2/C3), Red/Black, Even/Odd, Low/High.</li>
+          <li><b>Stake</b>: Your entered amount is applied <i>per selected bet</i>. Multiple selections use the same base stake each.</li>
+          <li><b>Payouts (This game only)</b>: When a selection hits, the win is your stake multiplied by a <b>Pay Scale tier</b>:
+            <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b>.
+            Easier bets (Red/Black, Even/Odd, Low/High) most often return <b>1.00×–1.25×</b>; Dozens/Columns are moderate; Straights have the best chance at higher tiers. <b>2.00×</b> is rarest overall.</li>
+          <li><b>Zeros</b> (0/00) are neither red/black, even/odd, nor low/high.</li>
+          <li>Minimum $1 · Maximum $2,000 stake (USD equivalent). Payouts settle in <b>$BAG</b>. $XRP stakes auto-convert at the live rate.</li>
+          <li>Practice mode is active here. On-ledger play wires in after QA.</li>
+        </ul>
+        <p class="micro" style="margin-top:8px">Responsible play: set limits, take breaks.</p>
+      </div>
+    </div>
+  </section>
+
+      <!-- =========================================================
        [OVERLAYS] Win Overlay
        ========================================================= -->
   <div id="winOverlay" class="win-overlay" aria-hidden="true">
