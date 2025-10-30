@@ -381,7 +381,7 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <div>
                 <input id="betQty" class="mono" type="tel" inputmode="decimal" enterkeyhint="done"
-                       min="0" step="any" value="1" aria-label="Stake units"
+                       min="0" step="0.000001" value="1" aria-label="Stake units"
                        style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
                 <span class="unit">XRP</span>
               </div>
@@ -713,129 +713,90 @@
 <!-- UNIVERSAL DEMO SESSION (v2) -->
 <script src="/js/bag-demo-session.js"></script>
 
-<!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS (with hard convert on toggle) -->
+<!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS -->
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
-
   const usdInput   = $('#usdBet');
   const qtyInput   = $('#betQty');
   const unitSpan   = document.querySelector('.unit');
   const curWrap    = $('#curToggle');
   const betLbl     = $('#betLbl');
 
-  // Balance labels
-  const balBagEl = $('#balBag');
-  const balXrpEl = $('#balXrp');
-  const balUsdEl = $('#balUsd');
+  // Balances hooks
+  const balBagEl = document.getElementById('balBag');
+  const balXrpEl = document.getElementById('balXrp');
+  const balUsdEl = document.getElementById('balUsd');
 
-  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function px(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
-  function sel(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
-  function clampUsd(n){ return Math.min(2000, Math.max(0, Number(n)||0)); }
+  function selCur(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
+  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
+  function pxFor(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
-  function fmtUnits(val, cur){
-    if (cur==='BAG') return String(Math.max(0, Math.floor(val))); // whole BAG
-    const v = Math.max(0, Math.floor((val + 1e-12)*1e6)/1e6);     // 6dp XRP
-    return v.toFixed(6).replace(/\.?0+$/,'');
+
+  function bagFromUnits(){
+    const qty = Math.max(0, parseFloat(qtyInput?.value||'0'));
+    const cur = selCur();
+    const p = P();
+    if (cur==='BAG') return qty;
+    if (p.bagUsd>0 && p.xrpUsd>0){
+      const bagPerXrp = p.xrpUsd / p.bagUsd;
+      return qty * bagPerXrp;
+    }
+    return 0;
   }
 
-  // Session balances (BAG primary; infer XRP from prices if not present)
+  function updateUsdFromUnits(){
+    const px=pxFor(selCur());
+    const qty=Math.max(0, parseFloat(qtyInput.value||'0'));
+    const usd = px>0 ? qty*px : 0;
+    document.getElementById('usdBet').value = usd>0 ? usd.toFixed(2) : '';
+    betLbl && (betLbl.textContent = Number.isFinite(qty) ? qty.toFixed(6).replace(/\.?0+$/,'') : '—');
+    renderBalances();
+  }
+  function updateUnitsFromUsd(){
+    const cur = selCur();
+    const px  = pxFor(cur);
+    const raw = Math.min(2000, Math.max(0, parseFloat(document.getElementById('usdBet').value||'0')));
+    if (!Number.isFinite(raw) || raw<=0 || px<=0) { renderBalances(); return; }
+    const units = raw/px;
+    const out = units.toFixed(6).replace(/\.?0+$/,'');
+    document.getElementById('betQty').value = out;
+    betLbl && (betLbl.textContent = out);
+    renderBalances();
+  }
+
   function balances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
     const bag = Number(sess.bag)||0;
     let xrp = Number(sess.xrp);
     const { bagUsd, xrpUsd } = P();
-    if (!(xrp > 0)) xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : 0;
+    if (!(xrp > 0)) {
+      xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : 0;
+    }
     const usd = (bagUsd>0) ? bag * bagUsd : 0;
     return {bag,xrp,usd};
   }
   function renderBalances(){
     const {bag,xrp,usd} = balances();
-    if (balBagEl) balBagEl.textContent = fmt(bag,0);
+    if (balBagEl) balBagEl.textContent = fmt(bag,6);
     if (balXrpEl) balXrpEl.textContent = fmt(xrp,6);
     if (balUsdEl) balUsdEl.textContent = fmt(usd,2);
   }
 
-  // From USD -> units (for current currency)
-  function updateUnitsFromUsd(){
-    const cur = sel();
-    const price = px(cur);
-    const usd = clampUsd(parseFloat(usdInput?.value||''));
-    if (!(usd>0) || !(price>0)){
-      if (qtyInput) qtyInput.value = '';
-      betLbl && (betLbl.textContent = '—');
-      renderBalances();
-      return;
-    }
-    const units = usd / price;
-    if (qtyInput) qtyInput.value = fmtUnits(units, cur);
-    betLbl && (betLbl.textContent = qtyInput.value);
-    renderBalances();
-  }
-
-  // From units -> USD (for current currency)
-  function updateUsdFromUnits(){
-    const cur = sel();
-    const price = px(cur);
-    const qty = Math.max(0, parseFloat(qtyInput?.value||''));
-    const usd = (price>0) ? qty * price : 0;
-    if (usdInput) usdInput.value = usd ? usd.toFixed(2) : '';
-    betLbl && (betLbl.textContent = qtyInput.value || '—');
-    renderBalances();
-  }
-
-  // Hard convert both fields when toggling currency
-  let lastCur = sel();
-  unitSpan && (unitSpan.textContent = lastCur);
-
-  function convertOnToggle(oldCur, newCur){
-    const pOld = px(oldCur), pNew = px(newCur);
-
-    // Determine USD value: prefer explicit USD field, otherwise derive from units @ oldCur
-    let usd = parseFloat(usdInput?.value || '');
-    if (!(usd > 0)) {
-      const qty = Math.max(0, parseFloat(qtyInput?.value || '0'));
-      usd = (pOld > 0) ? qty * pOld : 0;
-    }
-    usd = clampUsd(usd);
-
-    // Compute new units from USD for the selected currency
-    let units = 0;
-    if (pNew > 0) units = usd / pNew;
-
-    // Write back to both fields
-    if (usdInput) usdInput.value = usd ? usd.toFixed(2) : '';
-    if (qtyInput) qtyInput.value = fmtUnits(units, newCur);
-    if (betLbl)   betLbl.textContent = qtyInput.value;
-    if (unitSpan) unitSpan.textContent = newCur;
-
-    // Nudge listeners/HUD
-    window.dispatchEvent(new Event('input'));
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
-
-  // Events: inputs
-  usdInput?.addEventListener('input', updateUnitsFromUsd);
-  qtyInput?.addEventListener('input', updateUsdFromUnits);
-
-  // Toggle handler with conversion
-  curWrap?.addEventListener('change', ()=>{
-    const newCur = sel();
-    if (newCur === lastCur) return;
-    convertOnToggle(lastCur, newCur);
-    lastCur = newCur;
+  document.getElementById('usdBet')?.addEventListener('input', updateUnitsFromUsd);
+  document.getElementById('betQty')?.addEventListener('input', updateUsdFromUnits);
+  document.getElementById('curToggle')?.addEventListener('change', ()=>{
+    unitSpan.textContent = selCur();
+    updateUsdFromUnits();
   });
 
-  // Presets (USD chips)
   (function mountPresets(){
     const row = document.getElementById('usdPresets');
     if (!row) return;
     row.querySelectorAll('button[data-usd]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        const tag = btn.getAttribute('data-usd');
-        const val = (tag==='2000')?2000:Number(tag||0);
-        usdInput.value = Number(val).toFixed(2);
+        const tag = btn.getAttribute('data-usd'); const val = (tag==='2000')?2000:Number(tag||0);
+        document.getElementById('usdBet').value = Number(val).toFixed(2);
         updateUnitsFromUsd();
         row.querySelectorAll('button[data-usd]').forEach(x=>x.classList.remove('selected'));
         btn.classList.add('selected');
@@ -843,19 +804,12 @@
     });
   })();
 
-  // React to price updates: reflow amounts using current currency (no currency change)
-  window.addEventListener('bag:pricesUpdated', ()=>{
-    const cur = sel();
-    convertOnToggle(cur, cur);
-    renderBalances();
-  });
-
-  // Session events
+  // React to live prices + universal session refresh events
+  window.addEventListener('bag:pricesUpdated', ()=>{ updateUsdFromUnits(); renderBalances(); });
   window.addEventListener('bag:hudRefresh', renderBalances);
   window.addEventListener('bag:sessionToppedUp', renderBalances);
   window.addEventListener('bag:sessionSpent', renderBalances);
 
-  // Initial render
   updateUsdFromUnits();
   renderBalances();
 })();
@@ -1232,7 +1186,7 @@
                    : [0.46, 0.28, 0.14, 0.08, 0.04];
         }
         let r = Math.random();
-        for (let i=0;i+w.length && i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
+        for (let i=0;i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
         return TIERS[TIERS.length-1];
       }
 
@@ -1336,8 +1290,11 @@
     const {bag,xrp} = balances(); const c=cur();
     if (modeLbl) modeLbl.textContent = (window.__BAG_FORCE_DEMO ? 'DEMO' : 'LIVE');
     if (ccyLbl) ccyLbl.textContent = c;
-    if (balLbl) balLbl.textContent = fmt(c==='XRP'?xrp:bag);
-    if (betLbl){ const v=parseFloat(document.getElementById('betQty')?.value||'0'); betLbl.textContent = (c==='BAG'?Math.floor(v):Math.floor(v*1e6)/1e6); }
+    if (balLbl) balLbl.textContent = fmt(c==='XRP'?xrp:bag,6);
+    if (betLbl){
+      const v=parseFloat(document.getElementById('betQty')?.value||'0');
+      betLbl.textContent = Number.isFinite(v) ? v.toFixed(6).replace(/\.?0+$/,'') : '—';
+    }
   }
   ['input','change'].forEach(ev=>{
     document.getElementById('betQty')?.addEventListener(ev, render);
