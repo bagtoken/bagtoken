@@ -223,6 +223,14 @@
         </div>
       </div>
 
+      <!-- Practice readout on separate lines -->
+      <div id="practiceReadout" class="micro" style="opacity:.95; margin:6px 0 10px 0; line-height:1.35; display:none;">
+        <div style="font-weight:800;margin-bottom:4px;">Practice</div>
+        <div id="prBag">BAG: —</div>
+        <div id="prXrp">XRP: —</div>
+        <div id="prUsd">USD: —</div>
+      </div>
+
       <div class="section-title">Stake & Prices</div>
 
       <div class="stake-box">
@@ -897,9 +905,15 @@
     }
   });
 
+  // Currency toggle: preserve USD if present; otherwise preserve units and recompute USD
   curWrap?.addEventListener('change', ()=>{
     refreshUnit();
-    updateUsdFromBet();
+    const usdVal = parseFloat(usdInput?.value || '0');
+    if (Number.isFinite(usdVal) && usdVal > 0){
+      updateBetFromUsd();
+    } else {
+      updateUsdFromBet();
+    }
     updatePayouts();
   });
 
@@ -1507,6 +1521,54 @@
   renderHud();
   let tries = 0; 
   const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+})();
+</script>
+
+<!-- Practice readout lines renderer -->
+<script>
+(function(){
+  const box   = document.getElementById('practiceReadout');
+  const lineB = document.getElementById('prBag');
+  const lineX = document.getElementById('prXrp');
+  const lineU = document.getElementById('prUsd');
+
+  if (!box || !lineB || !lineX || !lineU) return;
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){ const x=Number(n); return Number.isFinite(x) ? x.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
+  function usd(n){ const x=Number(n)||0; return '$'+x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function getBalances(){
+    const s = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(s.bag)||0;
+    let xrp = Number(s.xrp);
+    const { bagUsd, xrpUsd } = PR();
+    if (!(xrp>0)){
+      if (bagUsd>0 && xrpUsd>0) xrp = bag*(bagUsd/xrpUsd);
+      else xrp = 0;
+    }
+    const usdVal = (bagUsd>0) ? bag*bagUsd : 0;
+    return { bag, xrp, usdVal };
+  }
+
+  function render(){
+    try{
+      const { bag, xrp, usdVal } = getBalances();
+      lineB.textContent = `BAG: ${fmt(bag, 6)}`;
+      lineX.textContent = `XRP: ${fmt(xrp, 6)}`;
+      lineU.textContent = `USD: ${usd(usdVal)}`;
+      // Keep visible in practice mode
+      box.style.display = 'block';
+    }catch{}
+  }
+
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:hudRefresh','storage'
+  ].forEach(ev => addEventListener(ev, render));
+
+  render();
+  let tries=0; const iv=setInterval(()=>{ render(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
