@@ -237,7 +237,7 @@
     #usdPresets .chip:active{ transform:translateY(1px); box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1); }
     #usdPresets .chip.selected{ box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25); }
 
-    /* Practice balances card */
+    /* Practice balances card (Blackjack-style) */
     .balances{
       display:grid;grid-template-columns:1fr 1fr;gap:10px;
       background:#0b2017;border:1px solid #214b35;border-radius:12px;padding:10px;margin:10px 0 0 0
@@ -246,6 +246,12 @@
       background:#0a1b13;border:1px solid #1a3c2b;border-radius:10px;padding:10px;text-align:center
     }
     .balances .bcell b{font-size:1.05rem}
+    .bal-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .btn-mini{
+      padding:8px 12px; border-radius:10px; border:0; cursor:pointer; font-weight:800;
+      color:#08130d; background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%); box-shadow:0 3px 0 #b08a19;
+    }
+    .btn-mini:active{ transform:translateY(1px); box-shadow:0 2px 0 #9a7315; }
   </style>
 </head>
 
@@ -263,7 +269,7 @@
 
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
-    <!-- LEFT: practice + stake + prices + note + bets -->
+    <!-- LEFT: practice balances + stake + prices + note + bets -->
     <div class="panel mock" id="bagRouletteDemo">
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
@@ -273,20 +279,15 @@
         </button>
       </div>
 
-      <!-- NEW: Practice session row (exact module) -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
-        <div id="sessionStatus" class="micro" style="opacity:.9"></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="startSessionBtn" style="min-width:auto;padding:8px 12px" class="chip">Start</button>
-          <button id="topUpBtn"        style="min-width:auto;padding:8px 12px" class="chip">Top&nbsp;Up</button>
-          <button id="endSessionBtn"   style="min-width:auto;padding:8px 12px" class="chip">End</button>
-        </div>
-      </div>
-
+      <!-- Practice (Blackjack-style) -->
       <div class="section-title">Practice: Balances</div>
       <div class="balances" aria-live="polite">
         <div class="bcell"><div class="micro">Demo BAG</div><b id="balBag">—</b></div>
         <div class="bcell"><div class="micro">Demo XRP (est.)</div><b id="balXrp">—</b></div>
+      </div>
+      <div class="bal-actions">
+        <button id="topUpBtn" class="btn-mini">Top up to $2,000</button>
+        <span class="micro" style="align-self:center;opacity:.9;">Practice mode — on-ledger play after QA</span>
       </div>
 
       <div class="section-title" style="margin-top:12px">Stake &amp; Prices</div>
@@ -456,8 +457,7 @@
         <li><b>Selections</b>: Straight (single number), Dozens (1–12 / 13–24 / 25–36), Columns (C1/C2/C3), Red/Black, Even/Odd, Low/High.</li>
         <li><b>Stake</b>: Your entered amount is applied <i>per selected bet</i>. Multiple selections use the same base stake each.</li>
         <li><b>Payouts (This game only)</b>: When a selection hits, the win is your stake multiplied by a <b>Pay Scale tier</b>:
-          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b>.
-          Easier bets (Red/Black, Even/Odd, Low/High) most often return <b>1.00×–1.25×</b>; Dozens/Columns are moderate; Straights have the best chance at higher tiers. <b>2.00×</b> is rarest overall.</li>
+          <b>1.00×</b>, <b>1.25×</b>, <b>1.50×</b>, <b>1.75×</b>, <b>2.00×</b>. Easier bets lean lower tiers; Straights have the best chance at higher tiers.</li>
         <li><b>Zeros</b> (0/00) are neither red/black, even/odd, nor low/high.</li>
         <li>Minimum $1 · Maximum $2,000 stake (USD equivalent). Payouts settle in <b>$BAG</b>. $XRP stakes auto-convert at the live rate.</li>
         <li>Practice mode is active here. On-ledger play wires in after QA.</li>
@@ -650,109 +650,6 @@
 <!-- UNIVERSAL DEMO SESSION (v2) -->
 <script src="/assets/js/bag-demo-session.js"></script>
 
-<!-- EXACT PRACTICE MODULE (seed $2,000 + TopUp + readout) -->
-<script>
-(function(){
-  const statusEl  = document.getElementById('sessionStatus');
-  const topUpBtn  = document.getElementById('topUpBtn');
-  const startBtn  = document.getElementById('startSessionBtn');
-  const endBtn    = document.getElementById('endSessionBtn');
-  const spinBtn   = document.getElementById('spinBtn');
-
-  const DEMO_BAL_KEY  = '__bag_demo_bag_v2';
-  const DEMO_INIT_KEY = '__bag_demo_init_v2';
-  const START_USD     = 2000;
-
-  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n){
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
-
-  // Try to borrow a cached BAG/USD if live not ready
-  function cachedBagUsd(){
-    try{
-      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-      const view = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-      if (view && view.v && Number(view.v.bagUsd)>0) return Number(view.v.bagUsd);
-    }catch{}
-    return 0;
-  }
-
-  function ensureSeed(){
-    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live = Number(P().bagUsd||0);
-    const fallback = cachedBagUsd();
-    const bagUsd = live>0 ? live : (fallback>0?fallback:0);
-    if (bagUsd>0){
-      setBag(START_USD/bagUsd);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      return true;
-    }
-    return false;
-  }
-
-  function renderPractice(){
-    const bag=getBag();
-    const { bagUsd, xrpUsd } = P();
-    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
-    if(statusEl){
-      statusEl.innerHTML =
-        `<div class="practiceBlock" style="-webkit-touch-callout:none;">
-          <div class="title"><b>Practice:</b></div>
-          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
-          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
-          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
-        </div>`;
-    }
-    // also mirror into the two-box balance card
-    try{
-      const balBagEl = document.getElementById('balBag');
-      const balXrpEl = document.getElementById('balXrp');
-      if (balBagEl) balBagEl.textContent = fmt(bag,0);
-      if (balXrpEl) balXrpEl.textContent = fmt(xrp,6);
-      window.dispatchEvent(new Event('bag:hudRefresh'));
-    }catch{}
-  }
-
-  // Force DEMO on
-  try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
-
-  const seededNow = ensureSeed();
-  renderPractice();
-  if (spinBtn) spinBtn.disabled = !seededNow;
-
-  addEventListener('bag:pricesUpdated', ()=>{
-    if (!localStorage.getItem(DEMO_INIT_KEY)){
-      const ok = ensureSeed();
-      if (ok && spinBtn) spinBtn.disabled = false;
-    }
-    renderPractice();
-  });
-
-  topUpBtn?.addEventListener('click', ()=>{
-    const bagUsd = Number((P().bagUsd)||0) || cachedBagUsd();
-    if (bagUsd>0){
-      setBag(START_USD/bagUsd);
-      renderPractice();
-      window.dispatchEvent(new Event('bag:hudRefresh'));
-      window.dispatchEvent(new Event('bag:sessionToppedUp'));
-    }
-  });
-
-  startBtn?.addEventListener('click', ()=>{ renderPractice(); });
-  endBtn?.addEventListener('click',   ()=>{ renderPractice(); });
-})();
-</script>
-
 <!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS -->
 <script>
 (function(){
@@ -765,6 +662,7 @@
 
   const balBagEl = document.getElementById('balBag');
   const balXrpEl = document.getElementById('balXrp');
+  const topUpBtn = document.getElementById('topUpBtn');
 
   function selCur(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
   function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
@@ -787,20 +685,49 @@
     const px=pxFor(selCur());
     const qty=Math.max(0, parseFloat(qtyInput.value||'0'));
     const usd = px>0 ? qty*px : 0;
-    document.getElementById('usdBet').value = usd>0 ? usd.toFixed(2) : '';
-    betLbl && (betLbl.textContent = String(qtyInput?.value||'0'));
+    if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
+    if (betLbl) betLbl.textContent = String(qtyInput?.value||'0');
     renderBalances();
   }
   function updateUnitsFromUsd(){
     const cur = selCur();
     const px  = pxFor(cur);
-    const raw = Math.min(2000, Math.max(0, parseFloat(document.getElementById('usdBet').value||'0')));
+    const raw = Math.min(2000, Math.max(0, parseFloat(usdInput?.value||'0')));
     if (!Number.isFinite(raw) || raw<=0 || px<=0) { renderBalances(); return; }
     const units = (cur==='BAG') ? Math.max(0, Math.floor(raw/px)) : Math.max(0, Math.floor((raw/px + 1e-12) * 1e6) / 1e6);
-    document.getElementById('betQty').value = (cur==='BAG') ? String(units) : units.toFixed(6).replace(/\.?0+$/,'');
-    betLbl && (betLbl.textContent = (cur==='BAG') ? String(units) : String(units));
+    qtyInput.value = (cur==='BAG') ? String(units) : String(units);
+    if (betLbl) betLbl.textContent = (cur==='BAG') ? String(units) : String(units);
     renderBalances();
   }
+
+  // ==== NEW: true two-way conversion on XRP <-> BAG toggle ====
+  let lastCur = selCur();
+  function convertOnToggle(){
+    const oldCur = lastCur;
+    const newCur = selCur();
+    if (oldCur === newCur) return;
+    // hold USD constant as the pivot
+    const pxOld = pxFor(oldCur);
+    const qtyOld = Math.max(0, parseFloat(qtyInput.value||'0'));
+    const usd = pxOld>0 ? qtyOld * pxOld : 0;
+
+    if (usdInput) usdInput.value = usd>0 ? usd.toFixed(2) : '';
+
+    const pxNew = pxFor(newCur);
+    if (pxNew>0){
+      const units = (newCur==='BAG')
+        ? Math.max(0, Math.floor(usd/pxNew))
+        : Math.max(0, Math.floor(((usd/pxNew)+1e-12) * 1e6) / 1e6);
+      qtyInput.value = (newCur==='BAG') ? String(units) : String(units);
+    } else {
+      qtyInput.value = '0';
+    }
+    if (betLbl) betLbl.textContent = String(qtyInput.value||'0');
+    unitSpan.textContent = newCur;
+    lastCur = newCur;
+    renderBalances();
+  }
+  // =========================================
 
   function balances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
@@ -818,34 +745,51 @@
     if (balXrpEl) balXrpEl.textContent = fmt(xrp,6);
   }
 
-  document.getElementById('usdBet')?.addEventListener('input', updateUnitsFromUsd);
-  document.getElementById('betQty')?.addEventListener('input', updateUsdFromUnits);
-  document.getElementById('curToggle')?.addEventListener('change', ()=>{
-    unitSpan.textContent = selCur();
-    updateUsdFromUnits();
+  // Top up to EXACT $2,000 (Blackjack-style)
+  function topUpTo2000(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bagNow = Number(sess.bag)||0;
+    const { bagUsd } = P();
+    const px = bagUsd>0 ? bagUsd : 0.02; // fallback
+    const targetBag = 2000 / px;
+    const add = Math.max(0, targetBag - bagNow);
+    if (add > 0 && window.__bagSession && window.__bagSession.credit){
+      window.__bagSession.credit(add);
+      window.dispatchEvent(new CustomEvent('bag:sessionToppedUp'));
+      renderBalances();
+    }
+  }
+
+  usdInput?.addEventListener('input', updateUnitsFromUsd);
+  qtyInput?.addEventListener('input', updateUsdFromUnits);
+
+  curWrap?.addEventListener('change', convertOnToggle); // swap that CONVERTS amounts
+  document.getElementById('usdPresets')?.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-usd]'); if(!btn) return;
+    const val = btn.getAttribute('data-usd');
+    if (usdInput) usdInput.value = Number(val||0).toFixed(2);
+    // after preset, recompute units for current currency
+    updateUnitsFromUsd();
+    // pill selection styling
+    const row = document.getElementById('usdPresets');
+    row?.querySelectorAll('button[data-usd]').forEach(x=>x.classList.remove('selected'));
+    btn.classList.add('selected');
   });
 
-  (function mountPresets(){
-    const row = document.getElementById('usdPresets');
-    if (!row) return;
-    row.querySelectorAll('button[data-usd]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const tag = btn.getAttribute('data-usd'); const val = (tag==='2000')?2000:Number(tag||0);
-        document.getElementById('usdBet').value = Number(val).toFixed(2);
-        updateUnitsFromUsd();
-        row.querySelectorAll('button[data-usd]').forEach(x=>x.classList.remove('selected'));
-        btn.classList.add('selected');
-      });
-    });
-  })();
+  topUpBtn?.addEventListener('click', topUpTo2000);
 
   // React to live prices + universal session refresh events
-  window.addEventListener('bag:pricesUpdated', ()=>{ updateUsdFromUnits(); renderBalances(); });
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    // keep USD stable, recompute units for whatever currency is selected
+    updateUnitsFromUsd();
+    renderBalances();
+  });
   window.addEventListener('bag:hudRefresh', renderBalances);
   window.addEventListener('bag:sessionToppedUp', renderBalances);
   window.addEventListener('bag:sessionSpent', renderBalances);
 
-  updateUsdFromUnits();
+  // initial draws
+  updateUnitsFromUsd();
   renderBalances();
 })();
 </script>
@@ -1321,4 +1265,3 @@
 
 </body>
 </html>
-
