@@ -713,65 +713,40 @@
 <!-- UNIVERSAL DEMO SESSION (v2) -->
 <script src="/js/bag-demo-session.js"></script>
 
-<!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS -->
+<!-- PRACTICE BALANCES + CONVERTER + PRESETS + LABELS (with hard convert on toggle) -->
 <script>
 (function(){
   const $ = (s)=>document.querySelector(s);
+
   const usdInput   = $('#usdBet');
   const qtyInput   = $('#betQty');
   const unitSpan   = document.querySelector('.unit');
   const curWrap    = $('#curToggle');
   const betLbl     = $('#betLbl');
 
-  // Balances hooks
-  const balBagEl = document.getElementById('balBag');
-  const balXrpEl = document.getElementById('balXrp');
-  const balUsdEl = document.getElementById('balUsd');
+  // Balance labels
+  const balBagEl = $('#balBag');
+  const balXrpEl = $('#balXrp');
+  const balUsdEl = $('#balUsd');
 
-  function selCur(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
-  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—' }; }
-  function pxFor(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
+  function P(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function px(cur){ const p=P(); return cur==='BAG' ? (p.bagUsd||0) : (p.xrpUsd||0); }
+  function sel(){ return curWrap?.querySelector('input[name="betCur"]:checked')?.value || 'XRP'; }
+  function clampUsd(n){ return Math.min(2000, Math.max(0, Number(n)||0)); }
   function fmt(n, max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
-
-  function bagFromUnits(){
-    const qty = Math.max(0, parseFloat(qtyInput?.value||'0'));
-    const cur = selCur();
-    const p = P();
-    if (cur==='BAG') return qty;
-    if (p.bagUsd>0 && p.xrpUsd>0){
-      const bagPerXrp = p.xrpUsd / p.bagUsd;
-      return qty * bagPerXrp;
-    }
-    return 0;
+  function fmtUnits(val, cur){
+    if (cur==='BAG') return String(Math.max(0, Math.floor(val))); // whole BAG
+    const v = Math.max(0, Math.floor((val + 1e-12)*1e6)/1e6);     // 6dp XRP
+    return v.toFixed(6).replace(/\.?0+$/,'');
   }
 
-  function updateUsdFromUnits(){
-    const px=pxFor(selCur());
-    const qty=Math.max(0, parseFloat(qtyInput.value||'0'));
-    const usd = px>0 ? qty*px : 0;
-    document.getElementById('usdBet').value = usd>0 ? usd.toFixed(2) : '';
-    betLbl && (betLbl.textContent = String(qtyInput?.value||'0'));
-    renderBalances();
-  }
-  function updateUnitsFromUsd(){
-    const cur = selCur();
-    const px  = pxFor(cur);
-    const raw = Math.min(2000, Math.max(0, parseFloat(document.getElementById('usdBet').value||'0')));
-    if (!Number.isFinite(raw) || raw<=0 || px<=0) { renderBalances(); return; }
-    const units = (cur==='BAG') ? Math.max(0, Math.floor(raw/px)) : Math.max(0, Math.floor((raw/px + 1e-12) * 1e6) / 1e6);
-    document.getElementById('betQty').value = (cur==='BAG') ? String(units) : units.toFixed(6).replace(/\.?0+$/,'');
-    betLbl && (betLbl.textContent = (cur==='BAG') ? String(units) : String(units));
-    renderBalances();
-  }
-
+  // Session balances (BAG primary; infer XRP from prices if not present)
   function balances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
     const bag = Number(sess.bag)||0;
     let xrp = Number(sess.xrp);
     const { bagUsd, xrpUsd } = P();
-    if (!(xrp > 0)) {
-      xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : 0;
-    }
+    if (!(xrp > 0)) xrp = (bagUsd>0 && xrpUsd>0) ? bag * (bagUsd/xrpUsd) : 0;
     const usd = (bagUsd>0) ? bag * bagUsd : 0;
     return {bag,xrp,usd};
   }
@@ -782,20 +757,85 @@
     if (balUsdEl) balUsdEl.textContent = fmt(usd,2);
   }
 
-  document.getElementById('usdBet')?.addEventListener('input', updateUnitsFromUsd);
-  document.getElementById('betQty')?.addEventListener('input', updateUsdFromUnits);
-  document.getElementById('curToggle')?.addEventListener('change', ()=>{
-    unitSpan.textContent = selCur();
-    updateUsdFromUnits();
+  // From USD -> units (for current currency)
+  function updateUnitsFromUsd(){
+    const cur = sel();
+    const price = px(cur);
+    const usd = clampUsd(parseFloat(usdInput?.value||''));
+    if (!(usd>0) || !(price>0)){
+      if (qtyInput) qtyInput.value = '';
+      betLbl && (betLbl.textContent = '—');
+      renderBalances();
+      return;
+    }
+    const units = usd / price;
+    if (qtyInput) qtyInput.value = fmtUnits(units, cur);
+    betLbl && (betLbl.textContent = qtyInput.value);
+    renderBalances();
+  }
+
+  // From units -> USD (for current currency)
+  function updateUsdFromUnits(){
+    const cur = sel();
+    const price = px(cur);
+    const qty = Math.max(0, parseFloat(qtyInput?.value||''));
+    const usd = (price>0) ? qty * price : 0;
+    if (usdInput) usdInput.value = usd ? usd.toFixed(2) : '';
+    betLbl && (betLbl.textContent = qtyInput.value || '—');
+    renderBalances();
+  }
+
+  // Hard convert both fields when toggling currency
+  let lastCur = sel();
+  unitSpan && (unitSpan.textContent = lastCur);
+
+  function convertOnToggle(oldCur, newCur){
+    const pOld = px(oldCur), pNew = px(newCur);
+
+    // Determine USD value: prefer explicit USD field, otherwise derive from units @ oldCur
+    let usd = parseFloat(usdInput?.value || '');
+    if (!(usd > 0)) {
+      const qty = Math.max(0, parseFloat(qtyInput?.value || '0'));
+      usd = (pOld > 0) ? qty * pOld : 0;
+    }
+    usd = clampUsd(usd);
+
+    // Compute new units from USD for the selected currency
+    let units = 0;
+    if (pNew > 0) units = usd / pNew;
+
+    // Write back to both fields
+    if (usdInput) usdInput.value = usd ? usd.toFixed(2) : '';
+    if (qtyInput) qtyInput.value = fmtUnits(units, newCur);
+    if (betLbl)   betLbl.textContent = qtyInput.value;
+    if (unitSpan) unitSpan.textContent = newCur;
+
+    // Nudge listeners/HUD
+    window.dispatchEvent(new Event('input'));
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+
+  // Events: inputs
+  usdInput?.addEventListener('input', updateUnitsFromUsd);
+  qtyInput?.addEventListener('input', updateUsdFromUnits);
+
+  // Toggle handler with conversion
+  curWrap?.addEventListener('change', ()=>{
+    const newCur = sel();
+    if (newCur === lastCur) return;
+    convertOnToggle(lastCur, newCur);
+    lastCur = newCur;
   });
 
+  // Presets (USD chips)
   (function mountPresets(){
     const row = document.getElementById('usdPresets');
     if (!row) return;
     row.querySelectorAll('button[data-usd]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        const tag = btn.getAttribute('data-usd'); const val = (tag==='2000')?2000:Number(tag||0);
-        document.getElementById('usdBet').value = Number(val).toFixed(2);
+        const tag = btn.getAttribute('data-usd');
+        const val = (tag==='2000')?2000:Number(tag||0);
+        usdInput.value = Number(val).toFixed(2);
         updateUnitsFromUsd();
         row.querySelectorAll('button[data-usd]').forEach(x=>x.classList.remove('selected'));
         btn.classList.add('selected');
@@ -803,12 +843,19 @@
     });
   })();
 
-  // React to live prices + universal session refresh events
-  window.addEventListener('bag:pricesUpdated', ()=>{ updateUsdFromUnits(); renderBalances(); });
+  // React to price updates: reflow amounts using current currency (no currency change)
+  window.addEventListener('bag:pricesUpdated', ()=>{
+    const cur = sel();
+    convertOnToggle(cur, cur);
+    renderBalances();
+  });
+
+  // Session events
   window.addEventListener('bag:hudRefresh', renderBalances);
   window.addEventListener('bag:sessionToppedUp', renderBalances);
   window.addEventListener('bag:sessionSpent', renderBalances);
 
+  // Initial render
   updateUsdFromUnits();
   renderBalances();
 })();
@@ -1185,7 +1232,7 @@
                    : [0.46, 0.28, 0.14, 0.08, 0.04];
         }
         let r = Math.random();
-        for (let i=0;i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
+        for (let i=0;i+w.length && i<w.length;i++){ if ((r-=w[i])<=0) return TIERS[i]; }
         return TIERS[TIERS.length-1];
       }
 
