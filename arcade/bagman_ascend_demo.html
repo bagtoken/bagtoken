@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>BAGMAN : ASCEND</title>
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:linear-gradient(#74b9ff,#dfe6e9);}
+  body{font-family:"Inter",sans-serif;color:#f5f7f4;user-select:none;}
+  canvas{display:block;position:absolute;top:0;left:0;width:100%;height:100%;}
+
+  /* HUD */
+  #hud{
+    position:absolute;top:0;left:0;width:100%;padding:10px 14px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-weight:600;font-size:16px;color:#ffe175;
+    text-shadow:0 0 4px rgba(0,0,0,.5);
+  }
+  #cashOut{
+    background:linear-gradient(180deg,#ffd700,#b89600);
+    color:#020703;border:none;padding:6px 12px;border-radius:6px;
+    font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4);
+  }
+  #controls{position:absolute;bottom:0;left:0;width:100%;display:flex;justify-content:center;padding:18px;}
+  #jumpBtn{
+    background:linear-gradient(180deg,#2fbf6b,#249a55);
+    color:#fff;font-weight:700;border:none;border-radius:50%;
+    width:80px;height:80px;font-size:16px;cursor:pointer;
+    box-shadow:0 4px 10px rgba(0,0,0,.4);
+  }
+  #overlay{
+    position:absolute;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,.85);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;
+    color:#ffe175;font-size:24px;font-weight:700;z-index:5;
+  }
+  #overlay.hidden{display:none;}
+  #overlay button{
+    margin-top:20px;padding:10px 20px;border:none;
+    border-radius:6px;font-weight:700;
+    background:linear-gradient(180deg,#2fbf6b,#249a55);
+    color:#fff;cursor:pointer;
+  }
+</style>
+
+  </head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="hud">
+    <div>
+      <span id="balance">Balance : $2 000 BAG (demo)</span>
+      <span id="stake">Stake : 10 BAG</span>
+      <span id="multiplier">x1.0</span>
+    </div>
+    <button id="cashOut">Cash Out</button>
+  </div>
+
+  <div id="controls">
+    <button id="jumpBtn">ASCEND</button>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div id="overlayText">BAG LOST</div>
+    <button id="restartBtn">Start Ascend</button>
+  </div>
+
+    <audio id="sndJump" src="/arcade/assets/sounds/jump.mp3" preload="auto"></audio>
+  <audio id="sndLand" src="/arcade/assets/sounds/land.mp3" preload="auto"></audio>
+  <audio id="sndFall" src="/arcade/assets/sounds/fall.mp3" preload="auto"></audio>
+  <audio id="sndPerfect" src="/arcade/assets/sounds/perfect.mp3" preload="auto"></audio>
+  <audio id="sndCash" src="/arcade/assets/sounds/cashout.mp3" preload="auto"></audio>
+
+  <script src="/arcade/js/bag-demo-session.js"></script>
+<script src="/arcade/js/bag-stake-wire.js"></script>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+let W,H; function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;}
+window.addEventListener("resize",resize); resize();
+
+/* ---- Assets ---- */
+const bagmanImg = new Image();
+bagmanImg.src = "/arcade/assets/img/bagman.png";
+const sounds = {
+  jump: document.getElementById("sndJump"),
+  land: document.getElementById("sndLand"),
+  fall: document.getElementById("sndFall"),
+  perfect: document.getElementById("sndPerfect"),
+  cash: document.getElementById("sndCash")
+};
+
+/* ---- Game State ---- */
+let gameActive=false, bagman, ledgers=[], velocityY=0, gravity=0.6, jumpPower=18;
+let stake=10, multiplier=1, balance=2000, highestLedger=0;
+
+/* ---- Setup ---- */
+function initGame(){
+  bagman={x:W/2,y:H-150,w:80,h:100,vx:0,vy:0,onLedger:false};
+  ledgers=[]; highestLedger=H-50;
+  for(let i=0;i<8;i++){
+    ledgers.push({x:Math.random()*(W-160)+80,y:H-i*180,w:160,h:20});
+  }
+  multiplier=1;
+  document.getElementById("multiplier").textContent="x"+multiplier.toFixed(1);
+  document.getElementById("overlay").classList.add("hidden");
+  gameActive=true;
+  animate();
+}
+
+/* ---- Jump ---- */
+function jump(){
+  if(!gameActive) return;
+  if(bagman.onLedger){
+    bagman.vy=-jumpPower;
+    bagman.onLedger=false;
+    sounds.jump.currentTime=0; sounds.jump.play();
+  }
+}
+
+/* ---- Collision ---- */
+function checkLedger(){
+  for(let l of ledgers){
+    if(bagman.vy>0 &&
+      bagman.x+bagman.w*0.5>l.x-l.w/2 &&
+      bagman.x-bagman.w*0.5<l.x+l.w/2 &&
+      bagman.y+bagman.h>l.y && bagman.y+bagman.h<l.y+20){
+        bagman.y=l.y-bagman.h;
+        bagman.vy=0;
+        bagman.onLedger=true;
+        if(l.y<highestLedger){
+          highestLedger=l.y;
+          multiplier+=0.1*(multiplier<2?1:0.5);
+          document.getElementById("multiplier").textContent="x"+multiplier.toFixed(1);
+          sounds.land.currentTime=0; sounds.land.play();
+        }
+    }
+  }
+}
+
+/* ---- Render ---- */
+function drawLedger(l){
+  const grd = ctx.createLinearGradient(l.x-l.w/2,l.y,l.x+l.w/2,l.y+l.h);
+  grd.addColorStop(0,"#6d5e00"); grd.addColorStop(1,"#ffd700");
+  ctx.fillStyle=grd;
+  ctx.fillRect(l.x-l.w/2,l.y,l.w,l.h);
+  ctx.strokeStyle="#b89600"; ctx.lineWidth=2; ctx.strokeRect(l.x-l.w/2,l.y,l.w,l.h);
+  ctx.font="bold 18px Inter"; ctx.fillStyle="#020703";
+  ctx.textAlign="center"; ctx.fillText("$BAG",l.x,l.y+16);
+}
+
+/* ---- Loop ---- */
+function animate(){
+  if(!gameActive) return;
+  ctx.clearRect(0,0,W,H);
+  bagman.vy+=gravity;
+  bagman.y+=bagman.vy;
+  checkLedger();
+
+  // camera scroll
+  if(bagman.y< H/2){
+    const diff = H/2 - bagman.y;
+    bagman.y=H/2;
+    for(let l of ledgers){ l.y+=diff; }
+    if(ledgers[ledgers.length-1].y>120){
+      ledgers.push({x:Math.random()*(W-160)+80,y:ledgers[ledgers.length-1].y-180,w:160,h:20});
+      if(ledgers.length>20) ledgers.shift();
+    }
+  }
+
+  // Draw ledgers
+  for(let l of ledgers){ drawLedger(l); }
+
+  // Draw Bagman
+  ctx.save();
+  ctx.translate(bagman.x,bagman.y);
+  ctx.drawImage(bagmanImg,-bagman.w/2,-bagman.h,bagman.w,bagman.h);
+  ctx.restore();
+
+  // Fall check
+  if(bagman.y>H+200){
+    sounds.fall.play();
+    lose();
+    return;
+  }
+  requestAnimationFrame(animate);
+}
+
+/* ---- Lose / Cashout ---- */
+function lose(){
+  gameActive=false;
+  balance-=stake;
+  document.getElementById("balance").textContent="Balance : "+balance.toFixed(0)+" BAG (demo)";
+  document.getElementById("overlayText").textContent="LEDGER LOST";
+  document.getElementById("overlay").classList.remove("hidden");
+}
+function cashOut(){
+  if(!gameActive) return;
+  sounds.cash.play();
+  gameActive=false;
+  const win=stake*multiplier;
+  balance+=win;
+  document.getElementById("balance").textContent="Balance : "+balance.toFixed(0)+" BAG (demo)";
+  document.getElementById("overlayText").textContent="YOU ASCENDED +"+win.toFixed(1)+" BAG";
+  document.getElementById("overlay").classList.remove("hidden");
+}
+
+  /* ---- Events ---- */
+document.getElementById("jumpBtn").addEventListener("click",jump);
+window.addEventListener("keydown",e=>{if(e.code==="Space"||e.code==="ArrowUp")jump();});
+document.getElementById("restartBtn").addEventListener("click",initGame);
+document.getElementById("cashOut").addEventListener("click",cashOut);
+
+/* ---- Start ---- */
+bagmanImg.onload=()=>{initGame();}
+</script>
+</body>
+</html>
