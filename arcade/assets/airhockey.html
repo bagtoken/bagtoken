@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- =========================================================
+       [HEAD] Meta, Title, Theme, Scripts
+  ========================================================= -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <title>$BAG Air Hockey — Play to Earn</title>
+
+  <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+  <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+  <script>window.__BAG_FORCE_DEMO = true;</script>
+
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      height:100%;
+      background:radial-gradient(circle at center,#021107 0%,#000 100%);
+      color:#ffe175;
+      font-family:"Orbitron",sans-serif;
+      overflow:hidden;
+      user-select:none;
+    }
+
+    #hud{
+      position:absolute;
+      top:10px;
+      left:0;right:0;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:0 20px;
+      font-size:18px;
+      z-index:20;
+    }
+
+    #modeSelect{
+      display:flex;
+      gap:10px;
+    }
+
+    button{
+      background:#0b1b13;
+      color:#ffe175;
+      border:1px solid #2fbf6b;
+      padding:6px 12px;
+      border-radius:6px;
+      font-weight:600;
+      cursor:pointer;
+    }
+    button.active{
+      background:#2fbf6b;
+      color:#000;
+    }
+
+    #gameCanvas{
+      display:block;
+      margin:0 auto;
+      background:linear-gradient(180deg,#052010 0%,#04150c 100%);
+      border:3px solid #2fbf6b;
+      border-radius:16px;
+      box-shadow:0 0 25px rgba(47,191,107,0.5);
+    }
+
+    #overlay{
+      position:absolute;
+      top:0;left:0;right:0;bottom:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:48px;
+      color:#ffe175;
+      background:rgba(0,0,0,0.6);
+      z-index:30;
+      opacity:0;
+      transition:opacity 0.3s;
+    }
+    #overlay.show{opacity:1;}
+
+    #scoreboard{
+      position:absolute;
+      bottom:10px;
+      left:0;right:0;
+      text-align:center;
+      font-size:24px;
+      color:#ffe175;
+    }
+  </style>
+</head>
+<body>
+  <!-- =========================================================
+       [HUD]
+  ========================================================= -->
+  <div id="hud">
+    <div id="modeSelect">
+      <button id="cpuBtn" class="active">CPU</button>
+      <button id="pvpBtn">Player 2</button>
+    </div>
+    <div id="timer">90</div>
+    <button id="startBtn">Start Match</button>
+  </div>
+
+  <!-- =========================================================
+       [CANVAS]
+  ========================================================= -->
+  <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+  <!-- =========================================================
+       [OVERLAY + SCORE]
+  ========================================================= -->
+  <div id="overlay">GOAL!</div>
+  <div id="scoreboard">Player 1 – 0 : 0 – Player 2</div>
+
+  <!-- =========================================================
+       [SCRIPTS] — Matter.js + Game Logic
+  ========================================================= -->
+  <script>
+  const { Engine, Render, Runner, World, Bodies, Body, Events } = Matter;
+  const canvas = document.getElementById("gameCanvas");
+  const engine = Engine.create();
+  const world = engine.world;
+  const render = Render.create({
+    canvas: canvas,
+    engine: engine,
+    options:{
+      width:900,height:500,
+      wireframes:false,
+      background:'transparent'
+    }
+  });
+
+  // Walls (with slight padding)
+  const wallOpts={isStatic:true,render:{fillStyle:'#062b13'}};
+  const walls=[
+    Bodies.rectangle(450,-5,900,10,wallOpts),
+    Bodies.rectangle(450,505,900,10,wallOpts),
+    Bodies.rectangle(-5,250,10,500,wallOpts),
+    Bodies.rectangle(905,250,10,500,wallOpts)
+  ];
+  World.add(world,walls);
+
+  // Goals
+  const goalWidth=180,goalHeight=20;
+  const goalTop={x:450,y:10,w:goalWidth,h:goalHeight};
+  const goalBottom={x:450,y:490,w:goalWidth,h:goalHeight};
+
+  // Paddles + Puck
+  const paddleOpts={density:1,restitution:0.9,frictionAir:0.08};
+  const puckOpts={density:0.02,restitution:0.98,frictionAir:0.01};
+  const paddle1=Bodies.circle(450,80,30,{...paddleOpts,render:{fillStyle:'#ffe175'}});
+  const paddle2=Bodies.circle(450,420,30,{...paddleOpts,render:{fillStyle:'#2fbf6b'}});
+  const puck=Bodies.circle(450,250,20,{...puckOpts,render:{fillStyle:'#00ff8c'}});
+
+  World.add(world,[paddle1,paddle2,puck]);
+
+  Render.run(render);
+  const runner=Runner.create();
+  Runner.run(runner,engine);
+
+  let scores=[0,0];
+  const overlay=document.getElementById("overlay");
+  const scoreText=document.getElementById("scoreboard");
+  const timer=document.getElementById("timer");
+  let timeLeft=90;
+  let interval=null;
+  let gameActive=false;
+  let cpuMode=true;
+
+  // Toggle CPU / PVP
+  document.getElementById("cpuBtn").onclick=()=>{cpuMode=true;cpuBtn.classList.add('active');pvpBtn.classList.remove('active');};
+  document.getElementById("pvpBtn").onclick=()=>{cpuMode=false;pvpBtn.classList.add('active');cpuBtn.classList.remove('active');};
+
+  // Start
+  document.getElementById("startBtn").onclick=()=>{
+    if(gameActive)return;
+    scores=[0,0];timeLeft=90;updateScore();timer.textContent=timeLeft;
+    Body.setPosition(puck,{x:450,y:250});Body.setVelocity(puck,{x:0,y:0});
+    gameActive=true;
+    interval=setInterval(()=>{timeLeft--;timer.textContent=timeLeft;if(timeLeft<=0)endGame();},1000);
+  };
+
+  function updateScore(){
+    scoreText.textContent=`Player 1 – ${scores[0]} : ${scores[1]} – Player 2`;
+  }
+
+  function goalScored(player){
+    overlay.classList.add('show');
+    overlay.textContent='GOAL!';
+    setTimeout(()=>overlay.classList.remove('show'),600);
+    if(player===1)scores[0]++;else scores[1]++;
+    updateScore();
+    Body.setPosition(puck,{x:450,y:250});
+    Body.setVelocity(puck,{x:0,y:0});
+  }
+
+  function endGame(){
+    clearInterval(interval);gameActive=false;
+    overlay.textContent='GAME OVER';
+    overlay.classList.add('show');
+  }
+
+  // Collision for goals
+  Events.on(engine,'afterUpdate',()=>{
+    if(!gameActive)return;
+    if(puck.position.y<goalTop.y+10 && Math.abs(puck.position.x-450)<goalWidth/2){goalScored(2);}
+    if(puck.position.y>goalBottom.y-10 && Math.abs(puck.position.x-450)<goalWidth/2){goalScored(1);}
+  });
+
+  // Mouse control for Player 1
+  const mouse={x:450,y:80};
+  canvas.addEventListener('mousemove',e=>{
+    const rect=canvas.getBoundingClientRect();
+    mouse.x=e.clientX-rect.left;
+    mouse.y=e.clientY-rect.top;
+  });
+
+  // Keyboard for Player 2 (PVP mode)
+  const keys={ArrowUp:false,ArrowDown:false};
+  window.addEventListener('keydown',e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=true;});
+  window.addEventListener('keyup',e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=false;});
+
+  // Game Loop
+  Events.on(engine,'beforeUpdate',()=>{
+    if(!gameActive)return;
+
+    // Player 1 follow mouse (limit to top half)
+    const targetY=Math.min(mouse.y,250-30);
+    Body.setPosition(paddle1,{x:mouse.x,y:targetY});
+
+    if(cpuMode){
+      // Simple CPU AI: move toward puck slowly
+      const dy=(puck.position.y>paddle2.position.y)?2:-2;
+      const dx=(puck.position.x-paddle2.position.x)*0.05;
+      Body.translate(paddle2,{x:dx,y:dy});
+    }else{
+      // Player 2 keyboard control
+      if(keys.ArrowUp)Body.translate(paddle2,{x:0,y:-5});
+      if(keys.ArrowDown)Body.translate(paddle2,{x:0,y:5});
+    }
+
+    // Keep paddle2 in bottom half
+    if(paddle2.position.y<250)paddle2.position.y=250;
+
+  });
+  </script>
+</body>
+</html>
