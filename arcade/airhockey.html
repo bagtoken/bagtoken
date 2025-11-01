@@ -2,233 +2,156 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="format-detection" content="telephone=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>$BAG Air Hockey — Arcade P2E</title>
-
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script>window.__BAG_FORCE_DEMO=true;</script>
-
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{
-  height:100%;
-  background:radial-gradient(circle at center,#021107 0%,#000 100%);
-  color:#ffe175;
-  font-family:"Orbitron",sans-serif;
-  overflow:hidden;user-select:none;
-}
-
-/* ---------- HUD ---------- */
-#hud{
-  position:absolute;top:8px;left:0;right:0;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:0 12px;font-size:16px;z-index:30;
-}
-button{
-  background:#0b1b13;color:#ffe175;border:1px solid #2fbf6b;
-  padding:6px 10px;border-radius:6px;font-weight:600;cursor:pointer;
-}
-button.active{background:#2fbf6b;color:#000;}
-#modeSelect{display:flex;gap:6px;}
-#playToggle{
-  display:flex;align-items:center;gap:6px;
-  background:#0b1b13;border:1px solid #2fbf6b;border-radius:20px;
-  padding:4px 8px;font-size:13px;
-}
-#playToggle span{cursor:pointer;}
-#playToggle .active{color:#000;background:#2fbf6b;padding:2px 6px;border-radius:12px;}
-
-/* ---------- GAME ---------- */
-#gameContainer{
-  position:absolute;top:0;left:0;right:0;bottom:0;
-  display:flex;align-items:center;justify-content:center;
-}
-#gameCanvas{
-  background:linear-gradient(180deg,#052010 0%,#04150c 100%);
-  border:3px solid #2fbf6b;border-radius:12px;
-  box-shadow:0 0 25px rgba(47,191,107,0.5);
-  touch-action:none;
-}
-
-/* ---------- INFO ---------- */
-#balances{
-  position:absolute;top:50px;left:12px;z-index:25;text-align:left;
-  font-size:13px;line-height:1.3;color:#ffe175;
-}
-#balances .label{color:#2fbf6b;}
-#reward{
-  position:absolute;top:50px;right:12px;font-size:13px;z-index:25;
-  color:#ffe175;text-align:right;
-}
-#scoreboard{
-  position:absolute;bottom:10px;left:0;right:0;text-align:center;
-  font-size:18px;color:#ffe175;
-}
-#overlay{
-  position:absolute;top:0;left:0;right:0;bottom:0;
-  display:flex;align-items:center;justify-content:center;
-  font-size:42px;color:#ffe175;background:rgba(0,0,0,0.6);
-  z-index:40;opacity:0;transition:opacity .3s;
-}
-#overlay.show{opacity:1;}
+html,body{margin:0;height:100%;overflow:hidden;background:#021107;color:#ffe175;
+  font-family:"Orbitron",sans-serif;user-select:none}
+canvas{touch-action:none;display:block;margin:auto;border:3px solid #2fbf6b;
+  border-radius:14px;box-shadow:0 0 20px rgba(47,191,107,.5)}
+#hud{position:fixed;top:10px;left:0;right:0;display:flex;justify-content:space-between;
+  align-items:center;padding:0 14px;font-size:16px;z-index:20}
+button{background:#0b1b13;color:#ffe175;border:1px solid #2fbf6b;
+  padding:6px 10px;border-radius:6px;font-weight:600;cursor:pointer}
+button.active{background:#2fbf6b;color:#000}
+#playToggle{display:flex;gap:6px;background:#0b1b13;border:1px solid #2fbf6b;
+  border-radius:20px;padding:4px 8px;font-size:13px}
+#playToggle span{cursor:pointer}
+#playToggle .active{background:#2fbf6b;color:#000;padding:2px 6px;border-radius:12px}
+#scoreboard{position:fixed;bottom:8px;left:0;right:0;text-align:center;font-size:18px}
+#overlay{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.6);color:#ffe175;font-size:42px;
+  z-index:50;opacity:0;transition:.3s}
+#overlay.show{opacity:1}
 </style>
 </head>
-
 <body>
-  <div id="hud">
-    <div id="modeSelect">
-      <button id="cpuBtn" class="active">CPU</button>
-      <button id="pvpBtn">Player 2</button>
-    </div>
-    <div id="playToggle">
-      <span id="practiceBtn" class="active">Practice</span>
-      <span id="liveBtn">Live</span>
-    </div>
-    <div>
-      <span id="timer">90</span>s <button id="startBtn">Start</button>
-    </div>
+<div id="hud">
+  <div>
+    <button id="cpuBtn" class="active">CPU</button>
+    <button id="pvpBtn">Player 2</button>
   </div>
-
-  <div id="balances">
-    <div><span class="label">Demo BAG:</span> <span id="demoBag">0</span></div>
-    <div><span class="label">Demo XRP (est.):</span> <span id="demoXrp">0</span></div>
+  <div id="playToggle">
+    <span id="practiceBtn" class="active">Practice</span>
+    <span id="liveBtn">Live</span>
   </div>
-  <div id="reward">Reward Potential: <span id="rewardAmt">+0 BAG</span></div>
-
-  <div id="gameContainer">
-    <canvas id="gameCanvas" width="900" height="500"></canvas>
+  <div>
+    <span id="timer">90</span>s <button id="startBtn">Start</button>
   </div>
-  <div id="overlay">GOAL!</div>
-  <div id="scoreboard">Player 1 – 0 : 0 – Player 2</div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<div id="overlay">GOAL!</div>
+<div id="scoreboard">Player 1 – 0 : 0 – Player 2</div>
 
 <script>
 const {Engine,Render,Runner,World,Bodies,Body,Events}=Matter;
+const engine=Engine.create(),world=engine.world;
 const canvas=document.getElementById("gameCanvas");
-const engine=Engine.create();const world=engine.world;
-const render=Render.create({canvas,engine,options:{wireframes:false,background:"transparent"}});
+const render=Render.create({canvas,engine,options:{wireframes:false,background:"#04150c"}});
 Render.run(render);Runner.run(Runner.create(),engine);
 
-/* --- responsive canvas --- */
-function resizeCanvas(){
-  const maxW=window.innerWidth-20,maxH=window.innerHeight-100;
-  const aspect=900/500;
-  let w=maxW,h=w/aspect;
-  if(h>maxH){h=maxH;w=h*aspect;}
+/* size / scaling */
+function setSize(){
+  const w=window.innerWidth*0.95,h=window.innerHeight*0.75;
   canvas.width=w;canvas.height=h;
+  render.canvas.width=w;render.canvas.height=h;
   render.options.width=w;render.options.height=h;
+  return {w,h};
 }
-resizeCanvas();window.addEventListener("resize",resizeCanvas);
+let {w:W,h:H}=setSize();
+window.addEventListener("resize",()=>{({w:W,h:H}=setSize());resetObjects();});
 
-/* --- walls & entities --- */
-const wallOpt={isStatic:true,render:{visible:false}};
-let W=900,H=500;
-function makeWalls(){
-  W=render.options.width;H=render.options.height;
-  const pad=5;
-  return[
-    Bodies.rectangle(W/2,-pad,W,10,wallOpt),
-    Bodies.rectangle(W/2,H+pad,W,10,wallOpt),
-    Bodies.rectangle(-pad,H/2,10,H,wallOpt),
-    Bodies.rectangle(W+pad,H/2,10,H,wallOpt)
-  ];
+/* sounds */
+const hitSound=new Audio("/arcade/assets/sounds/hit.mp3");
+const goalSound=new Audio("/arcade/assets/sounds/goal.mp3");
+const startSound=new Audio("/arcade/assets/sounds/start.mp3");
+
+/* objects */
+let paddle1,paddle2,puck;const wallOpt={isStatic:true,render:{visible:false}};
+function resetObjects(){
+  World.clear(world,false);
+  World.add(world,[
+    Bodies.rectangle(W/2,-5,W,10,wallOpt),
+    Bodies.rectangle(W/2,H+5,W,10,wallOpt),
+    Bodies.rectangle(-5,H/2,10,H,wallOpt),
+    Bodies.rectangle(W+5,H/2,10,H,wallOpt)
+  ]);
+  paddle1=Bodies.circle(W/2,H*0.15,H*0.06,{restitution:0.9,frictionAir:0.1,render:{fillStyle:"#ffe175"}});
+  paddle2=Bodies.circle(W/2,H*0.85,H*0.06,{restitution:0.9,frictionAir:0.1,render:{fillStyle:"#2fbf6b"}});
+  puck=Bodies.circle(W/2,H/2,H*0.04,{restitution:0.98,frictionAir:0.01,render:{fillStyle:"#00ff8c"}});
+  World.add(world,[paddle1,paddle2,puck]);
 }
-World.add(world,makeWalls());
+resetObjects();
 
-function newCircle(x,y,r,color,rest=.9,air=.05){
-  return Bodies.circle(x,y,r,{density:1,restitution:rest,frictionAir:air,render:{fillStyle:color}});
-}
-const paddle1=newCircle(450,80,30,"#ffe175");
-const paddle2=newCircle(450,420,30,"#2fbf6b");
-const puck=newCircle(450,250,20,"#00ff8c",.98,.01);
-World.add(world,[paddle1,paddle2,puck]);
-
-/* --- state --- */
+/* state */
 let scores=[0,0],cpuMode=true,gameActive=false,timeLeft=90,timerInt=null;
-const overlay=document.getElementById("overlay"),
-      scoreText=document.getElementById("scoreboard"),
-      timer=document.getElementById("timer");
+const overlay=document.getElementById("overlay"),timer=document.getElementById("timer"),scoreText=document.getElementById("scoreboard");
 
-/* --- controls --- */
-const cpuBtn=document.getElementById("cpuBtn"),
-      pvpBtn=document.getElementById("pvpBtn");
+/* controls */
+const cpuBtn=document.getElementById("cpuBtn"),pvpBtn=document.getElementById("pvpBtn");
 cpuBtn.onclick=()=>{cpuMode=true;cpuBtn.classList.add("active");pvpBtn.classList.remove("active");};
 pvpBtn.onclick=()=>{cpuMode=false;pvpBtn.classList.add("active");cpuBtn.classList.remove("active");};
 
-const practiceBtn=document.getElementById("practiceBtn"),
-      liveBtn=document.getElementById("liveBtn");
-let live=false;
+const practiceBtn=document.getElementById("practiceBtn"),liveBtn=document.getElementById("liveBtn");
+let live=false;function updateReward(){}; // placeholder
 practiceBtn.onclick=()=>{live=false;practiceBtn.classList.add("active");liveBtn.classList.remove("active");updateReward();};
 liveBtn.onclick=()=>{live=true;liveBtn.classList.add("active");practiceBtn.classList.remove("active");updateReward();};
 
-/* --- sounds --- */
-const sndHit=new Audio("/arcade/assets/sounds/hit.mp3");
-const sndGoal=new Audio("/arcade/assets/sounds/goal.mp3");
-const sndStart=new Audio("/arcade/assets/sounds/start.mp3");
-
-/* --- start --- */
+/* start */
 document.getElementById("startBtn").onclick=()=>{
   if(gameActive)return;
   scores=[0,0];updateScore();
   Body.setPosition(puck,{x:W/2,y:H/2});Body.setVelocity(puck,{x:0,y:0});
   timeLeft=90;timer.textContent=timeLeft;gameActive=true;
-  sndStart.currentTime=0;sndStart.play();
+  startSound.currentTime=0;startSound.play();
+  clearInterval(timerInt);
   timerInt=setInterval(()=>{timeLeft--;timer.textContent=timeLeft;if(timeLeft<=0)endGame();},1000);
 };
 
-/* --- gameplay --- */
 function updateScore(){scoreText.textContent=`Player 1 – ${scores[0]} : ${scores[1]} – Player 2`; }
 function goalScored(p){
-  sndGoal.currentTime=0;sndGoal.play();
+  goalSound.currentTime=0;goalSound.play();
   overlay.textContent="GOAL!";overlay.classList.add("show");
   setTimeout(()=>overlay.classList.remove("show"),500);
-  if(p===1)scores[0]++;else scores[1]++;
-  updateScore();
+  if(p===1)scores[0]++;else scores[1]++;updateScore();
   Body.setPosition(puck,{x:W/2,y:H/2});Body.setVelocity(puck,{x:0,y:0});
 }
 function endGame(){
   clearInterval(timerInt);gameActive=false;
-  let result="DRAW";
-  if(scores[0]>scores[1])result="YOU WIN!";
-  else if(scores[1]>scores[0])result="YOU LOSE!";
+  let result="DRAW";if(scores[0]>scores[1])result="YOU WIN!";else if(scores[1]>scores[0])result="YOU LOSE!";
   overlay.textContent=result;overlay.classList.add("show");
 }
 
-/* --- collisions --- */
+/* collisions */
 Events.on(engine,"collisionStart",e=>{
   if(!gameActive)return;
-  for(const pair of e.pairs)
-    if(pair.bodyA===puck||pair.bodyB===puck){sndHit.currentTime=0;sndHit.play();}
+  for(const p of e.pairs)if(p.bodyA===puck||p.bodyB===puck){hitSound.currentTime=0;hitSound.play();}
 });
 Events.on(engine,"afterUpdate",()=>{
   if(!gameActive)return;
-  if(puck.position.y<20 && Math.abs(puck.position.x-W/2)<W*0.1)goalScored(2);
-  if(puck.position.y>H-20 && Math.abs(puck.position.x-W/2)<W*0.1)goalScored(1);
+  if(puck.position.y<15 && Math.abs(puck.position.x-W/2)<W*0.12)goalScored(2);
+  if(puck.position.y>H-15 && Math.abs(puck.position.x-W/2)<W*0.12)goalScored(1);
 });
 
-/* --- input --- */
-const mouse={x:W/2,y:H/4};
+/* input */
+const mouse={x:W/2,y:H*0.25};
 canvas.addEventListener("mousemove",e=>{
   const r=canvas.getBoundingClientRect();
-  mouse.x=(e.clientX-r.left)/r.width*W;
-  mouse.y=(e.clientY-r.top)/r.height*H;
+  mouse.x=(e.clientX-r.left)/r.width*W;mouse.y=(e.clientY-r.top)/r.height*H;
 });
 canvas.addEventListener("touchmove",e=>{
   const t=e.touches[0],r=canvas.getBoundingClientRect();
-  mouse.x=(t.clientX-r.left)/r.width*W;
-  mouse.y=(t.clientY-r.top)/r.height*H;
-}, {passive:false});
-
+  mouse.x=(t.clientX-r.left)/r.width*W;mouse.y=(t.clientY-r.top)/r.height*H;
+},{passive:false});
 const keys={ArrowUp:false,ArrowDown:false};
 addEventListener("keydown",e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=true;});
 addEventListener("keyup",e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=false;});
 
 Events.on(engine,"beforeUpdate",()=>{
   if(!gameActive)return;
-  const limit=H*0.45;
-  const y=Math.min(mouse.y,limit);
-  Body.setPosition(paddle1,{x:mouse.x,y});
+  Body.setPosition(paddle1,{x:mouse.x,y:Math.min(mouse.y,H/2-20)});
   if(cpuMode){
     const dy=(puck.position.y>paddle2.position.y)?2:-2;
     const dx=(puck.position.x-paddle2.position.x)*0.05;
@@ -239,19 +162,6 @@ Events.on(engine,"beforeUpdate",()=>{
   }
   if(paddle2.position.y<H/2)paddle2.position.y=H/2;
 });
-
-/* --- demo balances --- */
-let demoBag=1000,demoXrp=10;
-const bagEl=document.getElementById("demoBag"),xrpEl=document.getElementById("demoXrp");
-function updateDemo(){
-  bagEl.textContent=demoBag.toFixed(2);
-  xrpEl.textContent=demoXrp.toFixed(2);
-}
-function updateReward(){
-  const base=live?50:5;
-  document.getElementById("rewardAmt").textContent=`+${base} BAG`;
-}
-updateReward();updateDemo();
 </script>
 </body>
 </html>
