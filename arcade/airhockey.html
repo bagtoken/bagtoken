@@ -7,31 +7,24 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#021107;overflow:hidden;}
-canvas{display:block;margin:0 auto;}
+canvas{display:block;margin:auto;}
 </style>
 </head>
 <body>
 <script>
-const config = {
-  type: Phaser.AUTO,
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 1024,
-    height: 1536
-  },
+const config={
+  type:Phaser.AUTO,
+  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536},
   backgroundColor:'#021107',
   physics:{default:'arcade',arcade:{debug:false,fps:60}},
   scene:{preload,create,update}
 };
-
-let table,puck,player,cpu,scoreText;
-let scorePlayer=0,scoreCPU=0;
-let playerPointer={x:0,y:0};
+let puck,player,cpu,scoreText,scorePlayer=0,scoreCPU=0;
+let playerPrev={x:0,y:0};
 
 const game=new Phaser.Game(config);
 
-/* ---------- PRELOAD ---------- */
+/* ---------------- PRELOAD ---------------- */
 function preload(){
   this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
@@ -39,93 +32,86 @@ function preload(){
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 }
 
-/* ---------- CREATE ---------- */
+/* ---------------- CREATE ---------------- */
 function create(){
-  const w=this.scale.width,h=this.scale.height;
-  const cx=w/2,cy=h/2;
+  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
 
-  table=this.add.image(cx,cy,'table').setDisplaySize(w,h);
+  this.add.image(cx,cy,'table').setDisplaySize(w,h);
+  this.physics.world.setBounds(90,80,w-180,h-160); // inside rails
 
-  // create puck + paddles
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  puck.body.setCircle(puck.width*0.035); // correct scaled radius
-  puck.setCollideWorldBounds(true).setBounce(0.95).setDamping(true).setDrag(0.99,0.99);
-  puck.setMaxVelocity(600);
+  puck.setCollideWorldBounds(true).setBounce(0.98).setDamping(true).setDrag(0.99,0.99);
 
   player=this.physics.add.image(cx,h*0.9,'paddle_gold').setScale(0.1);
-  player.body.setCircle(player.width*0.05);
-  player.setImmovable(true);
-
   cpu=this.physics.add.image(cx,h*0.1,'paddle_green').setScale(0.1);
-  cpu.body.setCircle(cpu.width*0.05);
+
+  player.setCollideWorldBounds(true);
+  cpu.setCollideWorldBounds(true);
+  player.setImmovable(true);
   cpu.setImmovable(true);
 
-  // world bounds (slightly inside table)
-  this.physics.world.setBounds(60,40,w-120,h-80,true,true,true,true);
+  this.physics.add.collider(puck,player,hitPaddle,null,this);
+  this.physics.add.collider(puck,cpu,hitPaddle,null,this);
 
-  // colliders
-  this.physics.add.collider(puck,player,onHit,null,this);
-  this.physics.add.collider(puck,cpu,onHit,null,this);
-
-  // pointer control
   this.input.on('pointermove',p=>{
-    playerPointer.x=p.x; playerPointer.y=p.y;
+    if(p.y>h/2){
+      player.x=Phaser.Math.Clamp(p.x,120,w-120);
+      player.y=Phaser.Math.Clamp(p.y,h/2+100,h-100);
+    }
   });
 
-  // score display
   scoreText=this.add.text(cx,40,'0 - 0',{
-    fontFamily:'Orbitron',
-    fontSize:'48px',
-    color:'#ffe175',
-    stroke:'#2fbf6b',
-    strokeThickness:3
+    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
+    stroke:'#2fbf6b',strokeThickness:3
   }).setOrigin(0.5,0);
 
   resetPuck.call(this);
 }
 
-/* ---------- COLLISION REACTION ---------- */
-function onHit(puck,paddle){
+/* ---------------- COLLISION ---------------- */
+function hitPaddle(puck,paddle){
+  // direction from paddle → puck
   const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
   const nx=dx/dist, ny=dy/dist;
 
-  // approximate paddle velocity from its last move delta
-  const speed=paddle.lastMoveSpeed||300;
-  const impulse=Phaser.Math.Clamp(speed*1.3,200,700);
-  puck.body.velocity.x = nx*impulse;
-  puck.body.velocity.y = ny*impulse;
+  // paddle velocity (how fast it moved since last frame)
+  const vx=paddle.x-(paddle.prevX||paddle.x);
+  const vy=paddle.y-(paddle.prevY||paddle.y);
+  const speed=Math.sqrt(vx*vx+vy*vy)*50;
+
+  const force=Phaser.Math.Clamp(speed,200,800);
+  puck.body.velocity.x=nx*force;
+  puck.body.velocity.y=ny*force;
 }
 
-/* ---------- UPDATE ---------- */
+/* ---------------- UPDATE ---------------- */
 function update(){
   const w=this.scale.width,h=this.scale.height;
 
-  // --- Player movement with interpolation (adds velocity) ---
-  const targetX=Phaser.Math.Clamp(playerPointer.x,80,w-80);
-  const targetY=Phaser.Math.Clamp(playerPointer.y,h/2+80,h-80);
-  const dx=targetX-player.x, dy=targetY-player.y;
-  player.lastMoveSpeed=Math.sqrt(dx*dx+dy*dy)*3; // used in impulse
-  player.x+=dx*0.3;
-  player.y+=dy*0.3;
+  // store paddle position each frame for velocity calc
+  player.prevX=player.x;
+  player.prevY=player.y;
+  cpu.prevX=cpu.x;
+  cpu.prevY=cpu.y;
 
-  // --- CPU AI ---
-  cpu.x+=(puck.x-cpu.x)*0.05;
-  if(puck.y<h/2) cpu.y+=(puck.y-cpu.y)*0.04;
-  cpu.y=Phaser.Math.Clamp(cpu.y,80,h/2-80);
+  // CPU AI
+  cpu.x+=(puck.x-cpu.x)*0.08;
+  if(puck.y<h/2) cpu.y+=(puck.y-cpu.y)*0.05;
+  cpu.y=Phaser.Math.Clamp(cpu.y,120,h/2-120);
 
-  // --- Goal detection ---
-  const goalW=250;
-  if(puck.y<60 && Math.abs(puck.x-w/2)<goalW/2){scorePlayer++;resetPuck.call(this,'player');}
-  if(puck.y>h-60 && Math.abs(puck.x-w/2)<goalW/2){scoreCPU++;resetPuck.call(this,'cpu');}
+  // goals
+  const goalWidth=250;
+  if(puck.y<100 && Math.abs(puck.x-w/2)<goalWidth/2){scorePlayer++;resetPuck.call(this,'player');}
+  if(puck.y>h-100 && Math.abs(puck.x-w/2)<goalWidth/2){scoreCPU++;resetPuck.call(this,'cpu');}
 }
 
-/* ---------- RESET PUCK ---------- */
+/* ---------------- RESET PUCK ---------------- */
 function resetPuck(scoredBy){
   const w=this.scale.width,h=this.scale.height;
   puck.setPosition(w/2,h/2);
   const angle=Phaser.Math.Between(25,155)*(Phaser.Math.Between(0,1)?1:-1);
-  const speed=Phaser.Math.Between(280,360);
+  const speed=Phaser.Math.Between(300,400);
   const vx=Math.cos(angle*Math.PI/180)*speed;
   const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
   puck.setVelocity(vx,vy);
