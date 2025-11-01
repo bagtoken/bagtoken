@@ -6,8 +6,7 @@
   <meta name="format-detection" content="telephone=no">
   <title>$BAG Air Hockey — Arcade P2E</title>
 
-  <!-- XRPL + Matter -->
-  <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+  <!-- Matter.js -->
   <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
   <script>window.__BAG_FORCE_DEMO = true;</script>
 
@@ -16,7 +15,10 @@
     html,body{
       height:100%;
       background:radial-gradient(circle at center,#021107 0%,#000 100%);
-      color:#ffe175;font-family:"Orbitron",sans-serif;overflow:hidden;user-select:none;
+      color:#ffe175;
+      font-family:"Orbitron",sans-serif;
+      overflow:hidden;
+      user-select:none;
     }
 
     /* HUD */
@@ -41,17 +43,19 @@
     #playToggle span{cursor:pointer;}
     #playToggle .active{color:#000;background:#2fbf6b;padding:2px 6px;border-radius:12px;}
 
-    /* Canvas + Score */
+    /* Game Area */
     #gameCanvas{
-      display:block;margin:0 auto;background:linear-gradient(180deg,#052010 0%,#04150c 100%);
-      border:3px solid #2fbf6b;border-radius:16px;box-shadow:0 0 25px rgba(47,191,107,0.5);
+      display:block;margin:0 auto;
+      background:linear-gradient(180deg,#052010 0%,#04150c 100%);
+      border:3px solid #2fbf6b;border-radius:16px;
+      box-shadow:0 0 25px rgba(47,191,107,0.5);
     }
+
+    /* Overlay + Score */
     #scoreboard{
       position:absolute;bottom:12px;left:0;right:0;text-align:center;
       font-size:22px;color:#ffe175;letter-spacing:1px;
     }
-
-    /* Overlay */
     #overlay{
       position:absolute;top:0;left:0;right:0;bottom:0;
       display:flex;align-items:center;justify-content:center;
@@ -60,7 +64,7 @@
     }
     #overlay.show{opacity:1;}
 
-    /* Demo Balances */
+    /* Balances + Reward */
     #balances{
       position:absolute;top:55px;left:20px;z-index:25;text-align:left;
       font-size:14px;line-height:1.4;color:#ffe175;
@@ -104,7 +108,7 @@
   <div id="overlay">GOAL!</div>
   <div id="scoreboard">Player 1 – 0 : 0 – Player 2</div>
 
-  <!-- Matter JS Logic -->
+  <!-- Core Script -->
   <script>
   const { Engine, Render, Runner, World, Bodies, Body, Events } = Matter;
   const canvas=document.getElementById("gameCanvas");
@@ -112,7 +116,7 @@
   const render=Render.create({canvas,engine,options:{width:900,height:500,wireframes:false,background:'transparent'}});
   Render.run(render);Runner.run(Runner.create(),engine);
 
-  // Table bounds
+  /* Table bounds */
   const wallOpt={isStatic:true,render:{fillStyle:'#062b13'}};
   World.add(world,[
     Bodies.rectangle(450,-5,900,10,wallOpt),
@@ -121,40 +125,48 @@
     Bodies.rectangle(905,250,10,500,wallOpt)
   ]);
 
-  // Elements
+  /* Entities */
   const paddle1=Bodies.circle(450,80,30,{density:1,restitution:.9,frictionAir:.08,render:{fillStyle:'#ffe175'}});
   const paddle2=Bodies.circle(450,420,30,{density:1,restitution:.9,frictionAir:.08,render:{fillStyle:'#2fbf6b'}});
   const puck=Bodies.circle(450,250,20,{density:.02,restitution:.98,frictionAir:.01,render:{fillStyle:'#00ff8c'}});
   World.add(world,[paddle1,paddle2,puck]);
 
-  // State
+  /* State */
   let scores=[0,0],cpuMode=true,gameActive=false,timeLeft=90,timerInt=null;
   const overlay=document.getElementById("overlay"),scoreText=document.getElementById("scoreboard"),timer=document.getElementById("timer");
 
-  // Mode toggles
+  /* Buttons */
   const cpuBtn=document.getElementById("cpuBtn"),pvpBtn=document.getElementById("pvpBtn");
   cpuBtn.onclick=()=>{cpuMode=true;cpuBtn.classList.add('active');pvpBtn.classList.remove('active');};
   pvpBtn.onclick=()=>{cpuMode=false;pvpBtn.classList.add('active');cpuBtn.classList.remove('active');};
 
-  // Practice / Live
   const practiceBtn=document.getElementById("practiceBtn"),liveBtn=document.getElementById("liveBtn");
   let live=false;
   practiceBtn.onclick=()=>{live=false;practiceBtn.classList.add('active');liveBtn.classList.remove('active');updateReward();};
   liveBtn.onclick=()=>{live=true;liveBtn.classList.add('active');practiceBtn.classList.remove('active');updateReward();};
 
-  // Start
+  /* Sounds */
+  const sndHit=new Audio('/arcade/assets/sounds/hit.mp3');
+  const sndGoal=new Audio('/arcade/assets/sounds/goal.mp3');
+  const sndStart=new Audio('/arcade/assets/sounds/start.mp3');
+
+  /* Game start */
   document.getElementById("startBtn").onclick=()=>{
     if(gameActive)return;
     scores=[0,0];updateScore();
     Body.setPosition(puck,{x:450,y:250});Body.setVelocity(puck,{x:0,y:0});
     timeLeft=90;timer.textContent=timeLeft;gameActive=true;
+    sndStart.currentTime=0;sndStart.play();
     timerInt=setInterval(()=>{timeLeft--;timer.textContent=timeLeft;if(timeLeft<=0)endGame();},1000);
   };
 
   function updateScore(){scoreText.textContent=`Player 1 – ${scores[0]} : ${scores[1]} – Player 2`;}
-  function goalScored(p){overlay.textContent='GOAL!';overlay.classList.add('show');
+  function goalScored(p){
+    sndGoal.currentTime=0;sndGoal.play();
+    overlay.textContent='GOAL!';overlay.classList.add('show');
     setTimeout(()=>overlay.classList.remove('show'),500);
-    if(p===1)scores[0]++;else scores[1]++;updateScore();
+    if(p===1)scores[0]++;else scores[1]++;
+    updateScore();
     Body.setPosition(puck,{x:450,y:250});Body.setVelocity(puck,{x:0,y:0});
   }
   function endGame(){
@@ -163,9 +175,16 @@
     if(scores[0]>scores[1])result='YOU WIN!';
     else if(scores[1]>scores[0])result='YOU LOSE!';
     overlay.textContent=result;overlay.classList.add('show');
-    // 🪙 payout hook placeholder
-    // if(live){ bagPayoutWire(result,scores); }
+    // 🪙 payout hook placeholder for future on-chain logic
   }
+
+  /* Collisions & Goals */
+  Events.on(engine,'collisionStart',e=>{
+    if(!gameActive)return;
+    for(const pair of e.pairs){
+      if(pair.bodyA===puck||pair.bodyB===puck){sndHit.currentTime=0;sndHit.play();}
+    }
+  });
 
   Events.on(engine,'afterUpdate',()=>{
     if(!gameActive)return;
@@ -173,10 +192,11 @@
     if(puck.position.y>470 && Math.abs(puck.position.x-450)<90){goalScored(1);}
   });
 
-  // Controls
+  /* Controls */
   const mouse={x:450,y:80};
   canvas.addEventListener('mousemove',e=>{
-    const r=canvas.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;
+    const r=canvas.getBoundingClientRect();
+    mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;
   });
   const keys={ArrowUp:false,ArrowDown:false};
   addEventListener('keydown',e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=true;});
@@ -184,7 +204,7 @@
 
   Events.on(engine,'beforeUpdate',()=>{
     if(!gameActive)return;
-    const y=Math.min(mouse.y,250-30);Body.setPosition(paddle1,{x:mouse.x,y});
+    const y=Math.min(mouse.y,220);Body.setPosition(paddle1,{x:mouse.x,y});
     if(cpuMode){
       const dy=(puck.position.y>paddle2.position.y)?2:-2;
       const dx=(puck.position.x-paddle2.position.x)*0.05;
@@ -196,7 +216,7 @@
     if(paddle2.position.y<250)paddle2.position.y=250;
   });
 
-  /* ---------- Demo Balance Simulation ---------- */
+  /* Demo Balances */
   let demoBag=1000,demoXrp=10;
   const bagEl=document.getElementById("demoBag"),xrpEl=document.getElementById("demoXrp");
   function updateDemo(){
