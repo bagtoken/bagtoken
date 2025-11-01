@@ -12,7 +12,6 @@ canvas{display:block;margin:auto;}
 </head>
 <body>
 <script>
-/* ---------- CONFIG ---------- */
 const config={
   type:Phaser.AUTO,
   width:window.innerWidth,
@@ -21,11 +20,13 @@ const config={
   physics:{default:"arcade",arcade:{debug:false,fps:60}},
   scene:{preload,create,update}
 };
-let puck,p1,p2,score1=0,score2=0,scoreText,cursors,cpu=true;
 
-/* ---------- GAME ---------- */
+let puck,player,cpuPaddle,scorePlayer=0,scoreCPU=0,scoreText;
+let prevPlayerPos={x:0,y:0},playerVel={x:0,y:0};
+
 const game=new Phaser.Game(config);
 
+/* ---------- LOAD ---------- */
 function preload(){
   const hiRes=window.innerWidth>1000?'1024':'960';
   this.load.image('table',`/arcade/assets/img/airhockey_table-${hiRes}.webp`);
@@ -36,94 +37,94 @@ function preload(){
 
 /* ---------- CREATE ---------- */
 function create(){
-  const cx=config.width/2,cy=config.height/2;
   const w=config.width,h=config.height;
-
-  /* table */
+  const cx=w/2,cy=h/2;
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
-  /* objects */
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  p1=this.physics.add.image(cx,h*0.2,'paddle_gold').setScale(0.1);
-  p2=this.physics.add.image(cx,h*0.8,'paddle_green').setScale(0.1);
+  player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
+  cpuPaddle=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
 
-  /* physics setup */
-  puck.setCollideWorldBounds(true);
-  puck.body.setBounce(0.98);
-  puck.body.setCircle(puck.width/2);
-  puck.body.setDrag(15,15); // slow decay
+  puck.setCollideWorldBounds(true).setBounce(0.98).setCircle(puck.width/2).setDrag(20,20);
+  player.setCollideWorldBounds(true).setImmovable(false);
+  cpuPaddle.setCollideWorldBounds(true).setImmovable(false);
 
-  p1.setCollideWorldBounds(true);
-  p2.setCollideWorldBounds(true);
-  p1.body.setImmovable(false);
-  p2.body.setImmovable(false);
+  this.physics.add.collider(puck,player,onPaddleHit,null,this);
+  this.physics.add.collider(puck,cpuPaddle,onPaddleHit,null,this);
 
-  this.physics.add.collider(puck,p1,handleHit,null,this);
-  this.physics.add.collider(puck,p2,handleHit,null,this);
-
-  /* pointer / touch */
+  // pointer control (bottom)
   this.input.on('pointermove',pointer=>{
-    p1.x=Phaser.Math.Clamp(pointer.x,60,w-60);
-    p1.y=Phaser.Math.Clamp(pointer.y,60,h/2-40);
+    player.x=Phaser.Math.Clamp(pointer.x,60,w-60);
+    player.y=Phaser.Math.Clamp(pointer.y,h/2+40,h-40);
   });
 
-  /* keyboard for P2 */
-  cursors=this.input.keyboard.createCursorKeys();
+  scoreText=this.add.text(cx,20,`0 - 0`,{
+    fontFamily:'Orbitron',fontSize:'32px',color:'#ffe175',
+    stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  /* score */
-  scoreText=this.add.text(cx,20,`0 - 0`,
-    {fontFamily:'Orbitron',fontSize:'32px',color:'#ffe175',
-     stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
-
-  resetPuck.call(this);
+  resetPuck();
 }
 
-/* ---------- COLLISION RESPONSE ---------- */
-function handleHit(puck,paddle){
-  // compute vector from paddle to puck
-  const dx=puck.x-paddle.x;
-  const dy=puck.y-paddle.y;
-  const dist=Math.sqrt(dx*dx+dy*dy)||1;
-  const nx=dx/dist,ny=dy/dist;
+/* ---------- PHYSICS REACTION ---------- */
+function onPaddleHit(puck,paddle){
+  // Calculate relative velocity between paddle and puck
+  const relVelX = paddle.body.velocity.x - puck.body.velocity.x;
+  const relVelY = paddle.body.velocity.y - puck.body.velocity.y;
+  const relSpeed = Math.sqrt(relVelX*relVelX + relVelY*relVelY);
 
-  // paddle impact speed adds to puck
-  const impact=Phaser.Math.Clamp(paddle.body.speed/5,0,150);
-  const current=puck.body.velocity.clone();
-  const addVel=new Phaser.Math.Vector2(nx*impact,ny*impact);
+  // Determine direction from paddle center to puck center
+  const dx = puck.x - paddle.x;
+  const dy = puck.y - paddle.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  const nx = dx / len, ny = dy / len;
 
-  puck.setVelocity(current.x+addVel.x,current.y+addVel.y);
+  // Apply impulse based on relative speed (sweet spot boost)
+  const force = Phaser.Math.Clamp(relSpeed * 0.4, 0, 400);
+  const vx = nx * force;
+  const vy = ny * force;
+
+  puck.body.velocity.x += vx;
+  puck.body.velocity.y += vy;
+
+  // Add slight rotation for natural rebound
+  puck.setAngularVelocity(Phaser.Math.Between(-50,50));
 }
 
-/* ---------- UPDATE LOOP ---------- */
+/* ---------- UPDATE ---------- */
 function update(){
   const w=config.width,h=config.height;
 
-  if(cpu){
-    const targetX=puck.x;
-    p2.x+= (targetX-p2.x)*0.08;
-    p2.y+= ((puck.y>h/2+20?1:-1)*2);
-  }else{
-    if(cursors.up.isDown)p2.y-=6;
-    else if(cursors.down.isDown)p2.y+=6;
+  // Track player's velocity for impact calc
+  playerVel.x = player.x - prevPlayerPos.x;
+  playerVel.y = player.y - prevPlayerPos.y;
+  prevPlayerPos.x = player.x;
+  prevPlayerPos.y = player.y;
+
+  // CPU AI (top)
+  const targetX=puck.x;
+  cpuPaddle.x += (targetX - cpuPaddle.x) * 0.08;
+  cpuPaddle.y += (puck.y<h/2?1:-1) * 1.5;
+  cpuPaddle.y = Phaser.Math.Clamp(cpuPaddle.y,40,h/2-40);
+
+  // Goal zones
+  if(puck.y < h*0.02 && Math.abs(puck.x-w/2)<120){
+    scorePlayer++; resetPuck('player');
   }
-
-  p1.y=Phaser.Math.Clamp(p1.y,40,h/2-40);
-  p2.y=Phaser.Math.Clamp(p2.y,h/2+40,h-40);
-
-  // goal zones
-  if(puck.y<8 && Math.abs(puck.x-w/2)<120){score2++;resetPuck.call(this);}
-  if(puck.y>h-8 && Math.abs(puck.x-w/2)<120){score1++;resetPuck.call(this);}
+  if(puck.y > h*0.98 && Math.abs(puck.x-w/2)<120){
+    scoreCPU++; resetPuck('cpu');
+  }
 }
 
-/* ---------- RESET PUCK ---------- */
-function resetPuck(){
-  puck.setPosition(config.width/2,config.height/2);
-  const angle=Phaser.Math.Between(30,150)*(Phaser.Math.Between(0,1)?1:-1);
-  const speed=Phaser.Math.Between(250,350);
+/* ---------- RESET ---------- */
+function resetPuck(scoredBy){
+  const w=config.width,h=config.height;
+  puck.setPosition(w/2,h/2);
+  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+  const speed=Phaser.Math.Between(260,340);
   const vx=Math.cos(angle*Math.PI/180)*speed;
-  const vy=Math.sin(angle*Math.PI/180)*speed;
+  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
   puck.setVelocity(vx,vy);
-  scoreText.setText(`${score1} - ${score2}`);
+  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 </script>
 </body>
