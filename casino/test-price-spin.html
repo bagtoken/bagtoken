@@ -3,35 +3,30 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The $BAG Big Wheel — centered, zoomed, visible plates (robust loader)</title>
+<title>$BAG Big Wheel — forward 3D</title>
 <style>
-  html,body{margin:0;height:100%;background:#081912;color:#eaf3ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  :root{--bg:#062218;--panel:#0b1f16;--gold:#d8bf74}
+  html,body{height:100%;margin:0;background:var(--bg);color:#eaf4ec;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  .hdr{display:flex;gap:.6rem;align-items:center;font-weight:900;font-size:28px;margin:0 0 8px}
-  .board{background:linear-gradient(180deg,#10271d,#0b1f17);
-         border:1px solid #234a35;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
-  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
-           background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:10px;
-           padding:8px;margin-bottom:10px}
-  .stage{position:relative;height:72vh;min-height:520px;max-height:82vh;border-radius:12px;overflow:hidden;
-         background:#0b1f16;border:1px dashed #2c6a49}
+  .board{background:linear-gradient(#0f2a20,#0c2119);border:1px solid #25573d;border-radius:14px;box-shadow:0 14px 36px rgba(0,0,0,.4);padding:12px}
+  .marq{font-weight:900;letter-spacing:.08em;color:#ffe9a6;text-align:center;border:1px solid #284f38;border-radius:10px;background:linear-gradient(#163421,#0e261b);padding:8px;margin-bottom:10px}
+  .stage{position:relative;height:72vh;min-height:480px;max-height:82vh;border:1px dashed #2c6a49;border-radius:12px;background:#0b1f16;overflow:hidden}
   #mount{position:absolute;inset:0}
-  #hud{position:absolute;right:min(3vw,18px);top:min(3vw,18px);width:min(42vw,220px);height:min(24vw,120px);z-index:3}
-  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.55);z-index:5}
-  #err b{color:#ffb3b3}
-  .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  #hud{position:absolute;right:10px;top:10px;width:min(44vw,220px);height:min(26vw,120px);z-index:3}
+  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;background:rgba(0,0,0,.55);z-index:5}
+  .row{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
   .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer}
-  .spin{background:linear-gradient(180deg,#ffe175,#f5c94c);color:#0b120d;box-shadow:0 5px 0 #b08a19}
-  .hold{background:linear-gradient(180deg,#d6f0e2,#cde7d9);color:#0b120d;box-shadow:0 5px 0 #7ba38d}
-  .reset{background:linear-gradient(180deg,#c3c7cc,#aeb3b9);color:#0b1016;box-shadow:0 5px 0 #7b8086}
+  .spin{background:linear-gradient(#ffe175,#f5c94c);color:#101613;box-shadow:0 5px 0 #b08a19}
+  .hold{background:linear-gradient(#d6f0e2,#cde7d9);color:#101613;box-shadow:0 5px 0 #7ba38d}
+  .reset{background:linear-gradient(#c3c7cc,#aeb3b9);color:#0b1016;box-shadow:0 5px 0 #7b8086}
   .t{text-align:center;margin:10px 0 0}.t.win{color:#37cf82}.t.lose{color:#e65b5b}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="hdr">🎡 The $BAG Big Wheel</div>
+  <h1>🎡 $BAG Big Wheel</h1>
   <div class="board">
-    <div class="marquee">SWIPE UP/DOWN TO SPIN • UPRIGHT 3D WHEEL • auto-fit to show entire wheel</div>
+    <div class="marq">SWIPE UP/DOWN TO SPIN • UPRIGHT 3D WHEEL • auto-fit to show entire wheel</div>
     <div class="stage">
       <div id="mount"></div>
       <canvas id="hud" width="240" height="130"></canvas>
@@ -47,227 +42,181 @@
 </div>
 
 <script>
-/* ----------------------- Three.js loader (CDN → CDN → local) ----------------------- */
 (function(){
-  const E = document.getElementById('err');
-  function showError(html){ E.style.display='flex'; E.innerHTML = `<div><b>3D failed to start</b><br><div style="opacity:.9;margin-top:6px">${html}</div></div>`; }
-  function load(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(); document.head.appendChild(s); }); }
-  function when(fn){ let n=0; (function tick(){ if(window.THREE){fn();return;} if(++n>220){showError('THREE never loaded (CSP/network).');return;} setTimeout(tick,50); })(); }
-
+  const E=document.getElementById('err');
+  function showError(s){E.style.display='flex';E.innerHTML=`<div><b style="color:#ffb3b3">3D failed</b><div style="margin-top:6px">${s}</div></div>`}
+  function load(src){return new Promise((ok,err)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=ok;s.onerror=()=>err();document.head.appendChild(s)})}
   (async()=>{
-    try{ await load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js'); }
-    catch(_){ try{ await load('https://unpkg.com/three@0.158.0/build/three.min.js'); }
-      catch(_2){ try{ await load('/vendor/three.min.js'); }
-        catch(_3){ showError('Could not fetch <code>three.min.js</code> from cdn.jsdelivr, unpkg, or <code>/vendor/three.min.js</code>.'); return; } } }
-    when(()=> initBagWheel(showError));
+    try{await load('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js')}
+    catch(_){try{await load('https://unpkg.com/three@0.158.0/build/three.min.js')}catch(_2){try{await load('/vendor/three.min.js')}catch(_3){showError('Could not load three.min.js');return}}}
+    init();
   })();
 
-/* -------------------------------- Main scene ----------------------------------- */
-function initBagWheel(showError){
-  const test = document.createElement('canvas');
-  const gl = test.getContext('webgl2')||test.getContext('webgl')||test.getContext('experimental-webgl');
-  if(!gl){ showError('WebGL is unavailable in this browser.'); return; }
+  function init(){
+    if(!document.createElement('canvas').getContext('webgl')){showError('WebGL unavailable');return}
 
-  const seq = [0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-  const labels = seq.map(v=>v.toFixed(2));
-  const N = labels.length, TAU=Math.PI*2, STEP=TAU/N;
+    const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+    const labels=seq.map(v=>v.toFixed(2)), N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
-  const mount = document.getElementById('mount');
-  const hud = document.getElementById('hud');
-  const msg = document.getElementById('msg');
-  const spinBtn = document.getElementById('spinBtn');
-  const holdBtn = document.getElementById('holdBtn');
-  const resetBtn = document.getElementById('resetBtn');
-  holdBtn.disabled = true;
+    const mount=document.getElementById('mount'), hud=document.getElementById('hud');
+    const {Scene,PerspectiveCamera,WebGLRenderer,Group,Mesh,MeshStandardMaterial,MeshBasicMaterial,
+           CylinderGeometry,TorusGeometry,PlaneGeometry,CircleGeometry,CanvasTexture,Vector3,
+           DirectionalLight,AmbientLight,Color,DoubleSide,SRGBColorSpace}=THREE;
 
-  const {
-    Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh,
-    MeshStandardMaterial, MeshBasicMaterial,
-    CylinderGeometry, TorusGeometry, PlaneGeometry, CircleGeometry,
-    CanvasTexture, Vector3, DirectionalLight, AmbientLight, Color, DoubleSide, SRGBColorSpace
-  } = THREE;
+    const scene=new Scene(); scene.background=new Color('#0a1b14');
+    const renderer=new WebGLRenderer({antialias:true,alpha:true});
+    renderer.outputColorSpace=SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+    mount.appendChild(renderer.domElement);
 
-  const scene = new Scene(); scene.background = new Color('#0b1f16');
-  const renderer = new WebGLRenderer({antialias:true,alpha:true});
-  renderer.outputColorSpace = SRGBColorSpace;
-  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
-  mount.appendChild(renderer.domElement);
+    // CAMERA ON +X (looking towards origin) -> true forward-facing wheel
+    const camera=new PerspectiveCamera(36,1,0.1,100);
+    camera.position.set(10,0,0); camera.lookAt(0,0,0);
 
-  // Camera: straight-on; distance auto-fits whole wheel
-  const camera = new PerspectiveCamera(40,1,0.1,100);
-  camera.position.set(0,0,9);
-  camera.lookAt(0,0,0);
+    // Lights
+    scene.add(new DirectionalLight(0xffffff,1.05).position.set(4,6,10));
+    scene.add(new DirectionalLight(0xfff2d2,.7).position.set(-5,2,6));
+    scene.add(new AmbientLight(0xffffff,.35));
 
-  // Lights
-  const key = new DirectionalLight(0xffffff, 1.0); key.position.set(3,6,8);
-  const fill = new DirectionalLight(0xffffff, .6); fill.position.set(-5,2,6);
-  const amb = new AmbientLight(0xffffff,.35);
-  scene.add(key,fill,amb);
+    // Wheel
+    const R=2.6, DEPTH=1.4, wheel=new Group(); scene.add(wheel);
 
-  // Wheel geometry
-  const R = 2.75, DEPTH = 1.25;
-  const wheel = new Group(); wheel.position.set(0,0,0); scene.add(wheel);
+    // Drum axis along X (so plates move vertically when rotating around X)
+    const drum=new Mesh(new CylinderGeometry(R,R,DEPTH,96,1,true),
+                        new MeshStandardMaterial({color:'#151515',metalness:.55,roughness:.55}));
+    drum.rotation.z=Math.PI/2; wheel.add(drum);
 
-  const drum = new Mesh(
-    new CylinderGeometry(R,R,DEPTH,128,1,true),
-    new MeshStandardMaterial({color:'#161616',metalness:.55,roughness:.62})
-  );
-  drum.rotation.z = Math.PI/2; // spin around X
-  wheel.add(drum);
+    // Front rim & pegs (at +X face)
+    const rimRing=new Mesh(new TorusGeometry(R+0.05,0.08,14,80),
+                           new MeshStandardMaterial({color:'#0d0d0d',metalness:.9,roughness:.25}));
+    rimRing.rotation.y=Math.PI/2; rimRing.position.x=DEPTH/2+0.01; wheel.add(rimRing);
 
-  // Rims
-  const rimA = new Mesh(new TorusGeometry(R+0.05,0.07,12,64), new MeshStandardMaterial({color:'#0b0b0b',metalness:.85,roughness:.3}));
-  rimA.rotation.y = Math.PI/2; rimA.position.z =  DEPTH/2 + 0.03; wheel.add(rimA);
-  const rimB = rimA.clone(); rimB.position.z = -DEPTH/2 - 0.03; wheel.add(rimB);
+    const pegGeo=new THREE.CylinderGeometry(0.07,0.07,0.36,12);
+    const pegMat=new MeshStandardMaterial({color:'#d4b261',metalness:.85,roughness:.32});
+    const pegs=new Group();
+    for(let i=0;i<N;i++){
+      const a=i*STEP, y=Math.sin(a)*(R-0.03), z=Math.cos(a)*(R-0.03);
+      const p=new Mesh(pegGeo,pegMat); p.position.set(DEPTH/2+0.2,y,z); p.rotation.y=Math.PI/2; pegs.add(p);
+    }
+    wheel.add(pegs);
 
-  // Pegs (front)
-  const pegGeo = new THREE.CylinderGeometry(0.06,0.06,0.34,12);
-  const pegMat = new MeshStandardMaterial({color:'#d6b45f',metalness:.85,roughness:.35});
-  const pegs = new Group();
-  for(let i=0;i<N;i++){
-    const a=i*STEP;
-    const y=Math.sin(a)*(R-0.02), z=Math.cos(a)*(R-0.02);
-    const p=new Mesh(pegGeo,pegMat);
-    p.position.set(DEPTH/2+0.18,y,z);
-    p.rotation.y=Math.PI/2;
-    pegs.add(p);
+    // Plate texture (green 5/15, red 100, alt black/white others)
+    function plateTexture(vStr, idx){
+      const c=document.createElement('canvas'); c.width=512; c.height=280; const g=c.getContext('2d');
+      const is100=vStr==='1.00', green=(vStr==='0.05'||vStr==='0.15'), dark=!(is100||green)&&(idx%2===0);
+      const BG=is100?'#a40f0f': green?'#1b7f3a': (dark?'#101010':'#f3f3f3');
+      const FG=(is100||green||dark)?'#fbfbfb':'#121212';
+      g.fillStyle=BG; g.fillRect(0,0,512,280);
+      const grad=g.createLinearGradient(0,0,512,280);
+      grad.addColorStop(0,'rgba(255,255,255,.12)'); grad.addColorStop(.5,'rgba(255,255,255,.03)'); grad.addColorStop(1,'rgba(255,255,255,.14)');
+      g.fillStyle=grad; g.fillRect(0,0,512,280);
+      g.lineWidth=30; g.strokeStyle='#d8bf74'; g.strokeRect(18,18,512-36,280-36);
+      g.fillStyle=FG; g.textAlign='center'; g.textBaseline='middle'; g.font='900 162px Inter,Arial,Helvetica,sans-serif';
+      g.fillText(is100?'100':String(Math.round(parseFloat(vStr)*100)),256,148);
+      return new CanvasTexture(c);
+    }
+
+    // Plates arranged around circle in YZ plane; every plate faces +X
+    const plates=new Group(), plateGeo=new PlaneGeometry(1.18,0.62);
+    for(let i=0;i<N;i++){
+      const a=i*STEP+STEP/2;
+      const y=Math.sin(a)*(R-0.48), z=Math.cos(a)*(R-0.48);
+      const m=new Mesh(plateGeo,new MeshBasicMaterial({map:plateTexture(labels[i],i),side:DoubleSide}));
+      m.position.set(0,y,z);
+      m.rotation.y=-Math.PI/2;               // face +X
+      m.lookAt(1, y, z+0.001);               // tiny tilt toward +X
+      plates.add(m);
+    }
+    wheel.add(plates);
+
+    // Hub + logo + flapper on front face (+X)
+    const hub=new Mesh(new CircleGeometry(0.95,64),
+                       new MeshStandardMaterial({color:'#0b0f10',metalness:.55,roughness:.5}));
+    hub.rotation.y=Math.PI/2; hub.position.set(DEPTH/2+0.06,0,0); scene.add(hub);
+
+    const logoCv=document.createElement('canvas'); logoCv.width=256; logoCv.height=256;
+    const gg=logoCv.getContext('2d'); gg.fillStyle='#0b0f10'; gg.fillRect(0,0,256,256);
+    gg.fillStyle='#ffd34d'; gg.font='800 74px Inter,Arial'; gg.textAlign='center'; gg.textBaseline='middle'; gg.fillText('$BAG',128,132);
+    const logo=new Mesh(new PlaneGeometry(1.65,1.65), new MeshBasicMaterial({map:new CanvasTexture(logoCv),transparent:true}));
+    logo.position.set(DEPTH/2+0.061,0,0); scene.add(logo);
+
+    const flapper=new Mesh(new PlaneGeometry(0.56,0.3),
+                           new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
+    flapper.rotation.z=Math.PI/2; flapper.position.set(DEPTH/2+0.23,0,0.02); scene.add(flapper);
+
+    // Auto-fit (camera on X axis → vary position.x)
+    function size(){
+      const r=mount.getBoundingClientRect(), w=Math.max(1,Math.floor(r.width)), h=Math.max(480,Math.floor(r.height));
+      renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+      const margin=1.18; const fov=THREE.MathUtils.degToRad(camera.fov);
+      const dist=(R*margin)/Math.tan(fov/2); // fit vertically
+      camera.position.set(dist,0,0); camera.lookAt(0,0,0);
+    }
+    size(); addEventListener('resize', size);
+
+    // HUD
+    function drawHUD(v){const g=hud.getContext('2d'),w=hud.width,h=hud.height;
+      g.clearRect(0,0,w,h); g.fillStyle='#0b0e0b'; g.fillRect(0,0,w,h);
+      g.strokeStyle='#1e1e1e'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
+      const fs=Math.min(92,Math.max(44,Math.floor(h*0.74)));
+      g.fillStyle='#ffe26a'; g.font=`900 ${fs}px ui-monospace,monospace`; g.textAlign='center'; g.textBaseline='middle';
+      g.fillText((v||0).toFixed(2), w/2, h/2+2);
+    }
+    drawHUD(0);
+
+    // Spin physics (rotate around X)
+    let angX=-Math.PI/2,vel=0,spinning=false,spin1=null,total=0,done=false;
+    const FRICTION=0.992,VMIN=0.002,PIX2RAD=0.012,TAU=Math.PI*2;
+    const spinBtn=document.getElementById('spinBtn'),holdBtn=document.getElementById('holdBtn'),
+          resetBtn=document.getElementById('resetBtn'),msg=document.getElementById('msg');
+    holdBtn.disabled=true;
+
+    function setAngle(a){angX=a;wheel.rotation.x=a}
+    function idxFrom(a){let t=a%TAU;if(t<0)t+=TAU;const i=Math.floor((t+STEP/2)/STEP)%N;return (N-i)%N}
+    function currentVal(){return parseFloat(labels[idxFrom(angX)])}
+    function snapTarget(){const i=idxFrom(angX);const top=(N-i)%N;return top*STEP-STEP/2}
+
+    const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
+    let dragging=false,lastY=0,lastT=0,samples=[];
+    function down(e){if(spinning||done)return;dragging=true;samples.length=0;lastY=getY(e);lastT=performance.now();e.preventDefault()}
+    function move(e){if(!dragging)return;const y=getY(e),t=performance.now(),dy=y-lastY;
+      setAngle(angX+dy*PIX2RAD); const dt=t-lastT; if(dt>0){samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6)samples.shift()}
+      lastY=y; lastT=t; e.preventDefault()}
+    function up(){if(!dragging)return;dragging=false;const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1);startSpin()}
+    surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
+    surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
+
+    spinBtn.onclick=()=>{if(spinning||done)return;vel=6;startSpin()}; holdBtn.onclick=()=>{if(spinning||done||spin1==null)return;settleHold()}; resetBtn.onclick=reset;
+
+    function startSpin(){
+      spinning=true; spinBtn.disabled=true; holdBtn.disabled=true; resetBtn.disabled=true;
+      msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
+      const loop=()=>{setAngle(angX+vel*(1/60)); vel*=FRICTION; drawHUD(currentVal());
+        if(Math.abs(vel)<VMIN){const target=snapTarget(); const d=((target-angX+Math.PI*3)%TAU)-Math.PI;
+          if(Math.abs(d)>0.0006){setAngle(angX+d*0.25); requestAnimationFrame(loop)}
+          else{setAngle(target); spinning=false; onSettle()}
+        } else requestAnimationFrame(loop);
+      }; requestAnimationFrame(loop);
+    }
+    function onSettle(){
+      const landed=currentVal();
+      if(spin1==null){spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtn.disabled=false; resetBtn.disabled=false; spinBtn.disabled=false; return;}
+      total+=landed; drawHUD(total);
+      if(total>1.00){done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; return;}
+      if(total===1.00){msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; return;}
+      if(total>=0.95){msg.className='t win'; msg.textContent='Near 1.00 — 1×'; done=true;} else {msg.className='t lose'; msg.textContent='Under 1.00 — 0×'; done=true;}
+      resetBtn.disabled=false; spinBtn.disabled=true; holdBtn.disabled=true;
+    }
+    function settleHold(){ if(total===1.00){msg.className='t win'; msg.textContent='Exact 1.00 — 5×';}
+      else if(total>=0.95){msg.className='t win'; msg.textContent='Held near 1.00 — 1×';}
+      else {msg.className='t lose'; msg.textContent='Held under 1.00 — 0×';}
+      done=true; resetBtn.disabled=false; spinBtn.disabled=true; holdBtn.disabled=true;
+    }
+    function reset(){spinning=false;spin1=null;total=0;done=false;holdBtn.disabled=true;spinBtn.disabled=false;resetBtn.disabled=false;setAngle(-Math.PI/2);drawHUD(0);msg.className='t';msg.textContent='Spin up to two times to reach 1.00 without going over.';size()}
+
+    function render(){renderer.render(scene,camera); requestAnimationFrame(render)}
+    setAngle(-Math.PI/2); render(); requestAnimationFrame(size);
   }
-  wheel.add(pegs);
-
-  // Number plates (DoubleSide + sRGB textures; forced update)
-  function plateTex(v, idx){
-    const c=document.createElement('canvas'); c.width=512; c.height=256; const g=c.getContext('2d');
-    const is100 = v==='1.00', isG=(v==='0.05'||v==='0.15');
-    const darkStripe = !is100 && !isG && (idx%2===0);
-    const bg = is100? '#b90b0b' : isG? '#1a8b43' : (darkStripe? '#0e0e0e' : '#efefef');
-    const fg = (is100||isG||darkStripe)? '#f7f7f7' : '#151515';
-    g.fillStyle = bg; g.fillRect(0,0,c.width,c.height);
-    g.strokeStyle='#d6b45f'; g.lineWidth=28; g.strokeRect(18,18,c.width-36,c.height-36);
-    g.fillStyle=fg; g.font='900 140px Inter,Arial,Helvetica,sans-serif';
-    g.textAlign='center'; g.textBaseline='middle';
-    g.fillText(is100?'100':String(Math.round(parseFloat(v)*100)), c.width/2, c.height/2+8);
-    const tex = new CanvasTexture(c);
-    tex.colorSpace = SRGBColorSpace;
-    tex.needsUpdate = true;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
-    return tex;
-  }
-
-  const plateW=1.18, plateH=0.62;
-  const plateGeo = new PlaneGeometry(plateW,plateH);
-  const plates = new Group();
-  for(let i=0;i<N;i++){
-    const holder = new Group(); holder.rotation.x = i*STEP;       // orbit position
-    const mat = new MeshBasicMaterial({map:plateTex(labels[i],i), side:DoubleSide});
-    const plate = new Mesh(plateGeo, mat);
-    plate.position.z = R-0.55;                 // near the rim
-    plate.rotation.x = -holder.rotation.x;     // keep text upright
-    plates.add(holder); holder.add(plate);
-  }
-  wheel.add(plates);
-
-  // Hub + flapper
-  const hub = new Mesh(new CircleGeometry(0.95,64), new MeshStandardMaterial({color:'#0b0f10',metalness:.5,roughness:.5}));
-  hub.rotation.y=Math.PI/2; hub.position.set(DEPTH/2+0.04,0,0); scene.add(hub);
-  const flap = new Mesh(new PlaneGeometry(0.52,0.3), new MeshStandardMaterial({color:'#e23a21',metalness:.4,roughness:.5,side:DoubleSide}));
-  flap.rotation.z = Math.PI/2; flap.position.set(DEPTH/2+0.22,0,R*0.02); scene.add(flap);
-
-  // Auto-fit: always show the whole wheel
-  function size(){
-    const r=mount.getBoundingClientRect();
-    const w=Math.max(1,Math.floor(r.width)), h=Math.max(520,Math.floor(r.height));
-    renderer.setSize(w,h,false);
-    camera.aspect=w/h;
-
-    const margin=1.32; // zoom-out factor
-    const needed = (R*2*margin) / (2*Math.tan((camera.fov*Math.PI/180)/2));
-    camera.position.z = Math.max(needed, 7.2);
-    camera.updateProjectionMatrix();
-  }
-  size(); addEventListener('resize', size);
-
-  // HUD blink
-  let blink=false; setInterval(()=>{ blink=!blink; drawHUD(currentVal()); }, 650);
-  function drawHUD(v){
-    const g=hud.getContext('2d'), w=hud.width, h=hud.height;
-    g.clearRect(0,0,w,h); g.fillStyle= blink ? '#0b0d0f' : '#0a0c0e';
-    g.fillRect(0,0,w,h); g.strokeStyle='#222'; g.lineWidth=6; g.strokeRect(4,4,w-8,h-8);
-    const fs=Math.min(88,Math.max(44,Math.floor(h*0.7)));
-    g.fillStyle='#ffe26a'; g.font=`900 ${fs}px "DM Mono",ui-monospace,monospace`;
-    g.textAlign='center'; g.textBaseline='middle';
-    g.fillText((v||0).toFixed(2),w/2,h/2+2);
-  }
-
-  // Physics / input
-  let angX=-Math.PI/2, vel=0, spinning=false, spin1=null, total=0, done=false;
-  const FRICTION=0.992, VMIN=0.002, PIX2RAD=0.012;
-
-  function setAngle(a){ angX=a; wheel.rotation.x=a; }
-  function idxFrom(a){ let t=a%TAU; if(t<0) t+=TAU; const i=Math.floor((t+STEP/2)/STEP)%N; return (N-i)%N; }
-  function currentVal(){ return parseFloat(labels[idxFrom(angX)]); }
-  function snapTarget(){ const i=idxFrom(angX); const top=(N-i)%N; return top*STEP-STEP/2; }
-
-  const surf=renderer.domElement, getY=e=>(e.touches?e.touches[0].clientY:e.clientY);
-  let dragging=false,lastY=0,lastT=0,samples=[];
-  function down(e){ if(spinning||done) return; dragging=true; samples.length=0; lastY=getY(e); lastT=performance.now(); e.preventDefault(); }
-  function move(e){ if(!dragging) return; const y=getY(e), t=performance.now(), dy=y-lastY;
-    setAngle(angX + dy*PIX2RAD);
-    const dt=t-lastT; if(dt>0){ samples.push(((dy*PIX2RAD)/(dt/1000))); if(samples.length>6) samples.shift(); }
-    lastY=y; lastT=t; e.preventDefault();
-  }
-  function up(){ if(!dragging) return; dragging=false;
-    const v=samples.length?samples.reduce((a,b)=>a+b,0)/samples.length:0;
-    vel=Math.max(1.2,Math.min(8,Math.abs(v*1.2)))*Math.sign(v||1);
-    startSpin();
-  }
-  surf.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
-  surf.addEventListener('touchstart',down,{passive:false}); addEventListener('touchmove',move,{passive:false}); addEventListener('touchend',up);
-
-  const spinBtnEl=spinBtn, holdBtnEl=holdBtn, resetBtnEl=resetBtn;
-  spinBtnEl.onclick=()=>{ if(spinning||done) return; vel=6; startSpin(); };
-  holdBtnEl.onclick=()=>{ if(spinning||done||spin1==null) return; settleHold(); };
-  resetBtnEl.onclick=reset;
-
-  function startSpin(){
-    spinning=true; spinBtnEl.disabled=true; holdBtnEl.disabled=true; resetBtnEl.disabled=true;
-    msg.className='t'; msg.textContent=(spin1==null)?'Spinning 1…':'Spinning 2…';
-    const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION; drawHUD(currentVal());
-      if(Math.abs(vel)<VMIN){
-        const target=snapTarget(); const d=((target-angX+Math.PI*3)%TAU)-Math.PI;
-        if(Math.abs(d)>0.0006){ setAngle(angX+d*0.25); requestAnimationFrame(loop); }
-        else{ setAngle(target); spinning=false; onSettle(); }
-      } else requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
-  }
-
-  function onSettle(){
-    const landed=currentVal();
-    if(spin1==null){ spin1=landed; total=landed; msg.textContent=`Spin 1: ${landed.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`; holdBtnEl.disabled=false; resetBtnEl.disabled=false; spinBtnEl.disabled=false; return; }
-    total+=landed; drawHUD(total);
-    if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} is over 1.00`; end(0,'Bust'); return; }
-    if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
-    if(total>=0.95) end(1,'Near 1.00'); else end(0,'Under 1.00');
-  }
-  function settleHold(){ if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×. Bonus spin…'; bonus(); return; }
-    if(total>=0.95) end(1,'Held near 1.00'); else end(0,'Held under 1.00'); }
-
-  function bonus(){
-    vel=5.4; const loop=()=>{ setAngle(angX + vel*(1/60)); vel*=FRICTION;
-      if(Math.abs(vel)<VMIN){
-        const v=currentVal(); const extra=(v===0.05)?5:(v===0.15)?15:(v===1.00)?25:0;
-        msg.className=extra?'t win':'t'; msg.textContent= extra?`Bonus hit ${v.toFixed(2)} — +${extra}×`:`Bonus missed — kept base 5×`;
-        done=true; resetBtnEl.disabled=false;
-      } else requestAnimationFrame(loop);
-    }; requestAnimationFrame(loop);
-  }
-  function end(mult,label){ done=true; spinBtnEl.disabled=true; holdBtnEl.disabled=true; resetBtnEl.disabled=false; msg.className=mult?'t win':'t lose'; msg.textContent=mult?`${label} — ${mult.toFixed(2)}×`:`${label} — 0×`; }
-  function reset(){ spinning=false; spin1=null; total=0; done=false; holdBtnEl.disabled=true; spinBtnEl.disabled=false; resetBtnEl.disabled=false; setAngle(-Math.PI/2); drawHUD(0); msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.'; size(); }
-
-  // Render
-  function render(){ renderer.render(scene,camera); requestAnimationFrame(render); }
-  setAngle(-Math.PI/2); drawHUD(0); render(); requestAnimationFrame(size);
-}
 })();
 </script>
 </body>
