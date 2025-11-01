@@ -15,13 +15,22 @@ canvas{display:block;margin:auto;}
 const config={
   type:Phaser.AUTO,
   scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536},
+  physics:{
+    default:'arcade',
+    arcade:{
+      debug:false,
+      fps:120,          // more physics checks per second
+      timeScale:1,
+      overlapBias:4,
+      step:1/120
+    }
+  },
   backgroundColor:'#021107',
-  physics:{default:'arcade',arcade:{debug:false,fps:60}},
   scene:{preload,create,update}
 };
-let puck,player,cpu,scoreText,scorePlayer=0,scoreCPU=0;
-let playerPrev={x:0,y:0};
-
+let table,puck,player,cpu,scoreText,stickBase,stickKnob,stickPointer=null;
+let scorePlayer=0,scoreCPU=0;
+let stickVector=new Phaser.Math.Vector2(0,0);
 const game=new Phaser.Game(config);
 
 /* ---------------- PRELOAD ---------------- */
@@ -37,10 +46,10 @@ function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
 
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
-  this.physics.world.setBounds(90,80,w-180,h-160); // inside rails
+  this.physics.world.setBounds(90,80,w-180,h-160);
 
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.98).setDamping(true).setDrag(0.99,0.99);
+  puck.setCollideWorldBounds(true).setBounce(0.98).setDamping(true).setDrag(0.99,0.99).setMaxVelocity(600);
 
   player=this.physics.add.image(cx,h*0.9,'paddle_gold').setScale(0.1);
   cpu=this.physics.add.image(cx,h*0.1,'paddle_green').setScale(0.1);
@@ -50,16 +59,34 @@ function create(){
   player.setImmovable(true);
   cpu.setImmovable(true);
 
-  this.physics.add.collider(puck,player,hitPaddle,null,this);
-  this.physics.add.collider(puck,cpu,hitPaddle,null,this);
+  this.physics.add.collider(puck,player,onHit,null,this);
+  this.physics.add.collider(puck,cpu,onHit,null,this);
 
+  // --- Virtual thumb stick (bottom-right) ---
+  const stickRadius=100;
+  stickBase=this.add.circle(w-160,h-160,stickRadius,0x222222,0.5).setScrollFactor(0);
+  stickKnob=this.add.circle(w-160,h-160,40,0xaaaaaa,0.8).setScrollFactor(0);
+
+  stickKnob.setInteractive();
+  this.input.on('pointerdown',p=>{
+    if(Phaser.Math.Distance.Between(p.x,p.y,stickBase.x,stickBase.y)<stickRadius*1.2){
+      stickPointer=p.id;
+      moveStick(p);
+    }
+  });
   this.input.on('pointermove',p=>{
-    if(p.y>h/2){
-      player.x=Phaser.Math.Clamp(p.x,120,w-120);
-      player.y=Phaser.Math.Clamp(p.y,h/2+100,h-100);
+    if(stickPointer===p.id) moveStick(p);
+  });
+  this.input.on('pointerup',p=>{
+    if(stickPointer===p.id){
+      stickPointer=null;
+      stickKnob.x=stickBase.x;
+      stickKnob.y=stickBase.y;
+      stickVector.set(0,0);
     }
   });
 
+  // --- Score display ---
   scoreText=this.add.text(cx,40,'0 - 0',{
     fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
     stroke:'#2fbf6b',strokeThickness:3
@@ -68,19 +95,23 @@ function create(){
   resetPuck.call(this);
 }
 
+/* ---------------- STICK MOVEMENT ---------------- */
+function moveStick(p){
+  const dx=p.x-stickBase.x, dy=p.y-stickBase.y;
+  const dist=Math.min(100,Math.sqrt(dx*dx+dy*dy));
+  const angle=Math.atan2(dy,dx);
+  stickKnob.x=stickBase.x+Math.cos(angle)*dist;
+  stickKnob.y=stickBase.y+Math.sin(angle)*dist;
+  stickVector.set(Math.cos(angle)*(dist/100),Math.sin(angle)*(dist/100));
+}
+
 /* ---------------- COLLISION ---------------- */
-function hitPaddle(puck,paddle){
-  // direction from paddle → puck
+function onHit(puck,paddle){
   const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
   const nx=dx/dist, ny=dy/dist;
-
-  // paddle velocity (how fast it moved since last frame)
-  const vx=paddle.x-(paddle.prevX||paddle.x);
-  const vy=paddle.y-(paddle.prevY||paddle.y);
-  const speed=Math.sqrt(vx*vx+vy*vy)*50;
-
-  const force=Phaser.Math.Clamp(speed,200,800);
+  const speed=paddle.body.velocity.length();
+  const force=Phaser.Math.Clamp(speed*1.2,150,800);
   puck.body.velocity.x=nx*force;
   puck.body.velocity.y=ny*force;
 }
@@ -89,21 +120,22 @@ function hitPaddle(puck,paddle){
 function update(){
   const w=this.scale.width,h=this.scale.height;
 
-  // store paddle position each frame for velocity calc
-  player.prevX=player.x;
-  player.prevY=player.y;
-  cpu.prevX=cpu.x;
-  cpu.prevY=cpu.y;
+  // --- Player paddle from thumb stick ---
+  const moveSpeed=8;
+  player.x+=stickVector.x*moveSpeed;
+  player.y+=stickVector.y*moveSpeed;
+  player.x=Phaser.Math.Clamp(player.x,120,w-120);
+  player.y=Phaser.Math.Clamp(player.y,h/2+120,h-120);
 
-  // CPU AI
-  cpu.x+=(puck.x-cpu.x)*0.08;
-  if(puck.y<h/2) cpu.y+=(puck.y-cpu.y)*0.05;
+  // --- CPU AI ---
+  cpu.x+=(puck.x-cpu.x)*0.06;
+  if(puck.y<h/2) cpu.y+=(puck.y-cpu.y)*0.04;
   cpu.y=Phaser.Math.Clamp(cpu.y,120,h/2-120);
 
-  // goals
-  const goalWidth=250;
-  if(puck.y<100 && Math.abs(puck.x-w/2)<goalWidth/2){scorePlayer++;resetPuck.call(this,'player');}
-  if(puck.y>h-100 && Math.abs(puck.x-w/2)<goalWidth/2){scoreCPU++;resetPuck.call(this,'cpu');}
+  // --- Goals ---
+  const goalW=250;
+  if(puck.y<100 && Math.abs(puck.x-w/2)<goalW/2){scorePlayer++;resetPuck.call(this,'player');}
+  if(puck.y>h-100 && Math.abs(puck.x-w/2)<goalW/2){scoreCPU++;resetPuck.call(this,'cpu');}
 }
 
 /* ---------------- RESET PUCK ---------------- */
