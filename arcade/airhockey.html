@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>$BAG Air Hockey — Arcade P2E</title>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <style>
@@ -12,6 +13,9 @@ canvas{display:block;margin:auto;}
 </head>
 <body>
 <script>
+/* ============================================================
+   CONFIG
+============================================================ */
 const config = {
   type: Phaser.AUTO,
   scale: {
@@ -20,8 +24,8 @@ const config = {
     width: 1024,
     height: 1536
   },
-  physics: { default: 'arcade', arcade: { debug: false, fps: 60 }},
   backgroundColor: '#021107',
+  physics: { default: 'arcade', arcade: { debug: false, fps: 60 }},
   scene: { preload, create, update }
 };
 
@@ -34,107 +38,109 @@ const game = new Phaser.Game(config);
 /* ============================================================
    LOAD
 ============================================================ */
-function preload() {
-  this.load.image('table', '/arcade/assets/img/airhockey_table-1024.webp');
-  this.load.image('puck', '/arcade/assets/img/puck-1024.webp');
-  this.load.image('paddle_gold', '/arcade/assets/img/paddle_gold-1024.webp');
-  this.load.image('paddle_green', '/arcade/assets/img/paddle_green-1024.webp');
+function preload(){
+  this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
+  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
+  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
+  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 }
 
 /* ============================================================
    CREATE
 ============================================================ */
-function create() {
-  const w = this.scale.width, h = this.scale.height;
-  const cx = w / 2, cy = h / 2;
+function create(){
+  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
 
-  table = this.add.image(cx, cy, 'table').setDisplaySize(w, h);
+  table=this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
-  puck = this.physics.add.image(cx, cy, 'puck').setScale(0.07);
-  player = this.physics.add.image(cx, h * 0.9, 'paddle_gold').setScale(0.1);
-  cpu = this.physics.add.image(cx, h * 0.1, 'paddle_green').setScale(0.1);
+  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
+  player=this.physics.add.image(cx,h*0.9,'paddle_gold').setScale(0.1);
+  cpu=this.physics.add.image(cx,h*0.1,'paddle_green').setScale(0.1);
 
-  puck.setCollideWorldBounds(true).setBounce(0.98).setDrag(20,20);
+  // --- Physics setup ---
+  puck.setCollideWorldBounds(true).setBounce(1).setDrag(10,10);
   puck.body.setCircle(puck.width/2);
+  puck.body.setMass(1);
 
-  player.setCollideWorldBounds(true);
-  cpu.setCollideWorldBounds(true);
+  player.setCollideWorldBounds(true).setImmovable(false).body.setMass(2);
+  cpu.setCollideWorldBounds(true).setImmovable(false).body.setMass(2);
 
-  this.physics.add.collider(puck, player, handleHit, null, this);
-  this.physics.add.collider(puck, cpu, handleHit, null, this);
+  this.physics.add.collider(puck,player,handleHit,null,this);
+  this.physics.add.collider(puck,cpu,handleHit,null,this);
 
-  // Touch control for player
-  this.input.on('pointermove', pointer => {
-    if (pointer.y > h / 2) {
-      player.x = Phaser.Math.Clamp(pointer.x, 60, w - 60);
-      player.y = Phaser.Math.Clamp(pointer.y, h / 2 + 40, h - 60);
+  // --- Player control ---
+  this.input.on('pointermove',pointer=>{
+    if(pointer.y>h/2){
+      player.x=Phaser.Math.Clamp(pointer.x,60,w-60);
+      player.y=Phaser.Math.Clamp(pointer.y,h/2+40,h-60);
     }
   });
 
-  scoreText = this.add.text(cx, 40, '0 - 0', {
-    fontFamily: 'Orbitron',
-    fontSize: '48px',
-    color: '#ffe175',
-    stroke: '#2fbf6b',
-    strokeThickness: 3
-  }).setOrigin(0.5, 0);
+  // --- Score display ---
+  scoreText=this.add.text(cx,40,'0 - 0',{
+    fontFamily:'Orbitron',
+    fontSize:'48px',
+    color:'#ffe175',
+    stroke:'#2fbf6b',
+    strokeThickness:3
+  }).setOrigin(0.5,0);
 
   resetPuck.call(this);
 }
 
 /* ============================================================
-   HANDLE COLLISION
+   HANDLE COLLISIONS (real impulse)
 ============================================================ */
-function handleHit(puck, paddle) {
-  const dx = puck.x - paddle.x;
-  const dy = puck.y - paddle.y;
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-  const nx = dx / dist, ny = dy / dist;
+function handleHit(puck,paddle){
+  // Vector from paddle center to puck
+  const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
+  const dist=Math.sqrt(dx*dx+dy*dy)||1;
+  const nx=dx/dist, ny=dy/dist;
 
-  const relVelX = paddle.body.velocity.x - puck.body.velocity.x;
-  const relVelY = paddle.body.velocity.y - puck.body.velocity.y;
-  const relSpeed = Math.sqrt(relVelX * relVelX + relVelY * relVelY);
-  const impulse = Phaser.Math.Clamp(relSpeed * 0.5, 100, 500);
+  // Paddle movement speed
+  const pvx=paddle.body.velocity.x, pvy=paddle.body.velocity.y;
+  const paddleSpeed=Math.sqrt(pvx*pvx+pvy*pvy);
 
-  puck.body.velocity.x += nx * impulse;
-  puck.body.velocity.y += ny * impulse;
-  puck.setAngularVelocity(Phaser.Math.Between(-60, 60));
+  // Impulse strength based on paddle speed
+  const impulse=Phaser.Math.Clamp(paddleSpeed*1.5,150,600);
+
+  puck.body.velocity.x=nx*impulse;
+  puck.body.velocity.y=ny*impulse;
+  puck.setAngularVelocity(Phaser.Math.Between(-80,80));
 }
 
 /* ============================================================
    UPDATE LOOP
 ============================================================ */
-function update() {
-  const w = this.scale.width, h = this.scale.height;
+function update(){
+  const w=this.scale.width,h=this.scale.height;
 
-  // CPU follows puck
-  cpu.x += (puck.x - cpu.x) * 0.08;
-  if (puck.y < h / 2) cpu.y += (puck.y - cpu.y) * 0.05;
-  cpu.y = Phaser.Math.Clamp(cpu.y, 50, h / 2 - 50);
+  // CPU simple AI
+  cpu.x+=(puck.x-cpu.x)*0.08;
+  if(puck.y<h/2) cpu.y+=(puck.y-cpu.y)*0.05;
+  cpu.y=Phaser.Math.Clamp(cpu.y,50,h/2-50);
 
-  // Goals
-  const goalWidth = 200;
-  if (puck.y < 20 && Math.abs(puck.x - w / 2) < goalWidth / 2) {
-    scorePlayer++;
-    resetPuck.call(this, 'player');
+  // Goal detection
+  const goalWidth=200;
+  if(puck.y<20 && Math.abs(puck.x-w/2)<goalWidth/2){
+    scorePlayer++; resetPuck.call(this,'player');
   }
-  if (puck.y > h - 20 && Math.abs(puck.x - w / 2) < goalWidth / 2) {
-    scoreCPU++;
-    resetPuck.call(this, 'cpu');
+  if(puck.y>h-20 && Math.abs(puck.x-w/2)<goalWidth/2){
+    scoreCPU++; resetPuck.call(this,'cpu');
   }
 }
 
 /* ============================================================
    RESET PUCK
 ============================================================ */
-function resetPuck(scoredBy) {
-  const w = this.scale.width, h = this.scale.height;
-  puck.setPosition(w / 2, h / 2);
-  const angle = Phaser.Math.Between(25, 155) * (Phaser.Math.Between(0, 1) ? 1 : -1);
-  const speed = Phaser.Math.Between(280, 360);
-  const vx = Math.cos(angle * Math.PI / 180) * speed;
-  const vy = (scoredBy === 'player' ? -1 : 1) * Math.abs(Math.sin(angle * Math.PI / 180) * speed);
-  puck.setVelocity(vx, vy);
+function resetPuck(scoredBy){
+  const w=this.scale.width,h=this.scale.height;
+  puck.setPosition(w/2,h/2);
+  const angle=Phaser.Math.Between(25,155)*(Phaser.Math.Between(0,1)?1:-1);
+  const speed=Phaser.Math.Between(280,360);
+  const vx=Math.cos(angle*Math.PI/180)*speed;
+  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+  puck.setVelocity(vx,vy);
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 </script>
