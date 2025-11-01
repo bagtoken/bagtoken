@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>The $BAG Is Right Wheel — FULLY WORKING</title>
+<title>$BAG Big Wheel — Centered • Full Wheel • Upright Numbers</title>
 
-<!-- THREE.JS LOADED FROM RELIABLE CDN (NO FAIL) -->
+<!-- Solid, version-pinned THREE -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 
 <style>
@@ -14,13 +14,13 @@
   h1{margin:0 0 12px;font-size:clamp(1.2rem,4vw,2rem)}
   .board{background:linear-gradient(180deg,#0c2218,#091a13);border:1px solid #244b35;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px}
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:10px;padding:8px;margin-bottom:10px}
-  .stage{position:relative;height:72vh;min-height:460px;max-height:82vh;border-radius:12px;overflow:hidden;background:#0b1f16;display:flex;justify-content:center;align-items:center}
-  #mount{position:absolute;inset:0;width:100%;height:100%}
+  .stage{position:relative;height:72vh;min-height:480px;max-height:82vh;border-radius:12px;overflow:hidden;background:#0b1f16}
+  #mount{position:absolute;inset:0}
   #hud{position:absolute;right:10px;top:10px;width:200px;height:110px;z-index:3}
-  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.8);color:#fff;z-index:5;font-size:1.1rem}
+  #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(0,0,0,.8);color:#fff;z-index:5;font-size:1.05rem}
   #err b{color:#ff6b6b}
   .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
-  .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer;transition:transform .1s}
+  .btn{padding:14px 18px;border:0;border-radius:12px;font-weight:900;cursor:pointer;transition:transform .08s}
   .btn:active{transform:translateY(2px)}
   .spin{background:linear-gradient(180deg,#ffe175,#f5c94c);color:#0b120d;box-shadow:0 5px 0 #b08a19}
   .hold{background:linear-gradient(180deg,#d6f0e2,#cde7d9);color:#0b120d;box-shadow:0 5px 0 #7ba38d}
@@ -32,9 +32,9 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>The $BAG Is Right Wheel</h1>
+  <h1>$BAG Big Wheel</h1>
   <div class="board">
-    <div class="marquee">SWIPE DOWN TO SPIN • FULL WHEEL • NUMBERS UPRIGHT</div>
+    <div class="marquee">SWIPE DOWN TO SPIN • FULL WHEEL IN VIEW • NUMBERS UPRIGHT</div>
     <div class="stage">
       <div id="mount"></div>
       <canvas id="hud" width="200" height="110"></canvas>
@@ -50,310 +50,308 @@
 </div>
 
 <script>
-// Wait for THREE to load
+/* ---------- Guard ---------- */
 if (!window.THREE) {
-  document.getElementById('err').innerHTML = '<b>ERROR: THREE.js failed to load.</b><br>Check internet or try desktop Chrome.';
-  throw new Error('THREE.js not loaded');
+  const E = document.getElementById('err'); E.style.display='flex';
+  E.innerHTML='<b>ERROR:</b> THREE.js failed to load.';
+  throw new Error('THREE not loaded');
 }
 
+/* ---------- Helpers ---------- */
 const E = document.getElementById('err');
-function showError(msg) {
-  E.style.display = 'flex';
-  E.innerHTML = `<b>ERROR:</b> ${msg}`;
+function showError(m){E.style.display='flex';E.innerHTML='<b>ERROR:</b> '+m;}
+
+function makePlateTexture(valueStr, index){
+  // Colors per Price-is-Right vibe
+  const is100 = valueStr==='1.00';
+  const isGreen = valueStr==='0.05' || valueStr==='0.15';
+  const altDark = !is100 && !isGreen && (index%2===0);
+
+  const c=document.createElement('canvas'); c.width=512; c.height=256;
+  const g=c.getContext('2d');
+
+  g.fillStyle = is100 ? '#b30000' : isGreen ? '#0e7f2b' : (altDark ? '#111' : '#ffffff');
+  g.fillRect(0,0,512,256);
+
+  g.strokeStyle='#d4af37'; g.lineWidth=28;
+  g.strokeRect(14,14,484,228);
+
+  g.fillStyle = (is100||isGreen||altDark)?'#ffffff':'#000000';
+  g.font = is100 ? '900 160px Inter,system-ui,Arial' : '900 140px Inter,system-ui,Arial';
+  g.textAlign='center'; g.textBaseline='middle';
+  const label = is100 ? '100' : String(Math.round(parseFloat(valueStr)*100));
+  g.fillText(label,256,128 + (is100?-6:6));
+  return new THREE.CanvasTexture(c);
 }
 
-function initWheel3D() {
-  const mount = document.getElementById('mount');
-  const hud = document.getElementById('hud');
-  const msg = document.getElementById('msg');
-  const spinBtn = document.getElementById('spinBtn');
-  const holdBtn = document.getElementById('holdBtn');
-  const resetBtn = document.getElementById('resetBtn');
-  holdBtn.disabled = true;
+/* ---------- Build ---------- */
+function initWheel3D(){
+  const mount=document.getElementById('mount');
+  const hud=document.getElementById('hud');
+  const msg=document.getElementById('msg');
+  const spinBtn=document.getElementById('spinBtn');
+  const holdBtn=document.getElementById('holdBtn');
+  const resetBtn=document.getElementById('resetBtn');
+  holdBtn.disabled=true;
 
-  const seq = [0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
-  const labels = seq.map(v => v.toFixed(2));
-  const N = labels.length;
-  const TAU = Math.PI * 2;
-  const STEP = TAU / N;
+  // Sequence (20 slots)
+  const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
+  const labels=seq.map(v=>v.toFixed(2));
+  const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
 
   const {
     Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
     CylinderGeometry, TorusGeometry, PlaneGeometry, CanvasTexture, Vector3,
-    DirectionalLight, AmbientLight, Color, DoubleSide, Box3
+    DirectionalLight, AmbientLight, Color, DoubleSide, Box3, BoxGeometry
   } = THREE;
 
-  const scene = new Scene();
-  scene.background = new Color('#091913');
+  const scene=new Scene(); scene.background=new Color('#091913');
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.domElement.style.touchAction = 'none';
+  const renderer=new WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.domElement.style.touchAction='none';
   mount.appendChild(renderer.domElement);
 
-  const camera = new PerspectiveCamera(35, 1, 0.1, 100);
-  camera.position.set(0, 0, 12);
-  camera.lookAt(0, 0, 0);
+  const camera=new PerspectiveCamera(35,1,0.1,100);
+  camera.position.set(0,0,10); camera.lookAt(0,0,0);
 
-  // Lights
-  scene.add(new DirectionalLight(0xffffff, 1.2)).position.set(5, 5, 5);
-  scene.add(new DirectionalLight(0xffffff, 0.6)).position.set(-5, 3, 5);
-  scene.add(new AmbientLight(0xffffff, 0.4));
+  // Lighting
+  const key=new DirectionalLight(0xffffff,1.15); key.position.set(5,6,8);
+  const rim=new DirectionalLight(0xffffff,0.6); rim.position.set(-6,3,5);
+  const amb=new AmbientLight(0xffffff,0.45);
+  scene.add(key,rim,amb);
 
-  const root = new Group();
-  scene.add(root);
+  // Root
+  const root=new Group(); scene.add(root);
 
-  const R = 2.8;
-  const DEPTH = 1.0;
-  const OUT = R + 0.1;
-  const wheel = new Group();
-  root.add(wheel);
+  // Wheel dimensions
+  const R=2.8, DEPTH=1.0, OUT=R+0.12;
 
-  // DRUM
-  const drum = new Mesh(
-    new CylinderGeometry(R, R, DEPTH, 128, 1, true),
-    new MeshStandardMaterial({ color: '#0a0a0a', metalness: 0.7, roughness: 0.3 })
+  const wheel=new Group(); root.add(wheel);
+
+  // Drum (side view cylinder)
+  const drum=new Mesh(
+    new CylinderGeometry(R,R,DEPTH,128,1,true),
+    new MeshStandardMaterial({color:'#0a0a0a',metalness:0.75,roughness:0.28})
   );
-  drum.rotation.x = Math.PI / 2;
+  drum.rotation.x=Math.PI/2; // stand it up
   wheel.add(drum);
 
-  // RIM
-  const rim = new Mesh(
-    new TorusGeometry(R + 0.05, 0.08, 16, 100),
-    new MeshStandardMaterial({ color: '#111', metalness: 0.9, roughness: 0.1 })
+  // Front rim
+  const rimMesh=new Mesh(
+    new TorusGeometry(R+0.06,0.08,16,100),
+    new MeshStandardMaterial({color:'#111',metalness:0.9,roughness:0.12})
   );
-  rim.rotation.x = Math.PI / 2;
-  rim.position.z = DEPTH / 2 + 0.02;
-  wheel.add(rim);
+  rimMesh.rotation.x=Math.PI/2;
+  rimMesh.position.z=DEPTH/2+0.02;
+  wheel.add(rimMesh);
 
-  // PEGS
-  const pegGeo = new CylinderGeometry(0.06, 0.06, 0.30, 12);
-  const pegMat = new MeshStandardMaterial({ color: '#d4af37', metalness: 0.9, roughness: 0.2 });
-  const pegs = new Group();
-  for (let i = 0; i < N; i++) {
-    const a = i * STEP + STEP / 2;
-    const x = Math.sin(a) * OUT;
-    const y = Math.cos(a) * OUT;
-    const p = new Mesh(pegGeo, pegMat);
-    p.position.set(x, y, DEPTH / 2 + 0.15);
-    p.rotation.y = -a;
+  // Pegs on front rim
+  const pegGeo=new CylinderGeometry(0.06,0.06,0.30,12);
+  const pegMat=new MeshStandardMaterial({color:'#d4af37',metalness:0.9,roughness:0.2});
+  const pegs=new Group();
+  for(let i=0;i<N;i++){
+    const a=i*STEP + STEP/2, x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
+    const p=new Mesh(pegGeo,pegMat);
+    p.position.set(x,y,DEPTH/2+0.15);
+    p.rotation.y=-a;
     pegs.add(p);
   }
   wheel.add(pegs);
 
-  // PLATES
-  const plates = new Group();
-  const plateGeo = new PlaneGeometry(1.3, 0.65);
-  for (let i = 0; i < N; i++) {
-    const a = i * STEP + STEP / 2;
-    const x = Math.sin(a) * OUT;
-    const y = Math.cos(a) * OUT;
-    const plate = new Group();
-    plate.position.set(x, y, DEPTH / 2 + 0.01);
+  // Number plates (proper outward-facing & upright)
+  const plates=new Group();
+  const plateGeo=new PlaneGeometry(1.30,0.65);
+  for(let i=0;i<N;i++){
+    const a=i*STEP + STEP/2;
+    const x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    const v = labels[i];
-    const is100 = v === '1.00';
-    const isGreen = v === '0.05' || v === '0.15';
-    const dark = !is100 && !isGreen && (i % 2 === 0);
-    ctx.fillStyle = is100 ? '#b30000' : isGreen ? '#006400' : dark ? '#111' : '#fff';
-    ctx.fillRect(0, 0, 512, 256);
-    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 28; ctx.strokeRect(14, 14, 484, 228);
-    ctx.fillStyle = (is100 || isGreen || dark) ? '#fff' : '#000';
-    ctx.font = is100 ? '900 160px Inter,sans-serif' : '900 140px Inter,sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(is100 ? '100' : String(Math.round(parseFloat(v) * 100)), 256, 128 + (is100 ? -4 : 6));
+    const holder=new Group();
+    holder.position.set(x,y,DEPTH/2+0.01);
 
-    const mesh = new Mesh(
-      plateGeo,
-      new MeshBasicMaterial({ map: new CanvasTexture(canvas), side: DoubleSide })
-    );
-    mesh.rotation.z = -a;
-    plate.add(mesh);
-    plates.add(plate);
+    // Orient the holder so its local +Z points outward along the radius
+    const outward=new Vector3(x,y,0).normalize();
+    const target=outward.clone().multiplyScalar(2); // any point further along the outward normal
+    holder.lookAt(target); // now holder's -Z looks at target; flip 180 on X to make +Z face out
+    holder.rotateX(Math.PI);
+
+    // Keep the top edge “up” so text is never tilted
+    // After lookAt+flip, rotate around local Z to keep plate tangent/upright
+    // We want the plate's long edge around the circumference, so rotate 90°
+    holder.rotateZ(Math.PI/2);
+
+    const tex=makePlateTexture(labels[i],i);
+    const plate=new Mesh(plateGeo,new MeshBasicMaterial({map:tex,side:DoubleSide}));
+    holder.add(plate);
+    plates.add(holder);
   }
   wheel.add(plates);
 
-  // FLAPPER
-  const flap = new Mesh(
-    new BoxGeometry(0.08, 0.45, 0.18),
-    new MeshStandardMaterial({ color: '#c41e3a', metalness: 0.6, roughness: 0.4 })
+  // Flapper
+  const flap=new Mesh(
+    new BoxGeometry(0.08,0.45,0.18),
+    new MeshStandardMaterial({color:'#c41e3a',metalness:0.6,roughness:0.4})
   );
-  flap.position.set(0, OUT + 0.1, 0);
+  flap.position.set(0,OUT+0.1,0);
   root.add(flap);
 
-  // CENTER
+  // Center root at (0,0,0)
   root.updateMatrixWorld(true);
-  const box = new Box3().setFromObject(root);
-  const center = box.getCenter(new Vector3());
+  const box=new Box3().setFromObject(root);
+  const center=box.getCenter(new Vector3());
   root.position.sub(center);
 
-  // RESIZE
-  function resize() {
-    const rect = mount.getBoundingClientRect();
-    const w = Math.floor(rect.width), h = Math.floor(rect.height);
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
+  // ---------- Fit camera so the entire wheel is visible ----------
+  function fitCamera(){
+    root.updateMatrixWorld(true);
+    const b=new Box3().setFromObject(root);
+    const size=b.getSize(new Vector3());
+    const maxDim=Math.max(size.x,size.y,size.z);
+    const fov=camera.fov * (Math.PI/180);
+    // Distance to fit object height in view
+    let dist = (maxDim/2) / Math.tan(fov/2);
+    dist += 1.2; // padding
+    camera.position.set(0,0,dist);
+    camera.lookAt(0,0,0);
+
+    const rect=mount.getBoundingClientRect();
+    const w=Math.floor(rect.width), h=Math.floor(rect.height);
+    renderer.setSize(w,h,false);
+    camera.aspect = w/h;
     camera.updateProjectionMatrix();
   }
-  resize();
-  window.addEventListener('resize', resize);
+  fitCamera();
 
-  // HUD
-  function drawHUD(val) {
-    const ctx = hud.getContext('2d');
-    ctx.clearRect(0, 0, 200, 110);
-    ctx.fillStyle = '#07090b'; ctx.fillRect(0, 0, 200, 110);
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 6; ctx.strokeRect(4, 4, 192, 102);
-    ctx.fillStyle = '#ffe26a'; ctx.font = '700 72px "DM Mono",monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText((val || 0).toFixed(2), 100, 55);
+  window.addEventListener('resize', fitCamera);
+
+  // ---------- HUD ----------
+  function drawHUD(v=0){
+    const ctx=hud.getContext('2d');
+    ctx.clearRect(0,0,200,110);
+    ctx.fillStyle='#07090b'; ctx.fillRect(0,0,200,110);
+    ctx.strokeStyle='#333'; ctx.lineWidth=6; ctx.strokeRect(4,4,192,102);
+    ctx.fillStyle='#ffe26a'; ctx.font='700 72px "DM Mono",monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(v.toFixed(2),100,55);
   }
   drawHUD(0);
 
-  // SPIN LOGIC
-  let angle = 0, velocity = 0, spinning = false, spin1 = null, total = 0, done = false;
-  const FRICTION = 0.99, MIN_VEL = 0.001, PIX2RAD = 0.03;
+  // ---------- Spin logic (unchanged behavior) ----------
+  let angle=0, velocity=0, spinning=false, spin1=null, total=0, done=false;
+  const FRICTION=0.99, MIN_VEL=0.001, PIX2RAD=0.03;
 
-  function setAngle(a) { angle = a; wheel.rotation.z = a; }
-  function getIndex() { return Math.floor(((angle % TAU) + TAU) % TAU / STEP) % N; }
-  function current() { return parseFloat(labels[getIndex()]); }
-  function snap() { return getIndex() * STEP; }
+  function setAngle(a){ angle=a; wheel.rotation.z=a; }
+  function getIndex(){ return Math.floor(((angle%TAU)+TAU)%TAU/STEP)%N; }
+  function current(){ return parseFloat(labels[getIndex()]); }
+  function snap(){ return getIndex()*STEP; }
 
-  const canvas = renderer.domElement;
-  let dragging = false, lastY = 0, samples = [];
+  const canvas=renderer.domElement;
+  let dragging=false,lastY=0,samples=[];
 
-  function start(e) { if (spinning || done) return; dragging = true; samples = []; lastY = (e.touches?.[0] || e).clientY; e.preventDefault(); }
-  function move(e) {
-    if (!dragging) return;
-    const y = (e.touches?.[0] || e).clientY;
-    const dy = lastY - y;
-    setAngle(angle + dy * PIX2RAD);
-    const now = performance.now();
-    if (!samples.length || now - samples[samples.length - 1].t > 16) {
-      samples.push({ v: dy * PIX2RAD, t: now });
-      if (samples.length > 5) samples.shift();
+  function start(e){ if(spinning||done)return; dragging=true;samples=[]; lastY=(e.touches?.[0]||e).clientY; e.preventDefault();}
+  function move(e){
+    if(!dragging)return;
+    const y=(e.touches?.[0]||e).clientY, dy=lastY-y;
+    setAngle(angle + dy*PIX2RAD);
+    const now=performance.now();
+    if(!samples.length||now-samples[samples.length-1].t>16){
+      samples.push({v:dy*PIX2RAD,t:now}); if(samples.length>5)samples.shift();
     }
-    lastY = y; e.preventDefault();
+    lastY=y; e.preventDefault();
   }
-  function end() {
-    if (!dragging) return; dragging = false;
-    if (samples.length) {
-      const avg = samples.reduce((s, i) => s + i.v, 0) / samples.length;
-      velocity = Math.sign(avg) * Math.min(12, Math.max(2, Math.abs(avg) * 1.5));
+  function end(){
+    if(!dragging)return; dragging=false;
+    if(samples.length){
+      const avg=samples.reduce((s,i)=>s+i.v,0)/samples.length;
+      velocity=Math.sign(avg)*Math.min(12,Math.max(2,Math.abs(avg)*1.5));
     }
     spin();
   }
 
-  canvas.addEventListener('mousedown', start);
-  canvas.addEventListener('touchstart', start, { passive: false });
-  window.addEventListener('mousemove', move);
-  window.addEventListener('touchmove', move, { passive: false });
-  window.addEventListener('mouseup', end);
-  window.addEventListener('touchend', end);
+  canvas.addEventListener('mousedown',start);
+  canvas.addEventListener('touchstart',start,{passive:false});
+  window.addEventListener('mousemove',move);
+  window.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('mouseup',end);
+  window.addEventListener('touchend',end);
 
-  spinBtn.onclick = () => { if (!spinning && !done) { velocity = 8; spin(); } };
-  holdBtn.onclick = () => { if (!spinning && !done && spin1 !== null) hold(); };
-  resetBtn.onclick = reset;
+  document.getElementById('spinBtn').onclick=()=>{ if(!spinning&&!done){ velocity=8; spin(); } };
+  document.getElementById('holdBtn').onclick=()=>{ if(!spinning&&!done&&spin1!==null) hold(); };
+  document.getElementById('resetBtn').onclick=reset;
 
-  function spin() {
-    spinning = true;
-    spinBtn.disabled = holdBtn.disabled = resetBtn.disabled = true;
-    msg.textContent = spin1 === null ? 'Spinning 1...' : 'Spinning 2...';
-    msg.className = 't';
+  function spin(){
+    spinning=true;
+    spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=true;
+    msg.textContent=spin1===null?'Spinning 1...':'Spinning 2...'; msg.className='t';
 
-    const loop = () => {
-      setAngle(angle + velocity / 60);
-      velocity *= FRICTION;
+    const loop=()=>{
+      setAngle(angle + velocity/60);
+      velocity*=FRICTION;
       drawHUD(current());
-      if (Math.abs(velocity) < MIN_VEL) {
-        const target = snap();
-        const diff = ((target - angle + TAU * 3) % TAU) - TAU;
-        if (Math.abs(diff) > 0.002) {
-          setAngle(angle + diff * 0.2);
-          requestAnimationFrame(loop);
-        } else {
-          setAngle(target);
-          spinning = false;
-          settle();
-        }
-      } else requestAnimationFrame(loop);
+      if(Math.abs(velocity)<MIN_VEL){
+        const target=snap();
+        const diff=((target-angle+TAU*3)%TAU)-TAU;
+        if(Math.abs(diff)>0.002){ setAngle(angle+diff*0.2); requestAnimationFrame(loop); }
+        else{ setAngle(target); spinning=false; settle(); }
+      }else requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
   }
 
-  function settle() {
-    const v = current();
-    if (spin1 === null) {
-      spin1 = v; total = v;
-      msg.textContent = `Spin 1: ${v.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`;
-      holdBtn.disabled = resetBtn.disabled = false;
-      spinBtn.disabled = false;
-    } else {
-      total += v; drawHUD(total);
-      if (total > 1.00) {
-        done = true; msg.className = 't lose'; msg.textContent = `BUST — ${total.toFixed(2)} over 1.00`; endGame(0, 'Bust');
-      } else if (total === 1.00) {
-        msg.className = 't win'; msg.textContent = 'Exact 1.00 — 5×! Bonus spin...'; bonusSpin();
-      } else if (total >= 0.95) {
-        endGame(1, 'Near 1.00');
-      } else {
-        endGame(0, 'Under 1.00');
-      }
+  function settle(){
+    const v=current();
+    if(spin1===null){
+      spin1=v; total=v;
+      msg.textContent=`Spin 1: ${v.toFixed(2)} — total ${total.toFixed(2)}. Spin again or HOLD.`;
+      holdBtn.disabled=resetBtn.disabled=false; spinBtn.disabled=false;
+    }else{
+      total+=v; drawHUD(total);
+      if(total>1.00){ done=true; msg.className='t lose'; msg.textContent=`BUST — ${total.toFixed(2)} over 1.00`; endGame(0,'Bust'); }
+      else if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×! Bonus spin...'; bonusSpin(); }
+      else if(total>=0.95){ endGame(1,'Near 1.00'); }
+      else{ endGame(0,'Under 1.00'); }
     }
   }
 
-  function hold() {
-    if (total === 1.00) { msg.className = 't win'; msg.textContent = 'Exact 1.00 — 5×! Bonus spin...'; bonusSpin(); return; }
-    endGame(total >= 0.95 ? 1 : 0, total >= 0.95 ? 'Held near 1.00' : 'Held under 1.00');
+  function hold(){
+    if(total===1.00){ msg.className='t win'; msg.textContent='Exact 1.00 — 5×! Bonus spin...'; bonusSpin(); return; }
+    endGame(total>=0.95?1:0, total>=0.95?'Held near 1.00':'Held under 1.00');
   }
 
-  function bonusSpin() {
-    velocity = 7; spinning = true;
-    const loop = () => {
-      setAngle(angle + velocity / 60);
-      velocity *= FRICTION;
-      if (Math.abs(velocity) < MIN_VEL) {
-        const v = current();
-        const extra = v === 0.05 ? 5 : v === 0.15 ? 15 : v === 1.00 ? 25 : 0;
-        msg.className = extra ? 't win' : 't';
-        msg.textContent = extra ? `Bonus: ${v} → +${extra}×` : 'Bonus missed — 5× base';
-        done = true; resetBtn.disabled = false;
-      } else requestAnimationFrame(loop);
+  function bonusSpin(){
+    velocity=7; spinning=true;
+    const loop=()=>{
+      setAngle(angle + velocity/60);
+      velocity*=FRICTION;
+      if(Math.abs(velocity)<MIN_VEL){
+        const v=current();
+        const extra = v===0.05?5 : v===0.15?15 : v===1.00?25 : 0;
+        msg.className=extra?'t win':'t';
+        msg.textContent=extra?`Bonus: ${v} → +${extra}×`:'Bonus missed — 5× base';
+        done=true; resetBtn.disabled=false;
+      }else requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
   }
 
-  function endGame(mult, label) {
-    done = true; spinBtn.disabled = holdBtn.disabled = true; resetBtn.disabled = false;
-    msg.className = mult ? 't win' : 't lose';
-    msg.textContent = mult ? `${label} — ${mult}×` : `${label} — 0×`;
+  function endGame(mult,label){
+    done=true; spinBtn.disabled=holdBtn.disabled=true; resetBtn.disabled=false;
+    msg.className=mult?'t win':'t lose';
+    msg.textContent=mult?`${label} — ${mult}×`:`${label} — 0×`;
   }
 
-  function reset() {
-    spinning = done = false; spin1 = null; total = 0;
-    holdBtn.disabled = true; spinBtn.disabled = resetBtn.disabled = false;
+  function reset(){
+    spinning=done=false; spin1=null; total=0;
+    holdBtn.disabled=true; spinBtn.disabled=resetBtn.disabled=false;
     setAngle(0); drawHUD(0);
-    msg.className = 't'; msg.textContent = 'Spin up to two times to reach 1.00 without going over.';
+    msg.className='t'; msg.textContent='Spin up to two times to reach 1.00 without going over.';
   }
 
-  function render() {
-    renderer.render(scene, camera);
-    requestAnimationFrame(render);
-  }
-
-  setAngle(0);
-  render();
+  function render(){ renderer.render(scene,camera); requestAnimationFrame(render); }
+  setAngle(0); render();
 }
 
-// Start when THREE is ready
-if (window.THREE) {
-  initWheel3D();
-} else {
-  showError('THREE.js failed to load from CDN.');
-}
+try{ initWheel3D(); }catch(err){ showError(err.message||String(err)); }
 </script>
 </body>
 </html>
