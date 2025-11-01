@@ -40,17 +40,17 @@ function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
-  // World bounds only for the puck
+  // world bounds for puck only
   this.physics.world.setBounds(80,80,w-160,h-160);
 
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.98).setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1000);
+  puck.setCollideWorldBounds(true).setBounce(0.98).setDamping(true)
+      .setDrag(0.995,0.995).setMaxVelocity(1100);
 
   player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
   cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
 
-  // Player completely free, CPU obeys bounds
-  player.body.collideWorldBounds=false;
+  player.body.collideWorldBounds=false; // manual control
   cpu.setCollideWorldBounds(true);
   player.setImmovable(true);
   cpu.setImmovable(true);
@@ -58,17 +58,18 @@ function create(){
   this.physics.add.collider(puck,player,onHit,null,this);
   this.physics.add.collider(puck,cpu,onHit,null,this);
 
-  // ---- Touch area anywhere below center line ----
+  // ---- Touch anywhere in bottom 40% (below paddle zone) ----
   this.input.on('pointerdown',p=>{
-    if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
+    if(p.y>h*0.6){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
   });
   this.input.on('pointermove',p=>{
-    if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;}
+    if(touchTarget.active && p.y>h*0.6){touchTarget.x=p.x;touchTarget.y=p.y;}
   });
   this.input.on('pointerup',()=>touchTarget.active=false);
 
   scoreText=this.add.text(cx,40,'0 - 0',{
-    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3
+    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
+    stroke:'#2fbf6b',strokeThickness:3
   }).setOrigin(0.5,0);
 
   resetPuck.call(this);
@@ -80,13 +81,18 @@ function onHit(puck,paddle){
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
   const nx=dx/dist, ny=dy/dist;
 
+  // paddle velocity
   const vx=paddle.x-prevPlayer.x;
   const vy=paddle.y-prevPlayer.y;
-  const paddleSpeed=Math.sqrt(vx*vx+vy*vy)*80;
-  const force=Phaser.Math.Clamp(paddleSpeed,250,1000);
+  const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
 
-  puck.body.velocity.x=nx*force;
-  puck.body.velocity.y=ny*force;
+  // reactive impulse curve: quick flicks = big hit, slow = gentle
+  const force=Phaser.Math.Clamp(200 + paddleSpeed*120,200,1200);
+
+  // small extra push based on direct overlap (for closer hits)
+  const overlapBoost=(1-dist/100)*80;
+  puck.body.velocity.x += nx*(force+overlapBoost);
+  puck.body.velocity.y += ny*(force+overlapBoost);
 }
 
 /* ---------------- UPDATE ---------------- */
@@ -95,20 +101,20 @@ function update(){
   prevPlayer.x=player.x;
   prevPlayer.y=player.y;
 
-  // ---- Player control: full bottom half ----
+  // ---- Player control ----
   if(touchTarget.active){
     const dx=touchTarget.x-player.x;
-    const dy=touchTarget.y-player.y;
-    const moveSpeed=0.5;
+    const dy=(touchTarget.y-(h*0.9)); // relative offset: move paddle toward thumb but stay visible
+    const moveSpeed=0.55;
     player.x+=dx*moveSpeed;
-    player.y+=dy*moveSpeed;
+    player.y+=(dy)*0.3;
   }
 
-  // Clamp manually to visible bottom half
+  // Manual clamp: full bottom half, stop just above bottom rail
   player.x=Phaser.Math.Clamp(player.x,100,w-100);
-  player.y=Phaser.Math.Clamp(player.y,h*0.5+20,h-80);
+  player.y=Phaser.Math.Clamp(player.y,h*0.52,h-90);
 
-  // ---- CPU AI (top half) ----
+  // ---- CPU AI ----
   cpu.x+=(puck.x-cpu.x)*0.08;
   cpu.y+=(puck.y-cpu.y)*0.05;
   cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
@@ -125,7 +131,7 @@ function resetPuck(scoredBy){
   const w=this.scale.width,h=this.scale.height;
   puck.setPosition(w/2,h/2);
   const angle=Phaser.Math.Between(25,155)*(Phaser.Math.Between(0,1)?1:-1);
-  const speed=Phaser.Math.Between(400,550);
+  const speed=Phaser.Math.Between(450,600);
   const vx=Math.cos(angle*Math.PI/180)*speed;
   const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
   puck.setVelocity(vx,vy);
