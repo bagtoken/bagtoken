@@ -2,134 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>$BAG Air Hockey — Arcade P2E</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#021107;
-  color:#ffe175;font-family:"Orbitron",sans-serif;user-select:none}
-canvas{display:block;margin:auto;touch-action:none;
-  border:3px solid #2fbf6b;border-radius:14px;box-shadow:0 0 20px rgba(47,191,107,.5)}
-#hud{position:fixed;top:8px;left:0;right:0;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:0 14px;font-size:16px;z-index:10}
-button{background:#0b1b13;color:#ffe175;border:1px solid #2fbf6b;
-  padding:6px 10px;border-radius:6px;font-weight:600;cursor:pointer}
-button.active{background:#2fbf6b;color:#000}
-#score{position:fixed;bottom:10px;left:0;right:0;text-align:center;font-size:18px}
-#overlay{position:fixed;top:0;left:0;right:0;bottom:0;
-  display:flex;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.5);color:#ffe175;font-size:42px;
-  opacity:0;transition:.3s}
-#overlay.show{opacity:1}
+body{margin:0;background:#021107;overflow:hidden;}
+canvas{display:block;margin:auto;}
 </style>
 </head>
 <body>
-<div id="hud">
-  <button id="cpuBtn" class="active">CPU</button>
-  <button id="pvpBtn">Player 2</button>
-  <button id="startBtn">Start</button>
-</div>
-<canvas id="game" width="900" height="500"></canvas>
-<div id="overlay">GOAL!</div>
-<div id="score">Player 1 – 0 : 0 – Player 2</div>
-
-<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script>
-const {Engine,Render,Runner,World,Bodies,Body,Events}=Matter;
-const engine=Engine.create();engine.world.gravity.y=0;
-const canvas=document.getElementById("game");
-const render=Render.create({
-  canvas,engine,
-  options:{width:900,height:500,wireframes:false,background:"#04150c"}
-});
-Render.run(render);Runner.run(Runner.create(),engine);
-
-/* Table dimensions */
-const W=render.options.width,H=render.options.height;
-
-/* Walls */
-const wallOpt={isStatic:true,render:{visible:false}};
-World.add(engine.world,[
-  Bodies.rectangle(W/2,-5,W,10,wallOpt),
-  Bodies.rectangle(W/2,H+5,W,10,wallOpt),
-  Bodies.rectangle(-5,H/2,10,H,wallOpt),
-  Bodies.rectangle(W+5,H/2,10,H,wallOpt)
-]);
-
-/* Objects */
-const paddleR=35,puckR=22;
-const paddle1=Bodies.circle(W/2,H*0.15,paddleR,{restitution:1,frictionAir:0.15,inertia:Infinity,render:{fillStyle:"#ffe175"}});
-const paddle2=Bodies.circle(W/2,H*0.85,paddleR,{restitution:1,frictionAir:0.15,inertia:Infinity,render:{fillStyle:"#2fbf6b"}});
-const puck=Bodies.circle(W/2,H/2,puckR,{restitution:1,frictionAir:0.02,render:{fillStyle:"#00ff8c"}});
-World.add(engine.world,[paddle1,paddle2,puck]);
-
-/* State */
-let cpuMode=true,scores=[0,0],gameActive=false;
-const overlay=document.getElementById("overlay"),scoreText=document.getElementById("score");
-
-/* Toggle CPU/PvP */
-cpuBtn.onclick=()=>{cpuMode=true;cpuBtn.classList.add("active");pvpBtn.classList.remove("active");};
-pvpBtn.onclick=()=>{cpuMode=false;pvpBtn.classList.add("active");cpuBtn.classList.remove("active");};
-
-/* Start */
-document.getElementById("startBtn").onclick=()=>{
-  scores=[0,0];updateScore();
-  Body.setPosition(puck,{x:W/2,y:H/2});
-  Body.setVelocity(puck,{x:(Math.random()-.5)*8,y:(Math.random()>.5?4:-4)});
-  gameActive=true;overlay.classList.remove("show");
+const config={
+  type:Phaser.AUTO,
+  width:window.innerWidth,
+  height:window.innerHeight,
+  physics:{default:'arcade',arcade:{debug:false}},
+  scene:{preload,create,update}
 };
+let puck,p1,p2,cursors,score1=0,score2=0,scoreText,cpu=true;
 
-/* Score + reset */
-function goalScored(p){
-  scores[p-1]++;updateScore();
-  overlay.textContent="GOAL!";overlay.classList.add("show");
-  setTimeout(()=>overlay.classList.remove("show"),600);
-  Body.setPosition(puck,{x:W/2,y:H/2});
-  Body.setVelocity(puck,{x:(Math.random()-.5)*8,y:(Math.random()>.5?4:-4)});
+const game=new Phaser.Game(config);
+
+function preload(){
+  this.load.image('table','/arcade/assets/img/airhockey_table.png');
+  this.load.image('puck','/arcade/assets/img/puck.png');
+  this.load.image('paddle1','/arcade/assets/img/paddle_gold.png');
+  this.load.image('paddle2','/arcade/assets/img/paddle_green.png');
 }
-function updateScore(){scoreText.textContent=`Player 1 – ${scores[0]} : ${scores[1]} – Player 2`;}
+function create(){
+  this.add.image(config.width/2,config.height/2,'table')
+      .setDisplaySize(config.width,config.height);
+  puck=this.physics.add.image(config.width/2,config.height/2,'puck').setScale(0.08);
+  p1=this.physics.add.image(config.width/2,config.height*0.2,'paddle1').setScale(0.1);
+  p2=this.physics.add.image(config.width/2,config.height*0.8,'paddle2').setScale(0.1);
+  puck.setCollideWorldBounds(true).setBounce(1);
+  p1.setCollideWorldBounds(true);
+  p2.setCollideWorldBounds(true);
+  this.physics.add.collider(puck,p1);
+  this.physics.add.collider(puck,p2);
 
-/* Collisions + goals */
-Events.on(engine,"afterUpdate",()=>{
-  if(!gameActive)return;
-  if(puck.position.y<puckR && Math.abs(puck.position.x-W/2)<100)goalScored(2);
-  if(puck.position.y>H-puckR && Math.abs(puck.position.x-W/2)<100)goalScored(1);
-});
+  this.input.on('pointermove',pointer=>{
+    p1.x=Phaser.Math.Clamp(pointer.x,50,config.width-50);
+    p1.y=Phaser.Math.Clamp(pointer.y,50,config.height/2-20);
+  });
 
-/* Control */
-const mouse={x:W/2,y:H/4};
-canvas.addEventListener("mousemove",e=>{
-  const r=canvas.getBoundingClientRect();
-  mouse.x=(e.clientX-r.left)/r.width*W;
-  mouse.y=(e.clientY-r.top)/r.height*H;
-});
-canvas.addEventListener("touchmove",e=>{
-  const t=e.touches[0],r=canvas.getBoundingClientRect();
-  mouse.x=(t.clientX-r.left)/r.width*W;
-  mouse.y=(t.clientY-r.top)/r.height*H;
-},{passive:false});
+  scoreText=this.add.text(config.width/2,20,`0 - 0`,
+      {fontFamily:'Orbitron',fontSize:'32px',color:'#ffe175'}).setOrigin(0.5,0);
 
-const keys={ArrowUp:false,ArrowDown:false};
-window.addEventListener("keydown",e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=true;});
-window.addEventListener("keyup",e=>{if(keys.hasOwnProperty(e.key))keys[e.key]=false;});
-
-/* Loop */
-Events.on(engine,"beforeUpdate",()=>{
-  if(!gameActive)return;
-  /* Player 1 follows mouse / finger */
-  Body.setPosition(paddle1,{x:mouse.x,y:Math.min(mouse.y,H/2-40)});
-  /* Player 2 (CPU or manual) */
-  if(cpuMode){
-    const targetX=puck.position.x;
-    const dx=(targetX-paddle2.position.x)*0.05;
-    const dy=(puck.position.y>paddle2.position.y)?2:-2;
-    Body.translate(paddle2,{x:dx,y:dy});
+  cursors=this.input.keyboard.createCursorKeys();
+}
+function update(){
+  if(!cpu){
+    if(cursors.up.isDown)p2.y-=6;
+    else if(cursors.down.isDown)p2.y+=6;
   }else{
-    if(keys.ArrowUp)Body.translate(paddle2,{x:0,y:-6});
-    if(keys.ArrowDown)Body.translate(paddle2,{x:0,y:6});
+    // simple AI
+    this.physics.moveToObject(p2,puck,150);
+    if(p2.y<config.height/2+50)p2.setVelocityY(100);
   }
-  if(paddle2.position.y<H/2)paddle2.position.y=H/2;
-});
+  // goal check
+  if(puck.y<10){score2++;resetPuck.call(this);}
+  if(puck.y>config.height-10){score1++;resetPuck.call(this);}
+}
+function resetPuck(){
+  puck.setPosition(config.width/2,config.height/2);
+  puck.setVelocity(Phaser.Math.Between(-200,200),Phaser.Math.Between(-300,300));
+  scoreText.setText(`${score1} - ${score2}`);
+}
 </script>
 </body>
 </html>
