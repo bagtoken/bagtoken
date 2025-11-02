@@ -3,9 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>$BAG Big Wheel — Centered • Full Wheel • Upright Numbers</title>
+<title>$BAG Big Wheel — Front View • Centered • Upright Numbers</title>
 
-<!-- Solid, version-pinned THREE -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 
 <style>
@@ -50,42 +49,29 @@
 </div>
 
 <script>
-/* ---------- Guard ---------- */
-if (!window.THREE) {
-  const E = document.getElementById('err'); E.style.display='flex';
-  E.innerHTML='<b>ERROR:</b> THREE.js failed to load.';
-  throw new Error('THREE not loaded');
+if(!window.THREE){
+  const E=document.getElementById('err');E.style.display='flex';
+  E.innerHTML='<b>ERROR:</b> THREE.js failed to load.';throw new Error('THREE not loaded');
 }
 
-/* ---------- Helpers ---------- */
-const E = document.getElementById('err');
-function showError(m){E.style.display='flex';E.innerHTML='<b>ERROR:</b> '+m;}
-
-function makePlateTexture(valueStr, index){
-  // Colors per Price-is-Right vibe
-  const is100 = valueStr==='1.00';
-  const isGreen = valueStr==='0.05' || valueStr==='0.15';
-  const altDark = !is100 && !isGreen && (index%2===0);
-
-  const c=document.createElement('canvas'); c.width=512; c.height=256;
+function plateTexture(valStr, i){
+  const is100=valStr==='1.00';
+  const isGreen=valStr==='0.05'||valStr==='0.15';
+  const altDark=!is100&&!isGreen&&(i%2===0);
+  const c=document.createElement('canvas');c.width=512;c.height=256;
   const g=c.getContext('2d');
-
-  g.fillStyle = is100 ? '#b30000' : isGreen ? '#0e7f2b' : (altDark ? '#111' : '#ffffff');
+  g.fillStyle=is100?'#b30000':isGreen?'#0e7f2b':(altDark?'#111':'#fff');
   g.fillRect(0,0,512,256);
-
-  g.strokeStyle='#d4af37'; g.lineWidth=28;
-  g.strokeRect(14,14,484,228);
-
-  g.fillStyle = (is100||isGreen||altDark)?'#ffffff':'#000000';
-  g.font = is100 ? '900 160px Inter,system-ui,Arial' : '900 140px Inter,system-ui,Arial';
-  g.textAlign='center'; g.textBaseline='middle';
-  const label = is100 ? '100' : String(Math.round(parseFloat(valueStr)*100));
-  g.fillText(label,256,128 + (is100?-6:6));
+  g.strokeStyle='#d4af37';g.lineWidth=28;g.strokeRect(14,14,484,228);
+  g.fillStyle=(is100||isGreen||altDark)?'#fff':'#000';
+  g.font=is100?'900 160px Inter,system-ui,Arial':'900 140px Inter,system-ui,Arial';
+  g.textAlign='center';g.textBaseline='middle';
+  const txt=is100?'100':String(Math.round(parseFloat(valStr)*100));
+  g.fillText(txt,256,128+(is100?-6:6));
   return new THREE.CanvasTexture(c);
 }
 
-/* ---------- Build ---------- */
-function initWheel3D(){
+function init(){
   const mount=document.getElementById('mount');
   const hud=document.getElementById('hud');
   const msg=document.getElementById('msg');
@@ -94,7 +80,6 @@ function initWheel3D(){
   const resetBtn=document.getElementById('resetBtn');
   holdBtn.disabled=true;
 
-  // Sequence (20 slots)
   const seq=[0.05,0.80,0.35,0.60,0.20,0.45,0.70,0.25,0.90,0.55,0.10,0.95,0.30,0.75,0.50,1.00,0.15,0.40,0.65,0.85];
   const labels=seq.map(v=>v.toFixed(2));
   const N=labels.length, TAU=Math.PI*2, STEP=TAU/N;
@@ -103,9 +88,9 @@ function initWheel3D(){
     Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
     CylinderGeometry, TorusGeometry, PlaneGeometry, CanvasTexture, Vector3,
     DirectionalLight, AmbientLight, Color, DoubleSide, Box3, BoxGeometry
-  } = THREE;
+  }=THREE;
 
-  const scene=new Scene(); scene.background=new Color('#091913');
+  const scene=new Scene();scene.background=new Color('#091913');
 
   const renderer=new WebGLRenderer({antialias:true,alpha:true});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
@@ -113,77 +98,70 @@ function initWheel3D(){
   mount.appendChild(renderer.domElement);
 
   const camera=new PerspectiveCamera(35,1,0.1,100);
-  camera.position.set(0,0,10); camera.lookAt(0,0,0);
+  camera.position.set(0,0,10);camera.lookAt(0,0,0);
 
-  // Lighting
-  const key=new DirectionalLight(0xffffff,1.15); key.position.set(5,6,8);
-  const rim=new DirectionalLight(0xffffff,0.6); rim.position.set(-6,3,5);
-  const amb=new AmbientLight(0xffffff,0.45);
-  scene.add(key,rim,amb);
+  scene.add(new DirectionalLight(0xffffff,1.15).position.set(5,6,8));
+  scene.add(new DirectionalLight(0xffffff,0.6).position.set(-6,3,5));
+  scene.add(new AmbientLight(0xffffff,0.45));
 
-  // Root
-  const root=new Group(); scene.add(root);
+  const root=new Group();scene.add(root);
 
-  // Wheel dimensions
   const R=2.8, DEPTH=1.0, OUT=R+0.12;
+  const wheel=new Group();root.add(wheel);
 
-  const wheel=new Group(); root.add(wheel);
-
-  // Drum (side view cylinder)
+  /* ---------- DRUM WITH FRONT FACE (the fix) ---------- */
+  // openEnded=false draws end caps so you see the front of the wheel
   const drum=new Mesh(
-    new CylinderGeometry(R,R,DEPTH,128,1,true),
-    new MeshStandardMaterial({color:'#0a0a0a',metalness:0.75,roughness:0.28})
+    new CylinderGeometry(R,R,DEPTH,128,1,false), // << false = has caps
+    new MeshStandardMaterial({color:'#0b0b0b',metalness:0.75,roughness:0.3})
   );
-  drum.rotation.x=Math.PI/2; // stand it up
+  drum.rotation.x=Math.PI/2;            // axis along Z so the cap faces the camera
   wheel.add(drum);
 
-  // Front rim
-  const rimMesh=new Mesh(
+  // Subtle front face highlight disk
+  const face=new Mesh(
+    new CylinderGeometry(R-0.02,R-0.02,0.02,128),
+    new MeshStandardMaterial({color:'#0f1412',metalness:0.6,roughness:0.35})
+  );
+  face.rotation.x=Math.PI/2;
+  face.position.z=DEPTH/2+0.011;
+  wheel.add(face);
+
+  // Bezel
+  const bezel=new Mesh(
     new TorusGeometry(R+0.06,0.08,16,100),
     new MeshStandardMaterial({color:'#111',metalness:0.9,roughness:0.12})
   );
-  rimMesh.rotation.x=Math.PI/2;
-  rimMesh.position.z=DEPTH/2+0.02;
-  wheel.add(rimMesh);
+  bezel.rotation.x=Math.PI/2;bezel.position.z=DEPTH/2+0.02;
+  wheel.add(bezel);
 
-  // Pegs on front rim
+  // Pegs
   const pegGeo=new CylinderGeometry(0.06,0.06,0.30,12);
   const pegMat=new MeshStandardMaterial({color:'#d4af37',metalness:0.9,roughness:0.2});
   const pegs=new Group();
   for(let i=0;i<N;i++){
-    const a=i*STEP + STEP/2, x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
+    const a=i*STEP+STEP/2, x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
     const p=new Mesh(pegGeo,pegMat);
-    p.position.set(x,y,DEPTH/2+0.15);
-    p.rotation.y=-a;
-    pegs.add(p);
+    p.position.set(x,y,DEPTH/2+0.15); p.rotation.y=-a; pegs.add(p);
   }
   wheel.add(pegs);
 
-  // Number plates (proper outward-facing & upright)
+  // Plates — outward facing and always upright
   const plates=new Group();
   const plateGeo=new PlaneGeometry(1.30,0.65);
   for(let i=0;i<N;i++){
-    const a=i*STEP + STEP/2;
-    const x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
+    const a=i*STEP+STEP/2, x=Math.sin(a)*OUT, y=Math.cos(a)*OUT;
+    const holder=new Group(); holder.position.set(x,y,DEPTH/2+0.01);
 
-    const holder=new Group();
-    holder.position.set(x,y,DEPTH/2+0.01);
-
-    // Orient the holder so its local +Z points outward along the radius
     const outward=new Vector3(x,y,0).normalize();
-    const target=outward.clone().multiplyScalar(2); // any point further along the outward normal
-    holder.lookAt(target); // now holder's -Z looks at target; flip 180 on X to make +Z face out
-    holder.rotateX(Math.PI);
+    const target=outward.clone().multiplyScalar(2);
+    holder.lookAt(target);           // orient normal
+    holder.rotateX(Math.PI);         // make +Z point outward
+    holder.rotateZ(Math.PI/2);       // make plate long edge wrap the rim
 
-    // Keep the top edge “up” so text is never tilted
-    // After lookAt+flip, rotate around local Z to keep plate tangent/upright
-    // We want the plate's long edge around the circumference, so rotate 90°
-    holder.rotateZ(Math.PI/2);
-
-    const tex=makePlateTexture(labels[i],i);
+    const tex=plateTexture(labels[i],i);
     const plate=new Mesh(plateGeo,new MeshBasicMaterial({map:tex,side:DoubleSide}));
-    holder.add(plate);
-    plates.add(holder);
+    holder.add(plate); plates.add(holder);
   }
   wheel.add(plates);
 
@@ -192,58 +170,46 @@ function initWheel3D(){
     new BoxGeometry(0.08,0.45,0.18),
     new MeshStandardMaterial({color:'#c41e3a',metalness:0.6,roughness:0.4})
   );
-  flap.position.set(0,OUT+0.1,0);
-  root.add(flap);
+  flap.position.set(0,OUT+0.1,0); root.add(flap);
 
-  // Center root at (0,0,0)
-  root.updateMatrixWorld(true);
-  const box=new Box3().setFromObject(root);
-  const center=box.getCenter(new Vector3());
-  root.position.sub(center);
-
-  // ---------- Fit camera so the entire wheel is visible ----------
-  function fitCamera(){
+  // Center and fit camera so whole wheel is visible
+  function centerAndFit(){
     root.updateMatrixWorld(true);
     const b=new Box3().setFromObject(root);
+    const c=b.getCenter(new Vector3()); root.position.sub(c);
+
     const size=b.getSize(new Vector3());
     const maxDim=Math.max(size.x,size.y,size.z);
-    const fov=camera.fov * (Math.PI/180);
-    // Distance to fit object height in view
-    let dist = (maxDim/2) / Math.tan(fov/2);
-    dist += 1.2; // padding
-    camera.position.set(0,0,dist);
-    camera.lookAt(0,0,0);
+    const fov=camera.fov*(Math.PI/180);
+    let dist=(maxDim/2)/Math.tan(fov/2); dist+=1.2;
+    camera.position.set(0,0,dist); camera.lookAt(0,0,0);
 
-    const rect=mount.getBoundingClientRect();
-    const w=Math.floor(rect.width), h=Math.floor(rect.height);
-    renderer.setSize(w,h,false);
-    camera.aspect = w/h;
-    camera.updateProjectionMatrix();
+    const r=mount.getBoundingClientRect();
+    renderer.setSize(r.width|0,r.height|0,false);
+    camera.aspect=r.width/r.height; camera.updateProjectionMatrix();
   }
-  fitCamera();
+  centerAndFit(); window.addEventListener('resize',centerAndFit);
 
-  window.addEventListener('resize', fitCamera);
-
-  // ---------- HUD ----------
+  // HUD
   function drawHUD(v=0){
     const ctx=hud.getContext('2d');
     ctx.clearRect(0,0,200,110);
-    ctx.fillStyle='#07090b'; ctx.fillRect(0,0,200,110);
-    ctx.strokeStyle='#333'; ctx.lineWidth=6; ctx.strokeRect(4,4,192,102);
-    ctx.fillStyle='#ffe26a'; ctx.font='700 72px "DM Mono",monospace';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#07090b';ctx.fillRect(0,0,200,110);
+    ctx.strokeStyle='#333';ctx.lineWidth=6;ctx.strokeRect(4,4,192,102);
+    ctx.fillStyle='#ffe26a';ctx.font='700 72px "DM Mono",monospace';
+    ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(v.toFixed(2),100,55);
   }
   drawHUD(0);
 
-  // ---------- Spin logic (unchanged behavior) ----------
+  // Spin logic (same behavior)
   let angle=0, velocity=0, spinning=false, spin1=null, total=0, done=false;
   const FRICTION=0.99, MIN_VEL=0.001, PIX2RAD=0.03;
 
-  function setAngle(a){ angle=a; wheel.rotation.z=a; }
-  function getIndex(){ return Math.floor(((angle%TAU)+TAU)%TAU/STEP)%N; }
-  function current(){ return parseFloat(labels[getIndex()]); }
-  function snap(){ return getIndex()*STEP; }
+  function setAngle(a){angle=a;wheel.rotation.z=a;}
+  function getIndex(){return Math.floor(((angle% (TAU))+TAU)%TAU/STEP)%N;}
+  function current(){return parseFloat(labels[getIndex()]);}
+  function snap(){return getIndex()*STEP;}
 
   const canvas=renderer.domElement;
   let dragging=false,lastY=0,samples=[];
@@ -252,7 +218,7 @@ function initWheel3D(){
   function move(e){
     if(!dragging)return;
     const y=(e.touches?.[0]||e).clientY, dy=lastY-y;
-    setAngle(angle + dy*PIX2RAD);
+    setAngle(angle+dy*PIX2RAD);
     const now=performance.now();
     if(!samples.length||now-samples[samples.length-1].t>16){
       samples.push({v:dy*PIX2RAD,t:now}); if(samples.length>5)samples.shift();
@@ -267,7 +233,6 @@ function initWheel3D(){
     }
     spin();
   }
-
   canvas.addEventListener('mousedown',start);
   canvas.addEventListener('touchstart',start,{passive:false});
   window.addEventListener('mousemove',move);
@@ -275,27 +240,21 @@ function initWheel3D(){
   window.addEventListener('mouseup',end);
   window.addEventListener('touchend',end);
 
-  document.getElementById('spinBtn').onclick=()=>{ if(!spinning&&!done){ velocity=8; spin(); } };
-  document.getElementById('holdBtn').onclick=()=>{ if(!spinning&&!done&&spin1!==null) hold(); };
+  document.getElementById('spinBtn').onclick=()=>{if(!spinning&&!done){velocity=8;spin();}};
+  document.getElementById('holdBtn').onclick=()=>{if(!spinning&&!done&&spin1!==null)hold();};
   document.getElementById('resetBtn').onclick=reset;
 
   function spin(){
-    spinning=true;
-    spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=true;
+    spinning=true; spinBtn.disabled=holdBtn.disabled=resetBtn.disabled=true;
     msg.textContent=spin1===null?'Spinning 1...':'Spinning 2...'; msg.className='t';
-
     const loop=()=>{
-      setAngle(angle + velocity/60);
-      velocity*=FRICTION;
-      drawHUD(current());
+      setAngle(angle+velocity/60); velocity*=FRICTION; drawHUD(current());
       if(Math.abs(velocity)<MIN_VEL){
-        const target=snap();
-        const diff=((target-angle+TAU*3)%TAU)-TAU;
-        if(Math.abs(diff)>0.002){ setAngle(angle+diff*0.2); requestAnimationFrame(loop); }
+        const target=snap(); const diff=((target-angle+TAU*3)%TAU)-TAU;
+        if(Math.abs(diff)>0.002){ setAngle(angle+diff*0.2); requestAnimationFrame(loop);}
         else{ setAngle(target); spinning=false; settle(); }
       }else requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
+    }; requestAnimationFrame(loop);
   }
 
   function settle(){
@@ -321,17 +280,15 @@ function initWheel3D(){
   function bonusSpin(){
     velocity=7; spinning=true;
     const loop=()=>{
-      setAngle(angle + velocity/60);
-      velocity*=FRICTION;
+      setAngle(angle+velocity/60); velocity*=FRICTION;
       if(Math.abs(velocity)<MIN_VEL){
         const v=current();
-        const extra = v===0.05?5 : v===0.15?15 : v===1.00?25 : 0;
+        const extra=v===0.05?5 : v===0.15?15 : v===1.00?25 : 0;
         msg.className=extra?'t win':'t';
         msg.textContent=extra?`Bonus: ${v} → +${extra}×`:'Bonus missed — 5× base';
         done=true; resetBtn.disabled=false;
       }else requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
+    }; requestAnimationFrame(loop);
   }
 
   function endGame(mult,label){
@@ -351,7 +308,7 @@ function initWheel3D(){
   setAngle(0); render();
 }
 
-try{ initWheel3D(); }catch(err){ showError(err.message||String(err)); }
+init();
 </script>
 </body>
 </html>
