@@ -165,7 +165,6 @@
   window.addEventListener('bag:overlayHide', window.restartAudio);
 })();
 </script>
-<!-- LIVE PRICING -->
 <script>
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
@@ -328,12 +327,10 @@
 <section class="game-teaser" aria-labelledby="game-teaser-title">
   <div class="game-wrap">
     <div class="panel pad">
-      <!-- CONNECT -->
       <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
         <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
         <button id="connectBtn" class="btn" style="min-width:auto;padding:10px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c);box-shadow:0 4px 0 #b08a19;">Connect Xaman</button>
       </div>
-      <!-- SESSION -->
       <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -433,13 +430,17 @@
   const statusEl=$('#sessionStatus'), startBtn=$('#startSessionBtn'), topUpBtn=$('#topUpBtn'), endBtn=$('#endSessionBtn'), connectEl=$('#connectBtn');
   const playBtn=$('#playBtn');
   const DEMO_BAL_KEY='__bag_demo_bag_v2', DEMO_INIT_KEY='__bag_demo_init_v2', START_USD=2000;
+  const DEFAULT_BAG_USD = 0.001;
+
   function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
   function fmt(n){ if(!Number.isFinite(n)) return '—'; if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
     if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
     if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8}); return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
   function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
   function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
   function getCachedBagUsd(){
     try{
       const lastLive=JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
@@ -449,16 +450,21 @@
     }catch{}
     return 0;
   }
-  function ensureSeedNowOrWhenReady(){
-    if(localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live=Number(PR().bagUsd||0), cached=getCachedBagUsd(); const bagUsd = live>0? live : (cached>0? cached : 0);
-    if(bagUsd>0){ const startBag=START_USD/bagUsd; setBag(startBag); localStorage.setItem(DEMO_INIT_KEY,'1'); return true; }
-    return false;
+
+  function seedDemoNow(){
+    if(localStorage.getItem(DEMO_INIT_KEY)) return;
+    const live = PR().bagUsd||0;
+    const cached = getCachedBagUsd();
+    const bagUsd = live>0 ? live : (cached>0 ? cached : DEFAULT_BAG_USD);
+    const startBag = START_USD / bagUsd;
+    setBag(startBag);
+    localStorage.setItem(DEMO_INIT_KEY,'1');
   }
+
   function renderDemo(){
     const bag=getBag(); const {bagUsd,xrpUsd}=PR();
-    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
+    const usd = bagUsd>0 ? bag*bagUsd : START_USD;
+    const xrp = (bagUsd>0 && xrpUsd>0) ? bag*(bagUsd/xrpUsd) : 0;
     if(statusEl){
       statusEl.innerHTML=`<div class="practiceBlock">
         <div class="title" style="font-weight:800;margin-bottom:4px;">Practice:</div>
@@ -468,30 +474,39 @@
       </div>`;
     }
     startBtn.style.display='inline-block'; topUpBtn.style.display='none'; endBtn.style.display='none';
+    if(playBtn) playBtn.disabled = false;
   }
+
   const demoSession={ active:()=>true, get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}), set:()=>{},
     spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
     credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; } };
+
   function forceBetXRP1Once(){
     const bet=document.getElementById('betQty'), usd=document.getElementById('usdBet'), unit=document.querySelector('.unit');
     const xrpRadio=document.querySelector('#curToggle input[value="XRP"]');
     if(xrpRadio && !xrpRadio.checked){ xrpRadio.checked=true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
     if(unit) unit.textContent='XRP';
-    if(bet && (!bet.value || Number(bet.value)<=0)){ bet.value='1'; bet.dispatchEvent(new Event('input',{bubbles:true})); bet.dispatchEvent(new Event('change',{bubbles:true})); }
-    if(usd){ usd.dataset.userTyped='0'; usd.dispatchEvent(new Event('input',{bubbles:true})); usd.dispatchEvent(new Event('change',{bubbles:true})); }
+    if(bet && (!bet.value || Number(bet.value)<=0)){ bet.value='1'; bet.dispatchEvent(new Event('input',{bubbles:true})); }
+    if(usd){ usd.dataset.userTyped='0'; usd.dispatchEvent(new Event('input',{bubbles:true})); }
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
+
   function enableDemo(){
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession=demoSession;
-    const seeded=ensureSeedNowOrWhenReady(); renderDemo(); if(playBtn) playBtn.disabled=!seeded;
-    addEventListener('bag:pricesUpdated', ()=>{ if(!localStorage.getItem(DEMO_INIT_KEY)){ const ok=ensureSeedNowOrWhenReady(); if(ok && playBtn) playBtn.disabled=false; renderDemo(); } else renderDemo(); });
-    forceBetXRP1Once(); if(connectEl) connectEl.style.opacity='0.9';
+    seedDemoNow();
+    renderDemo();
+    forceBetXRP1Once();
+    if(connectEl) connectEl.style.opacity='0.9';
   }
+
   function enableLive(){ window.__BAG_FORCE_DEMO=false; window.dispatchEvent(new CustomEvent('bag:pricesUpdated')); }
+
   if(forceLive) enableLive(); else enableDemo();
+
   addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
-  topUpBtn?.addEventListener('click', ()=>{ const bagUsd=Number((window.__PRICES__||{}).bagUsd||0)||getCachedBagUsd(); if(bagUsd>0){ setBag(START_USD/bagUsd); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); } });
+  topUpBtn?.addEventListener('click', ()=>{ const bagUsd=Number((window.__PRICES__||{}).bagUsd||0)||getCachedBagUsd()||DEFAULT_BAG_USD;
+    setBag(START_USD/bagUsd); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
 })();
 </script>
 <script>
@@ -604,14 +619,12 @@ let gameActive = false;
 const game = new Phaser.Game(config);
 const mainScene = game.scene.getScene('main');
 mainScene.data = {};
-/* ---------------- PRELOAD ---------------- */
 function preload(){
   this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 }
-/* ---------------- CREATE ---------------- */
 function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
@@ -652,7 +665,6 @@ function create(){
     resetPuck.call(this);
   };
 }
-/* ---------------- COLLISIONS ---------------- */
 function checkManualHit(){
   const now=performance.now();
   if(now-lastHit<50)return;
@@ -682,7 +694,6 @@ function onHit(puck,paddle){
   puck.body.velocity.x = nx*force;
   puck.body.velocity.y = ny*force;
 }
-/* ---------------- UPDATE ---------------- */
 function update(){
   if(!gameActive) return;
   const w=this.scale.width,h=this.scale.height;
@@ -735,7 +746,6 @@ function update(){
     });
   }
 }
-/* ---------------- FLASH & RESET ---------------- */
 function flashGoal(goal,color){
   goal.setFillStyle(color,0.9);
   setTimeout(()=>goal.setFillStyle(color,0.4),180);
@@ -756,7 +766,9 @@ function resetPuck(scoredBy){
 (function(){
   const playBtn = document.getElementById('playBtn');
   const playText = document.getElementById('playText');
+  const startText = mainScene?.startText;
   const ROUND = {active: false, lockedBag:0, lockedUsd:0};
+
   function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
   function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
   function stakeUsd(){
@@ -769,10 +781,12 @@ function resetPuck(scoredBy){
     return currentCurrency()==='BAG'? q : (bagUsd>0&&xrpUsd>0? q*(xrpUsd/bagUsd):0);
   }
   function setLast(s){ window.__HOCKEY_LAST__ = s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }
+
   playBtn.addEventListener('click', async () => {
     playBtn.disabled = true;
     const sUsdNow = stakeUsd(), sBagNow = stakeBag();
-    if(window.__BAG_FORCE_DEMO !== true && !window.__bagSession.active()) {
+
+    if(window.__BAG_FORCE_DEMO !== true && !window.__bagSession?.active?.()) {
       alert('Start a session at The Cage'); playBtn.disabled = false; return;
     }
     if(sUsdNow < 1){ alert(`Minimum $1.00 stake`); playBtn.disabled = false; return; }
@@ -780,8 +794,10 @@ function resetPuck(scoredBy){
     if(ROUND.active){ playBtn.disabled = false; return; }
     if(!(sBagNow > 0)){ alert('Enter a stake first'); playBtn.disabled = false; return; }
     if(!__bagSession.spend(sBagNow)){ alert('Insufficient balance'); playBtn.disabled = false; return; }
+
     ROUND.active = true; ROUND.lockedBag = sBagNow; ROUND.lockedUsd = sUsdNow;
     playText.textContent = 'Match in progress...';
+    if(startText) startText.setVisible(false);
     mainScene.startGame();
   });
 })();
