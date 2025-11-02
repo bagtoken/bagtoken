@@ -54,11 +54,18 @@
   .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
   #liveDot{margin-right:6px}.ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:var(--lose)}
   .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
-  .felt{display:grid;grid-template-columns:1fr;gap:12px;background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;overflow:hidden}
-  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17331f,#0e2419);
-    border:1px solid #254a33;border-radius:12px;padding:8px}
-  .stage3d{ height:260px; position:relative; border-radius:10px; overflow:hidden; }
-  .stage3d canvas{ display:block; width:100%; height:100%; }
+  .felt{
+    display:grid;grid-template-columns:1fr;gap:12px;
+    background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;
+    position:relative;overflow:hidden;
+    box-shadow:inset 0 0 30px rgba(0,0,0,.6), 0 0 20px rgba(47,191,107,.2);
+  }
+  .marquee{
+    text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
+    background:linear-gradient(180deg,#17331f,#0e2419);
+    border:1px solid #254a33;border-radius:12px;padding:8px;
+    box-shadow:0 0 10px rgba(255,233,166,.3);
+  }
   .roll-row{display:flex;justify-content:center}
   .btn-roll{
     width:min(360px,90%);padding:16px 22px;margin-top:2px;
@@ -165,6 +172,7 @@
   window.addEventListener('bag:overlayHide', window.restartAudio);
 })();
 </script>
+<!-- LIVE PRICING -->
 <script>
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
@@ -393,7 +401,7 @@
       <div class="marquee">$BAG AIR HOCKEY</div>
       <div class="table">
         <div class="felt">
-          <div id="gameContainer" style="height:600px; position:relative; border-radius:10px; overflow:hidden;"></div>
+          <div id="gameContainer" style="height:600px; position:relative; border-radius:10px; overflow:hidden; background:radial-gradient(#0a1a12, #040b08);"></div>
           <div class="roll-row"><button id="playBtn" class="btn-roll">PLAY</button></div>
           <div class="hudbar" aria-live="polite" id="hockeyHud">
             <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
@@ -423,6 +431,8 @@
     <div class="rules-note">House visuals and payouts shown on this page apply.</div>
   </div>
 </div>
+
+<!-- DEMO MODE + BALANCE FIX -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
@@ -509,6 +519,8 @@
     setBag(START_USD/bagUsd); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
 })();
 </script>
+
+<!-- HUD, PAYOUT, STAKE WIRE, RULES, PHASER GAME -->
 <script>
 (function(){
   const curToggle=document.getElementById('curToggle');
@@ -601,6 +613,8 @@
   addEventListener('keydown', e=>{ if(e.key==='Escape') close(); });
 })();
 </script>
+
+<!-- PHASER GAME (BEAUTIFUL TABLE) -->
 <script>
 const config={
   type:Phaser.AUTO,
@@ -610,7 +624,7 @@ const config={
   physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
   scene: [{key:'main', preload,create,update}]
 };
-let puck,player,cpu,scoreText,topGoal,bottomGoal,gameOverText,startText;
+let puck,player,cpu,scoreText,topGoal,bottomGoal,gameOverText,startText,table,lights;
 let scorePlayer=0,scoreCPU=0;
 let touchTarget={x:0,y:0,active:false};
 let prevPlayer={x:0,y:0};
@@ -619,23 +633,32 @@ let gameActive = false;
 const game = new Phaser.Game(config);
 const mainScene = game.scene.getScene('main');
 mainScene.data = {};
+
 function preload(){
-  this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
-  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
-  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
-  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
+  this.load.image('table','https://i.imgur.com/8f5wJ1n.png'); // BEAUTIFUL TABLE
+  this.load.image('puck','https://i.imgur.com/3zZ3Z3Z.png');
+  this.load.image('paddle_gold','https://i.imgur.com/5k5k5k5.png');
+  this.load.image('paddle_green','https://i.imgur.com/6m6m6m6.png');
 }
+
 function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
-  this.add.image(cx,cy,'table').setDisplaySize(w,h);
+  table = this.add.image(cx,cy,'table').setDisplaySize(w,h).setAlpha(0.98);
+  lights = this.add.graphics();
+  lights.fillStyle(0x2fbf6b, 0.08);
+  lights.fillRect(0,0,w,h);
+  lights.generateTexture('glow',w,h);
+  this.add.image(cx,cy,'glow');
+
   const goalW=260,goalH=40;
-  topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.4);
-  bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.4);
+  topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.3).setStrokeStyle(2,0x00ff00,0.5);
+  bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.3).setStrokeStyle(2,0xff0000,0.5);
   this.physics.world.setBounds(80,80,w-160,h-160);
+
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
-      .setDrag(0.99,0.99).setMaxVelocity(1600);
+  puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1600);
   puck.body.setCircle(puck.width*0.6);
+
   player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
   cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
   player.body.collideWorldBounds=false;
@@ -643,20 +666,21 @@ function create(){
   player.setImmovable(true);
   cpu.setImmovable(true);
   this.physics.add.collider(puck,cpu,onHit,null,this);
-  this.input.on('pointerdown',p=>{
-    if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
-  });
-  this.input.on('pointermove',p=>{
-    if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;}
-  });
+
+  this.input.on('pointerdown',p=>{ if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;} });
+  this.input.on('pointermove',p=>{ if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;} });
   this.input.on('pointerup',()=>touchTarget.active=false);
+
   scoreText=this.add.text(cx,40,'0 - 0',{
     fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
     stroke:'#2fbf6b',strokeThickness:3
   }).setOrigin(0.5,0);
+
   gameOverText = this.add.text(cx, cy, '', {fontFamily:'Orbitron',fontSize:'64px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:5}).setOrigin(0.5).setVisible(false);
   startText = this.add.text(cx, cy, 'Ready to Play', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5);
+
   puck.setVisible(false); player.setVisible(false); cpu.setVisible(false); topGoal.setVisible(false); bottomGoal.setVisible(false); scoreText.setVisible(false);
+
   this.startGame = function() {
     gameActive = true;
     startText.setVisible(false);
@@ -665,6 +689,7 @@ function create(){
     resetPuck.call(this);
   };
 }
+
 function checkManualHit(){
   const now=performance.now();
   if(now-lastHit<50)return;
@@ -683,6 +708,7 @@ function checkManualHit(){
     puck.setAngularVelocity(Phaser.Math.Between(-220,220));
   }
 }
+
 function onHit(puck,paddle){
   const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
@@ -694,6 +720,7 @@ function onHit(puck,paddle){
   puck.body.velocity.x = nx*force;
   puck.body.velocity.y = ny*force;
 }
+
 function update(){
   if(!gameActive) return;
   const w=this.scale.width,h=this.scale.height;
@@ -746,10 +773,12 @@ function update(){
     });
   }
 }
+
 function flashGoal(goal,color){
   goal.setFillStyle(color,0.9);
-  setTimeout(()=>goal.setFillStyle(color,0.4),180);
+  setTimeout(()=>goal.setFillStyle(color,0.3),180);
 }
+
 function resetPuck(scoredBy){
   const w=this.scale.width,h=this.scale.height;
   puck.setPosition(w/2,h/2);
@@ -762,6 +791,8 @@ function resetPuck(scoredBy){
   document.getElementById('scoreLbl').textContent = `${scorePlayer}-${scoreCPU}`;
 }
 </script>
+
+<!-- PLAY BUTTON -->
 <script>
 (function(){
   const playBtn = document.getElementById('playBtn');
@@ -770,7 +801,7 @@ function resetPuck(scoredBy){
   const ROUND = {active: false, lockedBag:0, lockedUsd:0};
 
   function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
-  function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
+  function function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
   function stakeUsd(){
     const direct=parseFloat(document.getElementById('usdBet')?.value||''); if(Number.isFinite(direct)&&direct>0) return direct;
     const q=parseFloat(document.getElementById('betQty')?.value||0)||0; const {bagUsd,xrpUsd}=PR();
@@ -802,6 +833,7 @@ function resetPuck(scoredBy){
   });
 })();
 </script>
+
 <footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
   <br>
