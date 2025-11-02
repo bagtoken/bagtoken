@@ -200,86 +200,101 @@ canvas{display:block;width:100%;height:100%}
 
 <script>
 (function(){
-  const stage = document.getElementById('hockeyStage');
-  const config = {
-    type: Phaser.AUTO,
-    parent: 'hockeyStage',
-    width: stage.clientWidth,
-    height: stage.clientHeight,
-    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
-    backgroundColor: '#021107',
-    physics:{ default:'arcade', arcade:{ debug:false, fps:120, step:1/240 } },
-    scene:{ preload, create, update }
+  const stage=document.getElementById('hockeyStage');
+  const config={
+    type:Phaser.AUTO,
+    parent:'hockeyStage',
+    width:1024,
+    height:1536,
+    scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH},
+    backgroundColor:'#021107',
+    physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
+    scene:{preload,create,update}
   };
 
-  let puck, player, cpu, dragging=false, pointerId=null;
+  let puck,player,cpu,lastHit=0,dragging=false;
 
   new Phaser.Game(config);
 
   function preload(){
-    this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
+    // 🟢 Use crisp PNG for better quality
+    this.load.image('table','/arcade/assets/img/airhockey_table-1024.png');
     this.load.image('puck','/arcade/assets/img/puck-1024.webp');
     this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
     this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
   }
 
   function create(){
-    const w=this.scale.width, h=this.scale.height;
-    this.add.image(w/2,h/2,'table')
-        .setDisplaySize(w,h); // fits exactly inside the box
+    const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
 
-    this.physics.world.setBounds(60,60,w-120,h-120);
+    // clean full-res table with correct ratio
+    this.add.image(cx,cy,'table').setDisplaySize(w,h).setOrigin(0.5);
 
-    puck=this.physics.add.image(w/2,h/2,'puck').setScale(h/1536*0.09)
-      .setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
-      .setDrag(0.99,0.99).setMaxVelocity(1600);
+    // world bounds loosened
+    this.physics.world.setBounds(40,40,w-80,h-80);
+
+    puck=this.physics.add.image(cx,cy,'puck').setScale(0.085);
+    puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
+        .setDrag(0.99,0.99).setMaxVelocity(1600);
     puck.body.setCircle(puck.width*0.5);
 
-    player=this.physics.add.image(w/2,h*0.85,'paddle_gold')
-      .setScale(h/1536*0.12).setImmovable(true);
-    cpu=this.physics.add.image(w/2,h*0.15,'paddle_green')
-      .setScale(h/1536*0.12).setImmovable(true);
+    player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.12);
+    cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.12);
+
+    player.setImmovable(true);
+    cpu.setImmovable(true);
 
     this.physics.add.collider(puck,player,onHit,null,this);
     this.physics.add.collider(puck,cpu,onHit,null,this);
 
-    // ✅ Smooth finger tracking
+    // ✅ Smooth touch control — follow finger
     this.input.on('pointerdown',p=>{
       const pos=p.positionToCamera(this.cameras.main);
-      if(pos.y>h*0.5){ dragging=true; pointerId=p.id; }
+      if(pos.y>h*0.5){dragging=true;}
     });
-    this.input.on('pointermove',p=>{
-      if(!dragging || p.id!==pointerId) return;
-      const pos=p.positionToCamera(this.cameras.main);
-      if(pos.y>h*0.5){
-        player.x=Phaser.Math.Clamp(pos.x,80,w-80);
-        player.y=Phaser.Math.Clamp(pos.y,h*0.55,h-80);
-      }
-    });
-    this.input.on('pointerup',p=>{
-      if(p.id===pointerId){ dragging=false; pointerId=null; }
-    });
+    this.input.on('pointerup',()=>dragging=false);
   }
 
   function update(){
     const w=this.scale.width,h=this.scale.height;
-    // simple CPU movement
+
+    if(dragging){
+      const pos=this.input.activePointer.positionToCamera(this.cameras.main);
+      if(pos.y>h*0.5){
+        player.x=Phaser.Math.Clamp(pos.x,80,w-80);
+        player.y=Phaser.Math.Clamp(pos.y,h*0.55,h-80);
+      }
+    }
+
+    // simple AI
     cpu.x+=(puck.x-cpu.x)*0.07;
     cpu.y+=(puck.y-cpu.y)*0.04;
     cpu.x=Phaser.Math.Clamp(cpu.x,80,w-80);
     cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
+
+    // keep puck moving
+    if(Math.abs(puck.body.velocity.x)<5 && Math.abs(puck.body.velocity.y)<5){
+      const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+      const speed=Phaser.Math.Between(600,750);
+      puck.setVelocity(Math.cos(angle*Math.PI/180)*speed,
+                       Math.sin(angle*Math.PI/180)*speed);
+    }
   }
 
   function onHit(puck,paddle){
+    const now=performance.now();
+    if(now-lastHit<80)return; // cooldown prevents rapid double-bounce
+    lastHit=now;
     const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
     const dist=Math.sqrt(dx*dx+dy*dy)||1;
     const nx=dx/dist, ny=dy/dist;
     const impulse=900;
-    puck.body.velocity.x = nx*impulse;
-    puck.body.velocity.y = ny*impulse;
+    puck.body.velocity.x=nx*impulse;
+    puck.body.velocity.y=ny*impulse;
   }
 })();
 </script>
+
 
 
   <script>
