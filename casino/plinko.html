@@ -775,6 +775,45 @@
 <!-- === UNIVERSAL DEMO SESSION (shared across games) — MUST come right after PRICES === -->
 <script src="/js/bag-demo-session.js"></script>
 
+ <script>
+/* Fallback demo session if /js/bag-demo-session.js failed to load */
+(function(){
+  if (window.__bagSession) return; // external file loaded, do nothing
+
+  const LS_KEY = '__bag_demo_bag_v2';
+  const EVT = (name, detail)=>{ try{ window.dispatchEvent(new CustomEvent(name,{detail})); }catch{} };
+
+  function loadBag(){ try{ const v = localStorage.getItem(LS_KEY); return Math.max(0, Number(v||'100')); }catch{ return 100; } }
+  function saveBag(v){ try{ localStorage.setItem(LS_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
+  let bag = loadBag();
+  const api = {
+    mode: 'demo',
+    active(){ return true; },
+    get(){ return { bag, xrp: 0 }; },
+    start(){ /* demo always active */ EVT('bag:sessionStarted', {mode:'demo'}); },
+    topup(amount=100){ bag += Number(amount)||0; saveBag(bag); EVT('bag:sessionToppedUp',{bag}); return true; },
+    end(){ /* keep demo */ EVT('bag:sessionEnded'); return true; },
+    spend(amount){
+      amount = Number(amount)||0;
+      if (amount <= 0) return false;
+      if (bag < amount) return false;
+      bag -= amount; saveBag(bag); EVT('bag:hudRefresh'); return true;
+    },
+    credit(amount){
+      amount = Number(amount)||0;
+      if (amount <= 0) return false;
+      bag += amount; saveBag(bag); EVT('bag:hudRefresh'); return true;
+    }
+  };
+
+  window.__bagSession = api;
+  window.__BAG_FORCE_DEMO = true;      // ensure demo weights/labels apply
+  EVT('bag:sessionStarted', {mode:'demo'});
+})();
+</script>
+
+
 <!-- === PRICES/STAKE SYNC + PAYOUTS === -->
 <script>
 (function(){
