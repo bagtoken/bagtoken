@@ -217,12 +217,11 @@ canvas{display:block;width:100%;height:100%}
     scene: { preload, create, update }
   };
 
-  let game, puck, player, cpu, scoreText, topGoal, bottomGoal;
+  let puck, player, cpu, scoreText, topGoal, bottomGoal;
   let scorePlayer=0, scoreCPU=0;
   let prevPlayer={x:0,y:0};
+  let dragging=false, touchOffsetY=0;
   let lastHit=0;
-  let dragging=false;
-  let touchOffsetY=0;
 
   function preload(){
     this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
@@ -254,11 +253,12 @@ canvas{display:block;width:100%;height:100%}
     this.physics.add.collider(puck,player,onHit,null,this);
     this.physics.add.collider(puck,cpu,onHit,null,this);
 
-    // ✅ Touch-based dragging
+    // --- Touch control (accurate to canvas coordinates)
     this.input.on('pointerdown',p=>{
-      if(p.y>h*0.5){
+      const y=this.input.y;  // Phaser's internal coord
+      if(y>h*0.5){
         dragging=true;
-        touchOffsetY = player.y - p.y; // distance so you can touch below paddle
+        touchOffsetY = player.y - y;
       }
     });
 
@@ -290,21 +290,18 @@ canvas{display:block;width:100%;height:100%}
     const w=this.scale.width, h=this.scale.height;
     prevPlayer.x=player.x; prevPlayer.y=player.y;
 
-    // ✅ Continuous drag-follow
     const pointer=this.input.activePointer;
     if(dragging && pointer.isDown){
-      const targetX = pointer.x;
-      const targetY = pointer.y + touchOffsetY;
-      const dx = targetX - player.x;
-      const dy = targetY - player.y;
-      player.x += dx * 0.4;
-      player.y += dy * 0.4;
+      // Use input manager to convert to game coords
+      const pointerWorldX=this.input.x;
+      const pointerWorldY=this.input.y;
+      const targetX=Phaser.Math.Clamp(pointerWorldX,60,w-60);
+      const targetY=Phaser.Math.Clamp(pointerWorldY+touchOffsetY,h*0.55,h-60);
+      const dx=targetX-player.x, dy=targetY-player.y;
+      player.x+=dx*0.45;
+      player.y+=dy*0.45;
     }
 
-    player.x=Phaser.Math.Clamp(player.x,60,w-60);
-    player.y=Phaser.Math.Clamp(player.y,h*0.55,h-60);
-
-    // 🧠 CPU
     if(MODE==='cpu'){
       cpu.x+=(puck.x-cpu.x)*0.08;
       cpu.y+=(puck.y-cpu.y)*0.05;
