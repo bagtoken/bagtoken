@@ -204,14 +204,15 @@ canvas{display:block;width:100%;height:100%}
     type: Phaser.AUTO,
     parent: 'hockeyStage',
     width: 1024,
-    height: 1536,
+    height: 1600,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     backgroundColor: '#021107',
-    physics:{ default:'arcade', arcade:{ debug:false } },
+    physics:{ default:'arcade', arcade:{ debug:false, fps:120, step:1/240 } },
     scene:{ preload, create, update }
   };
 
-  let puck, player, cpu, dragging=false, offsetY=0;
+  let puck, player, cpu, dragging=false;
+  let lastHit=0;
 
   new Phaser.Game(config);
 
@@ -225,34 +226,62 @@ canvas{display:block;width:100%;height:100%}
   function create(){
     const w=this.scale.width, h=this.scale.height, cx=w/2, cy=h/2;
 
-    // make table about 10% larger than canvas
-    this.add.image(cx, cy, 'table').setDisplaySize(w*1.1, h*1.1);
+    // enlarge table slightly to fill area
+    this.add.image(cx, cy, 'table').setDisplaySize(w*1.08, h*1.08);
 
     this.physics.world.setBounds(80,80,w-160,h-160);
 
     puck=this.physics.add.image(cx,cy,'puck').setScale(0.09)
-      .setCollideWorldBounds(true).setBounce(1);
+      .setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
+      .setDrag(0.99,0.99).setMaxVelocity(1600);
+    puck.body.setCircle(puck.width*0.5);
+
     player=this.physics.add.image(cx,h*0.85,'paddle_gold')
       .setScale(0.12).setImmovable(true);
     cpu=this.physics.add.image(cx,h*0.15,'paddle_green')
       .setScale(0.12).setImmovable(true);
 
+    this.physics.add.collider(puck,player,onHit,null,this);
+    this.physics.add.collider(puck,cpu,onHit,null,this);
+
+    // ✅ Touch tracking that actually follows finger smoothly
     this.input.on('pointerdown',p=>{
       const pos=p.positionToCamera(this.cameras.main);
-      if(pos.y>h*0.5){ dragging=true; offsetY=player.y-pos.y; }
+      if(pos.y>h*0.5){ dragging=true; }
     });
     this.input.on('pointerup',()=>dragging=false);
   }
 
   function update(){
     const w=this.scale.width,h=this.scale.height;
+
+    // player follow finger
     if(dragging){
       const pos=this.input.activePointer.positionToCamera(this.cameras.main);
-      const targetX=Phaser.Math.Clamp(pos.x,100,w-100);
-      const targetY=Phaser.Math.Clamp(pos.y+offsetY,h*0.55,h-80);
-      player.x=targetX;
-      player.y=targetY;
+      if(pos.y>h*0.5){
+        player.x=Phaser.Math.Clamp(pos.x,100,w-100);
+        // allow touch below paddle: smooth offset area
+        const targetY=Math.max(h*0.55, Math.min(pos.y, h-80));
+        player.y=targetY;
+      }
     }
+
+    // basic CPU AI
+    cpu.x+=(puck.x-cpu.x)*0.07;
+    cpu.y+=(puck.y-cpu.y)*0.04;
+    cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
+    cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
+  }
+
+  function onHit(puck,paddle){
+    const now=performance.now();
+    if(now-lastHit<50)return;
+    lastHit=now;
+    const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
+    const dist=Math.sqrt(dx*dx+dy*dy)||1;
+    const nx=dx/dist, ny=dy/dist;
+    puck.body.velocity.x = nx*900;
+    puck.body.velocity.y = ny*900;
   }
 })();
 </script>
