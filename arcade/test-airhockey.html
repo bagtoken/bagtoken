@@ -200,20 +200,18 @@ canvas{display:block;width:100%;height:100%}
 
 <script>
 (function(){
-  const stage=document.getElementById('hockeyStage');
   const config={
     type:Phaser.AUTO,
     parent:'hockeyStage',
-    width:stage.clientWidth,
-    height:stage.clientHeight,
-    scale:{mode:Phaser.Scale.RESIZE,autoCenter:Phaser.Scale.CENTER_BOTH},
+    width:1024,
+    height:1536,
+    scale:{mode:Phaser.Scale.NONE,autoCenter:Phaser.Scale.CENTER_BOTH},
     backgroundColor:'#021107',
     physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
     scene:{preload,create,update}
   };
 
-  let puck,player,cpu,lastHit=0,isDragging=false;
-
+  let puck,player,cpu,lastHit=0,prevPlayer={x:0,y:0},touchTarget={x:0,y:0,active:false};
   new Phaser.Game(config);
 
   function preload(){
@@ -225,76 +223,87 @@ canvas{display:block;width:100%;height:100%}
 
   function create(){
     const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
+    this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
-    // clean scaled table — full width, proportional height
-    const ratio=1536/1024;
-    const targetH=w*ratio>h?h:w*ratio;
-    this.add.image(cx,cy,'table')
-      .setDisplaySize(w,targetH)
-      .setOrigin(0.5)
-      .setY(h/2);
+    this.physics.world.setBounds(80,80,w-160,h-80);
 
-    // world bounds slightly inset for margin
-    this.physics.world.setBounds(40,40,w-80,h-80);
-
-    puck=this.physics.add.image(cx,cy,'puck').setScale(h/1536*0.09)
-      .setCollideWorldBounds(true).setBounce(0.99)
-      .setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1600);
+    puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
+    puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
+        .setDrag(0.99,0.99).setMaxVelocity(1600);
     puck.body.setCircle(puck.width*0.5);
 
-    player=this.physics.add.image(cx,h*0.85,'paddle_gold')
-      .setScale(h/1536*0.12).setImmovable(true);
-    cpu=this.physics.add.image(cx,h*0.15,'paddle_green')
-      .setScale(h/1536*0.12).setImmovable(true);
+    player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
+    cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
+    player.setImmovable(true); cpu.setImmovable(true);
 
-    this.physics.add.collider(puck,player,onHit,null,this);
     this.physics.add.collider(puck,cpu,onHit,null,this);
 
-    // ✅ Continuous finger tracking — paddle follows touch smoothly
+    // ✅ Touch control (below the paddle for visibility)
     this.input.on('pointerdown',p=>{
-      const pos=p.positionToCamera(this.cameras.main);
-      if(pos.y>h*0.5) isDragging=true;
+      if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
     });
-    this.input.on('pointerup',()=>isDragging=false);
+    this.input.on('pointermove',p=>{
+      if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;}
+    });
+    this.input.on('pointerup',()=>touchTarget.active=false);
   }
 
   function update(){
     const w=this.scale.width,h=this.scale.height;
+    prevPlayer.x=player.x; prevPlayer.y=player.y;
 
-    if(isDragging){
-      const pos=this.input.activePointer.positionToCamera(this.cameras.main);
-      if(pos.y>h*0.5){
-        // smooth follow to finger
-        player.x += (pos.x - player.x) * 0.5;
-        player.y += (pos.y - player.y) * 0.5;
-        player.x=Phaser.Math.Clamp(player.x,80,w-80);
-        player.y=Phaser.Math.Clamp(player.y,h*0.55,h-80);
-      }
+    // Player control (follows finger smoothly)
+    if(touchTarget.active){
+      const dx=touchTarget.x-player.x, dy=touchTarget.y-player.y;
+      const moveSpeed=0.5;
+      player.x+=dx*moveSpeed;
+      player.y+=dy*moveSpeed;
     }
 
-    // CPU AI tracking
-    cpu.x+=(puck.x-cpu.x)*0.07;
-    cpu.y+=(puck.y-cpu.y)*0.04;
-    cpu.x=Phaser.Math.Clamp(cpu.x,80,w-80);
+    player.x=Phaser.Math.Clamp(player.x,100,w-100);
+    player.y=Phaser.Math.Clamp(player.y,h*0.55,h-80);
+
+    // CPU AI
+    cpu.x+=(puck.x-cpu.x)*0.08;
+    cpu.y+=(puck.y-cpu.y)*0.05;
+    cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
     cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
 
-    // re-kick puck if it stops
-    if(Math.abs(puck.body.velocity.x)<5&&Math.abs(puck.body.velocity.y)<5){
-      const ang=Phaser.Math.Between(25,155)*(Phaser.Math.Between(0,1)?1:-1);
+    // Manual player collision
+    manualHit();
+
+    // Keep puck alive
+    if(Math.abs(puck.body.velocity.x)<5 && Math.abs(puck.body.velocity.y)<5){
+      const ang=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
       const spd=Phaser.Math.Between(600,750);
       puck.setVelocity(Math.cos(ang*Math.PI/180)*spd,
                        Math.sin(ang*Math.PI/180)*spd);
     }
   }
 
-  function onHit(puck,paddle){
+  function manualHit(){
     const now=performance.now();
-    if(now-lastHit<60)return;
-    lastHit=now;
+    if(now-lastHit<50)return;
+    const dx=puck.x-player.x, dy=puck.y-player.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const minDist=(puck.displayWidth*0.35)+(player.displayWidth*0.35);
+    if(dist<minDist){
+      lastHit=now;
+      const nx=dx/dist, ny=dy/dist;
+      const vx=player.x-prevPlayer.x, vy=player.y-prevPlayer.y;
+      const spd=Math.sqrt(vx*vx+vy*vy);
+      const impulse=Phaser.Math.Clamp(400+spd*220,400,1700);
+      puck.body.velocity.x=nx*impulse;
+      puck.body.velocity.y=ny*impulse;
+      puck.setAngularVelocity(Phaser.Math.Between(-220,220));
+    }
+  }
+
+  function onHit(puck,paddle){
     const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
     const dist=Math.sqrt(dx*dx+dy*dy)||1;
     const nx=dx/dist, ny=dy/dist;
-    const impulse=950;
+    const impulse=900;
     puck.body.velocity.x=nx*impulse;
     puck.body.velocity.y=ny*impulse;
   }
