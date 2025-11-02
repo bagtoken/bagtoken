@@ -21,9 +21,6 @@ html,body{margin:0;background:var(--bg);color:var(--fg);
   font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   line-height:1.55;overflow-x:hidden;}
 img{display:block;max-width:100%;height:auto}
-canvas{display:block;margin:auto;border-radius:10px;}
-button,input{font-size:16px}
-a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;pointer-events:none!important}
 .back-casino{
   position:fixed;top:18px;left:18px;z-index:1000;
   background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
@@ -34,9 +31,19 @@ a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important
   border:1px solid var(--line);border-radius:16px;
   box-shadow:0 8px 24px var(--shadow);}
 .pad{padding:16px}
+.marquee{text-align:center;font-weight:900;letter-spacing:.08em;
+  color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
+  border:1px solid #254a33;border-radius:12px;padding:8px}
+.table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px}
 .felt{display:grid;gap:12px;background:#091a13;border:1px solid #24533a;
   border-radius:12px;padding:12px;overflow:hidden}
-.stage3d{height:600px;position:relative;border-radius:10px;overflow:hidden}
+.stage3d{height:auto;aspect-ratio:2/3;position:relative;border-radius:10px;overflow:hidden}
+canvas{display:block;margin:auto;width:100%;height:auto;}
+.hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:6px;align-items:center;margin:6px 2px 0}
+.pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;
+  padding:6px 10px;font-size:12px;color:#cfe6d8}
+.pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 </style>
 </head>
 
@@ -44,23 +51,49 @@ a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important
 <a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
 <section class="game-header" style="text-align:center;padding:36px 10px 14px">
+  <picture>
+    <source type="image/webp"
+            srcset="/assets/bag-airhockey-960.webp 960w, /assets/bag-airhockey-1024.webp 1024w"
+            sizes="(min-width:900px) 420px, 70vw">
+    <img class="hero-img"
+         src="/assets/bag-airhockey-1024.png"
+         srcset="/assets/bag-airhockey-960.png 960w, /assets/bag-airhockey-1024.png 1024w"
+         sizes="(min-width:900px) 420px, 70vw"
+         alt="$BAG Air Hockey" loading="lazy" decoding="async">
+  </picture>
   <h2>🏒 $BAG Air Hockey — Arcade P2E</h2>
-  <p style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
+  <p class="micro" style="margin-top:4px;opacity:.9;">
+    💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
+  </p>
 </section>
 
-<section class="game-teaser" style="padding:10px 16px 60px;">
-  <div class="panel pad">
+<section class="game-teaser" aria-labelledby="game-teaser-title"
+ style="padding:10px 16px 60px;background:
+  radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+  radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+  border-top:1px solid #131313;border-bottom:1px solid #131313">
+<div class="game-wrap" style="max-width:1080px;margin:0 auto;display:grid;gap:22px">
+<div class="panel pad">
+
+  <div class="marquee">$BAG AIR HOCKEY</div>
+  <div class="table">
     <div class="felt">
       <div class="stage3d" id="hockeyStage"></div>
+
+      <div class="hudbar" id="diceHud">
+        <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+        <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+        <span class="pill">Bet: <b id="betLbl">1</b></span>
+        <span class="pill">Last: <b id="lastLbl">—</b></span>
+      </div>
     </div>
   </div>
-</section>
+</div></div></section>
 
-<!-- 🎮 GAME SCRIPT (unchanged logic) -->
+<!-- AIR HOCKEY ENGINE -->
 <script>
 const config={
   type:Phaser.AUTO,
-  parent:'hockeyStage',
   scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536},
   backgroundColor:'#021107',
   physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
@@ -73,9 +106,8 @@ let touchTarget={x:0,y:0,active:false};
 let prevPlayer={x:0,y:0};
 let lastHit=0;
 
-new Phaser.Game(config);
+window.addEventListener('load',()=>new Phaser.Game(config));
 
-/* ---------------- PRELOAD ---------------- */
 function preload(){
   this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
@@ -83,7 +115,6 @@ function preload(){
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 }
 
-/* ---------------- CREATE ---------------- */
 function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
@@ -125,45 +156,40 @@ function create(){
   resetPuck.call(this);
 }
 
-/* ---------------- MANUAL COLLISION CHECK ---------------- */
 function checkManualHit(){
   const now=performance.now();
   if(now-lastHit<50)return;
-
-  const dx=puck.x-player.x, dy=puck.y-player.y;
+  const dx=puck.x-player.x,dy=puck.y-player.y;
   const dist=Math.sqrt(dx*dx+dy*dy);
   const minDist=(puck.displayWidth*0.35)+(player.displayWidth*0.35);
   if(dist<minDist){
     lastHit=now;
-    const nx=dx/dist, ny=dy/dist;
+    const nx=dx/dist,ny=dy/dist;
     const vx=player.x-prevPlayer.x;
     const vy=player.y-prevPlayer.y;
     const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
     const impulse=Phaser.Math.Clamp(400+paddleSpeed*220,400,1700);
-    puck.body.velocity.x = nx*impulse;
-    puck.body.velocity.y = ny*impulse;
+    puck.body.velocity.x=nx*impulse;
+    puck.body.velocity.y=ny*impulse;
     puck.setAngularVelocity(Phaser.Math.Between(-220,220));
   }
 }
 
-/* ---------------- CPU COLLISION ---------------- */
 function onHit(puck,paddle){
-  const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
+  const dx=puck.x-paddle.x,dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
-  const nx=dx/dist, ny=dy/dist;
+  const nx=dx/dist,ny=dy/dist;
   const vx=paddle.x-prevPlayer.x;
   const vy=paddle.y-prevPlayer.y;
   const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
   const force=Phaser.Math.Clamp(400+paddleSpeed*200,400,1500);
-  puck.body.velocity.x = nx*force;
-  puck.body.velocity.y = ny*force;
+  puck.body.velocity.x=nx*force;
+  puck.body.velocity.y=ny*force;
 }
 
-/* ---------------- UPDATE ---------------- */
 function update(){
   const w=this.scale.width,h=this.scale.height;
-  prevPlayer.x=player.x;
-  prevPlayer.y=player.y;
+  prevPlayer.x=player.x; prevPlayer.y=player.y;
 
   if(touchTarget.active){
     const dx=touchTarget.x-player.x;
@@ -192,7 +218,6 @@ function update(){
   }
 }
 
-/* ---------------- FLASH & RESET ---------------- */
 function flashGoal(goal,color){
   goal.setFillStyle(color,0.9);
   setTimeout(()=>goal.setFillStyle(color,0.4),180);
@@ -210,5 +235,13 @@ function resetPuck(scoredBy){
 }
 </script>
 
+<footer style="text-align:center;padding:12px 0;line-height:1.6;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP <br>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener"
+     style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a>
+  &nbsp;|&nbsp;
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener"
+     style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+</footer>
 </body>
 </html>
