@@ -1,20 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>$BAG Air Hockey — Arcade P2E</title>
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 <style>
-html,body{margin:0;padding:0;height:100%;background:#021107;overflow:hidden;}
-canvas{display:block;margin:auto;}
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35);
+  }
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden;}
+  a.back-casino{
+    position:fixed;top:18px;left:18px;z-index:1000;
+    background:linear-gradient(180deg,#ffe175,#f5c94c);
+    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
+    box-shadow:0 4px 0 #b08a19;transition:all .15s ease;
+  }
+  a.back-casino:hover{filter:brightness(1.05);}
+  .game-header{text-align:center;padding:36px 10px 14px}
+  .game-header img.hero-img{margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+  .game-teaser{padding:10px 16px 60px;background:#060806;border-top:1px solid #131313}
+  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:22px}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
+  .pad{padding:16px}
+  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+  .felt{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;overflow:hidden;text-align:center;}
+  canvas{display:block;margin:auto;}
 </style>
 </head>
 <body>
+
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+
+<section class="game-header">
+  <img class="hero-img" src="/arcade/assets/img/airhockey_table-1024.webp" width="420" alt="$BAG Air Hockey">
+  <h2>🏒 $BAG Air Hockey — Arcade P2E</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">🎮 Player vs CPU · Built on XRPL · All wagers settle in $BAG</p>
+</section>
+
+<section class="game-teaser">
+  <div class="game-wrap">
+    <div class="panel pad">
+      <div class="section-title">Stake & Prices</div>
+      <div class="felt">
+        <!-- ✅ Your working Phaser Air Hockey game -->
+        <div id="gameContainer"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <script>
 const config={
   type:Phaser.AUTO,
-  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536},
+  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
   backgroundColor:'#021107',
   physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
   scene:{preload,create,update}
@@ -25,14 +69,14 @@ let touchTarget={x:0,y:0,active:false};
 let prevPlayer={x:0,y:0};
 let lastHit=0;
 new Phaser.Game(config);
-/* ---------------- PRELOAD ---------------- */
+
 function preload(){
-  this.load.image('table','https://www.sweatband.com/cdn/shop/articles/air-hockey-table-buying-guides.jpg?v=1622223003&width=1920');
-  this.load.image('puck','https://media.gettyimages.com/id/91646798/photo/air-hockey.jpg?s=612x612&w=gi&k=20&c=xBpUT6CQx7Wyrm-Z9hd4wazYrI8eA2LcSjdO9QQsqEQ=');
-  this.load.image('paddle_gold','https://mpamusement.com/cdn/shop/products/GP-L_OverheadScoring-FreePlay-01_b20716b7-274e-4ed2-9ff9-79979ada0293_800x.jpg?v=1644072208');
-  this.load.image('paddle_green','https://thumbs.dreamstime.com/b/air-hockey-table-closeup-paddle-amusement-arcade-45238859.jpg');
+  this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
+  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
+  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
+  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 }
-/* ---------------- CREATE ---------------- */
+
 function create(){
   const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
   this.add.image(cx,cy,'table').setDisplaySize(w,h);
@@ -50,88 +94,68 @@ function create(){
   cpu.setCollideWorldBounds(true);
   player.setImmovable(true);
   cpu.setImmovable(true);
-  // basic collider still useful for slow contacts
   this.physics.add.collider(puck,cpu,onHit,null,this);
-  this.input.on('pointerdown',p=>{
-    if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
-  });
-  this.input.on('pointermove',p=>{
-    if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;}
-  });
+  this.input.on('pointerdown',p=>{ if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;} });
+  this.input.on('pointermove',p=>{ if(touchTarget.active && p.y>h*0.5){touchTarget.x=p.x;touchTarget.y=p.y;} });
   this.input.on('pointerup',()=>touchTarget.active=false);
-  scoreText=this.add.text(cx,40,'0 - 0',{
-    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
-    stroke:'#2fbf6b',strokeThickness:3
-  }).setOrigin(0.5,0);
+  scoreText=this.add.text(cx,40,'0 - 0',{fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
   resetPuck.call(this);
 }
-/* ---------------- MANUAL COLLISION CHECK ---------------- */
+
 function checkManualHit(){
   const now=performance.now();
   if(now-lastHit<50)return;
-  const dx=puck.x-player.x, dy=puck.y-player.y;
+  const dx=puck.x-player.x,dy=puck.y-player.y;
   const dist=Math.sqrt(dx*dx+dy*dy);
   const minDist=(puck.displayWidth*0.35)+(player.displayWidth*0.35);
   if(dist<minDist){
     lastHit=now;
-    const nx=dx/dist, ny=dy/dist;
+    const nx=dx/dist,ny=dy/dist;
     const vx=player.x-prevPlayer.x;
     const vy=player.y-prevPlayer.y;
     const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
     const impulse=Phaser.Math.Clamp(400+paddleSpeed*220,400,1700);
-    puck.body.velocity.x = nx*impulse;
-    puck.body.velocity.y = ny*impulse;
+    puck.body.velocity.x=nx*impulse;
+    puck.body.velocity.y=ny*impulse;
     puck.setAngularVelocity(Phaser.Math.Between(-220,220));
   }
 }
-/* ---------------- CPU COLLISION ---------------- */
+
 function onHit(puck,paddle){
-  const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
+  const dx=puck.x-paddle.x,dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
-  const nx=dx/dist, ny=dy/dist;
+  const nx=dx/dist,ny=dy/dist;
   const vx=paddle.x-prevPlayer.x;
-  const vy=player.y-prevPlayer.y;
+  const vy=paddle.y-prevPlayer.y;
   const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
   const force=Phaser.Math.Clamp(400+paddleSpeed*200,400,1500);
-  puck.body.velocity.x = nx*force;
-  puck.body.velocity.y = ny*force;
+  puck.body.velocity.x=nx*force;
+  puck.body.velocity.y=ny*force;
 }
-/* ---------------- UPDATE ---------------- */
+
 function update(){
   const w=this.scale.width,h=this.scale.height;
-  prevPlayer.x=player.x;
-  prevPlayer.y=player.y;
-  // Player control
+  prevPlayer.x=player.x; prevPlayer.y=player.y;
   if(touchTarget.active){
-    const dx=touchTarget.x-player.x;
-    const dy=touchTarget.y-player.y;
-    const moveSpeed=0.5;
-    player.x+=dx*moveSpeed;
-    player.y+=dy*moveSpeed;
+    const dx=touchTarget.x-player.x,dy=touchTarget.y-player.y;
+    player.x+=dx*0.5; player.y+=dy*0.5;
   }
   player.x=Phaser.Math.Clamp(player.x,100,w-100);
   player.y=Phaser.Math.Clamp(player.y,h*0.5+20,h-80);
-  // CPU AI
-  cpu.x+=(puck.x-cpu.x)*0.08;
-  cpu.y+=(puck.y-cpu.y)*0.05;
+  cpu.x+=(puck.x-cpu.x)*0.08; cpu.y+=(puck.y-cpu.y)*0.05;
   cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
   cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
-  // Manual hit detection for player
   checkManualHit();
-  // Goals
   const goalHalfW=130;
-  if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-    scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
-  }
-  if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-    scoreCPU++; resetPuck.call(this,'cpu'); flashGoal(bottomGoal,0x00ff00);
-  }
+  if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){scorePlayer++;resetPuck.call(this,'player');flashGoal(topGoal,0xff0000);}
+  if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){scoreCPU++;resetPuck.call(this,'cpu');flashGoal(bottomGoal,0x00ff00);}
 }
-/* ---------------- FLASH & RESET ---------------- */
+
 function flashGoal(goal,color){
   goal.setFillStyle(color,0.9);
   setTimeout(()=>goal.setFillStyle(color,0.4),180);
 }
+
 function resetPuck(scoredBy){
   const w=this.scale.width,h=this.scale.height;
   puck.setPosition(w/2,h/2);
@@ -143,5 +167,7 @@ function resetPuck(scoredBy){
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 </script>
+
+<footer style="text-align:center;padding:12px 0;color:#ffe175;">© 2025 $BAG Arcade | getthebag.io | Powered by $XRP</footer>
 </body>
 </html>
