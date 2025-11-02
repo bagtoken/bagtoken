@@ -209,7 +209,7 @@ canvas{display:block;width:100%;height:100%}
     width: 1024,
     height: 1536,
     scale: {
-      mode: Phaser.Scale.ENVELOP,   // 🔥 fills and slightly overflows for bigger visual
+      mode: Phaser.Scale.ENVELOP,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
     backgroundColor: '#021107',
@@ -218,10 +218,9 @@ canvas{display:block;width:100%;height:100%}
   };
 
   let game, puck, player, cpu, scoreText, topGoal, bottomGoal;
-  let scorePlayer = 0, scoreCPU = 0;
-  let touchTarget = {x:0, y:0, active:false};
-  let prevPlayer = {x:0, y:0};
-  let lastHit = 0;
+  let scorePlayer=0, scoreCPU=0;
+  let prevPlayer={x:0,y:0};
+  let lastHit=0;
 
   function preload(){
     this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
@@ -240,31 +239,18 @@ canvas{display:block;width:100%;height:100%}
 
     this.physics.world.setBounds(40,40,w-80,h-80);
 
-    puck=this.physics.add.image(cx,cy,'puck').setScale(0.09); // bigger puck
-    puck.setCollideWorldBounds(true).setBounce(0.99)
-        .setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1600);
+    puck=this.physics.add.image(cx,cy,'puck').setScale(0.09);
+    puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
+        .setDrag(0.99,0.99).setMaxVelocity(1600);
     puck.body.setCircle(puck.width*0.6);
 
     player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.12);
     cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.12);
-    player.setImmovable(true); cpu.setImmovable(true);
+    player.setImmovable(true);
+    cpu.setImmovable(true);
 
     this.physics.add.collider(puck,player,onHit,null,this);
     this.physics.add.collider(puck,cpu,onHit,null,this);
-
-    this.input.on('pointerdown',p=>{
-      if(p.y > h*0.5){
-        touchTarget.active=true;
-        touchTarget.x=p.x;
-        touchTarget.y=p.y;
-      }
-    });
-    this.input.on('pointermove',p=>{
-      if(touchTarget.active && p.y>h*0.5){
-        touchTarget.x=p.x; touchTarget.y=p.y;
-      }
-    });
-    this.input.on('pointerup',()=>touchTarget.active=false);
 
     scoreText=this.add.text(cx,40,'0 - 0',{
       fontFamily:'Orbitron',fontSize:'54px',color:'#ffe175',
@@ -283,7 +269,7 @@ canvas{display:block;width:100%;height:100%}
     const nx=dx/dist, ny=dy/dist;
     const vx=paddle.x-prevPlayer.x, vy=paddle.y-prevPlayer.y;
     const speed=Math.sqrt(vx*vx+vy*vy);
-    const impulse=Phaser.Math.Clamp(600+speed*250,600,1900); // stronger hit
+    const impulse=Phaser.Math.Clamp(600+speed*250,600,1900);
     puck.body.velocity.x=nx*impulse;
     puck.body.velocity.y=ny*impulse;
   }
@@ -292,17 +278,20 @@ canvas{display:block;width:100%;height:100%}
     const w=this.scale.width, h=this.scale.height;
     prevPlayer.x=player.x; prevPlayer.y=player.y;
 
-    // 🎮 smoother control
-    if(touchTarget.active){
-      const dx=touchTarget.x-player.x;
-      const dy=touchTarget.y-player.y;
-      player.x+=dx*0.35;
-      player.y+=dy*0.35;
+    // 🎮 Pointer-based paddle control (always available)
+    const pointer=this.input.activePointer;
+    if(pointer.isDown && pointer.y>h*0.5){
+      const touchY = pointer.y - h*0.08; // touch below paddle
+      const dx=pointer.x - player.x;
+      const dy=touchY - player.y;
+      player.x += dx * 0.35;
+      player.y += dy * 0.35;
     }
 
     player.x=Phaser.Math.Clamp(player.x,60,w-60);
     player.y=Phaser.Math.Clamp(player.y,h*0.55,h-60);
 
+    // 🧠 CPU AI
     if(MODE==='cpu'){
       cpu.x+=(puck.x-cpu.x)*0.08;
       cpu.y+=(puck.y-cpu.y)*0.05;
