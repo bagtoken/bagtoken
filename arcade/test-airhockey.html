@@ -206,139 +206,134 @@ canvas{display:block;width:100%;height:100%}
   const config = {
     type: Phaser.AUTO,
     parent: 'hockeyStage',
-    width: 1024,           // 👈 restore fixed full game size
+    width: 1024,
     height: 1536,
     scale: {
-      mode: Phaser.Scale.FIT,      // keep original aspect, auto center
+      mode: Phaser.Scale.ENVELOP,   // 🔥 fills and slightly overflows for bigger visual
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
     backgroundColor: '#021107',
-    physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
+    physics: { default: 'arcade', arcade: { debug:false, fps:120, step:1/240 } },
     scene: { preload, create, update }
   };
 
   let game, puck, player, cpu, scoreText, topGoal, bottomGoal;
   let scorePlayer = 0, scoreCPU = 0;
-  let touchTarget = { x: 0, y: 0, active: false };
-  let prevPlayer = { x: 0, y: 0 };
+  let touchTarget = {x:0, y:0, active:false};
+  let prevPlayer = {x:0, y:0};
   let lastHit = 0;
 
-  function preload() {
+  function preload(){
     this.load.image('table','/arcade/assets/img/airhockey_table-1024.webp');
     this.load.image('puck','/arcade/assets/img/puck-1024.webp');
     this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
     this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
   }
 
-  function create() {
-    const w = this.scale.width, h = this.scale.height, cx = w/2, cy = h/2;
-    this.add.image(cx, cy, 'table').setDisplaySize(w, h);
+  function create(){
+    const w=this.scale.width, h=this.scale.height, cx=w/2, cy=h/2;
+    this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
-    const goalW = w * 0.26, goalH = h * 0.03;
-    topGoal = this.add.rectangle(cx, h * 0.045, goalW, goalH, 0xff0000, 0.35);
-    bottomGoal = this.add.rectangle(cx, h * 0.955, goalW, goalH, 0x00ff00, 0.35);
+    const goalW=w*0.26, goalH=h*0.03;
+    topGoal=this.add.rectangle(cx,h*0.045,goalW,goalH,0xff0000,0.35);
+    bottomGoal=this.add.rectangle(cx,h*0.955,goalW,goalH,0x00ff00,0.35);
 
-    this.physics.world.setBounds(40, 40, w - 80, h - 80);
+    this.physics.world.setBounds(40,40,w-80,h-80);
 
-    puck = this.physics.add.image(cx, cy, 'puck').setScale(0.07);
-    puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
-        .setDrag(0.99,0.99).setMaxVelocity(1600);
+    puck=this.physics.add.image(cx,cy,'puck').setScale(0.09); // bigger puck
+    puck.setCollideWorldBounds(true).setBounce(0.99)
+        .setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1600);
     puck.body.setCircle(puck.width*0.6);
 
-    player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(0.1);
-    cpu = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(0.1);
-    player.setImmovable(true);
-    cpu.setImmovable(true);
+    player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.12);
+    cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.12);
+    player.setImmovable(true); cpu.setImmovable(true);
 
-    this.physics.add.collider(puck, player, onHit, null, this);
-    this.physics.add.collider(puck, cpu, onHit, null, this);
+    this.physics.add.collider(puck,player,onHit,null,this);
+    this.physics.add.collider(puck,cpu,onHit,null,this);
 
-    const translatePointer = (p) => {
-      const rect = this.game.canvas.getBoundingClientRect();
-      return { x: p.x - rect.left, y: p.y - rect.top };
-    };
-
-    this.input.on('pointerdown', p=>{
-      const pos = translatePointer(p);
-      if(pos.y > h*0.5){
-        touchTarget.active = true;
-        touchTarget.x = pos.x;
-        touchTarget.y = pos.y;
+    this.input.on('pointerdown',p=>{
+      if(p.y > h*0.5){
+        touchTarget.active=true;
+        touchTarget.x=p.x;
+        touchTarget.y=p.y;
       }
     });
-    this.input.on('pointermove', p=>{
-      if(!touchTarget.active) return;
-      const pos = translatePointer(p);
-      if(pos.y > h*0.5){ touchTarget.x = pos.x; touchTarget.y = pos.y; }
+    this.input.on('pointermove',p=>{
+      if(touchTarget.active && p.y>h*0.5){
+        touchTarget.x=p.x; touchTarget.y=p.y;
+      }
     });
-    this.input.on('pointerup', ()=>touchTarget.active=false);
+    this.input.on('pointerup',()=>touchTarget.active=false);
 
-    scoreText = this.add.text(cx, 40, '0 - 0', {
-      fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',
+    scoreText=this.add.text(cx,40,'0 - 0',{
+      fontFamily:'Orbitron',fontSize:'54px',color:'#ffe175',
       stroke:'#2fbf6b',strokeThickness:3
     }).setOrigin(0.5,0);
 
     resetPuck.call(this);
   }
 
-  function onHit(puck, paddle){
-    const now = performance.now();
-    if(now - lastHit < 50) return;
-    lastHit = now;
-    const dx = puck.x - paddle.x, dy = puck.y - paddle.y;
-    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-    const nx = dx / dist, ny = dy / dist;
-    const vx = paddle.x - prevPlayer.x, vy = paddle.y - prevPlayer.y;
-    const speed = Math.sqrt(vx*vx + vy*vy);
-    const impulse = Phaser.Math.Clamp(400 + speed*220, 400, 1700);
-    puck.body.velocity.x = nx * impulse;
-    puck.body.velocity.y = ny * impulse;
+  function onHit(puck,paddle){
+    const now=performance.now();
+    if(now-lastHit<40)return;
+    lastHit=now;
+    const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
+    const dist=Math.sqrt(dx*dx+dy*dy)||1;
+    const nx=dx/dist, ny=dy/dist;
+    const vx=paddle.x-prevPlayer.x, vy=paddle.y-prevPlayer.y;
+    const speed=Math.sqrt(vx*vx+vy*vy);
+    const impulse=Phaser.Math.Clamp(600+speed*250,600,1900); // stronger hit
+    puck.body.velocity.x=nx*impulse;
+    puck.body.velocity.y=ny*impulse;
   }
 
   function update(){
     const w=this.scale.width, h=this.scale.height;
-    prevPlayer.x = player.x; prevPlayer.y = player.y;
+    prevPlayer.x=player.x; prevPlayer.y=player.y;
 
+    // 🎮 smoother control
     if(touchTarget.active){
-      const dx = touchTarget.x - player.x;
-      const dy = touchTarget.y - player.y;
-      player.x += dx * 0.5;
-      player.y += dy * 0.5;
+      const dx=touchTarget.x-player.x;
+      const dy=touchTarget.y-player.y;
+      player.x+=dx*0.35;
+      player.y+=dy*0.35;
     }
 
-    player.x = Phaser.Math.Clamp(player.x, 60, w-60);
-    player.y = Phaser.Math.Clamp(player.y, h*0.55, h-60);
+    player.x=Phaser.Math.Clamp(player.x,60,w-60);
+    player.y=Phaser.Math.Clamp(player.y,h*0.55,h-60);
 
     if(MODE==='cpu'){
-      cpu.x += (puck.x - cpu.x)*0.08;
-      cpu.y += (puck.y - cpu.y)*0.05;
-      cpu.x = Phaser.Math.Clamp(cpu.x, 60, w-60);
-      cpu.y = Phaser.Math.Clamp(cpu.y, 60, h*0.45);
+      cpu.x+=(puck.x-cpu.x)*0.08;
+      cpu.y+=(puck.y-cpu.y)*0.05;
+      cpu.x=Phaser.Math.Clamp(cpu.x,60,w-60);
+      cpu.y=Phaser.Math.Clamp(cpu.y,60,h*0.45);
     }
 
-    const goalHalf = w * 0.13;
-    if(puck.y < topGoal.y && Math.abs(puck.x - w/2) < goalHalf) handleGoal('player', this);
-    if(puck.y > bottomGoal.y && Math.abs(puck.x - w/2) < goalHalf) handleGoal('cpu', this);
+    const goalHalf=w*0.13;
+    if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalf) handleGoal('player',this);
+    if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalf) handleGoal('cpu',this);
   }
 
-  function handleGoal(who, scene){
+  function handleGoal(who,scene){
     if(who==='player') scorePlayer++; else scoreCPU++;
     scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
     resetPuck.call(scene);
   }
 
   function resetPuck(){
-    const w=this.scale.width, h=this.scale.height;
-    puck.setPosition(w/2, h/2);
-    const angle = Phaser.Math.Between(30,150)*(Phaser.Math.Between(0,1)?1:-1);
-    const speed = Phaser.Math.Between(600,750);
+    const w=this.scale.width,h=this.scale.height;
+    puck.setPosition(w/2,h/2);
+    const angle=Phaser.Math.Between(30,150)*(Phaser.Math.Between(0,1)?1:-1);
+    const speed=Phaser.Math.Between(650,800);
     puck.setVelocity(Math.cos(angle*Math.PI/180)*speed,
                      Math.sin(angle*Math.PI/180)*speed);
   }
 
-  window.addEventListener('load',()=>{ game = new Phaser.Game(config); });
+  window.addEventListener('load',()=>{ new Phaser.Game(config); });
 })();
 </script>
+
 
 
 
