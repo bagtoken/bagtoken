@@ -48,9 +48,9 @@ function create(){
   this.physics.world.setBounds(80,80,w-160,h-160);
 
   puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.99);
-  puck.setDamping(true).setDrag(0.99,0.99).setMaxVelocity(1500);
-  puck.body.setCircle(puck.width*0.6);           // enlarge collision circle
+  puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
+      .setDrag(0.99,0.99).setMaxVelocity(1600);
+  puck.body.setCircle(puck.width*0.6);
 
   player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
   cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
@@ -60,12 +60,8 @@ function create(){
   player.setImmovable(true);
   cpu.setImmovable(true);
 
-  this.physics.add.collider(puck,player,onHit,null,this);
+  // basic collider still useful for slow contacts
   this.physics.add.collider(puck,cpu,onHit,null,this);
-
-  // extra overlap correction each frame
-  this.physics.add.overlap(puck,player,correctOverlap,null,this);
-  this.physics.add.overlap(puck,cpu,correctOverlap,null,this);
 
   this.input.on('pointerdown',p=>{
     if(p.y>h*0.5){touchTarget.active=true;touchTarget.x=p.x;touchTarget.y=p.y;}
@@ -83,37 +79,38 @@ function create(){
   resetPuck.call(this);
 }
 
-/* ---------------- COLLISION ---------------- */
-function onHit(puck,paddle){
+/* ---------------- MANUAL COLLISION CHECK ---------------- */
+function checkManualHit(){
   const now=performance.now();
-  if(now-lastHit<60)return;
-  lastHit=now;
+  if(now-lastHit<50)return;
 
+  const dx=puck.x-player.x, dy=puck.y-player.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const minDist=(puck.displayWidth*0.35)+(player.displayWidth*0.35);
+  if(dist<minDist){
+    lastHit=now;
+    const nx=dx/dist, ny=dy/dist;
+    const vx=player.x-prevPlayer.x;
+    const vy=player.y-prevPlayer.y;
+    const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
+    const impulse=Phaser.Math.Clamp(400+paddleSpeed*220,400,1700);
+    puck.body.velocity.x = nx*impulse;
+    puck.body.velocity.y = ny*impulse;
+    puck.setAngularVelocity(Phaser.Math.Between(-220,220));
+  }
+}
+
+/* ---------------- CPU COLLISION ---------------- */
+function onHit(puck,paddle){
   const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
   const dist=Math.sqrt(dx*dx+dy*dy)||1;
   const nx=dx/dist, ny=dy/dist;
-
   const vx=paddle.x-prevPlayer.x;
   const vy=paddle.y-prevPlayer.y;
   const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
-
-  const force=Phaser.Math.Clamp(400 + paddleSpeed*200,400,1700);
-  puck.body.velocity.x = nx * force;
-  puck.body.velocity.y = ny * force;
-  puck.setAngularVelocity(Phaser.Math.Between(-220,220));
-}
-
-/* ---------------- OVERLAP FIX ---------------- */
-function correctOverlap(puck,paddle){
-  // move puck slightly away if overlapping so collider re-engages
-  const dx=puck.x-paddle.x, dy=puck.y-paddle.y;
-  const dist=Math.sqrt(dx*dx+dy*dy)||1;
-  const overlap=(puck.width*0.45)-(dist*0.5);
-  if(overlap>0){
-    const nx=dx/dist, ny=dy/dist;
-    puck.x+=nx*overlap;
-    puck.y+=ny*overlap;
-  }
+  const force=Phaser.Math.Clamp(400+paddleSpeed*200,400,1500);
+  puck.body.velocity.x = nx*force;
+  puck.body.velocity.y = ny*force;
 }
 
 /* ---------------- UPDATE ---------------- */
@@ -122,6 +119,7 @@ function update(){
   prevPlayer.x=player.x;
   prevPlayer.y=player.y;
 
+  // Player control
   if(touchTarget.active){
     const dx=touchTarget.x-player.x;
     const dy=touchTarget.y-player.y;
@@ -133,11 +131,16 @@ function update(){
   player.x=Phaser.Math.Clamp(player.x,100,w-100);
   player.y=Phaser.Math.Clamp(player.y,h*0.5+20,h-80);
 
+  // CPU AI
   cpu.x+=(puck.x-cpu.x)*0.08;
   cpu.y+=(puck.y-cpu.y)*0.05;
   cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
   cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
 
+  // Manual hit detection for player
+  checkManualHit();
+
+  // Goals
   const goalHalfW=130;
   if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
     scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
@@ -147,13 +150,12 @@ function update(){
   }
 }
 
-/* ---------------- FLASH EFFECT ---------------- */
+/* ---------------- FLASH & RESET ---------------- */
 function flashGoal(goal,color){
   goal.setFillStyle(color,0.9);
   setTimeout(()=>goal.setFillStyle(color,0.4),180);
 }
 
-/* ---------------- RESET ---------------- */
 function resetPuck(scoredBy){
   const w=this.scale.width,h=this.scale.height;
   puck.setPosition(w/2,h/2);
