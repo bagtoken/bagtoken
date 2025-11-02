@@ -168,6 +168,17 @@
   .rules-modal .rules-note{ margin-top: 10px; color: var(--muted); }
   .rules-close{ position:absolute; top:8px; right:12px; border:0; background:transparent; color:#e9efe9; font-size:24px; line-height:1; cursor:pointer; }
   .rules-close:hover{ filter:brightness(1.15); }
+
+  /* ---------- Skin underlay (added) ---------- */
+  .canvas-wrap .board-skin{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    z-index:0;
+    pointer-events:none;
+  }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; z-index:1; }
+  /* ------------------------------------------ */
 </style>
 
 <!-- Shared overlay (for win popup) -->
@@ -179,18 +190,19 @@
 <a href="/casino/" class="back-casino" aria-label="Back to Casino">⬅ Back to Casino</a>
 
 <section class="game-header">
-  <picture>
-    <source type="image/webp"
-            srcset="/casino/assets/img/bag-plinko-960.webp 960w, /casino/assets/img/bag-plinko-1024.webp 1024w"
-            sizes="(min-width:900px) 420px, 70vw">
-    <img
-      class="hero-img"
-      src="/casino/assets/img/bag-plinko-1024.png"
-      srcset="/casino/assets/img/bag-plinko-960.png 960w, /casino/assets/img/bag-plinko-1024.png 1024w"
-      sizes="(min-width:900px) 420px, 70vw"
-      alt="$BAG Plinko"
-      loading="lazy" decoding="async">
-  </picture>
+<picture>
+  <source type="image/webp"
+          srcset="/casino/assets/img/bag-plinko-960.webp 960w, /casino/assets/img/bag-plinko-1024.webp 1024w"
+          sizes="(min-width:1024px) 960px, 100vw">
+  <img class="hero-img"
+    src="/casino/assets/img/bag-plinko-1024.png"
+    srcset="/casino/assets/img/bag-plinko-960.png 960w, /casino/assets/img/bag-plinko-1024.png 1024w"
+    sizes="(min-width:1024px) 960px, 100vw"
+    alt="$BAG Plinko — header"
+    width="1024" height="576"
+    loading="lazy" decoding="async">
+</picture>
+
   <h2>🪙 $BAG Plinko</h2>
   <p class="micro" style="margin-top:4px;opacity:.9;">
     💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.
@@ -221,14 +233,6 @@
           <button id="topUpBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);box-shadow:0 3px 0 #b08a19;cursor:pointer;display:none;">Top Up</button>
           <button id="endSessionBtn" style="padding:8px 12px;font-weight:800;border:0;border-radius:10px;background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;cursor:pointer;display:none;">End</button>
         </div>
-      </div>
-
-      <!-- Practice readout on separate lines -->
-      <div id="practiceReadout" class="micro" style="opacity:.95; margin:6px 0 10px 0; line-height:1.35; display:none;">
-        <div style="font-weight:800;margin-bottom:4px;">Practice</div>
-        <div id="prBag">BAG: —</div>
-        <div id="prXrp">XRP: —</div>
-        <div id="prUsd">USD: —</div>
       </div>
 
       <div class="section-title">Stake & Prices</div>
@@ -313,6 +317,20 @@
           <!-- Board -->
           <div class="stage">
             <div class="canvas-wrap" id="boardWrap">
+              <!-- Skin underlay (added) -->
+              <picture class="board-skin">
+                <source type="image/webp"
+                        srcset="/casino/assets/img/bag-plinko-skin-960.webp 960w, /casino/assets/img/bag-plinko-skin-1024.webp 1024w"
+                        sizes="(min-width:720px) 640px, 100vw">
+                <img
+                  src="/casino/assets/img/bag-plinko-skin-1024.png"
+                  srcset="/casino/assets/img/bag-plinko-skin-960.png 960w, /casino/assets/img/bag-plinko-skin-1024.png 1024w"
+                  sizes="(min-width:720px) 640px, 100vw"
+                  alt="Plinko board skin"
+                  width="1024" height="1365"
+                  loading="eager" decoding="async">
+              </picture>
+
               <canvas id="game" aria-label="Plinko board"></canvas>
               <div class="hud" aria-hidden="true">
                 <span class="pill">Mode: <b>Demo</b></span>
@@ -905,15 +923,9 @@
     }
   });
 
-  // Currency toggle: preserve USD if present; otherwise preserve units and recompute USD
   curWrap?.addEventListener('change', ()=>{
     refreshUnit();
-    const usdVal = parseFloat(usdInput?.value || '0');
-    if (Number.isFinite(usdVal) && usdVal > 0){
-      updateBetFromUsd();
-    } else {
-      updateUsdFromBet();
-    }
+    updateUsdFromBet();
     updatePayouts();
   });
 
@@ -1388,7 +1400,7 @@
     for(let i=0;i<SLOTS;i++){ ctx.fillStyle=colors[i]; ctx.fillText(labels[i], centers[i], bottomBoard+72); }
 
     if (!dropping){
-      const gx = clamp(G.__dropX ?? (left+right)/2, left+BALL_R, right-BALL_R);
+      const gx = Math.min((W - 24 + WALL_WIDEN) - 8, Math.max((24 - WALL_WIDEN) + 8, G.__dropX ?? (left+right)/2));
 
       ctx.save();
       ctx.setLineDash([6,6]);
@@ -1521,54 +1533,6 @@
   renderHud();
   let tries = 0; 
   const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
-})();
-</script>
-
-<!-- Practice readout lines renderer -->
-<script>
-(function(){
-  const box   = document.getElementById('practiceReadout');
-  const lineB = document.getElementById('prBag');
-  const lineX = document.getElementById('prXrp');
-  const lineU = document.getElementById('prUsd');
-
-  if (!box || !lineB || !lineX || !lineU) return;
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n, max=6){ const x=Number(n); return Number.isFinite(x) ? x.toLocaleString(undefined,{maximumFractionDigits:max}) : '—'; }
-  function usd(n){ const x=Number(n)||0; return '$'+x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function getBalances(){
-    const s = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
-    const bag = Number(s.bag)||0;
-    let xrp = Number(s.xrp);
-    const { bagUsd, xrpUsd } = PR();
-    if (!(xrp>0)){
-      if (bagUsd>0 && xrpUsd>0) xrp = bag*(bagUsd/xrpUsd);
-      else xrp = 0;
-    }
-    const usdVal = (bagUsd>0) ? bag*bagUsd : 0;
-    return { bag, xrp, usdVal };
-  }
-
-  function render(){
-    try{
-      const { bag, xrp, usdVal } = getBalances();
-      lineB.textContent = `BAG: ${fmt(bag, 6)}`;
-      lineX.textContent = `XRP: ${fmt(xrp, 6)}`;
-      lineU.textContent = `USD: ${usd(usdVal)}`;
-      // Keep visible in practice mode
-      box.style.display = 'block';
-    }catch{}
-  }
-
-  [
-    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
-    'bag:pricesUpdated','bag:hudRefresh','storage'
-  ].forEach(ev => addEventListener(ev, render));
-
-  render();
-  let tries=0; const iv=setInterval(()=>{ render(); if(++tries>40) clearInterval(iv); }, 500);
 })();
 </script>
 
