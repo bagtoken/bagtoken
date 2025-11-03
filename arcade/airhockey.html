@@ -20,11 +20,10 @@ html,body{
  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
  line-height:1.5;overflow-y:auto;scrollbar-width:thin;
  scrollbar-color:#2fbf6b #0b1b13;
- overscroll-behavior:none;
- -webkit-tap-highlight-color:transparent;
- touch-action:none;            /* 👈 global */
- user-select:none;
- -webkit-user-select:none;
+ overscroll-behavior: contain;     /* allow normal page scroll */
+ -webkit-tap-highlight-color: transparent;
+ touch-action: pan-y;              /* ✅ vertical scroll allowed */
+ user-select: none; -webkit-user-select: none;
 }
 .panel{
  background:linear-gradient(180deg,var(--panel),var(--panel2));
@@ -42,14 +41,13 @@ html,body{
 .marquee{
  text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
  background:linear-gradient(180deg,#17311f,#0e2419);
- border:1px solid #254a33;border-radius:12px;padding:8px;
- margin:10px 0;
+ border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0;
 }
-canvas{display:block;margin:auto;touch-action:none;}
-#gameContainer{
- max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;
- /* removed aspect-ratio to avoid pointer desync with Phaser */
-}
+canvas{display:block;margin:auto;}
+
+/* 👇 Only the game region disables native gestures */
+#gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;}
+#gameContainer canvas{touch-action:none; -ms-touch-action:none;}
 </style>
 
 </head>
@@ -163,7 +161,7 @@ const config={
  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
  backgroundColor:'#021107',
  physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
- input:{activePointers:5}   // 👈 more touch pointers
+ input:{activePointers:5}
 };
 
 let puck,player,cpu,scoreText,topGoal,bottomGoal;
@@ -171,15 +169,7 @@ let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let lastHit=0;
 
-const game=new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
-
-function blockTouchDefaults(){
-  const el=document.getElementById('gameContainer');
-  ['touchstart','touchmove','touchend','touchcancel'].forEach(evt=>{
-    el.addEventListener(evt,(e)=>{ e.preventDefault(); },{passive:false});
-  });
-}
-blockTouchDefaults();
+new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 
 function preload(){
  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
@@ -190,9 +180,6 @@ function preload(){
 
 function create(){
  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
- this.input.addPointer(4);                 // 👈 ensure extra touch pointers
- this.input.mouse?.disableContextMenu?.(); // no context menu
-
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
  const goalW=260,goalH=40;
@@ -213,17 +200,15 @@ function create(){
 
  this.physics.add.collider(puck,cpu,onHit,null,this);
 
- // Wide circular hit area (not required for “anywhere” control, but keeps drag workable)
+ // Big hit area, plus finger-anywhere control (lower half)
  const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
  player.setInteractive(new Phaser.Geom.Circle(0,0,radius),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
 
- // Classic drag (works on mouse/touch)
  this.input.on('drag',(pointer,obj,dragX,dragY)=>{
-   movePaddleTo({x:dragX,y:dragY},this.scale.width,this.scale.height);
+   movePaddleTo({x:dragX,y:dragY},w,h);
  });
 
- // Finger-anywhere control on lower half. No need to “grab” the paddle.
  this.input.on('pointerdown',p=>{
    if(p.y>=h*0.5) movePaddleTo(p,w,h);
  });
