@@ -22,7 +22,7 @@ html,body{
  scrollbar-color:#2fbf6b #0b1b13;
  overscroll-behavior: contain;
  -webkit-tap-highlight-color: transparent;
- touch-action: pan-y;
+ touch-action: pan-y;              /* normal page scroll */
  user-select: none; -webkit-user-select: none;
 }
 .panel{
@@ -31,14 +31,23 @@ html,body{
  border-radius:16px;box-shadow:0 8px 24px var(--shadow);
  padding:16px;margin:0 auto;max-width:1080px;
 }
-.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;}
+.btn{
+ cursor:pointer;border:0;border-radius:12px;padding:10px 14px;
+ font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);
+ color:#08130d;box-shadow:0 4px 0 #b08a19;
+}
 .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315;}
 .divider{height:1px;background:#123221;margin:14px 0;}
-.marquee{ text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0;}
+.marquee{
+ text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
+ background:linear-gradient(180deg,#17311f,#0e2419);
+ border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0;
+}
 canvas{display:block;margin:auto;}
 #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;}
-#gameContainer canvas{touch-action:none; -ms-touch-action:none;}
+#gameContainer canvas{touch-action:none; -ms-touch-action:none;} /* capture touches only in game */
 </style>
+
 </head>
 <body>
 
@@ -51,6 +60,7 @@ canvas{display:block;margin:auto;}
 
 <section style="padding:0 16px 80px;">
  <div class="panel">
+   <!-- SESSION -->
    <div style="display:flex;justify-content:space-between;align-items:center;">
      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
      <button id="startSessionBtn" class="btn">Start Session</button>
@@ -170,20 +180,23 @@ function preload(){
 
 function create(){
  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
+
+ // Table
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
+ // Visual goal refs (invisible — only for positions)
  const GOAL_W=260, GOAL_H=40;
  topGoal=this.add.rectangle(cx,70,GOAL_W,GOAL_H,0x000000,0);
  bottomGoal=this.add.rectangle(cx,h-70,GOAL_W,GOAL_H,0x000000,0);
 
+ // World bounds with top/bottom walls; we’ll detect “slot” at center
  this.physics.world.setBounds(80,80,w-160,h-160);
 
  // 🏒 PUCK
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true)
      .setDrag(0.995,0.995).setMaxVelocity(2000);
- puck.body.setCircle(puck.displayWidth/2);
- centerBodyOnTexture(puck);
+ puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
  // 🟡 PLAYER / 🟢 CPU — bigger paddles
  player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.14);
@@ -191,8 +204,7 @@ function create(){
  [player,cpu].forEach(p=>{
    p.setImmovable(true);
    p.setCollideWorldBounds(true);
-   p.body.setCircle(p.displayWidth/2);
-   centerBodyOnTexture(p);
+   p.body.setCircle(p.displayWidth/2); centerBodyOnTexture(p);
  });
 
  // Input: finger-anywhere on lower half
@@ -203,6 +215,7 @@ function create(){
  this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h); });
  this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h); });
 
+ // Score
  scoreText=this.add.text(cx,40,'0 - 0',{
    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3
  }).setOrigin(0.5,0);
@@ -215,19 +228,14 @@ function centerBodyOnTexture(img){
   img.body.setOffset(img.width/2 - bw/2, img.height/2 - bh/2);
 }
 
-// ⛔ Keep paddles off the goal lips
-function clampPlayerY(y,h){
-  return Phaser.Math.Clamp(y, h*0.5+60, h-110);
-}
-function clampCPUY(y,h){
-  return Phaser.Math.Clamp(y, 110, h*0.45-40);
-}
+// No-parking near goal lips
+function clampPlayerY(y,h){ return Phaser.Math.Clamp(y, h*0.5+60, h-110); }
+function clampCPUY(y,h){ return Phaser.Math.Clamp(y, 110, h*0.45-40); }
 
 function movePaddleTo(p,w,h){
  if(inputLocked) return;
- const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
- const clampedY=clampPlayerY(p.y,h);
- player.x=clampedX; player.y=clampedY;
+ player.x = Phaser.Math.Clamp(p.x,100,w-100);
+ player.y = clampPlayerY(p.y,h);
 }
 
 function resolvePaddle(paddle, prev){
@@ -258,25 +266,26 @@ function resolvePaddle(paddle, prev){
   }
 }
 
-// 🎯 Goal pocket animation with full lock + safe respawn
+// Goal pocket animation + safe reset
 function animateGoalPocket(scene, side){
   goalAnimating = true;
   inputLocked   = true;
 
-  // Freeze velocities to avoid drift during tween
+  // Freeze velocities
   puck.body.setVelocity(0,0);
   player.body.setVelocity(0,0);
   cpu.body.setVelocity(0,0);
 
-  // Nudge paddles away from slot while we animate
+  // Pull paddles away from the mouth
   const w=scene.scale.width, h=scene.scale.height, cx=w/2;
   scene.tweens.add({ targets: player, x: w*0.75, y: clampPlayerY(h*0.82,h), duration:180, ease:'Quad.easeOut' });
   scene.tweens.add({ targets: cpu,    x: w*0.25, y: clampCPUY(h*0.20,h),   duration:180, ease:'Quad.easeOut' });
 
-  const slotY = side==='top' ? (topGoal.y - 24) : (bottomGoal.y + 24);
-  const targetY = side==='top' ? (topGoal.y - 80) : (bottomGoal.y + 80);
+  // Slot geometry
+  const slotY = side==='top' ? (scene.physics.world.bounds.top + 6) : (scene.physics.world.bounds.bottom - 6);
+  const targetY = side==='top' ? (slotY - 56) : (slotY + 56);
 
-  // Disable world-bounce so we can dip into the pocket
+  // Allow puck to move inside during animation
   puck.setCollideWorldBounds(false);
   puck.body.setEnable(false);
 
@@ -286,17 +295,14 @@ function animateGoalPocket(scene, side){
       { targets:puck, x:cx, y:targetY, scaleX:puck.scaleX*0.55, scaleY:puck.scaleY*0.55, alpha:0, ease:'Quad.easeIn', duration:180 }
     ],
     onComplete: ()=>{
-      // hide puck fully off-screen before reset to avoid any overlap
+      // hide puck off-screen before reset to avoid overlaps
       puck.setAlpha(0).setPosition(-9999,-9999).setScale(0.07);
 
-      // small timeout ensures no stray collisions the same frame
       scene.time.delayedCall(80, ()=>{
-        // restore physics + bounds
         puck.body.setEnable(true);
         puck.setCollideWorldBounds(true);
         goalAnimating=false;
         resetPuck.call(scene, side==='top' ? 'player' : 'cpu');
-        // unlock input half a beat later so the first touch doesn’t interfere
         scene.time.delayedCall(80, ()=>{ inputLocked=false; puck.setAlpha(1); }, null, scene);
       });
     }
@@ -324,18 +330,28 @@ function update(time, delta){
  resolvePaddle(player, prevPlayer);
  resolvePaddle(cpu, prevCPU);
 
- // Goals → pocket animation
- const goalHalfW=130;
+ // ---------- GOAL DETECTION THROUGH WALL SLOT ----------
  if(!goalAnimating){
-   if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-     scorePlayer++; scoreText.setText(`${scorePlayer} - ${scoreCPU}`); animateGoalPocket(this,'top');
+   const bounds = this.physics.world.bounds;
+   const r      = puck.displayWidth/2;
+   const halfW  = topGoal.width/2;       // matches GOAL_W/2
+   const withinGoalX = Math.abs(puck.x - (bounds.centerX)) < (halfW - r);
+
+   // top slot: puck touching/penetrating the top wall near center
+   if( withinGoalX && puck.y <= bounds.top + r + 2 ){
+     scorePlayer++; scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+     animateGoalPocket(this,'top');
    }
-   if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-     scoreCPU++; scoreText.setText(`${scorePlayer} - ${scoreCPU}`); animateGoalPocket(this,'bottom');
+
+   // bottom slot
+   if( withinGoalX && puck.y >= bounds.bottom - r - 2 ){
+     scoreCPU++; scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+     animateGoalPocket(this,'bottom');
    }
  }
+ // ------------------------------------------------------
 
- // Soft clamp puck velocity
+ // Keep puck sane
  const v = puck.body.velocity, vmax=2000, keep=0.999;
  v.x = Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
  v.y = Phaser.Math.Clamp(v.y*keep,-vmax,vmax);
@@ -343,8 +359,6 @@ function update(time, delta){
  prevPlayer = curPlayer;
  prevCPU = curCPU;
 }
-
-function flashGoal(goal,color){ /* kept for future effects */ }
 
 function resetPuck(scoredBy){
  const w=this.scale.width,h=this.scale.height;
@@ -358,5 +372,6 @@ function resetPuck(scoredBy){
  puck.setAlpha(1).setScale(0.07);
 }
 </script>
+
 </body>
 </html>
