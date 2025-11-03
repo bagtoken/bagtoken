@@ -20,7 +20,7 @@ html,body{
  margin:0;padding:0;background:var(--bg);color:var(--fg);
  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
  line-height:1.55;overscroll-behavior:contain;
- -webkit-tap-highlight-color:transparent;touch-action:pan-y;
+ -webkit-tap-highlight-color:transparent;touch-action:manipulation;
  user-select:none;-webkit-user-select:none;
 }
 a.back{position:fixed;top:18px;left:18px;z-index:1000;
@@ -51,19 +51,6 @@ h2{margin:0;font-size:clamp(1.6rem,4vw,2rem)}
 .grid-2{grid-template-columns:1fr 1fr}
 @media(max-width:980px){.grid-2{grid-template-columns:1fr}}
 
-.canvas-wrap{
- /* Keep the board sharp and fully visible on phones */
- width:100%;
- /* 1024x1536 = 2:3 aspect */
- aspect-ratio:2/3;
- /* Cap height so HUD is visible without hard scrolling */
- height:min(78vh, calc(100vw * 1.5));
- max-height:78vh;
- border-radius:12px;overflow:hidden;
- background:#021107;
-}
-canvas{display:block;width:100% !important;height:100% !important}
-
 .section-title{font-weight:800;font-size:1.2rem;margin:0 0 8px}
 .stack{display:grid;gap:10px}
 .choice{display:flex;gap:10px;flex-wrap:wrap}
@@ -82,7 +69,7 @@ canvas{display:block;width:100% !important;height:100% !important}
 
 .hudbar{
  display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
- gap:6px;align-items:center;margin:10px 2px 0
+ gap:6px;align-items:center;margin:8px 2px 0
 }
 .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
 .pill b{font-weight:800}
@@ -91,10 +78,33 @@ canvas{display:block;width:100% !important;height:100% !important}
 .micro{font-size:.85rem;color:#a8b5ab}
 .warn{color:var(--warn)}.lose{color:var(--lose)}
 
-.score{display:flex;justify-content:center;gap:18px;font-weight:900}
+.score{display:flex;gap:18px;font-weight:900}
 .score .box{min-width:84px;text-align:center;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;padding:8px}
-.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 
+/* GAME AT BOTTOM, LEFT-ALIGNED */
+.bottom-wrap{max-width:1080px;margin:0 auto;padding:0 16px 60px}
+.game-panel{
+ background:linear-gradient(180deg,var(--panel),var(--panel2));
+ border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);
+ padding:12px;margin-top:14px;
+}
+.left-align{margin-left:0;margin-right:auto}
+
+/* Canvas wrapper: full width on mobile, safe height; pointer events routed to canvas */
+.canvas-wrap{
+ width:100%;
+ aspect-ratio:2/3;               /* 1024x1536 */
+ height:min(78vh, calc(100vw * 1.5));
+ max-height:78vh;
+ border-radius:12px;overflow:hidden;
+ background:#021107;
+ position:relative;
+}
+#gameContainer{position:relative; width:100%; height:100%; pointer-events:auto; }
+#gameContainer canvas{display:block;width:100% !important;height:100% !important; touch-action:none;}
+
+/* header area */
+.header-wrap{padding-top:70px;text-align:center}
 .footer{color:#b9c1b5;text-align:center;padding:14px 0;font-size:.9rem}
 </style>
 </head>
@@ -102,53 +112,30 @@ canvas{display:block;width:100% !important;height:100% !important}
 <body>
 <a href="/casino/" class="back">⬅️ Back</a>
 
-<section style="text-align:center;padding-top:70px;">
+<!-- ✅ HUD PILLS ABOVE THE HEADER -->
+<section class="panel" style="margin-top:70px;margin-bottom:10px">
+  <div class="hudbar" id="hud" aria-live="polite">
+    <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+    <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+    <span class="pill">Bet: <b id="betLbl">1</b></span>
+    <span class="pill">Best-of: <b id="bestLbl">1</b></span>
+    <span class="pill">Goals: <b id="goalsLbl">5</b></span>
+    <span class="pill">Last: <b id="lastLbl">—</b></span>
+  </div>
+</section>
+
+<!-- HEADER BELOW HUD -->
+<section class="header-wrap">
   <h2>🏒 $BAG Air Hockey — Arcade P2E</h2>
   <p class="micro" style="opacity:.9">💰 All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
-<section style="padding:0 16px 60px">
+<!-- SETTINGS / PRICES / SESSION -->
+<section style="padding:0 16px 24px">
   <div class="panel grid grid-2">
-
-    <!-- LEFT COLUMN: GAME ➜ HUD (mobile shows this column first) -->
     <div>
       <div class="marquee">$BAG AIR HOCKEY</div>
 
-      <!-- Responsive canvas wrapper -->
-      <div class="canvas-wrap" id="gameContainer"></div>
-
-      <!-- ✅ HUD sits directly under the board on mobile -->
-      <div class="hudbar" id="hud" aria-live="polite">
-        <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
-        <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
-        <span class="pill">Bet: <b id="betLbl">1</b></span>
-        <span class="pill">Best-of: <b id="bestLbl">1</b></span>
-        <span class="pill">Goals: <b id="goalsLbl">5</b></span>
-        <span class="pill">Last: <b id="lastLbl">—</b></span>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="score" aria-live="polite">
-        <div class="box">Round <span id="roundIdx">—</span>/<span id="roundMax">—</span></div>
-        <div class="box">You <span id="youScore">0</span></div>
-        <div class="box">CPU <span id="cpuScore">0</span></div>
-      </div>
-
-      <div class="controls" style="margin-top:10px">
-        <button id="startMatchBtn" class="btn">Start Match</button>
-        <button id="pauseBtn" class="btn alt" disabled>Pause</button>
-        <button id="resumeBtn" class="btn" disabled>Resume</button>
-        <button id="resetBtn" class="btn alt">Reset</button>
-      </div>
-    </div>
-
-    <!-- RIGHT COLUMN: SESSION / PRICES / STAKE / OPTIONS -->
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%">
-        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <button id="connectBtn" class="btn">Connect Xaman</button>
-      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice</span></div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -221,6 +208,37 @@ canvas{display:block;width:100% !important;height:100% !important}
       </div>
     </div>
 
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn" class="btn">Connect Xaman</button>
+      </div>
+
+      <div class="section-title">Round / Score</div>
+      <div class="score" aria-live="polite">
+        <div class="box">Round <span id="roundIdx">—</span>/<span id="roundMax">—</span></div>
+        <div class="box">You <span id="youScore">0</span></div>
+        <div class="box">CPU <span id="cpuScore">0</span></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="startMatchBtn" class="btn">Start Match</button>
+        <button id="pauseBtn" class="btn alt" disabled>Pause</button>
+        <button id="resumeBtn" class="btn" disabled>Resume</button>
+        <button id="resetBtn" class="btn alt">Reset</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ✅ GAME AT THE VERY BOTTOM, LEFT-ALIGNED -->
+<section class="bottom-wrap">
+  <div class="game-panel left-align" style="max-width:720px;">
+    <div class="canvas-wrap left-align">
+      <div id="gameContainer" aria-label="Air Hockey Game"></div>
+    </div>
   </div>
 </section>
 
@@ -233,9 +251,8 @@ canvas{display:block;width:100% !important;height:100% !important}
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
 
-<!-- LIVE PRICING (same engine as Dice) -->
+<!-- LIVE PRICING -->
 <script>
-/* unchanged pricing engine from your working build */
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
@@ -263,10 +280,10 @@ canvas{display:block;width:100% !important;height:100% !important}
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
   async function fetchXrpUsdLive(){ try{
-      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-      if(!r.ok) throw 0; const v=(await r.json())?.ripple?.usd;
-      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
-    }catch{} return false; }
+    const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+    if(!r.ok) throw 0; const v=(await r.json())?.ripple?.usd;
+    if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+  }catch{} return false; }
   function parseX(a){ if(a==null) return null; if(typeof a==='string') return Number(a)/1_000_000; if(typeof a==='object'&&a.currency==='XRP') return Number(a.value); return null; }
   function parseI(a){ if(!a||typeof a!=='object') return null; return Number(a.value); }
   async function fetchBagViaAMMLive(){
@@ -323,7 +340,7 @@ canvas{display:block;width:100% !important;height:100% !important}
 })(window);
 </script>
 
-<!-- DEMO SESSION + HUD updater (unchanged logic, just HUD location) -->
+<!-- DEMO SESSION + HUD -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
@@ -374,7 +391,7 @@ canvas{display:block;width:100% !important;height:100% !important}
   if(forceLive){ window.__BAG_FORCE_DEMO=false; } else { window.__BAG_FORCE_DEMO=true; window.__bagSession=demoSession; const seeded=ensureSeedNowOrWhenReady(); renderDemo(); }
   addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  // HUD refresher (targets the HUD under the game)
+  /* HUD */
   const curToggle=document.getElementById('curToggle');
   function PRx(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
   function fmt6(n){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
@@ -411,14 +428,14 @@ canvas{display:block;width:100% !important;height:100% !important}
 })();
 </script>
 
-<!-- GAME + MATCH LOGIC (unchanged except container sizing) -->
+<!-- GAME -->
 <script>
 const config={
  type:Phaser.AUTO,
- scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
+ scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.NONE,width:1024,height:1536,parent:'gameContainer'},
  backgroundColor:'#021107',
  physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
- input:{activePointers:5}
+ input:{activePointers:5}  /* ✅ multi-touch */
 };
 let game, sceneRef=null;
 let puck,player,cpu;
@@ -426,8 +443,7 @@ let youScore=0,cpuScore=0,roundIdx=0,roundMax=1,goalsToWin=5;
 let matchActive=false, paused=false, goalLock=false;
 let prevPlayer={x:0,y:0}, prevCPU={x:0,y:0};
 let sfx={hit:null,goal:null};
-function $(id){ return document.getElementById(id); }
-function setText(id, v){ const el=$(id); if(el) el.textContent=String(v); }
+
 function preload(){
  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
@@ -440,21 +456,29 @@ function create(){
  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
  this.physics.world.setBounds(80,80,w-160,h-160);
+
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
  puck.body.setCircle(puck.displayWidth/2); centerBody(puck);
+
  player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.14);
  cpu   =this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.14);
  [player,cpu].forEach(p=>{ p.setImmovable(true); p.setCollideWorldBounds(true); p.body.setCircle(p.displayWidth/2); centerBody(p); });
+
+ /* ✅ Robust touch: attach to scene input and explicitly set draggable area */
  const r=player.displayWidth*0.5;
  player.setInteractive(new Phaser.Geom.Circle(0,0,r),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
- this.input.on('drag',(ptr,obj,dx,dy)=>{ movePaddleTo({x:dx,y:dy},w,h); });
+ this.input.on('drag',(pointer,obj,dragX,dragY)=>{ movePaddleTo({x:dragX,y:dragY},w,h); });
  this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h); });
  this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h); });
+ this.input.topOnly=false; /* allow dragging even if overlapped by effects */
+
  try{ sfx.hit=this.sound.add('hit',{volume:.35}); sfx.goal=this.sound.add('goal',{volume:.5}); }catch{}
+
  updateRoundHud();
 }
+
 function centerBody(img){ const bw=img.body.width,bh=img.body.height; img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2); }
 function movePaddleTo(p,w,h){ if(paused) return; player.x=Phaser.Math.Clamp(p.x,100,w-100); player.y=Phaser.Math.Clamp(p.y,h*0.5+40,h-80); }
 function resolvePaddle(paddle, prev){
@@ -490,6 +514,7 @@ function update(time,delta){
  const v=puck.body.velocity, vmax=2000, keep=0.999;
  v.x=Phaser.Math.Clamp(v.x*keep,-vmax,vmax); v.y=Phaser.Math.Clamp(v.y*keep,-vmax,vmax);
 }
+
 function onGoal(who){
  if(goalLock) return; goalLock=true;
  const scene=sceneRef, w=scene.scale.width, h=scene.scale.height, cx=w/2;
@@ -516,8 +541,13 @@ function onGoal(who){
   }
  });
 }
+
+/* Round / Match */
+function $(id){ return document.getElementById(id); }
+function setText(id, v){ const el=$(id); if(el) el.textContent=String(v); }
 function updateRoundHud(){ setText('roundIdx', Math.max(0,roundIdx)); setText('roundMax', roundMax); updateScoreHud(); }
 function updateScoreHud(){ setText('youScore', youScore); setText('cpuScore', cpuScore); }
+
 function startServe(){
  const scene=sceneRef, w=scene.scale.width, h=scene.scale.height;
  puck.setPosition(w/2,h/2).setAlpha(1).setScale(0.07);
@@ -529,11 +559,13 @@ function startServe(){
  const vy=(Math.random()<0.5? -1: 1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
  puck.setVelocity(vx,vy); puck.setAngularVelocity(Phaser.Math.Between(-120,120));
 }
+
 function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
 function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
 function stakeBag(){
- const q=parseFloat(document.getElementById('betQty')?.value||0)||0; if(!q) return 0;
- const {bagUsd,xrpUsd}=PR(); return currentCurrency()==='BAG'? q : (bagUsd>0&&xrpUsd>0? q*(xrpUsd/bagUsd):0);
+ const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+ if(!q) return 0; const {bagUsd,xrpUsd}=PR();
+ return currentCurrency()==='BAG'? q : (bagUsd>0&&xrpUsd>0? q*(xrpUsd/bagUsd):0);
 }
 function stakeUsd(){
  const direct=parseFloat(document.getElementById('usdBet')?.value||''); if(Number.isFinite(direct)&&direct>0) return direct;
@@ -541,6 +573,7 @@ function stakeUsd(){
  if(currentCurrency()==='BAG') return bagUsd>0? q*bagUsd:0; return xrpUsd>0? q*xrpUsd:0;
 }
 function setLast(s){ try{ window.__HOCKEY_LAST__=s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{} }
+
 function beginMatch(){
  if(matchActive) return;
  const sUsd=stakeUsd(), sBag=stakeBag();
@@ -559,6 +592,7 @@ function beginMatch(){
  document.getElementById('resumeBtn').disabled=true;
  startServe();
 }
+
 function endMatch(playerWon){
  matchActive=false; paused=false; goalLock=false;
  const sBag=stakeBag(); const isDemo=(window.__BAG_FORCE_DEMO===true);
@@ -571,6 +605,7 @@ function endMatch(playerWon){
    try{ window.__bagAudio?.thud?.(); }catch{} setLast('Loss');
  }
 }
+
 function checkRoundEnd(){
  if(youScore>=goalsToWin || cpuScore>=goalsToWin){
    const youTook = youScore>cpuScore;
@@ -580,6 +615,7 @@ function checkRoundEnd(){
    sceneRef.time.delayedCall(300, ()=>{ if(matchActive){ startServe(); }});
  }
 }
+
 document.addEventListener('DOMContentLoaded', ()=>{
  document.getElementById('startMatchBtn').addEventListener('click', beginMatch);
  document.getElementById('pauseBtn').addEventListener('click', ()=>{ if(!matchActive) return; paused=true; document.getElementById('pauseBtn').disabled=true; document.getElementById('resumeBtn').disabled=false; setLast('Paused'); });
@@ -589,10 +625,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
    if(puck){ puck.setVelocity(0,0); puck.setAngularVelocity(0); }
  });
 });
+
+/* Boot the game */
 game=new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 </script>
 
-<!-- small input niceties -->
+<!-- input safety -->
 <script>
   document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
   document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
