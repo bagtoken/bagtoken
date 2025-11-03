@@ -20,9 +20,11 @@ html,body{
  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
  line-height:1.5;overflow-y:auto;scrollbar-width:thin;
  scrollbar-color:#2fbf6b #0b1b13;
- /* prevent pull-to-refresh jitter while playing */
- overscroll-behavior: none;
- -webkit-tap-highlight-color: transparent;
+ overscroll-behavior:none;
+ -webkit-tap-highlight-color:transparent;
+ touch-action:none;            /* 👈 global */
+ user-select:none;
+ -webkit-user-select:none;
 }
 .panel{
  background:linear-gradient(180deg,var(--panel),var(--panel2));
@@ -43,15 +45,11 @@ html,body{
  border:1px solid #254a33;border-radius:12px;padding:8px;
  margin:10px 0;
 }
-canvas{display:block;margin:auto;}
-/* 🔧 Critical: let Phaser receive all touch events (no page scroll/zoom) */
-canvas,#gameContainer{
-  touch-action:none;
-  -ms-touch-action:none;
-  user-select:none;
-  -webkit-user-select:none;
+canvas{display:block;margin:auto;touch-action:none;}
+#gameContainer{
+ max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;
+ /* removed aspect-ratio to avoid pointer desync with Phaser */
 }
-#gameContainer{aspect-ratio:2/3;max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;}
 </style>
 
 </head>
@@ -165,17 +163,23 @@ const config={
  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
  backgroundColor:'#021107',
  physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
- /* allow multiple touches if needed */
- input:{activePointers:3}
+ input:{activePointers:5}   // 👈 more touch pointers
 };
 
 let puck,player,cpu,scoreText,topGoal,bottomGoal;
 let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let lastHit=0;
-let pointerActive=false;
 
-new Phaser.Game(Object.assign({}, config, { scene:{preload,create,update} }));
+const game=new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
+
+function blockTouchDefaults(){
+  const el=document.getElementById('gameContainer');
+  ['touchstart','touchmove','touchend','touchcancel'].forEach(evt=>{
+    el.addEventListener(evt,(e)=>{ e.preventDefault(); },{passive:false});
+  });
+}
+blockTouchDefaults();
 
 function preload(){
  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
@@ -186,6 +190,9 @@ function preload(){
 
 function create(){
  const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
+ this.input.addPointer(4);                 // 👈 ensure extra touch pointers
+ this.input.mouse?.disableContextMenu?.(); // no context menu
+
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
  const goalW=260,goalH=40;
@@ -206,26 +213,23 @@ function create(){
 
  this.physics.add.collider(puck,cpu,onHit,null,this);
 
- // ✅ Make the paddle reliably interactive with a circular hit area the size of its display
- const radius = Math.max(player.displayWidth, player.displayHeight) * 0.5;
- player.setInteractive(new Phaser.Geom.Circle(0,0,radius), Phaser.Geom.Circle.Contains);
-
- // ✅ Optional: classic drag on the paddle itself
+ // Wide circular hit area (not required for “anywhere” control, but keeps drag workable)
+ const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
+ player.setInteractive(new Phaser.Geom.Circle(0,0,radius),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
+
+ // Classic drag (works on mouse/touch)
  this.input.on('drag',(pointer,obj,dragX,dragY)=>{
-   const clampedX=Phaser.Math.Clamp(dragX,100,w-100);
-   const clampedY=Phaser.Math.Clamp(dragY,h*0.5+40,h-80);
-   obj.x=clampedX; obj.y=clampedY;
+   movePaddleTo({x:dragX,y:dragY},this.scale.width,this.scale.height);
  });
 
- // ✅ Finger-anywhere control on the lower half (best on mobile)
- this.input.on('pointerdown', (p)=>{
-   if(p.y>=h*0.5){ pointerActive=true; movePaddleTo(p, w, h); }
+ // Finger-anywhere control on lower half. No need to “grab” the paddle.
+ this.input.on('pointerdown',p=>{
+   if(p.y>=h*0.5) movePaddleTo(p,w,h);
  });
- this.input.on('pointermove', (p)=>{
-   if(pointerActive && p.isDown){ movePaddleTo(p, w, h); }
+ this.input.on('pointermove',p=>{
+   if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h);
  });
- this.input.on('pointerup', ()=>{ pointerActive=false; });
 
  scoreText=this.add.text(cx,40,'0 - 0',{
    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3
@@ -234,9 +238,9 @@ function create(){
  resetPuck.call(this);
 }
 
-function movePaddleTo(pointer, w, h){
- const clampedX=Phaser.Math.Clamp(pointer.x,100,w-100);
- const clampedY=Phaser.Math.Clamp(pointer.y,h*0.5+40,h-80);
+function movePaddleTo(p,w,h){
+ const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
+ const clampedY=Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
  player.x=clampedX; player.y=clampedY;
 }
 
