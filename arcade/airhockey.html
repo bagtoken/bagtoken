@@ -27,38 +27,38 @@ canvas{display:block;margin:auto}
 <a href="/casino/" class="btn" style="position:fixed;top:18px;left:18px;z-index:1000;">⬅️ Back</a>
 
 <section style="text-align:center;padding-top:70px;">
- <h2 style="margin:0;font-size:1.6rem;">🏒 $BAG Air Hockey — Arcade P2E</h2>
- <p style="font-size:.95rem;opacity:.9;">💰 All payouts in $BAG · $XRP bets convert automatically.</p>
+  <h2 style="margin:0;font-size:1.6rem;">🏒 $BAG Air Hockey — Arcade P2E</h2>
+  <p style="font-size:.95rem;opacity:.9;">💰 All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
 <section style="padding:0 16px 80px;">
- <div class="panel">
-   <div style="display:flex;justify-content:space-between;align-items:center;">
-     <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
-     <button id="startSessionBtn" class="btn">Start Session</button>
-   </div>
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
+      <button id="startSessionBtn" class="btn">Start Session</button>
+    </div>
 
-   <div class="divider"></div>
+    <div class="divider"></div>
 
-   <div class="marquee">💹 Live Prices</div>
-   <div style="text-align:center;font-family:monospace;">
-     BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span>
-     <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
-   </div>
+    <div class="marquee">💹 Live Prices</div>
+    <div style="text-align:center;font-family:monospace;">
+      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span>
+      <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+    </div>
 
-   <div class="divider"></div>
+    <div class="divider"></div>
 
-   <div style="text-align:center;line-height:1.6;">
-     <div style="font-weight:800">Practice Balance</div>
-     <div>BAG: <span id="balBAG">—</span>  XRP: <span id="balXRP">—</span></div>
-     <div>USD: <span id="balUSD">—</span></div>
-   </div>
+    <div style="text-align:center;line-height:1.6;">
+      <div style="font-weight:800">Practice Balance</div>
+      <div>BAG: <span id="balBAG">—</span>  XRP: <span id="balXRP">—</span></div>
+      <div>USD: <span id="balUSD">—</span></div>
+    </div>
 
-   <div class="divider"></div>
-   <div class="marquee">$BAG AIR HOCKEY</div>
+    <div class="divider"></div>
+    <div class="marquee">$BAG AIR HOCKEY</div>
 
-   <div id="gameContainer"></div>
- </div>
+    <div id="gameContainer"></div>
+  </div>
 </section>
 
 <footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">© 2025 $BAG Protocol | getthebag.io | Powered by $XRP</footer>
@@ -134,7 +134,7 @@ let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let prevCPU={x:0,y:0};
 let inGoal=false;
-let sensors;
+let sensors, walls;
 
 new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 
@@ -152,20 +152,20 @@ function create(){
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
  // Playfield geometry
- const PAD=80;                         // board margin
+ const PAD=80;                        // board margin
  const TOP=PAD, BOTTOM=h-PAD;
  const LEFT=PAD, RIGHT=w-PAD;
  const GOAL_W=260, GOAL_HALF=GOAL_W/2;
 
- // reference bounds (for math only)
+ // reference bounds only
  this.physics.world.setBounds(LEFT,TOP,RIGHT-LEFT,BOTTOM-TOP);
 
- // 🏒 puck (no collideWorldBounds; we handle with walls)
+ // puck (no collideWorldBounds; we use custom walls)
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
  puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
- // paddles
+ // paddles (big)
  player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.14);
  cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.14);
  [player,cpu].forEach(p=>{
@@ -174,32 +174,32 @@ function create(){
    p.body.setCircle(p.displayWidth/2); centerBodyOnTexture(p);
  });
 
- // ---- STATIC WALLS (L/R + split T/B) ----
- const walls=this.physics.add.staticGroup();
+ // STATIC WALLS: left/right + split top/bottom
+ walls=this.physics.add.staticGroup();
 
- // Left / Right
- walls.add(rect(this, LEFT, (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));   // left strip
- walls.add(rect(this, RIGHT, (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));  // right strip
+ // L/R strips
+ walls.add(rect(this, LEFT,  (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));
+ walls.add(rect(this, RIGHT, (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));
 
- // precise top/bottom split widths and centers
- const topLeftWidth  = (cx - GOAL_HALF) - LEFT;
- const topRightWidth = RIGHT - (cx + GOAL_HALF);
- walls.add(rect(this, LEFT + topLeftWidth/2,  TOP, topLeftWidth,  8));
- walls.add(rect(this, RIGHT - topRightWidth/2,TOP, topRightWidth, 8));
- walls.add(rect(this, LEFT + topLeftWidth/2,  BOTTOM, topLeftWidth,  8));
- walls.add(rect(this, RIGHT - topRightWidth/2,BOTTOM, topRightWidth, 8));
+ // compute split widths so GOAL_W gap is centered
+ const leftSpan  = (cx - GOAL_HALF) - LEFT;
+ const rightSpan = RIGHT - (cx + GOAL_HALF);
+ walls.add(rect(this, LEFT + leftSpan/2,  TOP,    leftSpan, 8));    // top-left
+ walls.add(rect(this, RIGHT - rightSpan/2,TOP,    rightSpan,8));    // top-right
+ walls.add(rect(this, LEFT + leftSpan/2,  BOTTOM, leftSpan, 8));    // bottom-left
+ walls.add(rect(this, RIGHT - rightSpan/2,BOTTOM, rightSpan,8));    // bottom-right
 
  this.physics.add.collider(puck, walls);
 
- // ---- GOAL SENSORS ----
+ // GOAL SENSORS (thin zones)
  sensors = {
-   top:    makeSensor(this, cx, TOP+6,    GOAL_W-10, 12),
-   bottom: makeSensor(this, cx, BOTTOM-6, GOAL_W-10, 12)
+   top:    makeSensor(this, cx, TOP+6,    GOAL_W-12, 12),
+   bottom: makeSensor(this, cx, BOTTOM-6, GOAL_W-12, 12)
  };
  this.physics.add.overlap(puck, sensors.top,    ()=>onGoal(this,'top'),    null, this);
  this.physics.add.overlap(puck, sensors.bottom, ()=>onGoal(this,'bottom'), null, this);
 
- // input (lower half)
+ // input (lower half touch/drag)
  const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
  player.setInteractive(new Phaser.Geom.Circle(0,0,radius),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
@@ -207,6 +207,7 @@ function create(){
  this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h,TOP,BOTTOM,LEFT,RIGHT); });
  this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h,TOP,BOTTOM,LEFT,RIGHT); });
 
+ // score
  scoreText=this.add.text(cx,40,'0 - 0',{fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
  serve(this); // first serve
@@ -220,7 +221,7 @@ function rect(scene,x,y,w,h){
 }
 function makeSensor(scene,x,y,w,h){
  const z=scene.add.zone(x,y,Math.max(2,w),Math.max(2,h));
- scene.physics.add.existing(z,true);
+ scene.physics.add.existing(z,true); // static sensor
  z.body.setAllowGravity(false);
  return z;
 }
@@ -235,8 +236,9 @@ function movePaddleTo(p,w,h,TOP,BOTTOM,LEFT,RIGHT){
  player.x=Phaser.Math.Clamp(p.x,LEFT+20,RIGHT-20);
  player.y=clampPlayerY(p.y,h,TOP,BOTTOM);
 }
+
 function resolvePaddle(paddle, prev){
- if(inGoal || !puck.body.enable) return;
+ if(inGoal || !puck.body || !puck.body.enable) return;
  const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
  const rSum=puck.displayWidth/2+paddle.displayWidth/2;
  if(dist<rSum){
@@ -252,12 +254,12 @@ function resolvePaddle(paddle, prev){
  }
 }
 
-// scoring
+// HARD goal handler (no tweens, no ghost, no pauses)
 function onGoal(scene, side){
- if(inGoal || !puck.body.enable) return;
+ if(inGoal || !puck.body || !puck.body.enable) return;
  inGoal = true;
 
- // disable sensors so overlap can't refire during the animation
+ // prevent re-firing while handling
  sensors.top.active = false;
  sensors.bottom.active = false;
 
@@ -265,49 +267,28 @@ function onGoal(scene, side){
  if(side==='top'){ scorePlayer++; } else { scoreCPU++; }
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 
- // ghost animation (physics puck untouched)
- const ghost=scene.add.image(puck.x,puck.y,'puck').setScale(puck.scaleX,puck.scaleY).setDepth(9999).setAlpha(1);
-
- // hide + disable physics puck immediately
- puck.setAlpha(0);
+ // park puck safely off-screen & disable body
  puck.body.setEnable(false);
+ puck.setPosition(-9999,-9999).setAlpha(0);
 
- // pull paddles away cleanly
- const w=scene.scale.width,h=scene.scale.height;
- scene.tweens.add({targets:player,x:w*0.75,y:clampPlayerY(player.y,h,scene.physics.world.bounds.top,scene.physics.world.bounds.bottom),duration:140,ease:'Quad.easeOut'});
- scene.tweens.add({targets:cpu,   x:w*0.25,y:clampCPUY(cpu.y,h,scene.physics.world.bounds.top),duration:140,ease:'Quad.easeOut'});
-
- // pocket path
- const b=scene.physics.world.bounds, centerX=b.x+b.width/2;
- const slotY   = side==='top' ? (b.top + 6) : (b.bottom - 6);
- const targetY = side==='top' ? (slotY - 56) : (slotY + 56);
-
- scene.tweens.timeline({
-   tweens:[
-     {targets:ghost,x:centerX,y:slotY,ease:'Quad.easeOut',duration:140},
-     {targets:ghost,x:centerX,y:targetY,scaleX:ghost.scaleX*0.55,scaleY:ghost.scaleY*0.55,alpha:0,ease:'Quad.easeIn',duration:160}
-   ],
-   onComplete:()=>{
-     ghost.destroy();
-     // re-enable puck and serve away from scorer
-     puck.setAlpha(1).setScale(0.07);
-     puck.body.setEnable(true);
-     puck.setCollideWorldBounds(false); // we use custom walls
-     serve(scene, side==='top' ? 'player' : 'cpu');
-     // re-enable sensors after a tick
-     scene.time.delayedCall(80,()=>{
-       sensors.top.active = true;
-       sensors.bottom.active = true;
-       inGoal=false;
-     });
-   }
+ // quick clean reset after 120ms
+ scene.time.delayedCall(120, ()=>{
+   serve(scene, side==='top' ? 'player' : 'cpu');
+   puck.setAlpha(1);
+   // re-enable sensors a tick later
+   scene.time.delayedCall(60, ()=>{
+     sensors.top.active = true;
+     sensors.bottom.active = true;
+     inGoal = false;
+   });
  });
 }
 
 function serve(scene, scoredBy){
  const w=scene.scale.width,h=scene.scale.height;
- puck.setPosition(w/2,h/2);
- if(puck.body && puck.body.enable){
+ puck.setPosition(w/2,h/2).setScale(0.07);
+ if(puck.body){
+   puck.body.setEnable(true);
    const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
    const speed=Phaser.Math.Between(650,800);
    const vx=Math.cos(angle*Math.PI/180)*speed;
@@ -326,21 +307,20 @@ function update(time,delta){
  const curCPU={x:cpu.x,y:cpu.y};
 
  // CPU AI
- if(!inGoal){
+ if(!inGoal && puck.body && puck.body.enable){
    aiTimer+=delta;
    cpu.x+=(puck.x-cpu.x)*0.10;
    cpu.y+=(puck.y-cpu.y)*0.06;
-   // correct clamps (use cpu.y, not h)
    const TOP=this.physics.world.bounds.top, BOTTOM=this.physics.world.bounds.bottom, LEFT=this.physics.world.bounds.left, RIGHT=this.physics.world.bounds.right;
    cpu.x=Phaser.Math.Clamp(cpu.x,LEFT+20,RIGHT-20);
    cpu.y=clampCPUY(cpu.y,h,TOP);
  }
 
- // Continuous collisions
+ // Paddle vs puck resolver
  resolvePaddle(player,prevPlayer);
  resolvePaddle(cpu,prevCPU);
 
- // clamp puck velocity when enabled
+ // Clamp puck velocity only when enabled
  if(puck.body && puck.body.enable){
    const v=puck.body.velocity, vmax=2000, keep=0.999;
    v.x=Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
