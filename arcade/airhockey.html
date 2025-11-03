@@ -137,9 +137,10 @@ const config = {
   input: { activePointers: 5 }
 };
 
-let puck, player, cpu, scoreText;
+let puck = null, player, cpu, scoreText;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
+let isGoalInProgress = false; // Prevent double goal
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -159,13 +160,13 @@ function create() {
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
 
-  // Keep puck on table
+  // Bounds: keep puck on table
   this.physics.world.setBounds(80, 80, w - 160, h - 160);
 
-  // PUCK
+  // Create initial puck
   createPuck.call(this, cx, h/2);
 
-  // PADDLES
+  // Paddles
   player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(0.14);
   cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(0.14);
   [player, cpu].forEach(p => {
@@ -182,7 +183,7 @@ function create() {
     this.sfx.goal = this.sound.add('goal', { volume: 0.5 });
   }catch(e){}
 
-  // INPUT
+  // Input
   const radius = player.displayWidth * 0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,radius), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
@@ -208,6 +209,7 @@ function createPuck(x, y) {
       .setDrag(0.995, 0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2);
   centerBodyOnTexture(puck);
+  puck.body.stop();
 }
 
 function movePaddleTo(p,w,h){
@@ -217,6 +219,7 @@ function movePaddleTo(p,w,h){
 }
 
 function resolvePaddle(paddle, prev){
+  if (!puck) return;
   const dx = puck.x - paddle.x;
   const dy = puck.y - paddle.y;
   const dist = Math.hypot(dx,dy) || 0.0001;
@@ -244,6 +247,8 @@ function resolvePaddle(paddle, prev){
 }
 
 function update(time, delta){
+  if (!puck || isGoalInProgress) return;
+
   const w = this.scale.width, h = this.scale.height;
   const curPlayer = {x:player.x, y:player.y};
   const curCPU    = {x:cpu.x,    y:cpu.y};
@@ -289,8 +294,11 @@ function update(time, delta){
 function playGoalSound(){ try{ this.sfx?.goal?.play(); }catch{} }
 
 function handleGoal(winner){
-  // DESTROY PUCK IMMEDIATELY → NO FREEZE
-  if (puck && puck.body) {
+  if (isGoalInProgress) return;
+  isGoalInProgress = true;
+
+  // Destroy puck immediately
+  if (puck) {
     puck.destroy();
     puck = null;
   }
@@ -300,10 +308,12 @@ function handleGoal(winner){
     const w = this.scale.width, h = this.scale.height;
     createPuck.call(this, w/2, h/2);
     resetPuck.call(this, winner);
+    isGoalInProgress = false;
   });
 }
 
 function resetPuck(scoredBy){
+  if (!puck) return;
   const w = this.scale.width, h = this.scale.height;
   puck.setPosition(w/2, h/2);
   puck.body.stop();
