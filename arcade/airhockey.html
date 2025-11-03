@@ -166,6 +166,7 @@ let puck,player,cpu,scoreText,topGoal,bottomGoal;
 let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let prevCPU={x:0,y:0};
+let goalAnimating=false; // 🔒 lock during pocket animation
 
 new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 
@@ -181,15 +182,14 @@ function create(){
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
  const goalW=260,goalH=40;
- topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.4);
- bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.4);
+ topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.0);     // visuals hidden; we’ll animate instead
+ bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.0);
  this.physics.world.setBounds(80,80,w-160,h-160);
 
  // 🏒 PUCK
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true)
      .setDrag(0.995,0.995).setMaxVelocity(2000);
- // circular body matching displayed size
  puck.body.setCircle(puck.displayWidth/2);
  centerBodyOnTexture(puck);
 
@@ -202,8 +202,6 @@ function create(){
    p.body.setCircle(p.displayWidth/2);
    centerBodyOnTexture(p);
  });
-
- // We rely on our own continuous collision, so no physics collider here.
 
  // Large hit-area + finger-anywhere control (lower half)
  const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
@@ -232,12 +230,15 @@ function centerBodyOnTexture(img){
 }
 
 function movePaddleTo(p,w,h){
+ if(goalAnimating) return;
  const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
  const clampedY=Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
  player.x=clampedX; player.y=clampedY;
 }
 
 function resolvePaddle(paddle, prev){
+  if(goalAnimating) return;
+
   // Continuous circle collision against the puck
   const dx = puck.x - paddle.x;
   const dy = puck.y - paddle.y;
@@ -248,26 +249,21 @@ function resolvePaddle(paddle, prev){
   const rSum  = rPuck + rPad;
 
   if(dist < rSum){
-    // normal from paddle → puck
     const nx = dx / dist, ny = dy / dist;
-    // push puck to surface
     const penetration = rSum - dist;
     puck.x += nx * penetration;
     puck.y += ny * penetration;
 
-    // paddle velocity (px/frame → px/s-ish factor 60)
     const pvx = (paddle.x - prev.x) * 60;
     const pvy = (paddle.y - prev.y) * 60;
 
-    // decompose along normal & tangent for “english”
     const tx = -ny, ty = nx;
     const vN = pvx*nx + pvy*ny;
     const vT = pvx*tx + pvy*ty;
 
-    // base & gains — tweak to taste
     const base = 520;
-    const gainN = 9.0;   // normal boost from swipe
-    const gainT = 5.0;   // tangential → spin
+    const gainN = 9.0;
+    const gainT = 5.0;
     const maxV = 2000;
 
     const vx = nx*(base + gainN*Math.abs(vN)) + tx*(vT*gainT);
@@ -278,10 +274,53 @@ function resolvePaddle(paddle, prev){
       Phaser.Math.Clamp(vy, -maxV, maxV)
     );
 
-    // spin from tangential swipe
     const spin = Phaser.Math.Clamp(vT*1.5, -450, 450);
     puck.setAngularVelocity(spin);
   }
+}
+
+// 🎯 Goal pocket animation
+function animateGoalPocket(scene, side){
+  goalAnimating = true;
+
+  // Where the “machine mouth” is (slightly inside the table for depth effect)
+  const w = scene.scale.width, h = scene.scale.height, cx = w/2;
+  const slotY = side === 'top' ? (topGoal.y - 24) : (bottomGoal.y + 24);
+  const targetY = side === 'top' ? (topGoal.y - 80) : (bottomGoal.y + 80);
+
+  // Disable puck bounce during animation
+  puck.body.setEnable(false);
+
+  // Timeline: move → shrink → fade → reset
+  scene.tweens.timeline({
+    tweens: [
+      { // slide toward slot center
+        targets: puck,
+        x: cx,
+        y: slotY,
+        ease: 'Quad.easeOut',
+        duration: 160
+      },
+      { // slip “inside” machine
+        targets: puck,
+        x: cx,
+        y: targetY,
+        scaleX: puck.scaleX * 0.55,
+        scaleY: puck.scaleY * 0.55,
+        alpha: 0.0,
+        ease: 'Quad.easeIn',
+        duration: 180
+      }
+    ],
+    onComplete: () => {
+      // restore puck
+      puck.setScale(0.07);
+      puck.setAlpha(1);
+      puck.body.setEnable(true);
+      goalAnimating = false;
+      resetPuck.call(scene, side === 'top' ? 'player' : 'cpu'); // top goal = player scored
+    }
+  });
 }
 
 let aiTimer=0;
@@ -294,23 +333,31 @@ function update(time, delta){
  const curCPU={x:cpu.x,y:cpu.y};
 
  // CPU AI (simple track)
- aiTimer += delta;
- cpu.x += (puck.x - cpu.x) * 0.10;
- cpu.y += (puck.y - cpu.y) * 0.06;
- cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
- cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+ if(!goalAnimating){
+   aiTimer += delta;
+   cpu.x += (puck.x - cpu.x) * 0.10;
+   cpu.y += (puck.y - cpu.y) * 0.06;
+   cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
+   cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+ }
 
  // Continuous collisions
  resolvePaddle(player, prevPlayer);
  resolvePaddle(cpu, prevCPU);
 
- // Goals
+ // Goals → run pocket animation instead of instant reset
  const goalHalfW=130;
- if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-   scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
- }
- if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
-   scoreCPU++; resetPuck.call(this,'cpu'); flashGoal(bottomGoal,0x00ff00);
+ if(!goalAnimating){
+   if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
+     scorePlayer++;
+     scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+     animateGoalPocket(this,'top');
+   }
+   if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
+     scoreCPU++;
+     scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+     animateGoalPocket(this,'bottom');
+   }
  }
 
  // Soft clamp puck velocity
@@ -319,16 +366,9 @@ function update(time, delta){
  v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
  v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
 
- scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
-
  // store prevs
  prevPlayer = curPlayer;
  prevCPU = curCPU;
-}
-
-function flashGoal(goal,color){
- goal.setFillStyle(color,0.9);
- setTimeout(()=>goal.setFillStyle(color,0.4),180);
 }
 
 function resetPuck(scoredBy){
@@ -340,8 +380,11 @@ function resetPuck(scoredBy){
  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
  puck.setVelocity(vx,vy);
  puck.setAngularVelocity(Phaser.Math.Between(-120,120));
- scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+ // make sure puck fully visible after pocket
+ puck.setAlpha(1);
+ puck.setScale(0.07);
 }
+
 </script>
 
 </body>
