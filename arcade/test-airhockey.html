@@ -4,54 +4,164 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <title>$BAG Air Hockey — Arcade P2E</title>
+
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
+<!-- Dice shared UI logic -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
+
 <style>
-:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35)}
+:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
-.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
 .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 .divider{height:1px;background:#123221;margin:14px 0}
 .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
+a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
+a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
+img{display:block;max-width:100%;height:auto}
 canvas{display:block;margin:auto}
 #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
 #gameContainer canvas{touch-action:none;-ms-touch-action:none}
+
+/* Hero image sizing (mobile-first) */
+.hero-wrap{padding:68px 12px 6px}
+.hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+@media (min-width:900px){ .hero-img{max-width:720px}}
+
+/* Stake/HUD (Dice parity) */
+.stack{display:grid;gap:10px}
+.choice{display:flex;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+.chip input{accent-color:#2fbf6b}
+.mono{font-variant-numeric:tabular-nums}
+.micro{font-size:.85rem;color:#aeb7af}
+.preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.preset-chip{appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+.preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
+.hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
+.pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+.pill b{font-weight:800}
+.pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
+.ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 </style>
 </head>
 <body>
-<a href="/casino/" class="btn" style="position:fixed;top:18px;left:18px;z-index:1000;">Back</a>
 
-<section style="text-align:center;padding-top:70px;">
-  <h2 style="margin:0;font-size:1.6rem;">$BAG Air Hockey — Arcade P2E</h2>
+<a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
+
+<!-- HERO IMAGE (your files) -->
+<section class="hero-wrap" aria-label="$BAG Air Hockey">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-airhockey-960.webp 960w, /arcade/assets/img/bag-airhockey-1024.webp 1024w"
+            sizes="100vw">
+    <img class="hero-img"
+         src="/arcade/assets/img/bag-airhockey-1024.png"
+         srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
+         sizes="100vw"
+         width="1024" height="576"
+         alt="$BAG Air Hockey — hero">
+  </picture>
+</section>
+
+<!-- HEADER -->
+<section style="text-align:center;padding:0 12px 10px">
+  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
   <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
-<section style="padding:0 16px 80px;">
+<!-- CONTROL + PRICES + SESSION -->
+<section style="padding:0 16px 20px;">
   <div class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
-      <button id="startSessionBtn" class="btn">Start Session</button>
+      <div style="display:flex;gap:8px">
+        <button id="startSessionBtn" class="btn">Start Session</button>
+        <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
+        <button id="endSessionBtn" class="btn" style="display:none">End</button>
+      </div>
     </div>
+
     <div class="divider"></div>
 
+    <!-- Stake (Dice-style) -->
+    <div class="stack">
+      <div>
+        <div class="micro">Amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="micro unit">USD</span>
+          </div>
+        </div>
+        <div class="preset-chips" id="usdPresets" data-quick-amounts data-target-usd="#usdBet" data-target-qty="#betQty"
+             data-currency-toggle="#curToggle" data-min-usd="1" data-max-usd="2000" data-active-class="active" data-sync-on-price="1">
+          <button type="button" class="preset-chip" data-usd="1">$1</button>
+          <button type="button" class="preset-chip" data-usd="2">$2</button>
+          <button type="button" class="preset-chip" data-usd="5">$5</button>
+          <button type="button" class="preset-chip" data-usd="10">$10</button>
+          <button type="button" class="preset-chip" data-usd="20">$20</button>
+          <button type="button" class="preset-chip" data-usd="50">$50</button>
+          <button type="button" class="preset-chip" data-usd="100">$100</button>
+          <button type="button" class="preset-chip" data-usd="max">Max</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Bet currency</div>
+        <div class="choice" id="curToggle">
+          <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+          <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Bet amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="unit">XRP</span>
+          </div>
+        </div>
+        <div class="micro" id="betLimits" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Live Prices -->
     <div class="marquee">Live Prices</div>
     <div style="text-align:center;font-family:monospace;">
-      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span>
+      <span id="liveDot" class="warn">●</span>
+      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span><span id="liveNote"></span>
       <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
     </div>
+  </div>
+</section>
 
-    <div class="divider"></div>
-    <div style="text-align:center;line-height:1.6;">
-      <div style="font-weight:800">Practice Balance</div>
-      <div>BAG: <span id="balBAG">—</span> XRP: <span id="balXRP">—</span></div>
-      <div>USD: <span id="balUSD">—</span></div>
-    </div>
-
-    <div class="divider"></div>
+<!-- GAME PANEL (game first, HUD below it) -->
+<section style="padding:0 16px 80px;">
+  <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
     <div id="gameContainer"></div>
+
+    <div class="divider"></div>
+
+    <!-- HUD pills (Dice-style) -->
+    <div class="hudbar" id="ahHud" aria-live="polite">
+      <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+      <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+      <span class="pill">Bet: <b id="betLbl">1</b></span>
+      <span class="pill">Last: <b id="lastLbl">—</b></span>
+    </div>
   </div>
 </section>
 
@@ -59,63 +169,154 @@ canvas{display:block;margin:auto}
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
 </footer>
 
-<!-- Live Prices -->
+<!-- ===== LIVE PRICING (Dice engine with cache + AMM) ===== -->
 <script>
 (function(){
- const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr',BAG_CODE='BAG';
- window.P={bagUsd:0,xrpUsd:0};
- const fmt=n=>Number.isFinite(n)?n.toFixed(6):'—';
- async function refresh(){
-  try{
-   const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-   const xrp=(await r.json())?.ripple?.usd||0;
-   const ws=new WebSocket('wss://s1.ripple.com');
-   const bagUsd=await new Promise(res=>{
-    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
-    ws.onopen=()=>ws.send(JSON.stringify(req));
-    ws.onmessage=e=>{
-     try{const d=JSON.parse(e.data);if(d.result?.amm){
-      const a=+d.result.amm.amount.value,b=+d.result.amm.amount2.value;
-      if(a>0&&b>0)res(b/a*xrp);ws.close();}}catch{}};
-    setTimeout(()=>{try{ws.close();}catch{};res(null);},6000);
-   });
-   if(xrp>0&&bagUsd>0){P.xrpUsd=xrp;P.bagUsd=bagUsd;update();}
-  }catch{}
- }
- function update(){
-  document.getElementById('liveBAG').textContent=fmt(P.bagUsd);
-  document.getElementById('liveXRP').textContent=fmt(P.xrpUsd);
-  if(P.bagUsd&&P.xrpUsd){
-   const xrpPerBag=P.bagUsd/P.xrpUsd,bagPerXrp=P.xrpUsd/P.bagUsd;
-   document.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
+  const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
+  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
+  const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
+  const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
+
+  const fmt=n=>Number.isFinite(n)? n.toFixed(6):'—';
+  const cacheSet=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
+  const cacheGet=(k,ttl)=>{ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } };
+
+  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    finally{ setTimeout(()=>clearTimeout(id),0); }
   }
-  document.dispatchEvent(new Event('bag:pricesUpdated'));
- }
- refresh();setInterval(refresh,15000);
+
+  function paint(){
+    const d=document; d.getElementById('liveBAG').textContent=fmt(PRICES.bagUsd);
+    d.getElementById('liveXRP').textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
+    const dot=d.getElementById('liveDot'), note=d.getElementById('liveNote');
+    if(dot) dot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
+    if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
+      d.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
+    }
+    document.dispatchEvent(new Event('bag:pricesUpdated'));
+  }
+
+  async function fetchXrpUsd(){
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=+v; cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+    }catch{} return false;
+  }
+  const parseXRP=a=> (typeof a==='string')? Number(a)/1_000_000 : (a&&a.currency==='XRP'? Number(a.value):null);
+  const parseIOU=a=> (a&&typeof a==='object')? Number(a.value):null;
+
+  async function fetchBAGViaAMM(){
+    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+    const price=await new Promise(resolve=>{
+      let ws; const t=setTimeout(()=>{ try{ws&&ws.close();}catch{} resolve(null); },8000);
+      try{
+        ws=new WebSocket('wss://s1.ripple.com');
+        ws.onopen=()=>ws.send(JSON.stringify(req));
+        ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
+        ws.onmessage=e=>{
+          try{
+            const m=JSON.parse(e.data); if(m.id!==1||!m.result||!m.result.amm) return;
+            clearTimeout(t); try{ws.close();}catch{};
+            const amm=m.result.amm; const bag=parseIOU(amm.amount), xrp=parseXRP(amm.amount2);
+            if(!(bag>0)&&!(xrp>0)) return resolve(null);
+            const px=xrp/bag; resolve(isFinite(px)&&px>0?px:null);
+          }catch{ resolve(null); }
+        };
+      }catch{ clearTimeout(t); resolve(null); }
+    });
+    if(!(price>0)) return false;
+    if(!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd=PRICES.xrpUsd*price; PRICES.source='live-amm';
+    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    return true;
+  }
+
+  function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
+  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
+    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
+    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
+    if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok;
+  }
+
+  async function refresh(){ const gotX=await fetchXrpUsd(); const gotB=await fetchBAGViaAMM(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } paint(); }
+  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
+  document.addEventListener('DOMContentLoaded', paint);
+  addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); paint(); } });
 })();
 </script>
 
-<!-- Practice Balance -->
+<!-- ===== Stake Wire (Dice) ===== -->
 <script>
-(function(){
- const BAL_KEY='bag_demo_balance',USD_START=2000;
- function getBag(){return Number(localStorage.getItem(BAL_KEY)||0);}
- function setBag(v){localStorage.setItem(BAL_KEY,v);}
- function seed(){if(getBag()>0)return;const p=window.P?.bagUsd||0;if(p>0)setBag(USD_START/p);}
- function render(){
-  const bal=getBag(),p=window.P;
-  const usd=(p.bagUsd>0)?bal*p.bagUsd:USD_START;
-  const xrp=(p.bagUsd>0&&p.xrpUsd>0)?bal*(p.bagUsd/p.xrpUsd):0;
-  document.getElementById('balBAG').textContent=bal.toFixed(2);
-  document.getElementById('balXRP').textContent=xrp.toFixed(2);
-  document.getElementById('balUSD').textContent='$'+usd.toFixed(2);
- }
- document.getElementById('startSessionBtn').addEventListener('click',()=>{seed();render();});
- document.addEventListener('bag:pricesUpdated',render);
-})();
+(function(global){
+  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
+  const priceFor=cur=>{ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd:xrpUsd; };
+  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function computeSessionMaxUsd(cur,minUsd,maxUsd){
+    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
+    const bagBal=Number(sess.bag)||0; let unitsAvail;
+    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
+    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
+    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  }
+
+  function init(opts){
+    const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
+      presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
+    const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
+          unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
+    const STATE={lastEdited:'qty', lastCur:null, syncing:false};
+    const rUsd=()=>{ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const rQty=()=>{ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const wUsd=u=>{ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; };
+    const wQty=q=>{ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; };
+    const paintUnits=()=>{ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); };
+    const renderLimits=()=>{ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
+      const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
+      limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; };
+
+    function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
+      if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
+    function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
+      if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
+    function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
+      if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
+
+    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+
+    STATE.lastCur=getCur(curToggle);
+    curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+
+    if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
+
+    if(presets){
+      const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
+      const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
+      const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
+      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
+          usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
+          usd=clamp(usd); setActive(btn); applyUsd(usd);
+        });
+      });
+      const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
+        if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
+      addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
+    }
+    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+  }
+  global.BAGStakeWire={ init };
+})(window);
 </script>
 
-<!-- Air Hockey Game (NO FREEZE GOALS) -->
+<!-- ===== Air Hockey Game (robust touch + goal sink, finger-friendly) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -125,10 +326,17 @@ const config = {
   input: { activePointers: 5 }
 };
 
-let puck, player, cpu, scoreText;
+// --- size + UX tuning ---
+const PADDLE_SCALE = 0.20;    // bigger for finger control (was 0.14)
+const PUCK_SCALE   = 0.09;    // slightly bigger (was 0.07)
+const GOAL_HALF    = 140;     // a touch wider to match bigger puck (was 130)
+const POINTER_OFFSET_Y = -56; // keep paddle a bit above the finger
+const WALL_MARGIN  = 100;     // keep > radius to avoid clipping
+
+let puck, player, cpu, scoreText, ring;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
-let goalLock = false; // guard while sinking/resetting
+let goalLock = false;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -147,16 +355,16 @@ function create(){
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
-  this.physics.world.setBounds(80, 80, w-160, h-160);
+  this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
   // puck
-  puck = this.physics.add.image(cx, h/2, 'puck').setScale(0.07);
+  puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
   // paddles
-  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(0.14);
-  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(0.14);
+  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
+  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
   [player,cpu].forEach(p=>{
     p.setImmovable(true);
     p.setCollideWorldBounds(true);
@@ -171,29 +379,44 @@ function create(){
     this.sfx.goal = this.sound.add('goal',{volume:.5});
   }catch(e){}
 
-  // input
+  // touch ring so finger doesn't hide the aim point
+  ring = this.add.graphics({ x: 0, y: 0 });
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
+  ring.setAlpha(0);
+
+  // input — world coordinates work with FIT scaling
+  const clamp = Phaser.Math.Clamp;
+  const moveTo=(gx,gy)=>{
+    const ww=this.scale.width, hh=this.scale.height;
+    const half = player.displayWidth*0.5;
+    const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
+    const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
+    player.x = targetX; player.y = targetY;
+    ring.x = gx; ring.y = gy;
+  };
+
+  const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
+  lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
+  lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
+  lowerZone.on('pointerout', ()=> ring.setAlpha(0));
+  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
+
   const r = player.displayWidth*0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
-  this.input.on('drag',(ptr,obj,dx,dy)=>movePaddleTo({x:dx,y:dy},w,h));
-  this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h); });
-  this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h); });
+  this.input.dragDistanceThreshold=0;
+  player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
+  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
+  this.input.on('pointerup', ()=> ring.setAlpha(0));
 
   scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  // first serve
   serve(this);
 }
 
 function centerBodyOnTexture(img){
   const bw=img.body.width, bh=img.body.height;
   img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
-}
-
-function movePaddleTo(p,w,h){
-  if(goalLock) return;
-  player.x = Phaser.Math.Clamp(p.x,100,w-100);
-  player.y = Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
 }
 
 function resolvePaddle(paddle, prev, scene){
@@ -203,53 +426,55 @@ function resolvePaddle(paddle, prev, scene){
   if(dist<rSum){
     const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
     puck.x+=nx*pen; puck.y+=ny*pen;
+
     const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
     const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
-    const base=520, gainN=9, gainT=5, maxV=2000;
+
+    // slightly softened impulse for bigger faces
+    const base=500, gainN=8.5, gainT=4.7, maxV=2000;
     const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
     const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
     puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
-    puck.setAngularVelocity(Phaser.Math.Clamp(vT*1.5,-450,450));
+
+    const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
+    puck.setAngularVelocity(spin);
+
     try{ scene.sfx?.hit1?.play(); }catch{}
   }
 }
 
-function update(time,delta){
+function update(){
   const w=this.scale.width, h=this.scale.height;
 
-  // EARLY goal check — exit the frame immediately when a goal starts
-  const GOAL_HALF=130, cx=w/2;
+  // goal detect (radius-aware)
+  const cx=w/2, r = puck.displayWidth * 0.5;
   if(!goalLock && puck && puck.body && puck.body.enable){
-    if(puck.y < 85 && Math.abs(puck.x-cx) < GOAL_HALF){
+    if(puck.y < WALL_MARGIN - (r - 5) && Math.abs(puck.x - cx) < GOAL_HALF){
       try{ this.sfx?.goal?.play(); }catch{}
-      scorePlayer++;
-      startGoalSink.call(this, 'top');   // begins sink & schedules reset
-      return; // <- do nothing else this frame
+      scorePlayer++; startGoalSink.call(this, 'top'); return;
     }
-    if(puck.y > h-85 && Math.abs(puck.x-cx) < GOAL_HALF){
+    if(puck.y > h - (WALL_MARGIN - (r - 5)) && Math.abs(puck.x - cx) < GOAL_HALF){
       try{ this.sfx?.goal?.play(); }catch{}
-      scoreCPU++;
-      startGoalSink.call(this, 'bottom');
-      return;
+      scoreCPU++; startGoalSink.call(this, 'bottom'); return;
     }
   }
 
-  if(goalLock) return; // while sinking/resetting
+  if(goalLock) return;
 
-  // AI
+  // very light AI
   cpu.x += (puck.x - cpu.x) * 0.10;
   cpu.y += (puck.y - cpu.y) * 0.06;
-  cpu.x  = Phaser.Math.Clamp(cpu.x,100,w-100);
-  cpu.y  = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+  cpu.x  = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + cpu.displayWidth*0.5, w - (WALL_MARGIN + cpu.displayWidth*0.5));
+  cpu.y  = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + cpu.displayWidth*0.5, h*0.45);
 
-  // collisions
   const curPlayer={x:player.x,y:player.y};
   const curCPU={x:cpu.x,y:cpu.y};
+
   resolvePaddle(player, prevPlayer, this);
   resolvePaddle(cpu,    prevCPU,  this);
-  prevPlayer = curPlayer; prevCPU = curCPU;
 
-  // velocity clamp
+  prevPlayer=curPlayer; prevCPU=curCPU;
+
   if(puck.body && puck.body.enable){
     const v=puck.body.velocity, vmax=2000, keep=0.999;
     v.x = Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
@@ -259,22 +484,18 @@ function update(time,delta){
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 
-// SINK: disable physics, let puck visually slide into slot, then re-enable & serve
 function startGoalSink(side){
   if(goalLock || !puck) return;
   const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
   goalLock = true;
 
-  // stop interacting with physics/world bounds during sink
   puck.setVelocity(0,0);
   puck.setAngularVelocity(0);
   if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
   puck.setCollideWorldBounds(false);
 
-  // target y inside “machine”
   const targetY = (side==='top') ? -40 : (h+40);
 
-  // tween visual sink (scale/fade + slide to center of slot)
   scene.tweens.add({
     targets: puck,
     x: cx,
@@ -284,23 +505,18 @@ function startGoalSink(side){
     alpha: 0,
     duration: 230,
     ease: 'Quad.easeIn',
-    onComplete: ()=>{
-      // reset to center and re-enable physics cleanly
-      serve(scene, side==='top' ? 'player' : 'cpu');
-      goalLock = false;
-    }
+    onComplete: ()=>{ serve(scene, side==='top' ? 'player' : 'cpu'); goalLock=false; }
   });
 }
 
 function serve(scene, scoredBy){
   const w=scene.scale.width, h=scene.scale.height;
-  // restore puck visuals
-  puck.setPosition(w/2, h/2).setAlpha(1).setScale(0.07);
-  // re-enable physics body
-  if(!puck.body){ scene.physics.add.existing(puck); } // safety if body was stripped
-  puck.body.enable = true;
-  puck.body.checkCollision.none = false;
+  puck.setPosition(w/2, h/2).setAlpha(1).setScale(PUCK_SCALE);
+  if(!puck.body){ scene.physics.add.existing(puck); }
+  puck.body.enable = true; puck.body.checkCollision.none = false;
   puck.setCollideWorldBounds(true);
+  puck.body.setCircle(puck.displayWidth/2); // sync to scale
+  centerBodyOnTexture(puck);
 
   const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
   const speed=Phaser.Math.Between(650,800);
@@ -309,10 +525,10 @@ function serve(scene, scoredBy){
   puck.setVelocity(vx,vy);
   puck.setAngularVelocity(Phaser.Math.Between(-120,120));
 
-  // UI
+  window.__AH_LAST__ = scoredBy==='player' ? 'You scored' : (scoredBy==='cpu' ? 'CPU scored' : 'Serve');
+  window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
-
 </script>
 </body>
 </html>
