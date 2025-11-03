@@ -127,7 +127,7 @@ canvas{display:block;margin:auto;}
 })();
 </script>
 
-<!-- Air Hockey Game (FINAL: PUCK STAYS + SCORES 100%) -->
+<!-- Air Hockey Game (FINAL: Goals closer + ONE puck only) -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -160,9 +160,9 @@ function create() {
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
 
-  // GOAL POSITIONS INSIDE BOUNDS
-  const GOAL_Y_TOP = 120;      // inside 80-margin
-  const GOAL_Y_BOTTOM = h - 120;
+  // GOALS MOVED BACK TO EDGE (y = 100 and h-100)
+  const GOAL_Y_TOP = 100;
+  const GOAL_Y_BOTTOM = h - 100;
   const GOAL_W = 260, SLOT_H = 36;
 
   topGoal    = this.add.rectangle(cx, GOAL_Y_TOP, GOAL_W, 40, 0xff0000, 0.4).setDepth(0);
@@ -269,24 +269,24 @@ function update(time, delta){
   resolvePaddle.call(this, player, prevPlayer);
   resolvePaddle.call(this, cpu,    prevCPU);
 
-  // GOAL DETECTION — GOALS INSIDE BOUNDS
+  // GOAL DETECTION — GOALS AT y=100 and h-100
   const GOAL_HALF = 130;
   const cx = w/2;
 
   // PLAYER scores (top)
-  if(puck.y < 120 && Math.abs(puck.x - cx) < GOAL_HALF){
+  if(puck.y < 100 && Math.abs(puck.x - cx) < GOAL_HALF){
     scorePlayer++;
     flashGoal(topGoal, 0xff0000);
     playGoalSound.call(this);
-    animatePuckIntoSlot.call(this, puck.x, puck.y, topSlot, 0, 'player');
+    animatePuckIntoSlot.call(this, puck.x, puck.y, topSlot, 100, 'player');
   }
 
   // CPU scores (bottom)
-  if(puck.y > h - 120 && Math.abs(puck.x - cx) < GOAL_HALF){
+  if(puck.y > h - 100 && Math.abs(puck.x - cx) < GOAL_HALF){
     scoreCPU++;
     flashGoal(bottomGoal, 0x00ff00);
     playGoalSound.call(this);
-    animatePuckIntoSlot.call(this, puck.x, puck.y, bottomSlot, h, 'cpu');
+    animatePuckIntoSlot.call(this, puck.x, puck.y, bottomSlot, h - 100, 'cpu');
   }
 
   // Velocity clamp
@@ -309,29 +309,37 @@ function flashGoal(goal,color){
 function playGoalSound(){ try{ this.sfx?.goal?.play(); }catch{} }
 
 function animatePuckIntoSlot(x, y, slot, targetY, winner){
-  puck.setAlpha(0);
-  puck.body.stop();
+  // 1. DESTROY REAL PUCK IMMEDIATELY → NO DUPLICATES
+  puck.destroy();
 
+  // 2. Create ghost
   const ghost = this.add.image(x, y, 'puck')
-    .setScale(puck.scaleX)
+    .setScale(0.07)
     .setDepth(9999)
     .setAlpha(1);
 
+  // Cancel previous
   if(pocketTween) pocketTween.remove();
 
   pocketTween = this.tweens.add({
     targets: ghost,
     y: targetY,
-    scaleX: ghost.scaleX * 0.35,
-    scaleY: ghost.scaleY * 0.35,
+    scaleX: 0.07 * 0.35,
+    scaleY: 0.07 * 0.35,
     angle: '+=360',
     alpha: 0,
     duration: 340,
     ease: 'Power2',
     onComplete: () => {
       ghost.destroy();
+      // 3. SPAWN NEW PUCK AFTER ANIMATION
+      puck = this.physics.add.image(w/2, h/2, 'puck').setScale(0.07);
+      puck.setCollideWorldBounds(true);
+      puck.setBounce(0.995).setDamping(true)
+          .setDrag(0.995, 0.995).setMaxVelocity(2000);
+      puck.body.setCircle(puck.displayWidth/2);
+      centerBodyOnTexture(puck);
       resetPuck.call(this, winner);
-      puck.setAlpha(1);
     }
   });
 }
