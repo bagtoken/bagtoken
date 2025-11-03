@@ -165,7 +165,7 @@ const config={
 let puck,player,cpu,scoreText,topGoal,bottomGoal;
 let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
-let lastHit=0;
+let prevCPU={x:0,y:0};
 
 new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 
@@ -189,14 +189,13 @@ function create(){
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true)
      .setDrag(0.995,0.995).setMaxVelocity(2000);
-
- // ✅ Accurate circular body matching visual size
+ // circular body matching displayed size
  puck.body.setCircle(puck.displayWidth/2);
  centerBodyOnTexture(puck);
 
- // 🟡 PLAYER / 🟢 CPU
- player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
- cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
+ // 🟡 PLAYER / 🟢 CPU — bigger paddles
+ player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.14);
+ cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.14);
  [player,cpu].forEach(p=>{
    p.setImmovable(true);
    p.setCollideWorldBounds(true);
@@ -204,19 +203,15 @@ function create(){
    centerBodyOnTexture(p);
  });
 
- // ✅ Real colliders
- this.physics.add.collider(puck, cpu, paddleHit.bind(this), null, this);
- this.physics.add.collider(puck, player, paddleHit.bind(this), null, this);
+ // We rely on our own continuous collision, so no physics collider here.
 
  // Large hit-area + finger-anywhere control (lower half)
  const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
  player.setInteractive(new Phaser.Geom.Circle(0,0,radius),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
-
  this.input.on('drag',(pointer,obj,dragX,dragY)=>{
    movePaddleTo({x:dragX,y:dragY},w,h);
  });
-
  this.input.on('pointerdown',p=>{
    if(p.y>=h*0.5) movePaddleTo(p,w,h);
  });
@@ -232,7 +227,6 @@ function create(){
 }
 
 function centerBodyOnTexture(img){
-  // re-center physics body over the displayed texture
   const bw = img.body.width, bh = img.body.height;
   img.body.setOffset(img.width/2 - bw/2, img.height/2 - bh/2);
 }
@@ -243,45 +237,51 @@ function movePaddleTo(p,w,h){
  player.x=clampedX; player.y=clampedY;
 }
 
-function paddleHit(puckObj, paddleObj){
-  // Vector from paddle to puck (collision normal)
-  const dx = puckObj.x - paddleObj.x;
-  const dy = puckObj.y - paddleObj.y;
-  const dist = Math.max(1, Math.hypot(dx,dy));
-  const nx = dx / dist, ny = dy / dist;
+function resolvePaddle(paddle, prev){
+  // Continuous circle collision against the puck
+  const dx = puck.x - paddle.x;
+  const dy = puck.y - paddle.y;
+  const dist = Math.hypot(dx,dy) || 0.0001;
 
-  // Paddle motion since last frame (player uses prevPlayer; cpu uses its body velocity)
-  const pvx = (paddleObj === player) ? (paddleObj.x - prevPlayer.x) : paddleObj.body.velocity.x/60;
-  const pvy = (paddleObj === player) ? (paddleObj.y - prevPlayer.y) : paddleObj.body.velocity.y/60;
-  const paddleSpeed = Math.hypot(pvx,pvy);
+  const rPuck = puck.displayWidth/2;
+  const rPad  = paddle.displayWidth/2;
+  const rSum  = rPuck + rPad;
 
-  // Split paddle motion into normal & tangential to give spin
-  const tangentX = -ny, tangentY = nx;
-  const vN = pvx*nx + pvy*ny;       // along normal
-  const vT = pvx*tangentX + pvy*tangentY; // tangential
+  if(dist < rSum){
+    // normal from paddle → puck
+    const nx = dx / dist, ny = dy / dist;
+    // push puck to surface
+    const penetration = rSum - dist;
+    puck.x += nx * penetration;
+    puck.y += ny * penetration;
 
-  // Stronger impulse with clamp
-  const base = 550;
-  const gainN = 380;   // normal gain
-  const gainT = 260;   // tangential -> spin
-  const maxV = 2000;
+    // paddle velocity (px/frame → px/s-ish factor 60)
+    const pvx = (paddle.x - prev.x) * 60;
+    const pvy = (paddle.y - prev.y) * 60;
 
-  const vx = nx*(base + gainN*paddleSpeed) + tangentX*(vT*gainT);
-  const vy = ny*(base + gainN*paddleSpeed) + tangentY*(vT*gainT);
+    // decompose along normal & tangent for “english”
+    const tx = -ny, ty = nx;
+    const vN = pvx*nx + pvy*ny;
+    const vT = pvx*tx + pvy*ty;
 
-  puckObj.setVelocity(
-    Phaser.Math.Clamp(vx, -maxV, maxV),
-    Phaser.Math.Clamp(vy, -maxV, maxV)
-  );
+    // base & gains — tweak to taste
+    const base = 520;
+    const gainN = 9.0;   // normal boost from swipe
+    const gainT = 5.0;   // tangential → spin
+    const maxV = 2000;
 
-  // Spin from tangential swipe
-  const spin = Phaser.Math.Clamp(vT*220, -400, 400);
-  puckObj.setAngularVelocity(spin);
+    const vx = nx*(base + gainN*Math.abs(vN)) + tx*(vT*gainT);
+    const vy = ny*(base + gainN*Math.abs(vN)) + ty*(vT*gainT);
 
-  // Tiny separation so the puck doesn't stick on fast swipes
-  const sep = 2;
-  puckObj.x += nx*sep;
-  puckObj.y += ny*sep;
+    puck.setVelocity(
+      Phaser.Math.Clamp(vx, -maxV, maxV),
+      Phaser.Math.Clamp(vy, -maxV, maxV)
+    );
+
+    // spin from tangential swipe
+    const spin = Phaser.Math.Clamp(vT*1.5, -450, 450);
+    puck.setAngularVelocity(spin);
+  }
 }
 
 let aiTimer=0;
@@ -289,16 +289,22 @@ let aiTimer=0;
 function update(time, delta){
  const w=this.scale.width,h=this.scale.height;
 
- // Keep last player position for momentum calc
- prevPlayer.x=player.x; prevPlayer.y=player.y;
+ // cache previous positions
+ const curPlayer={x:player.x,y:player.y};
+ const curCPU={x:cpu.x,y:cpu.y};
 
- // CPU AI (simple track with slight damping)
+ // CPU AI (simple track)
  aiTimer += delta;
  cpu.x += (puck.x - cpu.x) * 0.10;
  cpu.y += (puck.y - cpu.y) * 0.06;
  cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
  cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
 
+ // Continuous collisions
+ resolvePaddle(player, prevPlayer);
+ resolvePaddle(cpu, prevCPU);
+
+ // Goals
  const goalHalfW=130;
  if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
    scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
@@ -307,13 +313,17 @@ function update(time, delta){
    scoreCPU++; resetPuck.call(this,'cpu'); flashGoal(bottomGoal,0x00ff00);
  }
 
- // Soft clamp to keep games fast but controllable
+ // Soft clamp puck velocity
  const v = puck.body.velocity;
  const vmax = 2000, keep = 0.999;
  v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
  v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
 
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+
+ // store prevs
+ prevPlayer = curPlayer;
+ prevCPU = curCPU;
 }
 
 function flashGoal(goal,color){
