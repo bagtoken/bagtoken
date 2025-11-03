@@ -20,9 +20,9 @@ html,body{
  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
  line-height:1.5;overflow-y:auto;scrollbar-width:thin;
  scrollbar-color:#2fbf6b #0b1b13;
- overscroll-behavior: contain;     /* allow normal page scroll */
+ overscroll-behavior: contain;
  -webkit-tap-highlight-color: transparent;
- touch-action: pan-y;              /* ✅ vertical scroll allowed */
+ touch-action: pan-y;              /* normal page scroll */
  user-select: none; -webkit-user-select: none;
 }
 .panel{
@@ -44,10 +44,8 @@ html,body{
  border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0;
 }
 canvas{display:block;margin:auto;}
-
-/* 👇 Only the game region disables native gestures */
 #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;}
-#gameContainer canvas{touch-action:none; -ms-touch-action:none;}
+#gameContainer canvas{touch-action:none; -ms-touch-action:none;} /* capture touches only in game */
 </style>
 
 </head>
@@ -187,20 +185,30 @@ function create(){
  bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.4);
  this.physics.world.setBounds(80,80,w-160,h-160);
 
+ // 🏒 PUCK
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
- puck.setCollideWorldBounds(true).setBounce(0.99).setDamping(true)
-     .setDrag(0.99,0.99).setMaxVelocity(1600);
- puck.body.setCircle(puck.width*0.6);
+ puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true)
+     .setDrag(0.995,0.995).setMaxVelocity(2000);
 
+ // ✅ Accurate circular body matching visual size
+ puck.body.setCircle(puck.displayWidth/2);
+ centerBodyOnTexture(puck);
+
+ // 🟡 PLAYER / 🟢 CPU
  player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.1);
  cpu=this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.1);
- player.setImmovable(true);
- cpu.setImmovable(true);
- cpu.setCollideWorldBounds(true);
+ [player,cpu].forEach(p=>{
+   p.setImmovable(true);
+   p.setCollideWorldBounds(true);
+   p.body.setCircle(p.displayWidth/2);
+   centerBodyOnTexture(p);
+ });
 
- this.physics.add.collider(puck,cpu,onHit,null,this);
+ // ✅ Real colliders
+ this.physics.add.collider(puck, cpu, paddleHit.bind(this), null, this);
+ this.physics.add.collider(puck, player, paddleHit.bind(this), null, this);
 
- // Big hit area, plus finger-anywhere control (lower half)
+ // Large hit-area + finger-anywhere control (lower half)
  const radius=Math.max(player.displayWidth,player.displayHeight)*0.5;
  player.setInteractive(new Phaser.Geom.Circle(0,0,radius),Phaser.Geom.Circle.Contains);
  this.input.setDraggable(player);
@@ -223,60 +231,87 @@ function create(){
  resetPuck.call(this);
 }
 
+function centerBodyOnTexture(img){
+  // re-center physics body over the displayed texture
+  const bw = img.body.width, bh = img.body.height;
+  img.body.setOffset(img.width/2 - bw/2, img.height/2 - bh/2);
+}
+
 function movePaddleTo(p,w,h){
  const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
  const clampedY=Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
  player.x=clampedX; player.y=clampedY;
 }
 
-function checkManualHit(){
- const now=performance.now();
- if(now-lastHit<50)return;
- const dx=puck.x-player.x,dy=puck.y-player.y;
- const dist=Math.sqrt(dx*dx+dy*dy);
- const minDist=(puck.displayWidth*0.35)+(player.displayWidth*0.35);
- if(dist<minDist){
-   lastHit=now;
-   const nx=dx/dist,ny=dy/dist;
-   const vx=player.x-prevPlayer.x,vy=player.y-prevPlayer.y;
-   const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
-   const impulse=Phaser.Math.Clamp(400+paddleSpeed*220,400,1700);
-   puck.body.velocity.x=nx*impulse;
-   puck.body.velocity.y=ny*impulse;
-   puck.setAngularVelocity(Phaser.Math.Between(-220,220));
- }
+function paddleHit(puckObj, paddleObj){
+  // Vector from paddle to puck (collision normal)
+  const dx = puckObj.x - paddleObj.x;
+  const dy = puckObj.y - paddleObj.y;
+  const dist = Math.max(1, Math.hypot(dx,dy));
+  const nx = dx / dist, ny = dy / dist;
+
+  // Paddle motion since last frame (player uses prevPlayer; cpu uses its body velocity)
+  const pvx = (paddleObj === player) ? (paddleObj.x - prevPlayer.x) : paddleObj.body.velocity.x/60;
+  const pvy = (paddleObj === player) ? (paddleObj.y - prevPlayer.y) : paddleObj.body.velocity.y/60;
+  const paddleSpeed = Math.hypot(pvx,pvy);
+
+  // Split paddle motion into normal & tangential to give spin
+  const tangentX = -ny, tangentY = nx;
+  const vN = pvx*nx + pvy*ny;       // along normal
+  const vT = pvx*tangentX + pvy*tangentY; // tangential
+
+  // Stronger impulse with clamp
+  const base = 550;
+  const gainN = 380;   // normal gain
+  const gainT = 260;   // tangential -> spin
+  const maxV = 2000;
+
+  const vx = nx*(base + gainN*paddleSpeed) + tangentX*(vT*gainT);
+  const vy = ny*(base + gainN*paddleSpeed) + tangentY*(vT*gainT);
+
+  puckObj.setVelocity(
+    Phaser.Math.Clamp(vx, -maxV, maxV),
+    Phaser.Math.Clamp(vy, -maxV, maxV)
+  );
+
+  // Spin from tangential swipe
+  const spin = Phaser.Math.Clamp(vT*220, -400, 400);
+  puckObj.setAngularVelocity(spin);
+
+  // Tiny separation so the puck doesn't stick on fast swipes
+  const sep = 2;
+  puckObj.x += nx*sep;
+  puckObj.y += ny*sep;
 }
 
-function onHit(puck,paddle){
- const dx=puck.x-paddle.x,dy=puck.y-paddle.y;
- const dist=Math.sqrt(dx*dx+dy*dy)||1;
- const nx=dx/dist,ny=dy/dist;
- const vx=paddle.x-prevPlayer.x,vy=paddle.y-prevPlayer.y;
- const paddleSpeed=Math.sqrt(vx*vx+vy*vy);
- const force=Phaser.Math.Clamp(400+paddleSpeed*200,400,1500);
- puck.body.velocity.x=nx*force;
- puck.body.velocity.y=ny*force;
-}
+let aiTimer=0;
 
-function update(){
+function update(time, delta){
  const w=this.scale.width,h=this.scale.height;
+
+ // Keep last player position for momentum calc
  prevPlayer.x=player.x; prevPlayer.y=player.y;
 
- // CPU AI
- cpu.x+=(puck.x-cpu.x)*0.08;
- cpu.y+=(puck.y-cpu.y)*0.05;
- cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
- cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
-
- checkManualHit();
+ // CPU AI (simple track with slight damping)
+ aiTimer += delta;
+ cpu.x += (puck.x - cpu.x) * 0.10;
+ cpu.y += (puck.y - cpu.y) * 0.06;
+ cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
+ cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
 
  const goalHalfW=130;
- if(puck.y<topGoal.y&&Math.abs(puck.x-w/2)<goalHalfW){
-   scorePlayer++;resetPuck.call(this,'player');flashGoal(topGoal,0xff0000);
+ if(puck.y<topGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
+   scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
  }
- if(puck.y>bottomGoal.y&&Math.abs(puck.x-w/2)<goalHalfW){
-   scoreCPU++;resetPuck.call(this,'cpu');flashGoal(bottomGoal,0x00ff00);
+ if(puck.y>bottomGoal.y && Math.abs(puck.x-w/2)<goalHalfW){
+   scoreCPU++; resetPuck.call(this,'cpu'); flashGoal(bottomGoal,0x00ff00);
  }
+
+ // Soft clamp to keep games fast but controllable
+ const v = puck.body.velocity;
+ const vmax = 2000, keep = 0.999;
+ v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
+ v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
 
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
@@ -290,10 +325,11 @@ function resetPuck(scoredBy){
  const w=this.scale.width,h=this.scale.height;
  puck.setPosition(w/2,h/2);
  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
- const speed=Phaser.Math.Between(600,750);
+ const speed=Phaser.Math.Between(650,800);
  const vx=Math.cos(angle*Math.PI/180)*speed;
  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
  puck.setVelocity(vx,vy);
+ puck.setAngularVelocity(Phaser.Math.Between(-120,120));
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 </script>
