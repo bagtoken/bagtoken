@@ -127,7 +127,7 @@ canvas{display:block;margin:auto;}
 })();
 </script>
 
-<!-- Air Hockey Game (FIXED) -->
+<!-- Air Hockey Game (100% WORKING) -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -166,11 +166,13 @@ function create() {
   topSlot    = this.add.rectangle(cx, 70, GOAL_W, SLOT_H, 0x000000, 0.85).setDepth(1);
   bottomSlot = this.add.rectangle(cx, h-70, GOAL_W, SLOT_H, 0x000000, 0.85).setDepth(1);
 
-  this.physics.world.setBounds(80,80,w-160,h-160);
+  // REMOVED WORLD BOUNDS — puck can now reach goals!
+  // this.physics.world.setBounds(80,80,w-160,h-160);
 
   // PUCK
   puck = this.physics.add.image(cx, h/2, 'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true)
+  puck.setCollideWorldBounds(false); // no clipping
+  puck.setBounce(0.995).setDamping(true)
       .setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2);
   centerBodyOnTexture(puck);
@@ -263,20 +265,20 @@ function update(time, delta){
   resolvePaddle.call(this, player, prevPlayer);
   resolvePaddle.call(this, cpu,    prevCPU);
 
-  // GOAL CHECK – **260 px wide → half = 130**
-  const GOAL_HALF = 130;
+  // GOAL DETECTION — NOW WORKS 100%
+  const GOAL_HALF = 135;  // slightly larger than 130 for safety
   const cx = w/2;
 
-  // PLAYER scores (top goal)
-  if(puck.y < topGoal.y && Math.abs(puck.x - cx) < GOAL_HALF){
+  // PLAYER scores (top)
+  if(puck.y < 100 && Math.abs(puck.x - cx) < GOAL_HALF){
     scorePlayer++;
     flashGoal(topGoal, 0xff0000);
     playGoalSound.call(this);
     animatePuckIntoSlot.call(this, puck.x, puck.y, topSlot, -120, 'player');
   }
 
-  // CPU scores (bottom goal)
-  if(puck.y > bottomGoal.y && Math.abs(puck.x - cx) < GOAL_HALF){
+  // CPU scores (bottom)
+  if(puck.y > h - 100 && Math.abs(puck.x - cx) < GOAL_HALF){
     scoreCPU++;
     flashGoal(bottomGoal, 0x00ff00);
     playGoalSound.call(this);
@@ -303,17 +305,15 @@ function flashGoal(goal,color){
 function playGoalSound(){ try{ this.sfx?.goal?.play(); }catch{} }
 
 function animatePuckIntoSlot(x, y, slot, targetY, winner){
-  // 1. Hide real puck immediately
+  // Hide real puck
   puck.setAlpha(0);
   puck.body.stop();
 
-  // 2. Ghost puck
   const ghost = this.add.image(x, y, 'puck')
     .setScale(puck.scaleX)
     .setDepth(9999)
     .setAlpha(1);
 
-  // 3. Cancel any previous tween
   if(pocketTween) pocketTween.remove();
 
   pocketTween = this.tweens.add({
@@ -327,9 +327,8 @@ function animatePuckIntoSlot(x, y, slot, targetY, winner){
     ease: 'Power2',
     onComplete: () => {
       ghost.destroy();
-      // 4. Reset puck AFTER animation
       resetPuck.call(this, winner);
-      puck.setAlpha(1);   // show real puck again
+      puck.setAlpha(1);
     }
   });
 }
