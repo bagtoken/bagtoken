@@ -3,316 +3,737 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>$BAG Air Hockey — Arcade P2E</title>
+<title>🏒 $BAG Air Hockey — Arcade P2E</title>
+
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
 <style>
-:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--line:#173524;--shadow:rgba(0,0,0,.35)}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
-.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
-.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19}
-.btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
-.divider{height:1px;background:#123221;margin:14px 0}
-.marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
-canvas{display:block;margin:auto}
+:root{
+ --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;
+ --muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;
+ --shadow:rgba(0,0,0,.35);--lose:#e25b5b;--warn:#e8a85c;
+}
+*{box-sizing:border-box}
+html,body{
+ margin:0;padding:0;background:var(--bg);color:var(--fg);
+ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+ line-height:1.55;overflow-y:auto;scrollbar-width:thin;
+ scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;
+ -webkit-tap-highlight-color:transparent;touch-action:pan-y;
+ user-select:none;-webkit-user-select:none;
+}
+a.back{position:fixed;top:18px;left:18px;z-index:1000;
+ background:linear-gradient(180deg,#ffe175,#f5c94c);
+ color:#08130d;text-decoration:none;font-weight:900;padding:8px 14px;border-radius:10px;
+ box-shadow:0 4px 0 #b08a19}
+h2{margin:0;font-size:clamp(1.6rem,4vw,2rem)}
+.panel{
+ background:linear-gradient(180deg,var(--panel),var(--panel2));
+ border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);
+ padding:16px;margin:0 auto;max-width:1080px;
+}
+.btn{
+ cursor:pointer;border:0;border-radius:12px;padding:10px 14px;
+ font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);
+ color:#08130d;box-shadow:0 4px 0 #b08a19;
+}
+.btn.alt{background:#12281c;border:1px solid #2b6a48;color:#e9efe9;box-shadow:none}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.divider{height:1px;background:#123221;margin:14px 0;}
+.marquee{
+ text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;
+ background:linear-gradient(180deg,#17311f,#0e2419);
+ border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0;
+}
+.grid{display:grid;gap:16px}
+.grid-2{grid-template-columns:1fr;gap:16px}
+@media(min-width:980px){.grid-2{grid-template-columns:1fr 1fr}}
+
+canvas{display:block;margin:auto;}
 #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
 #gameContainer canvas{touch-action:none;-ms-touch-action:none}
+
+.section-title{font-weight:800;font-size:1.2rem;margin:0 0 8px}
+.stack{display:grid;gap:10px}
+.choice{display:flex;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+.chip input{accent-color:#2fbf6b}
+
+.input{width:160px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px}
+
+.preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.preset-chip{
+ appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;
+ padding:8px 12px;font-weight:900;letter-spacing:.2px;cursor:pointer;
+ box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+}
+.preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
+
+.hudbar{
+ display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+ gap:6px;align-items:center;margin:6px 2px 0
+}
+.pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+.pill b{font-weight:800}
+.pill.balance{grid-column:1 / -1;font-size:14px;padding:8px 12px;font-weight:800}
+.mono{font-variant-numeric:tabular-nums}
+.micro{font-size:.85rem;color:#a8b5ab}
+.warn{color:var(--warn)}.lose{color:var(--lose)}
+
+.score{display:flex;justify-content:center;gap:18px;font-weight:900}
+.score .box{min-width:84px;text-align:center;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;padding:8px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+
+.footer{color:#b9c1b5;text-align:center;padding:14px 0;font-size:.9rem}
 </style>
+
 </head>
 <body>
-<a href="/casino/" class="btn" style="position:fixed;top:18px;left:18px;z-index:1000;">Back</a>
+
+<a href="/casino/" class="back">⬅️ Back</a>
 
 <section style="text-align:center;padding-top:70px;">
-  <h2 style="margin:0;font-size:1.6rem;">$BAG Air Hockey — Arcade P2E</h2>
-  <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
+  <h2>🏒 $BAG Air Hockey — Arcade P2E</h2>
+  <p class="micro" style="opacity:.9">💰 All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
-<section style="padding:0 16px 80px;">
-  <div class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
-      <button id="startSessionBtn" class="btn">Start Session</button>
-    </div>
-    <div class="divider"></div>
+<section style="padding:0 16px 60px">
+  <div class="panel grid grid-2">
+    <!-- LEFT: GAME -->
+    <div>
+      <div class="marquee">$BAG AIR HOCKEY</div>
+      <div id="gameContainer"></div>
 
-    <div class="marquee">Live Prices</div>
-    <div style="text-align:center;font-family:monospace;">
-      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span>
-      <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+      <div class="divider"></div>
+
+      <div class="score" aria-live="polite">
+        <div class="box">Round <span id="roundIdx">—</span>/<span id="roundMax">—</span></div>
+        <div class="box">You <span id="youScore">0</span></div>
+        <div class="box">CPU <span id="cpuScore">0</span></div>
+      </div>
+
+      <div class="controls" style="margin-top:10px">
+        <button id="startMatchBtn" class="btn">Start Match</button>
+        <button id="pauseBtn" class="btn alt" disabled>Pause</button>
+        <button id="resumeBtn" class="btn" disabled>Resume</button>
+        <button id="resetBtn" class="btn alt">Reset</button>
+      </div>
     </div>
 
-    <div class="divider"></div>
-    <div style="text-align:center;line-height:1.6;">
-      <div style="font-weight:800">Practice Balance</div>
-      <div>BAG: <span id="balBAG">—</span> XRP: <span id="balXRP">—</span></div>
-      <div>USD: <span id="balUSD">—</span></div>
-    </div>
+    <!-- RIGHT: STAKE / SESSION / HUD -->
+    <div>
+      <!-- CONNECT + SESSION -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn" class="btn">Connect Xaman</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%">
+        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="startSessionBtn" class="btn">Start Session</button>
+          <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
+          <button id="endSessionBtn" class="btn alt" style="display:none">End</button>
+        </div>
+      </div>
 
-    <div class="divider"></div>
-    <div class="marquee">$BAG AIR HOCKEY</div>
-    <div id="gameContainer"></div>
+      <div class="section-title">Stake & Prices</div>
+      <div class="stack">
+        <div>
+          <div class="micro">Amount</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input id="usdBet" class="input mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00">
+            <span class="micro unit">USD</span>
+          </div>
+          <div class="preset-chips" id="usdPresets" data-quick-amounts data-target-usd="#usdBet" data-target-qty="#betQty" data-currency-toggle="#curToggle" data-min-usd="1" data-max-usd="2000" data-active-class="active" data-sync-on-price="1">
+            <button type="button" class="preset-chip" data-usd="1">$1</button>
+            <button type="button" class="preset-chip" data-usd="2">$2</button>
+            <button type="button" class="preset-chip" data-usd="5">$5</button>
+            <button type="button" class="preset-chip" data-usd="10">$10</button>
+            <button type="button" class="preset-chip" data-usd="20">$20</button>
+            <button type="button" class="preset-chip" data-usd="50">$50</button>
+            <button type="button" class="preset-chip" data-usd="100">$100</button>
+            <button type="button" class="preset-chip" data-usd="max">Max</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="micro">Bet currency</div>
+          <div class="choice" id="curToggle">
+            <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+            <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+          </div>
+        </div>
+
+        <div>
+          <div class="micro">Bet amount</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input id="betQty" class="input mono" type="number" inputmode="decimal" min="0" step="any" value="1">
+            <span class="unit">XRP</span>
+          </div>
+          <div class="micro" id="betLimits" style="margin-top:6px"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="micro">Live prices</div>
+        <div class="mono" id="liveLine">
+          <span id="liveDot" class="warn">●</span>
+          BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span>
+          <span id="liveNote"></span>
+          <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">Match Options</div>
+        <div class="choice">
+          <label class="chip"><input type="radio" name="bestof" value="1" checked> Best of 1</label>
+          <label class="chip"><input type="radio" name="bestof" value="3"> Best of 3</label>
+          <label class="chip"><input type="radio" name="bestof" value="5"> Best of 5</label>
+        </div>
+        <div class="choice">
+          <label class="chip"><input type="radio" name="goals" value="3"> First to 3</label>
+          <label class="chip"><input type="radio" name="goals" value="5" checked> First to 5</label>
+          <label class="chip"><input type="radio" name="goals" value="7"> First to 7</label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="hudbar" id="hud" aria-live="polite">
+          <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+          <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+          <span class="pill">Bet: <b id="betLbl">1</b></span>
+          <span class="pill">Best-of: <b id="bestLbl">1</b></span>
+          <span class="pill">Goals: <b id="goalsLbl">5</b></span>
+          <span class="pill">Last: <b id="lastLbl">—</b></span>
+        </div>
+        <p class="micro" style="opacity:.8;margin:6px 0 0">Payouts: Win match <b>1.15×</b> (Demo) / <b>1.10×</b> (Live). Shutout bonus <b>+0.10×</b>.</p>
+      </div>
+    </div>
   </div>
 </section>
 
-<footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
+<footer class="footer">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
 </footer>
 
-<!-- Live Prices -->
+<!-- ---------- SHARED: OVERLAY / SESSION / QUICK AMOUNTS ---------- -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
+
+<!-- ---------- LIVE PRICING (same engine as Dice) ---------- -->
 <script>
 (function(){
- const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr',BAG_CODE='BAG';
- window.P={bagUsd:0,xrpUsd:0};
- const fmt=n=>Number.isFinite(n)?n.toFixed(6):'—';
- async function refresh(){
-  try{
-   const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-   const xrp=(await r.json())?.ripple?.usd||0;
-   const ws=new WebSocket('wss://s1.ripple.com');
-   const bagUsd=await new Promise(res=>{
-    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
-    ws.onopen=()=>ws.send(JSON.stringify(req));
-    ws.onmessage=e=>{
-     try{const d=JSON.parse(e.data);if(d.result?.amm){
-      const a=+d.result.amm.amount.value,b=+d.result.amm.amount2.value;
-      if(a>0&&b>0)res(b/a*xrp);ws.close();}}catch{}};
-    setTimeout(()=>{try{ws.close();}catch{};res(null);},6000);
-   });
-   if(xrp>0&&bagUsd>0){P.xrpUsd=xrp;P.bagUsd=bagUsd;update();}
-  }catch{}
- }
- function update(){
-  document.getElementById('liveBAG').textContent=fmt(P.bagUsd);
-  document.getElementById('liveXRP').textContent=fmt(P.xrpUsd);
-  if(P.bagUsd&&P.xrpUsd){
-   const xrpPerBag=P.bagUsd/P.xrpUsd,bagPerXrp=P.xrpUsd/P.bagUsd;
-   document.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
+  const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
+  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
+  const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
+  const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
+
+  function fmt(n){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:6}):'—'; }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k,ttl){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } }
+
+  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    finally{ setTimeout(()=>clearTimeout(id),0); }
   }
-  document.dispatchEvent(new Event('bag:pricesUpdated'));
- }
- refresh();setInterval(refresh,15000);
+
+  function updateLine(){
+    const liveDot=document.getElementById('liveDot');
+    const liveBAG=document.getElementById('liveBAG');
+    const liveXRP=document.getElementById('liveXRP');
+    const liveNote=document.getElementById('liveNote');
+    const liveConv=document.getElementById('liveConv');
+
+    if(liveBAG) liveBAG.textContent=fmt(PRICES.bagUsd);
+    if(liveXRP) liveXRP.textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
+    if(liveDot) liveDot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
+    if(liveNote) liveNote.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    if(liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent=`1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else liveConv.textContent='1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+    }
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  async function fetchXrpUsdLive(){
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v=(await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+    }catch{}
+    return false;
+  }
+
+  function parseXrpAmount(a){ if(a==null) return null; if(typeof a==='string') return Number(a)/1_000_000; if(typeof a==='object'&&a.currency==='XRP') return Number(a.value); return null; }
+  function parseIouAmount(a){ if(!a||typeof a!=='object') return null; return Number(a.value); }
+
+  async function fetchBagViaAMMLive(){
+    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+    const xrpPerBag=await new Promise(resolve=>{
+      let ws; const t=setTimeout(()=>{ try{ws&&ws.close();}catch{} resolve(null); },8000);
+      try{
+        ws=new WebSocket('wss://s1.ripple.com');
+        ws.onopen=()=>ws.send(JSON.stringify(req));
+        ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
+        ws.onmessage=ev=>{
+          try{
+            const msg=JSON.parse(ev.data);
+            if(msg.id!==1 || !msg.result || !msg.result.amm) return;
+            clearTimeout(t); try{ws.close();}catch{};
+            const amm=msg.result.amm;
+            const bagBal=parseIouAmount(amm.amount);
+            const xrpBal=parseXrpAmount(amm.amount2);
+            if(!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+            const price=xrpBal/bagBal;
+            if(!(price>0) || !isFinite(price)) return resolve(null);
+            resolve(price);
+          }catch{ resolve(null); }
+        };
+      }catch{ clearTimeout(t); resolve(null); }
+    });
+    if(!(xrpPerBag>0)) return false;
+    if(!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd=PRICES.xrpUsd*xrpPerBag; PRICES.source='live-amm';
+    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd}); cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    return true;
+  }
+
+  function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
+  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
+    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
+    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
+    if(ok && PRICES.source==='—') PRICES.source='last-live';
+    return ok;
+  }
+
+  async function refresh(){ const gotX=await fetchXrpUsdLive(); const gotB=await fetchBagViaAMMLive(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } updateLine(); }
+  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
+  document.addEventListener('DOMContentLoaded', updateLine);
+  addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); updateLine(); }});
 })();
 </script>
 
-<!-- Practice Balance -->
+<!-- ---------- STAKE WIRE INIT (mirror Dice) ---------- -->
+<script>
+(function(global){
+  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
+  function getCur(root){ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
+  function priceFor(cur){ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd : xrpUsd; }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function computeSessionMaxUsd(cur,minUsd,maxUsd){
+    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
+    const bagBal=Number(sess.bag)||0; let unitsAvail;
+    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
+    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
+    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  }
+  function init(){
+    global.BAGStakeWire && global.BAGStakeWire.init({
+      usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle',
+      unitLabels:'.unit', limitsLabel:'#betLimits', presetsRoot:'#usdPresets',
+      minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true
+    });
+  }
+  document.addEventListener('DOMContentLoaded', init);
+})(window);
+</script>
+
+<!-- ---------- DEMO SESSION + HUD (mirror Dice) ---------- -->
 <script>
 (function(){
- const BAL_KEY='bag_demo_balance',USD_START=2000;
- function getBag(){return Number(localStorage.getItem(BAL_KEY)||0);}
- function setBag(v){localStorage.setItem(BAL_KEY,v);}
- function seed(){if(getBag()>0)return;const p=window.P?.bagUsd||0;if(p>0)setBag(USD_START/p);}
- function render(){
-  const bal=getBag(),p=window.P;
-  const usd=(p.bagUsd>0)?bal*p.bagUsd:USD_START;
-  const xrp=(p.bagUsd>0&&p.xrpUsd>0)?bal*(p.bagUsd/p.xrpUsd):0;
-  document.getElementById('balBAG').textContent=bal.toFixed(2);
-  document.getElementById('balXRP').textContent=xrp.toFixed(2);
-  document.getElementById('balUSD').textContent='$'+usd.toFixed(2);
- }
- document.getElementById('startSessionBtn').addEventListener('click',()=>{seed();render();});
- document.addEventListener('bag:pricesUpdated',render);
+  const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
+  const $=s=>document.querySelector(s);
+  const statusEl=$('#sessionStatus'), startBtn=$('#startSessionBtn'), topUpBtn=$('#topUpBtn'), endBtn=$('#endSessionBtn'), connectEl=$('#connectBtn');
+
+  const DEMO_BAL_KEY='__bag_demo_bag_v2', DEMO_INIT_KEY='__bag_demo_init_v2', START_USD=2000;
+  function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
+  function fmt(n){ if(!Number.isFinite(n)) return '—'; if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
+    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
+    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8}); return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+  function getCachedBagUsd(){
+    try{
+      const lastLive=JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      if(lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
+      const view=JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      if(view && view.v && Number(view.v.bagUsd)>0) return Number(view.v.bagUsd);
+    }catch{}
+    return 0;
+  }
+  function ensureSeedNowOrWhenReady(){
+    if(localStorage.getItem(DEMO_INIT_KEY)) return true;
+    const live=Number(PR().bagUsd||0), cached=getCachedBagUsd(); const bagUsd = live>0? live : (cached>0? cached : 0);
+    if(bagUsd>0){ const startBag=START_USD/bagUsd; setBag(startBag); localStorage.setItem(DEMO_INIT_KEY,'1'); return true; }
+    return false;
+  }
+  function renderDemo(){
+    const bag=getBag(),{bagUsd,xrpUsd}=PR();
+    const usd=(bagUsd>0)?bag*bagUsd:START_USD;
+    const xrp=(bagUsd>0&&xrpUsd>0)?(bag*(bagUsd/xrpUsd)):0;
+    if(statusEl){
+      statusEl.innerHTML=`<div class="practiceBlock">
+        <div class="title" style="font-weight:800;margin-bottom:4px;">Practice:</div>
+        <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
+        <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
+        <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
+      </div>`;
+    }
+    startBtn.style.display='inline-block'; topUpBtn.style.display='none'; endBtn.style.display='none';
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+  const demoSession={ active:()=>true, get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}), set:()=>{},
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); return true; } };
+
+  function enableDemo(){ window.__BAG_FORCE_DEMO=true; window.__bagSession=demoSession;
+    const seeded=ensureSeedNowOrWhenReady(); renderDemo(); }
+  function enableLive(){ window.__BAG_FORCE_DEMO=false; /* your live session binder in bag-session.js */ }
+
+  if(forceLive) enableLive(); else enableDemo();
+  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
+
+  // HUD
+  const curToggle=document.getElementById('curToggle');
+  function PRx(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
+  function fmt6(n){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function currentCurrency(){ const el=curToggle?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
+  function getBalances(){
+    const sess=(window.__bagSession&&window.__bagSession.get&&window.__bagSession.get())||{}; const bag=Number(sess.bag)||0; let xrp=Number(sess.xrp);
+    const {bagUsd,xrpUsd}=PRx(); if(!(xrp>0)){ if(bagUsd>0&&xrpUsd>0) xrp=bag*(bagUsd/xrpUsd); else xrp=0; } return {bag,xrp};
+  }
+  function currentBet(){ const v=parseFloat(document.getElementById('betQty')?.value||'0'); return (Number.isFinite(v)&&v>=0)? v:0; }
+  function renderHud(){
+    const modeLbl=document.getElementById('modeLbl');
+    const betLbl=document.getElementById('betLbl');
+    const lastLbl=document.getElementById('lastLbl');
+    const balLbl=document.getElementById('balLbl');
+    const ccyLbl=document.getElementById('ccyLbl');
+    const bestLbl=document.getElementById('bestLbl');
+    const goalsLbl=document.getElementById('goalsLbl');
+
+    if(modeLbl) modeLbl.textContent = window.__BAG_FORCE_DEMO ? 'Demo' : 'Live';
+    if(betLbl) betLbl.textContent = fmt6(currentBet());
+    if(lastLbl) lastLbl.textContent = String(window.__HOCKEY_LAST__||'—');
+    const {bag,xrp}=getBalances();
+    if(ccyLbl && balLbl){ if(currentCurrency()==='XRP'){ ccyLbl.textContent='XRP'; balLbl.textContent=fmt6(xrp); } else { ccyLbl.textContent='BAG'; balLbl.textContent=fmt6(bag); } }
+    const bo = document.querySelector('input[name="bestof"]:checked')?.value||'1';
+    const gl = document.querySelector('input[name="goals"]:checked')?.value||'5';
+    if(bestLbl) bestLbl.textContent = bo;
+    if(goalsLbl) goalsLbl.textContent = gl;
+  }
+  ['bag:pricesUpdated','bag:hudRefresh','bag:sessionStarted','bag:sessionEnded'].forEach(ev=>addEventListener(ev,renderHud));
+  addEventListener('storage', (e)=>{ if(e && e.key==='__bag_demo_bag_v2') renderHud(); });
+  document.getElementById('betQty')?.addEventListener('input',()=>window.dispatchEvent(new CustomEvent('bag:hudRefresh')));
+  document.getElementById('curToggle')?.addEventListener('change',()=>window.dispatchEvent(new CustomEvent('bag:hudRefresh')));
+  renderHud();
 })();
 </script>
 
-<!-- Air Hockey Game (NO FREEZE GOALS) -->
+<!-- ---------- AIR HOCKEY GAME + MATCH LOGIC ---------- -->
 <script>
-const config = {
-  type: Phaser.AUTO,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1024, height: 1536, parent: 'gameContainer' },
-  backgroundColor: '#021107',
-  physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
-  input: { activePointers: 5 }
+const config={
+ type:Phaser.AUTO,
+ scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
+ backgroundColor:'#021107',
+ physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
+ input:{activePointers:5}
 };
 
-let puck, player, cpu, scoreText;
-let scorePlayer = 0, scoreCPU = 0;
-let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
-let goalLock = false; // guard while sinking/resetting
+let game, sceneRef=null;
+let puck,player,cpu;
+let youScore=0,cpuScore=0,roundIdx=0,roundMax=1,goalsToWin=5;
+let matchActive=false, paused=false, goalLock=false;
+let prevPlayer={x:0,y:0}, prevCPU={x:0,y:0};
 
-new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
+let sfx={hit:null,goal:null};
+
+function $(id){ return document.getElementById(id); }
+function setText(id, v){ const el=$(id); if(el) el.textContent=String(v); }
 
 function preload(){
-  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
-  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
-  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
-  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
-  try{
-    this.load.audio('hit1','/arcade/assets/sounds/hit1.mp3');
-    this.load.audio('goal','/arcade/assets/sounds/goal.mp3');
-  }catch(e){}
+ this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
+ this.load.image('puck','/arcade/assets/img/puck-1024.webp');
+ this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
+ this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
+ try{
+  this.load.audio('hit','/arcade/assets/sounds/hit1.mp3');
+  this.load.audio('goal','/arcade/assets/sounds/goal.mp3');
+ }catch(e){}
 }
 
 function create(){
-  const w=this.scale.width, h=this.scale.height, cx=w/2;
+ sceneRef=this;
+ const w=this.scale.width,h=this.scale.height,cx=w/2,cy=h/2;
 
-  this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
-  this.physics.world.setBounds(80, 80, w-160, h-160);
+ this.add.image(cx,cy,'table').setDisplaySize(w,h);
+ this.physics.world.setBounds(80,80,w-160,h-160);
 
-  // puck
-  puck = this.physics.add.image(cx, h/2, 'puck').setScale(0.07);
-  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
-  puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
+ // puck
+ puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
+ puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
+ puck.body.setCircle(puck.displayWidth/2); centerBody(puck);
 
-  // paddles
-  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(0.14);
-  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(0.14);
-  [player,cpu].forEach(p=>{
-    p.setImmovable(true);
-    p.setCollideWorldBounds(true);
-    p.body.setCircle(p.displayWidth/2);
-    centerBodyOnTexture(p);
-  });
+ // paddles (bigger)
+ player=this.physics.add.image(cx,h*0.85,'paddle_gold').setScale(0.14);
+ cpu   =this.physics.add.image(cx,h*0.15,'paddle_green').setScale(0.14);
+ [player,cpu].forEach(p=>{ p.setImmovable(true); p.setCollideWorldBounds(true); p.body.setCircle(p.displayWidth/2); centerBody(p); });
 
-  // sfx
-  this.sfx = {hit1:null,goal:null};
-  try{
-    this.sfx.hit1 = this.sound.add('hit1',{volume:.35});
-    this.sfx.goal = this.sound.add('goal',{volume:.5});
-  }catch(e){}
+ // input
+ const r=player.displayWidth*0.5;
+ player.setInteractive(new Phaser.Geom.Circle(0,0,r),Phaser.Geom.Circle.Contains);
+ this.input.setDraggable(player);
+ this.input.on('drag',(ptr,obj,dx,dy)=>{ movePaddleTo({x:dx,y:dy},w,h); });
+ this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h); });
+ this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h); });
 
-  // input
-  const r = player.displayWidth*0.5;
-  player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
-  this.input.setDraggable(player);
-  this.input.on('drag',(ptr,obj,dx,dy)=>movePaddleTo({x:dx,y:dy},w,h));
-  this.input.on('pointerdown',p=>{ if(p.y>=h*0.5) movePaddleTo(p,w,h); });
-  this.input.on('pointermove',p=>{ if(p.isDown && p.y>=h*0.5) movePaddleTo(p,w,h); });
+ // sfx
+ try{ sfx.hit=this.sound.add('hit',{volume:.35}); sfx.goal=this.sound.add('goal',{volume:.5}); }catch{}
 
-  scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
-
-  // first serve
-  serve(this);
+ // UI defaults
+ updateRoundHud();
 }
 
-function centerBodyOnTexture(img){
-  const bw=img.body.width, bh=img.body.height;
-  img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
+function centerBody(img){
+ const bw=img.body.width, bh=img.body.height;
+ img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
 }
 
 function movePaddleTo(p,w,h){
-  if(goalLock) return;
-  player.x = Phaser.Math.Clamp(p.x,100,w-100);
-  player.y = Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
+ if(paused) return;
+ const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
+ const clampedY=Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
+ player.x=clampedX; player.y=clampedY;
 }
 
-function resolvePaddle(paddle, prev, scene){
-  if(goalLock || !puck.body || !puck.body.enable) return;
-  const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
-  const rSum=puck.displayWidth/2+paddle.displayWidth/2;
-  if(dist<rSum){
-    const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
-    puck.x+=nx*pen; puck.y+=ny*pen;
-    const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
-    const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
-    const base=520, gainN=9, gainT=5, maxV=2000;
-    const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
-    const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
-    puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
-    puck.setAngularVelocity(Phaser.Math.Clamp(vT*1.5,-450,450));
-    try{ scene.sfx?.hit1?.play(); }catch{}
-  }
+function resolvePaddle(paddle, prev){
+ if(goalLock || paused || !puck.body || !puck.body.enable) return;
+ const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
+ const rSum=puck.displayWidth/2+paddle.displayWidth/2;
+ if(dist<rSum){
+   const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
+   puck.x+=nx*pen; puck.y+=ny*pen;
+   const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
+   const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
+   const base=520, gainN=9, gainT=5, maxV=2000;
+   const vx=nx*(base+gainN*Math.abs(vN))+tx*(vT*gainT);
+   const vy=ny*(base+gainN*Math.abs(vN))+ty*(vT*gainT);
+   puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV),Phaser.Math.Clamp(vy,-maxV,maxV));
+   puck.setAngularVelocity(Phaser.Math.Clamp(vT*1.5,-450,450));
+   try{ sfx.hit?.play(); }catch{}
+ }
 }
 
 function update(time,delta){
-  const w=this.scale.width, h=this.scale.height;
+ const w=this.scale.width,h=this.scale.height;
+ if(paused) return;
 
-  // EARLY goal check — exit the frame immediately when a goal starts
-  const GOAL_HALF=130, cx=w/2;
-  if(!goalLock && puck && puck.body && puck.body.enable){
-    if(puck.y < 85 && Math.abs(puck.x-cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scorePlayer++;
-      startGoalSink.call(this, 'top');   // begins sink & schedules reset
-      return; // <- do nothing else this frame
-    }
-    if(puck.y > h-85 && Math.abs(puck.x-cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scoreCPU++;
-      startGoalSink.call(this, 'bottom');
-      return;
-    }
+ // Early goal check (center slot width)
+ const GOAL_HALF=130, cx=w/2;
+ if(!goalLock && puck && puck.body && puck.body.enable){
+   if(puck.y<85 && Math.abs(puck.x-cx)<GOAL_HALF){ try{sfx.goal?.play();}catch{}; onGoal('you'); return; }
+   if(puck.y>h-85 && Math.abs(puck.x-cx)<GOAL_HALF){ try{sfx.goal?.play();}catch{}; onGoal('cpu'); return; }
+ }
+
+ // AI
+ cpu.x+=(puck.x-cpu.x)*0.10;
+ cpu.y+=(puck.y-cpu.y)*0.06;
+ cpu.x=Phaser.Math.Clamp(cpu.x,100,w-100);
+ cpu.y=Phaser.Math.Clamp(cpu.y,80,h*0.45);
+
+ const curPlayer={x:player.x,y:player.y};
+ const curCPU={x:cpu.x,y:cpu.y};
+ resolvePaddle(player,prevPlayer);
+ resolvePaddle(cpu,prevCPU);
+ prevPlayer=curPlayer; prevCPU=curCPU;
+
+ // velocity damping
+ const v=puck.body.velocity, vmax=2000, keep=0.999;
+ v.x=Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
+ v.y=Phaser.Math.Clamp(v.y*keep,-vmax,vmax);
+}
+
+/* ---------- GOAL / ROUND / MATCH ---------- */
+function onGoal(who){
+ if(goalLock) return;
+ goalLock=true;
+
+ // sink animation
+ const scene=sceneRef, w=scene.scale.width, h=scene.scale.height, cx=w/2;
+ puck.setVelocity(0,0); puck.setAngularVelocity(0);
+ puck.body.enable=false; puck.body.checkCollision.none=true; puck.setCollideWorldBounds(false);
+
+ const targetY=(who==='you')? -40 : (h+40);
+ scene.tweens.add({
+  targets:puck, x:cx, y:targetY, scaleX:puck.scaleX*0.55, scaleY:puck.scaleY*0.55, alpha:0,
+  duration:230, ease:'Quad.easeIn',
+  onComplete:()=>{
+    if(who==='you') youScore++; else cpuScore++;
+    updateScoreHud();
+    checkRoundEnd();
+    // reset puck mid after short delay if still playing
+    scene.time.delayedCall(220, ()=>{
+      if(!matchActive){ goalLock=false; return; }
+      puck.setPosition(w/2,h/2).setAlpha(1).setScale(0.07);
+      if(!puck.body) scene.physics.add.existing(puck);
+      puck.body.enable=true; puck.body.checkCollision.none=false; puck.setCollideWorldBounds(true);
+      const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+      const speed=Phaser.Math.Between(650,800);
+      const vx=Math.cos(angle*Math.PI/180)*speed;
+      const vy=(who==='you'? -1: 1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+      puck.setVelocity(vx,vy); puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+      goalLock=false;
+    });
   }
-
-  if(goalLock) return; // while sinking/resetting
-
-  // AI
-  cpu.x += (puck.x - cpu.x) * 0.10;
-  cpu.y += (puck.y - cpu.y) * 0.06;
-  cpu.x  = Phaser.Math.Clamp(cpu.x,100,w-100);
-  cpu.y  = Phaser.Math.Clamp(cpu.y,80,h*0.45);
-
-  // collisions
-  const curPlayer={x:player.x,y:player.y};
-  const curCPU={x:cpu.x,y:cpu.y};
-  resolvePaddle(player, prevPlayer, this);
-  resolvePaddle(cpu,    prevCPU,  this);
-  prevPlayer = curPlayer; prevCPU = curCPU;
-
-  // velocity clamp
-  if(puck.body && puck.body.enable){
-    const v=puck.body.velocity, vmax=2000, keep=0.999;
-    v.x = Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
-    v.y = Phaser.Math.Clamp(v.y*keep,-vmax,vmax);
-  }
-
-  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+ });
 }
 
-// SINK: disable physics, let puck visually slide into slot, then re-enable & serve
-function startGoalSink(side){
-  if(goalLock || !puck) return;
-  const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
-  goalLock = true;
-
-  // stop interacting with physics/world bounds during sink
-  puck.setVelocity(0,0);
-  puck.setAngularVelocity(0);
-  if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
-  puck.setCollideWorldBounds(false);
-
-  // target y inside “machine”
-  const targetY = (side==='top') ? -40 : (h+40);
-
-  // tween visual sink (scale/fade + slide to center of slot)
-  scene.tweens.add({
-    targets: puck,
-    x: cx,
-    y: targetY,
-    scaleX: puck.scaleX*0.55,
-    scaleY: puck.scaleY*0.55,
-    alpha: 0,
-    duration: 230,
-    ease: 'Quad.easeIn',
-    onComplete: ()=>{
-      // reset to center and re-enable physics cleanly
-      serve(scene, side==='top' ? 'player' : 'cpu');
-      goalLock = false;
-    }
-  });
+function updateRoundHud(){
+ setText('roundIdx', Math.max(0,roundIdx));
+ setText('roundMax', roundMax);
+ updateScoreHud();
 }
 
-function serve(scene, scoredBy){
-  const w=scene.scale.width, h=scene.scale.height;
-  // restore puck visuals
-  puck.setPosition(w/2, h/2).setAlpha(1).setScale(0.07);
-  // re-enable physics body
-  if(!puck.body){ scene.physics.add.existing(puck); } // safety if body was stripped
-  puck.body.enable = true;
-  puck.body.checkCollision.none = false;
-  puck.setCollideWorldBounds(true);
-
-  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
-  const speed=Phaser.Math.Between(650,800);
-  const vx=Math.cos(angle*Math.PI/180)*speed;
-  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
-  puck.setVelocity(vx,vy);
-  puck.setAngularVelocity(Phaser.Math.Between(-120,120));
-
-  // UI
-  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+function updateScoreHud(){
+ setText('youScore', youScore);
+ setText('cpuScore', cpuScore);
 }
 
+function startServe(){
+ const scene=sceneRef, w=scene.scale.width, h=scene.scale.height;
+ puck.setPosition(w/2,h/2).setAlpha(1).setScale(0.07);
+ if(!puck.body) scene.physics.add.existing(puck);
+ puck.body.enable=true; puck.body.checkCollision.none=false; puck.setCollideWorldBounds(true);
+ const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+ const speed=Phaser.Math.Between(650,800);
+ const vx=Math.cos(angle*Math.PI/180)*speed;
+ const vy=(Math.random()<0.5? -1: 1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+ puck.setVelocity(vx,vy); puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+}
+
+/* ---------- ECON / STAKE ---------- */
+function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
+function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
+function stakeBag(){
+ const q=parseFloat(document.getElementById('betQty')?.value||0)||0; if(!q) return 0;
+ const {bagUsd,xrpUsd}=PR(); return currentCurrency()==='BAG'? q : (bagUsd>0&&xrpUsd>0? q*(xrpUsd/bagUsd):0);
+}
+function stakeUsd(){
+ const direct=parseFloat(document.getElementById('usdBet')?.value||''); if(Number.isFinite(direct)&&direct>0) return direct;
+ const q=parseFloat(document.getElementById('betQty')?.value||0)||0; const {bagUsd,xrpUsd}=PR();
+ if(currentCurrency()==='BAG') return bagUsd>0? q*bagUsd:0; return xrpUsd>0? q*xrpUsd:0;
+}
+function setLast(s){ try{ window.__HOCKEY_LAST__=s; window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }catch{} }
+
+/* ---------- MATCH FLOW ---------- */
+function beginMatch(){
+ if(matchActive) return;
+
+ const sUsd=stakeUsd(), sBag=stakeBag();
+ if(!window.__bagSession || !__bagSession.active()){ alert('Start a session at The Cage'); return; }
+ if(!(sUsd>=1)){ alert('Minimum $1.00 stake'); return; }
+ if(sUsd>2000){ alert('Maximum $2000.00 stake'); return; }
+ if(!(sBag>0)){ alert('Enter a stake first'); return; }
+ if(!__bagSession.spend(sBag)){ alert('Insufficient balance'); return; }
+
+ // lock settings
+ roundIdx=1;
+ roundMax=parseInt(document.querySelector('input[name="bestof"]:checked')?.value||'1',10);
+ goalsToWin=parseInt(document.querySelector('input[name="goals"]:checked')?.value||'5',10);
+ youScore=0; cpuScore=0; paused=false; matchActive=true; goalLock=false;
+
+ setText('roundIdx', roundIdx); setText('roundMax', roundMax);
+ updateScoreHud();
+ setLast('Match Start');
+
+ // UI buttons
+ document.getElementById('pauseBtn').disabled=false;
+ document.getElementById('resumeBtn').disabled=true;
+
+ // serve
+ startServe();
+}
+
+function endMatch(playerWon){
+ matchActive=false; paused=false; goalLock=false;
+
+ const sBag=stakeBag();
+ const isDemo = (window.__BAG_FORCE_DEMO===true);
+ const base = isDemo ? 1.15 : 1.10;
+ const shutout = (playerWon && cpuScore===0) ? 0.10 : 0;
+ const mult = playerWon ? (base+shutout) : 0;
+
+ if(playerWon){
+   try{ __bagSession.credit(sBag*mult); }catch{}
+   try{
+     BAGOverlay.showWin({
+       message: shutout ? 'SHUTOUT WIN' : 'MATCH WIN',
+       subtext: shutout ? `Payout ${mult.toFixed(2)}× (incl. shutout bonus)` : `Payout ${mult.toFixed(2)}×`,
+       duration: 4200, sound: true
+     });
+   }catch{}
+   setLast(`Win ${mult.toFixed(2)}×`);
+ }else{
+   try{ window.__bagAudio && window.__bagAudio.thud && window.__bagAudio.thud(); }catch{}
+   setLast('Loss');
+ }
+}
+
+function checkRoundEnd(){
+ const need=Math.ceil(roundMax/2);
+
+ if(youScore>=goalsToWin || cpuScore>=goalsToWin){
+   const youTook = youScore>cpuScore;
+   // round result
+   if(youTook) setLast(`Round ${roundIdx} WIN`); else setLast(`Round ${roundIdx} LOSS`);
+
+   // advance / match end
+   if(roundIdx>=roundMax){
+     endMatch(youTook);
+     return;
+   }else{
+     roundIdx++;
+     youScore=0; cpuScore=0;
+     updateRoundHud();
+
+     // serve next round
+     sceneRef.time.delayedCall(300, ()=>{ if(matchActive){ startServe(); }});
+   }
+ }
+}
+
+/* ---------- UI buttons ---------- */
+document.addEventListener('DOMContentLoaded', ()=>{
+ $('startMatchBtn').addEventListener('click', beginMatch);
+ $('pauseBtn').addEventListener('click', ()=>{ if(!matchActive) return; paused=true; $('pauseBtn').disabled=true; $('resumeBtn').disabled=false; setLast('Paused'); });
+ $('resumeBtn').addEventListener('click', ()=>{ if(!matchActive) return; paused=false; $('pauseBtn').disabled=false; $('resumeBtn').disabled=true; setLast('Resumed'); });
+ $('resetBtn').addEventListener('click', ()=>{
+   matchActive=false; paused=false; goalLock=false;
+   youScore=0; cpuScore=0; roundIdx=0;
+   updateRoundHud(); setLast('Reset');
+   // stop puck
+   if(puck){ puck.setVelocity(0,0); puck.setAngularVelocity(0); }
+ });
+});
+
+game=new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 </script>
+
+<!-- small input niceties -->
+<script>
+  document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
+  document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
+  window.addEventListener('wheel', (e)=>{ if(e.ctrlKey){ e.preventDefault(); } }, {passive:false});
+</script>
+
 </body>
 </html>
