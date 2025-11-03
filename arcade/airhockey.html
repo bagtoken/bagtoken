@@ -316,7 +316,7 @@ canvas{display:block;margin:auto}
 })(window);
 </script>
 
-<!-- ===== Air Hockey Game (finger-friendly + goal sensors) ===== -->
+<!-- ===== Air Hockey Game (anti-trap AI + goal sensors) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -333,11 +333,22 @@ const GOAL_HALF    = 140;     // half-width of the mouth area
 const POINTER_OFFSET_Y = -56; // keep paddle above finger
 const WALL_MARGIN  = 100;     // world bounds margin
 
+// --- anti-trap tuning ---
+const CORNER_BAND     = 150;   // region near walls considered "cornerish"
+const STUCK_SPEED     = 60;    // px/s below this means "slow"
+const STUCK_TIME_MS   = 600;   // how long the puck must be slow in corner
+const STUCK_COOLDOWN  = 800;   // cooldown between escape kicks
+const CPU_RETREAT_Y   = 280;   // target Y for CPU retreat after kick
+
 let puck, player, cpu, scoreText, ring;
 let goalTop, goalBottom;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
 let goalLock = false;
+
+// stuck tracking
+let stuckStart = 0;
+let lastKickAt = 0;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -464,11 +475,71 @@ function update(){
   const w=this.scale.width, h=this.scale.height;
   if(goalLock) return;
 
-  // very light AI
-  cpu.x += (puck.x - cpu.x) * 0.10;
-  cpu.y += (puck.y - cpu.y) * 0.06;
-  cpu.x  = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + cpu.displayWidth*0.5, w - (WALL_MARGIN + cpu.displayWidth*0.5));
-  cpu.y  = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + cpu.displayWidth*0.5, h*0.45);
+  // --------- CPU AI: bias away from corners ----------
+  const cx = w/2;
+  const rCpu = cpu.displayWidth * 0.5;
+  const rPuck = puck.displayWidth * 0.5;
+
+  // Desired target follows puck but is pulled toward center when puck hugs walls at top half
+  const nearTop = puck.y < h*0.45;
+  const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
+  const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
+
+  const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(
+                    Phaser.Math.Linear(puck.x, cx, pullToCenter),
+                    WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
+                  ), 0.10);
+
+  // Cap how deep CPU chases; hover a bit above the defense line to leave room
+  const cpuChaseDepth = Math.min(puck.y, h*0.38);
+  const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
+
+  cpu.x = targetX;
+  cpu.y = targetY;
+
+  // No-pin spacing: if puck is near a wall and CPU overlaps too closely, push CPU outward slightly
+  const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
+                   (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
+                   (puck.y < WALL_MARGIN + rPuck + 8);
+
+  const dxPC = puck.x - cpu.x, dyPC = puck.y - cpu.y, dPC = Math.hypot(dxPC, dyPC) || 1;
+  const minGap = (rCpu + rPuck) * 0.95;
+  if(nearWall && dPC < minGap){
+    const push = (minGap - dPC) * 0.6;
+    cpu.x -= (dxPC / dPC) * push;
+    cpu.y -= (dyPC / dPC) * push;
+    cpu.x = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu));
+    cpu.y = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + rCpu, h*0.45);
+  }
+
+  // --------- Corner-escape kick (CPU side) ----------
+  const now = performance.now();
+  const v = puck.body ? puck.body.velocity : {x:0,y:0};
+  const speed = Math.hypot(v.x, v.y);
+
+  const inCpuHalf = puck.y < h * 0.5;
+  const inCornerish = inCpuHalf &&
+    (puck.y < WALL_MARGIN + CORNER_BAND) &&
+    ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
+
+  if(inCornerish && speed < STUCK_SPEED){
+    if(!stuckStart) stuckStart = now;
+    const longEnough = (now - stuckStart) > STUCK_TIME_MS;
+    const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
+    if(longEnough && cooled){
+      // Kick puck toward center-lower area
+      const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
+      puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
+      // CPU retreats to open the lane
+      cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
+      lastKickAt = now;
+      stuckStart = 0;
+    }
+  }else{
+    stuckStart = 0;
+  }
+
+  // -----------------------------------------------
 
   const curPlayer={x:player.x,y:player.y};
   const curCPU={x:cpu.x,y:cpu.y};
@@ -479,9 +550,9 @@ function update(){
   prevPlayer=curPlayer; prevCPU=curCPU;
 
   if(puck.body && puck.body.enable){
-    const v=puck.body.velocity, vmax=2000, keep=0.999;
-    v.x = Phaser.Math.Clamp(v.x*keep,-vmax,vmax);
-    v.y = Phaser.Math.Clamp(v.y*keep,-vmax,vmax);
+    const v2=puck.body.velocity, vmax=2000, keep=0.999;
+    v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
+    v2.y = Phaser.Math.Clamp(v2.y*keep,-vmax,vmax);
   }
 
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
