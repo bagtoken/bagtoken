@@ -167,9 +167,8 @@ let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let prevCPU={x:0,y:0};
 
-// 🔊 optional SFX + pocket tween + masks (safe if files missing)
-let pocketTween=null;
-let goalMasks={top:null,bottom:null};
+// 🔊 optional SFX (safe if files missing)
+let sinking=false; // <-- while the puck is visually sinking into the goal
 
 new Phaser.Game(Object.assign({},config,{scene:{preload,create,update}}));
 
@@ -191,15 +190,9 @@ function create(){
  this.add.image(cx,cy,'table').setDisplaySize(w,h);
 
  const goalW=260,goalH=40;
- topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.4);
- bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.4);
+ topGoal=this.add.rectangle(cx,70,goalW,goalH,0xff0000,0.35);
+ bottomGoal=this.add.rectangle(cx,h-70,goalW,goalH,0x00ff00,0.35);
  this.physics.world.setBounds(80,80,w-160,h-160);
-
- // 👇 invisible clip rectangles to mask ghost sink animation
- const topClipRect    = this.add.rectangle(cx, topGoal.y - 6, goalW - 8, 24, 0x000000, 0).setVisible(false);
- const bottomClipRect = this.add.rectangle(cx, bottomGoal.y + 6, goalW - 8, 24, 0x000000, 0).setVisible(false);
- goalMasks.top    = topClipRect.createGeometryMask();
- goalMasks.bottom = bottomClipRect.createGeometryMask();
 
  // 🏒 PUCK
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
@@ -247,59 +240,51 @@ function centerBodyOnTexture(img){
 }
 
 function movePaddleTo(p,w,h){
+ if(sinking) return; // lock input while puck is sinking into goal
  const clampedX=Phaser.Math.Clamp(p.x,100,w-100);
  const clampedY=Phaser.Math.Clamp(p.y,h*0.5+40,h-80);
  player.x=clampedX; player.y=clampedY;
 }
 
-function resolvePaddle(paddle, prev){
-  // Continuous circle collision against the puck
-  const dx = puck.x - paddle.x;
-  const dy = puck.y - paddle.y;
-  const dist = Math.hypot(dx,dy) || 0.0001;
+function resolvePaddle(paddle, prev, scene){
+ if(sinking) return; // no player/cpu impacts while sinking
+ // Continuous circle collision against the puck
+ const dx = puck.x - paddle.x;
+ const dy = puck.y - paddle.y;
+ const dist = Math.hypot(dx,dy) || 0.0001;
 
-  const rPuck = puck.displayWidth/2;
-  const rPad  = paddle.displayWidth/2;
-  const rSum  = rPuck + rPad;
+ const rPuck = puck.displayWidth/2;
+ const rPad  = paddle.displayWidth/2;
+ const rSum  = rPuck + rPad;
 
-  if(dist < rSum){
-    // normal from paddle → puck
-    const nx = dx / dist, ny = dy / dist;
-    // push puck to surface
-    const penetration = rSum - dist;
-    puck.x += nx * penetration;
-    puck.y += ny * penetration;
+ if(dist < rSum){
+   const nx = dx / dist, ny = dy / dist;
+   const penetration = rSum - dist;
+   puck.x += nx * penetration;
+   puck.y += ny * penetration;
 
-    // paddle velocity (px/frame → px/s-ish factor 60)
-    const pvx = (paddle.x - prev.x) * 60;
-    const pvy = (paddle.y - prev.y) * 60;
+   const pvx = (paddle.x - prev.x) * 60;
+   const pvy = (paddle.y - prev.y) * 60;
 
-    // decompose along normal & tangent for “english”
-    const tx = -ny, ty = nx;
-    const vN = pvx*nx + pvy*ny;
-    const vT = pvx*tx + pvy*ty;
+   const tx = -ny, ty = nx;
+   const vN = pvx*nx + pvy*ny;
+   const vT = pvx*tx + pvy*ty;
 
-    // base & gains — tweak to taste
-    const base = 520;
-    const gainN = 9.0;   // normal boost from swipe
-    const gainT = 5.0;   // tangential → spin
-    const maxV = 2000;
+   const base = 520, gainN = 9.0, gainT = 5.0, maxV = 2000;
 
-    const vx = nx*(base + gainN*Math.abs(vN)) + tx*(vT*gainT);
-    const vy = ny*(base + gainN*Math.abs(vN)) + ty*(vT*gainT);
+   const vx = nx*(base + gainN*Math.abs(vN)) + tx*(vT*gainT);
+   const vy = ny*(base + gainN*Math.abs(vN)) + ty*(vT*gainT);
 
-    puck.setVelocity(
-      Phaser.Math.Clamp(vx, -maxV, maxV),
-      Phaser.Math.Clamp(vy, -maxV, maxV)
-    );
+   puck.setVelocity(
+     Phaser.Math.Clamp(vx, -maxV, maxV),
+     Phaser.Math.Clamp(vy, -maxV, maxV)
+   );
 
-    // spin from tangential swipe
-    const spin = Phaser.Math.Clamp(vT*1.5, -450, 450);
-    puck.setAngularVelocity(spin);
+   const spin = Phaser.Math.Clamp(vT*1.5, -450, 450);
+   puck.setAngularVelocity(spin);
 
-    // SFX
-    try{ this.sfx?.hit1?.play(); }catch{}
-  }
+   try{ scene?.sfx?.hit1?.play(); }catch{}
+ }
 }
 
 let aiTimer=0;
@@ -307,91 +292,112 @@ let aiTimer=0;
 function update(time, delta){
  const w=this.scale.width,h=this.scale.height;
 
- // cache previous positions
  const curPlayer={x:player.x,y:player.y};
  const curCPU={x:cpu.x,y:cpu.y};
 
- // CPU AI (simple track)
- aiTimer += delta;
- cpu.x += (puck.x - cpu.x) * 0.10;
- cpu.y += (puck.y - cpu.y) * 0.06;
- cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
- cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+ // CPU AI (turn off while sinking)
+ if(!sinking){
+   aiTimer += delta;
+   cpu.x += (puck.x - cpu.x) * 0.10;
+   cpu.y += (puck.y - cpu.y) * 0.06;
+   cpu.x = Phaser.Math.Clamp(cpu.x,100,w-100);
+   cpu.y = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+ }
 
- // Continuous collisions
- resolvePaddle.call(this, player, prevPlayer);
- resolvePaddle.call(this, cpu,    prevCPU);
+ // Continuous collisions (skip while sinking)
+ resolvePaddle(player, prevPlayer, this);
+ resolvePaddle(cpu,    prevCPU,  this);
 
- // Goals + pocket ghost animation (physics untouched)
+ // ── PHYSICAL “SINK INTO GOAL” (real puck goes through opening) ─────────
  const goalHalfW=130;
  const cxMid=w/2;
 
- // TOP GOAL (player scores) — ghost sinks upward through masked slot
- if(puck.y<topGoal.y && Math.abs(puck.x-cxMid)<goalHalfW){
-   const ghost=this.add.image(puck.x,puck.y,'puck')
-     .setScale(puck.scaleX).setDepth(9999).setAlpha(1)
-     .setMask(goalMasks.top);
+ // TOP GOAL (player scores)
+ if(!sinking && puck.y < topGoal.y && Math.abs(puck.x - cxMid) < goalHalfW){
+   sinking = true;
 
-   pocketTween && pocketTween.remove();
-   pocketTween = this.tweens.add({
-     targets: ghost,
-     x: cxMid,
-     y: topGoal.y - 48,
-     scaleX: ghost.scaleX * 0.55,
-     scaleY: ghost.scaleY * 0.55,
-     alpha: 0,
-     duration: 220,
-     ease: 'Quad.easeIn',
-     onComplete: ()=>ghost.destroy()
+   // let it pass through the world bound at the slot: turn off world-bound bounce
+   puck.setCollideWorldBounds(false);
+
+   // aim into the center of the slot and upward
+   const vx = (cxMid - puck.x) * 4; // pull to center quickly
+   const vy = -900;                 // strong upward push “into the machine”
+   puck.setVelocity(vx, vy);
+
+   // shrink/fade while the physics body continues
+   this.tweens.add({
+     targets: puck,
+     scaleX: puck.scaleX * 0.55,
+     scaleY: puck.scaleY * 0.55,
+     alpha: 0.0,
+     duration: 230,
+     ease: 'Quad.easeIn'
    });
 
    try{ this.sfx?.goal?.play(); }catch{}
-   scorePlayer++; resetPuck.call(this,'player'); flashGoal(topGoal,0xff0000);
+   // after the visual, score + hard reset
+   this.time.delayedCall(240, ()=>{
+     scorePlayer++;
+     resetPuck.call(this, 'player');
+     flashGoal(topGoal, 0xff0000);
+     sinking = false;
+   });
  }
 
- // BOTTOM GOAL (cpu scores) — ghost sinks downward through masked slot
- if(puck.y>bottomGoal.y && Math.abs(puck.x-cxMid)<goalHalfW){
-   const ghost=this.add.image(puck.x,puck.y,'puck')
-     .setScale(puck.scaleX).setDepth(9999).setAlpha(1)
-     .setMask(goalMasks.bottom);
+ // BOTTOM GOAL (cpu scores)
+ if(!sinking && puck.y > bottomGoal.y && Math.abs(puck.x - cxMid) < goalHalfW){
+   sinking = true;
 
-   pocketTween && pocketTween.remove();
-   pocketTween = this.tweens.add({
-     targets: ghost,
-     x: cxMid,
-     y: bottomGoal.y + 48,
-     scaleX: ghost.scaleX * 0.55,
-     scaleY: ghost.scaleY * 0.55,
-     alpha: 0,
-     duration: 220,
-     ease: 'Quad.easeIn',
-     onComplete: ()=>ghost.destroy()
+   puck.setCollideWorldBounds(false);
+
+   const vx = (cxMid - puck.x) * 4;
+   const vy = 900; // downward into machine
+   puck.setVelocity(vx, vy);
+
+   this.tweens.add({
+     targets: puck,
+     scaleX: puck.scaleX * 0.55,
+     scaleY: puck.scaleY * 0.55,
+     alpha: 0.0,
+     duration: 230,
+     ease: 'Quad.easeIn'
    });
 
    try{ this.sfx?.goal?.play(); }catch{}
-   scoreCPU++; resetPuck.call(this,'cpu'); flashGoal(bottomGoal,0x00ff00);
+   this.time.delayedCall(240, ()=>{
+     scoreCPU++;
+     resetPuck.call(this, 'cpu');
+     flashGoal(bottomGoal, 0x00ff00);
+     sinking = false;
+   });
  }
 
  // Soft clamp puck velocity
- const v = puck.body.velocity;
- const vmax = 2000, keep = 0.999;
- v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
- v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
+ if(!sinking){
+   const v = puck.body.velocity;
+   const vmax = 2000, keep = 0.999;
+   v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
+   v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
+ }
 
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 
- // store prevs
  prevPlayer = curPlayer;
  prevCPU = curCPU;
 }
 
 function flashGoal(goal,color){
  goal.setFillStyle(color,0.9);
- setTimeout(()=>goal.setFillStyle(color,0.4),180);
+ setTimeout(()=>goal.setFillStyle(color,0.35),180);
 }
 
 function resetPuck(scoredBy){
  const w=this.scale.width,h=this.scale.height;
+
+ // restore visuals / collisions
+ puck.setAlpha(1).setScale(0.07);
+ puck.setCollideWorldBounds(true);
+
  puck.setPosition(w/2,h/2);
  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
  const speed=Phaser.Math.Between(650,800);
