@@ -157,10 +157,10 @@ function create(){
  const LEFT=PAD, RIGHT=w-PAD;
  const GOAL_W=260, GOAL_HALF=GOAL_W/2;
 
- // reference bounds only
+ // reference bounds only (no puck collideWorldBounds)
  this.physics.world.setBounds(LEFT,TOP,RIGHT-LEFT,BOTTOM-TOP);
 
- // puck (no collideWorldBounds; we use custom walls)
+ // puck (we use custom walls, not collideWorldBounds)
  puck=this.physics.add.image(cx,cy,'puck').setScale(0.07);
  puck.setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
  puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
@@ -174,24 +174,26 @@ function create(){
    p.body.setCircle(p.displayWidth/2); centerBodyOnTexture(p);
  });
 
- // STATIC WALLS: left/right + split top/bottom
+ // STATIC WALLS: left/right + split top/bottom around the goal opening
  walls=this.physics.add.staticGroup();
 
  // L/R strips
  walls.add(rect(this, LEFT,  (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));
  walls.add(rect(this, RIGHT, (TOP+BOTTOM)/2, 8, (BOTTOM-TOP)));
 
- // compute split widths so GOAL_W gap is centered
+ // split widths so GOAL_W gap is centered
  const leftSpan  = (cx - GOAL_HALF) - LEFT;
  const rightSpan = RIGHT - (cx + GOAL_HALF);
- walls.add(rect(this, LEFT + leftSpan/2,  TOP,    leftSpan, 8));    // top-left
- walls.add(rect(this, RIGHT - rightSpan/2,TOP,    rightSpan,8));    // top-right
- walls.add(rect(this, LEFT + leftSpan/2,  BOTTOM, leftSpan, 8));    // bottom-left
- walls.add(rect(this, RIGHT - rightSpan/2,BOTTOM, rightSpan,8));    // bottom-right
+
+ // Top & bottom split rails (8px thick)
+ walls.add(rect(this, LEFT + leftSpan/2,   TOP,    leftSpan, 8));    // top-left
+ walls.add(rect(this, RIGHT - rightSpan/2, TOP,    rightSpan,8));    // top-right
+ walls.add(rect(this, LEFT + leftSpan/2,   BOTTOM, leftSpan, 8));    // bottom-left
+ walls.add(rect(this, RIGHT - rightSpan/2, BOTTOM, rightSpan,8));    // bottom-right
 
  this.physics.add.collider(puck, walls);
 
- // GOAL SENSORS (thin zones)
+ // GOAL SENSORS (thin overlap zones in the opening)
  sensors = {
    top:    makeSensor(this, cx, TOP+6,    GOAL_W-12, 12),
    bottom: makeSensor(this, cx, BOTTOM-6, GOAL_W-12, 12)
@@ -221,7 +223,7 @@ function rect(scene,x,y,w,h){
 }
 function makeSensor(scene,x,y,w,h){
  const z=scene.add.zone(x,y,Math.max(2,w),Math.max(2,h));
- scene.physics.add.existing(z,true); // static sensor
+ scene.physics.add.existing(z,true); // static sensor body
  z.body.setAllowGravity(false);
  return z;
 }
@@ -254,46 +256,64 @@ function resolvePaddle(paddle, prev){
  }
 }
 
-// HARD goal handler (no tweens, no ghost, no pauses)
+// HARD goal handler (no tweens; disable sensor bodies while scoring)
 function onGoal(scene, side){
+ // Debounce + only if puck body is live
  if(inGoal || !puck.body || !puck.body.enable) return;
  inGoal = true;
 
- // prevent re-firing while handling
- sensors.top.active = false;
- sensors.bottom.active = false;
+ // 🔒 Turn off sensor PHYSICS bodies so overlap cannot refire mid-reset
+ if(sensors?.top?.body){ sensors.top.body.enable = false; }
+ if(sensors?.bottom?.body){ sensors.bottom.body.enable = false; }
 
- // score
+ // Update score
  if(side==='top'){ scorePlayer++; } else { scoreCPU++; }
  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 
- // park puck safely off-screen & disable body
- puck.body.setEnable(false);
- puck.setPosition(-9999,-9999).setAlpha(0);
+ // Stop puck participating in any collisions before disabling
+ puck.setVelocity(0,0);
+ puck.setAngularVelocity(0);
+ if(puck.body){
+   puck.body.checkCollision.none = true; // opt-out immediately
+   puck.body.enable = false;             // fully disable body
+ }
+ puck.setAlpha(0).setPosition(-9999,-9999);
 
- // quick clean reset after 120ms
+ // Simple, safe reset
  scene.time.delayedCall(120, ()=>{
-   serve(scene, side==='top' ? 'player' : 'cpu');
-   puck.setAlpha(1);
-   // re-enable sensors a tick later
+   const w=scene.scale.width, h=scene.scale.height;
+   const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+   const speed=Phaser.Math.Between(650,800);
+   const vx=Math.cos(angle*Math.PI/180)*speed;
+   const vy=(side==='top'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+
+   // Re-enable puck cleanly at center
+   puck.setPosition(w/2,h/2).setScale(0.07).setAlpha(1);
+   if(puck.body){
+     puck.body.enable = true;
+     puck.body.checkCollision.none = false;
+   }
+   puck.setVelocity(vx,vy);
+   puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+
+   // Re-arm sensor bodies after a tiny delay to avoid immediate refire
    scene.time.delayedCall(60, ()=>{
-     sensors.top.active = true;
-     sensors.bottom.active = true;
+     if(sensors?.top?.body){ sensors.top.body.enable = true; }
+     if(sensors?.bottom?.body){ sensors.bottom.body.enable = true; }
      inGoal = false;
    });
  });
 }
 
-function serve(scene, scoredBy){
+function serve(scene){
  const w=scene.scale.width,h=scene.scale.height;
- puck.setPosition(w/2,h/2).setScale(0.07);
+ puck.setPosition(w/2,h/2).setScale(0.07).setAlpha(1);
  if(puck.body){
-   puck.body.setEnable(true);
+   puck.body.enable = true;
+   puck.body.checkCollision.none = false;
    const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
    const speed=Phaser.Math.Between(650,800);
-   const vx=Math.cos(angle*Math.PI/180)*speed;
-   const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
-   puck.setVelocity(vx,vy);
+   puck.setVelocity(Math.cos(angle*Math.PI/180)*speed, Math.sin(angle*Math.PI/180)*speed);
    puck.setAngularVelocity(Phaser.Math.Between(-120,120));
  }
 }
@@ -306,7 +326,7 @@ function update(time,delta){
  const curPlayer={x:player.x,y:player.y};
  const curCPU={x:cpu.x,y:cpu.y};
 
- // CPU AI
+ // CPU AI (tracks puck while not in a goal state)
  if(!inGoal && puck.body && puck.body.enable){
    aiTimer+=delta;
    cpu.x+=(puck.x-cpu.x)*0.10;
