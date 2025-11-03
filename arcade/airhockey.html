@@ -316,116 +316,7 @@ canvas{display:block;margin:auto}
 })(window);
 </script>
 
-<!-- ===== Demo/Session wiring (Dice parity) ===== -->
-<script>
-(function(){
-  const statusEl=document.getElementById('sessionStatus'),
-        startBtn=document.getElementById('startSessionBtn'),
-        topUpBtn=document.getElementById('topUpBtn'),
-        endBtn=document.getElementById('endSessionBtn');
-
-  const DEMO_BAL_KEY='__bag_demo_bag_v2', DEMO_INIT_KEY='__bag_demo_init_v2', START_USD=2000;
-  const PR=()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-
-  const fmt=n=>{
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  };
-  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  const getBag=()=>{ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } };
-  const setBag=v=>{ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} };
-
-  function getCachedBagUsd(){
-    try{
-      const lastLive=JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-      if(lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-      const view=JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-      if(view && view.v && Number(view.v.bagUsd)>0) return Number(view.v.bagUsd);
-    }catch{} return 0;
-  }
-
-  function ensureSeed(){
-    if(localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live=Number(PR().bagUsd||0), cached=getCachedBagUsd();
-    const bagUsd=live>0? live : (cached>0? cached : 0);
-    if(bagUsd>0){ setBag(START_USD/bagUsd); localStorage.setItem(DEMO_INIT_KEY,'1'); return true; }
-    return false;
-  }
-
-  function renderDemo(){
-    const bag=getBag(); const {bagUsd,xrpUsd}=PR();
-    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
-    if(statusEl){
-      statusEl.innerHTML=`Practice — BAG <b style="color:#2fbf6b">${fmt(bag)}</b> · XRP <b style="color:#7cc7ff">${fmt(xrp)}</b> · USD <b>${fmtUsd(usd)}</b>`;
-    }
-    startBtn.style.display='inline-block'; topUpBtn.style.display='none'; endBtn.style.display='none';
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
-
-  const demoSession={ active:()=>true, get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}), set:()=>{},
-    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); return true; } };
-
-  function enableDemo(){
-    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
-    window.__bagSession=demoSession;
-    const ok=ensureSeed(); renderDemo();
-    addEventListener('bag:pricesUpdated', ()=>{ if(!localStorage.getItem(DEMO_INIT_KEY)){ const seeded=ensureSeed(); if(seeded) renderDemo(); } else renderDemo(); });
-  }
-  enableDemo();
-
-  // HUD sync (Dice IDs)
-  function PRX(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
-  function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
-  function fmtN(n,max=6){ const x=Number(n); if(!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined,{maximumFractionDigits:max}); }
-  function getBalances(){
-    const sess=(window.__bagSession&&window.__bagSession.get&&window.__bagSession.get())||{}; const bag=Number(sess.bag)||0; let xrp=Number(sess.xrp);
-    const {bagUsd,xrpUsd}=PRX(); if(!(xrp>0)){ if(bagUsd>0 && xrpUsd>0) xrp=bag*(bagUsd/xrpUsd); else xrp=0; }
-    return {bag,xrp};
-  }
-  function currentBet(){ const el=document.getElementById('betQty'); const v=parseFloat(el?.value||'0'); return (Number.isFinite(v)&&v>=0)? v:0; }
-  function renderHud(){
-    try{
-      const modeLbl=document.getElementById('modeLbl'), betLbl=document.getElementById('betLbl'), lastLbl=document.getElementById('lastLbl'),
-            balLbl=document.getElementById('balLbl'), ccyLbl=document.getElementById('ccyLbl');
-      const mode=(window.__BAG_FORCE_DEMO===true)?'Demo':'Live', ccy=currentCurrency(); const {bag,xrp}=getBalances();
-      if(modeLbl) modeLbl.textContent=mode; if(betLbl) betLbl.textContent=fmtN(currentBet(),6); if(lastLbl) lastLbl.textContent=String(window.__AH_LAST__||'—');
-      if(balLbl && ccyLbl){ if(ccy==='XRP'){ balLbl.textContent=fmtN(xrp,6); ccyLbl.textContent='XRP'; } else { balLbl.textContent=fmtN(bag,6); ccyLbl.textContent='BAG'; } }
-    }catch{}
-  }
-  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:hudRefresh']
-    .forEach(ev=>addEventListener(ev,renderHud));
-  document.getElementById('betQty')?.addEventListener('input',renderHud);
-  document.getElementById('curToggle')?.addEventListener('change',renderHud);
-  addEventListener('storage',(e)=>{ if(e && e.key==='__bag_demo_bag_v2') renderHud(); });
-  renderHud();
-
-  // Init stake wire now that session & prices exist
-  window.addEventListener('DOMContentLoaded', ()=>{
-    if(window.BAGStakeWire){
-      window.BAGStakeWire.init({
-        usdInput:'#usdBet',
-        qtyInput:'#betQty',
-        currencyToggle:'#curToggle',
-        unitLabels:'.unit',
-        limitsLabel:'#betLimits',
-        presetsRoot:'#usdPresets',
-        minUsd:1,
-        maxUsd:2000,
-        activeClass:'active',
-        syncOnPrice:true
-      });
-    }
-  });
-})();
-</script>
-
-<!-- ===== Air Hockey Game (robust touch + goal sink) ===== -->
+<!-- ===== Air Hockey Game (finger-friendly + goal sensors) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -435,7 +326,15 @@ const config = {
   input: { activePointers: 5 }
 };
 
-let puck, player, cpu, scoreText;
+// --- size + UX tuning ---
+const PADDLE_SCALE = 0.20;    // bigger for finger control
+const PUCK_SCALE   = 0.09;    // slightly bigger
+const GOAL_HALF    = 140;     // half-width of the mouth area
+const POINTER_OFFSET_Y = -56; // keep paddle above finger
+const WALL_MARGIN  = 100;     // world bounds margin
+
+let puck, player, cpu, scoreText, ring;
+let goalTop, goalBottom;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
 let goalLock = false;
@@ -457,22 +356,31 @@ function create(){
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
-  this.physics.world.setBounds(80, 80, w-160, h-160);
+  this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
   // puck
-  puck = this.physics.add.image(cx, h/2, 'puck').setScale(0.07);
+  puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
   // paddles
-  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(0.14);
-  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(0.14);
+  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
+  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
   [player,cpu].forEach(p=>{
     p.setImmovable(true);
     p.setCollideWorldBounds(true);
     p.body.setCircle(p.displayWidth/2);
     centerBodyOnTexture(p);
   });
+
+  // --- invisible goal sensors (physics overlap) ---
+  goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
+  goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
+  this.physics.add.existing(goalTop, true);
+  this.physics.add.existing(goalBottom, true);
+
+  this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
+  this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
   // sfx
   this.sfx = {hit1:null,goal:null};
@@ -481,26 +389,46 @@ function create(){
     this.sfx.goal = this.sound.add('goal',{volume:.5});
   }catch(e){}
 
+  // touch ring so finger doesn't hide the aim point
+  ring = this.add.graphics({ x: 0, y: 0 });
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
+  ring.setAlpha(0);
+
   // input — world coordinates work with FIT scaling
+  const clamp = Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
     const ww=this.scale.width, hh=this.scale.height;
-    player.x=Phaser.Math.Clamp(gx,100,ww-100);
-    player.y=Phaser.Math.Clamp(gy,hh*0.5+40,hh-80);
+    const half = player.displayWidth*0.5;
+    const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
+    const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
+    player.x = targetX; player.y = targetY;
+    ring.x = gx; ring.y = gy;
   };
-  const lowerZone=this.add.zone(w/2,h*0.75,w,h*0.5).setInteractive({useHandCursor:false});
-  lowerZone.on('pointerdown',(p)=>moveTo(p.worldX,p.worldY));
+
+  const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
+  lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
+  lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
+  lowerZone.on('pointerout', ()=> ring.setAlpha(0));
   lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
 
   const r = player.displayWidth*0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
   this.input.dragDistanceThreshold=0;
-  player.on('drag',(pointer,dragX,dragY)=>moveTo(dragX,dragY));
-  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5) moveTo(p.worldX,p.worldY); });
+  player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
+  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
+  this.input.on('pointerup', ()=> ring.setAlpha(0));
 
   scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
   serve(this);
+}
+
+function onGoal(side){
+  if(goalLock || !puck || !puck.body || !puck.body.enable) return;
+  try{ this.sfx?.goal?.play(); }catch{}
+  if(side==='top') scorePlayer++; else scoreCPU++;
+  startGoalSink.call(this, side);
 }
 
 function centerBodyOnTexture(img){
@@ -519,7 +447,8 @@ function resolvePaddle(paddle, prev, scene){
     const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
     const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
 
-    const base=520, gainN=9, gainT=5, maxV=2000;
+    // slightly softened impulse for bigger faces
+    const base=500, gainN=8.5, gainT=4.7, maxV=2000;
     const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
     const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
     puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
@@ -533,27 +462,13 @@ function resolvePaddle(paddle, prev, scene){
 
 function update(){
   const w=this.scale.width, h=this.scale.height;
-
-  // goal detect (early exit)
-  const GOAL_HALF=130, cx=w/2;
-  if(!goalLock && puck && puck.body && puck.body.enable){
-    if(puck.y < 85 && Math.abs(puck.x-cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scorePlayer++; startGoalSink.call(this, 'top'); return;
-    }
-    if(puck.y > h-85 && Math.abs(puck.x-cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scoreCPU++; startGoalSink.call(this, 'bottom'); return;
-    }
-  }
-
   if(goalLock) return;
 
   // very light AI
   cpu.x += (puck.x - cpu.x) * 0.10;
   cpu.y += (puck.y - cpu.y) * 0.06;
-  cpu.x  = Phaser.Math.Clamp(cpu.x,100,w-100);
-  cpu.y  = Phaser.Math.Clamp(cpu.y,80,h*0.45);
+  cpu.x  = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + cpu.displayWidth*0.5, w - (WALL_MARGIN + cpu.displayWidth*0.5));
+  cpu.y  = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + cpu.displayWidth*0.5, h*0.45);
 
   const curPlayer={x:player.x,y:player.y};
   const curCPU={x:cpu.x,y:cpu.y};
@@ -599,10 +514,12 @@ function startGoalSink(side){
 
 function serve(scene, scoredBy){
   const w=scene.scale.width, h=scene.scale.height;
-  puck.setPosition(w/2, h/2).setAlpha(1).setScale(0.07);
+  puck.setPosition(w/2, h/2).setAlpha(1).setScale(PUCK_SCALE);
   if(!puck.body){ scene.physics.add.existing(puck); }
   puck.body.enable = true; puck.body.checkCollision.none = false;
   puck.setCollideWorldBounds(true);
+  puck.body.setCircle(puck.displayWidth/2); // sync to scale
+  centerBodyOnTexture(puck);
 
   const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
   const speed=Phaser.Math.Between(650,800);
