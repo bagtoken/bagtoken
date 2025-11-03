@@ -140,7 +140,7 @@ const config = {
 let puck = null, player, cpu, scoreText;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
-let isGoalInProgress = false; // Prevent double goal
+let isGoalInProgress = false;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -160,10 +160,9 @@ function create() {
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
 
-  // Bounds: keep puck on table
   this.physics.world.setBounds(80, 80, w - 160, h - 160);
 
-  // Create initial puck
+  // Initial puck
   createPuck.call(this, cx, h/2);
 
   // Paddles
@@ -219,7 +218,7 @@ function movePaddleTo(p,w,h){
 }
 
 function resolvePaddle(paddle, prev){
-  if (!puck) return;
+  if (!puck || !puck.body) return;
   const dx = puck.x - paddle.x;
   const dy = puck.y - paddle.y;
   const dist = Math.hypot(dx,dy) || 0.0001;
@@ -247,7 +246,7 @@ function resolvePaddle(paddle, prev){
 }
 
 function update(time, delta){
-  if (!puck || isGoalInProgress) return;
+  if (isGoalInProgress || !puck || !puck.body) return;
 
   const w = this.scale.width, h = this.scale.height;
   const curPlayer = {x:player.x, y:player.y};
@@ -271,9 +270,7 @@ function update(time, delta){
     scorePlayer++;
     playGoalSound.call(this);
     handleGoal.call(this, 'player');
-  }
-
-  if(puck.y > h - 85 && Math.abs(puck.x - cx) < GOAL_HALF){
+  } else if(puck.y > h - 85 && Math.abs(puck.x - cx) < GOAL_HALF){
     scoreCPU++;
     playGoalSound.call(this);
     handleGoal.call(this, 'cpu');
@@ -282,8 +279,8 @@ function update(time, delta){
   // Velocity clamp
   const v = puck.body.velocity;
   const vmax = 2000, keep = 0.999;
-  v.x = Phaser.Math.Clamp(v.x*keep, -vmax, vmax);
-  v.y = Phaser.Math.Clamp(v.y*keep, -vmax, vmax);
+  v.x = Phaser.Math.Clamp(v.x * keep, -vmax, vmax);
+  v.y = Phaser.Math.Clamp(v.y * keep, -vmax, vmax);
 
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 
@@ -303,13 +300,13 @@ function handleGoal(winner){
     puck = null;
   }
 
-  // Wait 0.3s → feels like goal
-  this.time.delayedCall(300, () => {
+  // Respawn after 0.3s
+  this.time.delayedCall(300, function() {
     const w = this.scale.width, h = this.scale.height;
     createPuck.call(this, w/2, h/2);
     resetPuck.call(this, winner);
     isGoalInProgress = false;
-  });
+  }, [], this); // <-- CRITICAL: pass `this` context
 }
 
 function resetPuck(scoredBy){
