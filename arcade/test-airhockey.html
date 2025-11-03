@@ -316,7 +316,7 @@ canvas{display:block;margin:auto}
 })(window);
 </script>
 
-<!-- ===== Air Hockey Game (robust touch + goal sink, finger-friendly) ===== -->
+<!-- ===== Air Hockey Game (finger-friendly + goal sensors) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -327,13 +327,14 @@ const config = {
 };
 
 // --- size + UX tuning ---
-const PADDLE_SCALE = 0.20;    // bigger for finger control (was 0.14)
-const PUCK_SCALE   = 0.09;    // slightly bigger (was 0.07)
-const GOAL_HALF    = 140;     // a touch wider to match bigger puck (was 130)
-const POINTER_OFFSET_Y = -56; // keep paddle a bit above the finger
-const WALL_MARGIN  = 100;     // keep > radius to avoid clipping
+const PADDLE_SCALE = 0.20;    // bigger for finger control
+const PUCK_SCALE   = 0.09;    // slightly bigger
+const GOAL_HALF    = 140;     // half-width of the mouth area
+const POINTER_OFFSET_Y = -56; // keep paddle above finger
+const WALL_MARGIN  = 100;     // world bounds margin
 
 let puck, player, cpu, scoreText, ring;
+let goalTop, goalBottom;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
 let goalLock = false;
@@ -371,6 +372,15 @@ function create(){
     p.body.setCircle(p.displayWidth/2);
     centerBodyOnTexture(p);
   });
+
+  // --- invisible goal sensors (physics overlap) ---
+  goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
+  goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
+  this.physics.add.existing(goalTop, true);
+  this.physics.add.existing(goalBottom, true);
+
+  this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
+  this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
   // sfx
   this.sfx = {hit1:null,goal:null};
@@ -414,6 +424,13 @@ function create(){
   serve(this);
 }
 
+function onGoal(side){
+  if(goalLock || !puck || !puck.body || !puck.body.enable) return;
+  try{ this.sfx?.goal?.play(); }catch{}
+  if(side==='top') scorePlayer++; else scoreCPU++;
+  startGoalSink.call(this, side);
+}
+
 function centerBodyOnTexture(img){
   const bw=img.body.width, bh=img.body.height;
   img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
@@ -445,20 +462,6 @@ function resolvePaddle(paddle, prev, scene){
 
 function update(){
   const w=this.scale.width, h=this.scale.height;
-
-  // goal detect (radius-aware)
-  const cx=w/2, r = puck.displayWidth * 0.5;
-  if(!goalLock && puck && puck.body && puck.body.enable){
-    if(puck.y < WALL_MARGIN - (r - 5) && Math.abs(puck.x - cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scorePlayer++; startGoalSink.call(this, 'top'); return;
-    }
-    if(puck.y > h - (WALL_MARGIN - (r - 5)) && Math.abs(puck.x - cx) < GOAL_HALF){
-      try{ this.sfx?.goal?.play(); }catch{}
-      scoreCPU++; startGoalSink.call(this, 'bottom'); return;
-    }
-  }
-
   if(goalLock) return;
 
   // very light AI
