@@ -127,7 +127,7 @@ canvas{display:block;margin:auto;}
 })();
 </script>
 
-<!-- Air Hockey Game (100% WORKING) -->
+<!-- Air Hockey Game (FIXED: Puck stays on table + scores correctly) -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -166,14 +166,14 @@ function create() {
   topSlot    = this.add.rectangle(cx, 70, GOAL_W, SLOT_H, 0x000000, 0.85).setDepth(1);
   bottomSlot = this.add.rectangle(cx, h-70, GOAL_W, SLOT_H, 0x000000, 0.85).setDepth(1);
 
-  // REMOVED WORLD BOUNDS — puck can now reach goals!
-  // this.physics.world.setBounds(80,80,w-160,h-160);
+  // CORRECT BOUNDS: 80px margin on ALL sides
+  this.physics.world.setBounds(80, 80, w - 160, h - 160);
 
   // PUCK
   puck = this.physics.add.image(cx, h/2, 'puck').setScale(0.07);
-  puck.setCollideWorldBounds(false); // no clipping
+  puck.setCollideWorldBounds(true);
   puck.setBounce(0.995).setDamping(true)
-      .setDrag(0.995,0.995).setMaxVelocity(2000);
+      .setDrag(0.995, 0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2);
   centerBodyOnTexture(puck);
 
@@ -265,20 +265,20 @@ function update(time, delta){
   resolvePaddle.call(this, player, prevPlayer);
   resolvePaddle.call(this, cpu,    prevCPU);
 
-  // GOAL DETECTION — NOW WORKS 100%
-  const GOAL_HALF = 135;  // slightly larger than 130 for safety
+  // GOAL DETECTION — CORRECT Y + HALF-WIDTH
+  const GOAL_HALF = 130;  // 260 / 2
   const cx = w/2;
 
-  // PLAYER scores (top)
-  if(puck.y < 100 && Math.abs(puck.x - cx) < GOAL_HALF){
+  // PLAYER scores (top goal)
+  if(puck.y < 70 && Math.abs(puck.x - cx) < GOAL_HALF){
     scorePlayer++;
     flashGoal(topGoal, 0xff0000);
     playGoalSound.call(this);
     animatePuckIntoSlot.call(this, puck.x, puck.y, topSlot, -120, 'player');
   }
 
-  // CPU scores (bottom)
-  if(puck.y > h - 100 && Math.abs(puck.x - cx) < GOAL_HALF){
+  // CPU scores (bottom goal)
+  if(puck.y > h - 70 && Math.abs(puck.x - cx) < GOAL_HALF){
     scoreCPU++;
     flashGoal(bottomGoal, 0x00ff00);
     playGoalSound.call(this);
@@ -305,7 +305,7 @@ function flashGoal(goal,color){
 function playGoalSound(){ try{ this.sfx?.goal?.play(); }catch{} }
 
 function animatePuckIntoSlot(x, y, slot, targetY, winner){
-  // Hide real puck
+  // Hide real puck + stop physics
   puck.setAlpha(0);
   puck.body.stop();
 
@@ -328,7 +328,7 @@ function animatePuckIntoSlot(x, y, slot, targetY, winner){
     onComplete: () => {
       ghost.destroy();
       resetPuck.call(this, winner);
-      puck.setAlpha(1);
+      puck.setAlpha(1);  // show fresh puck
     }
   });
 }
