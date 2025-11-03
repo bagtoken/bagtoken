@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -21,6 +20,9 @@ html,body{
  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
  line-height:1.5;overflow-y:auto;scrollbar-width:thin;
  scrollbar-color:#2fbf6b #0b1b13;
+ /* prevent pull-to-refresh jitter while playing */
+ overscroll-behavior: none;
+ -webkit-tap-highlight-color: transparent;
 }
 .panel{
  background:linear-gradient(180deg,var(--panel),var(--panel2));
@@ -42,6 +44,13 @@ html,body{
  margin:10px 0;
 }
 canvas{display:block;margin:auto;}
+/* 🔧 Critical: let Phaser receive all touch events (no page scroll/zoom) */
+canvas,#gameContainer{
+  touch-action:none;
+  -ms-touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+}
 #gameContainer{aspect-ratio:2/3;max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;}
 </style>
 
@@ -93,7 +102,6 @@ canvas{display:block;margin:auto;}
 </footer>
 
 <!-- Live Prices -->
-
 <script>
 (function(){
  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr',BAG_CODE='BAG';
@@ -131,7 +139,6 @@ canvas{display:block;margin:auto;}
 </script>
 
 <!-- Practice Balance -->
-
 <script>
 (function(){
  const BAL_KEY='bag_demo_balance',USD_START=2000;
@@ -152,25 +159,25 @@ canvas{display:block;margin:auto;}
 </script>
 
 <!-- 🎮 Air Hockey Game -->
-
 <script>
 const config={
  type:Phaser.AUTO,
  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,width:1024,height:1536,parent:'gameContainer'},
  backgroundColor:'#021107',
  physics:{default:'arcade',arcade:{debug:false,fps:120,step:1/240}},
- scene:{preload,create,update}
+ /* allow multiple touches if needed */
+ input:{activePointers:3}
 };
 
 let puck,player,cpu,scoreText,topGoal,bottomGoal;
 let scorePlayer=0,scoreCPU=0;
 let prevPlayer={x:0,y:0};
 let lastHit=0;
+let pointerActive=false;
 
-new Phaser.Game(config);
+new Phaser.Game(Object.assign({}, config, { scene:{preload,create,update} }));
 
 function preload(){
- // ✅ Updated table skin asset to your new file
  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
@@ -199,24 +206,38 @@ function create(){
 
  this.physics.add.collider(puck,cpu,onHit,null,this);
 
- // ✅ Built-in drag control for paddle
- player.setInteractive({draggable:true,useHandCursor:false});
+ // ✅ Make the paddle reliably interactive with a circular hit area the size of its display
+ const radius = Math.max(player.displayWidth, player.displayHeight) * 0.5;
+ player.setInteractive(new Phaser.Geom.Circle(0,0,radius), Phaser.Geom.Circle.Contains);
+
+ // ✅ Optional: classic drag on the paddle itself
  this.input.setDraggable(player);
- this.input.on('dragstart',(pointer,obj)=>{
-   if(pointer.y<h*0.5)return;
- });
  this.input.on('drag',(pointer,obj,dragX,dragY)=>{
    const clampedX=Phaser.Math.Clamp(dragX,100,w-100);
    const clampedY=Phaser.Math.Clamp(dragY,h*0.5+40,h-80);
    obj.x=clampedX; obj.y=clampedY;
  });
- this.input.on('dragend',()=>{});
+
+ // ✅ Finger-anywhere control on the lower half (best on mobile)
+ this.input.on('pointerdown', (p)=>{
+   if(p.y>=h*0.5){ pointerActive=true; movePaddleTo(p, w, h); }
+ });
+ this.input.on('pointermove', (p)=>{
+   if(pointerActive && p.isDown){ movePaddleTo(p, w, h); }
+ });
+ this.input.on('pointerup', ()=>{ pointerActive=false; });
 
  scoreText=this.add.text(cx,40,'0 - 0',{
    fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3
  }).setOrigin(0.5,0);
 
  resetPuck.call(this);
+}
+
+function movePaddleTo(pointer, w, h){
+ const clampedX=Phaser.Math.Clamp(pointer.x,100,w-100);
+ const clampedY=Phaser.Math.Clamp(pointer.y,h*0.5+40,h-80);
+ player.x=clampedX; player.y=clampedY;
 }
 
 function checkManualHit(){
