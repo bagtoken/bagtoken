@@ -8,9 +8,11 @@
 
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<script>window.__BAG_FORCE_DEMO = false;</script>
 
-<!-- Optional three.js lazy loader (kept intact) -->
+<!-- Default to DEMO so the page always loads safely -->
+<script>window.__BAG_FORCE_DEMO = true;</script>
+
+<!-- Optional three.js lazy loader -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search);
@@ -91,8 +93,8 @@
   .stage3d{ height:260px; position:relative; border-radius:10px; overflow:hidden; }
   .stage3d canvas{ display:block; width:100%; height:100%; }
 
-  .table-bg{ position:absolute; inset:0; z-index:0; border-radius:10px; }
-  .table-bg img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:10px; filter:brightness(1.08) contrast(1.05); }
+  .table-bg{ position:absolute; inset:0; z-index:0; border-radius:10px; pointer-events:none; }
+  .table-bg img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:10px; filter:brightness(1.08) contrast(1.05); pointer-events:none; }
 
   .roll-row{display:flex;justify-content:center}
   .btn-roll{
@@ -117,13 +119,12 @@
   .f3{ transform: rotateY( 90deg) translateZ(52px); } .f4{ transform: rotateY(-90deg) translateZ(52px); }
   .f2{ transform: rotateX( 90deg) translateZ(52px); } .f5{ transform: rotateX(-90deg) translateZ(52px); }
 
-  /* RAISED DICE POSITION */
-  .dieA{ transform: translate3d(-74px,6px,0) rotateX(10deg) rotateY(-16deg); }
-  .dieB{ transform: translate3d( 74px,10px,0) rotateX(-8deg) rotateY(18deg); }
+  /* 🔼 Raised more (moved up) */
+  .dieA{ transform: translate3d(-74px,-10px,0) rotateX(10deg) rotateY(-16deg); }
+  .dieB{ transform: translate3d( 74px, -6px,0) rotateX(-8deg) rotateY(18deg); }
 
-  /* Tumbles anchored to the higher baseline */
-  @keyframes tumbleA{ from{ transform:translate3d(-74px,6px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d(-74px,6px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn);} }
-  @keyframes tumbleB{ from{ transform:translate3d( 74px,10px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d( 74px,10px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn);} }
+  @keyframes tumbleA{ from{ transform:translate3d(-74px,-10px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d(-74px,-10px,0) rotateX(1.7turn) rotateY(.95turn) rotateZ(.65turn);} }
+  @keyframes tumbleB{ from{ transform:translate3d( 74px, -6px,0) rotateX(0turn) rotateY(0turn) rotateZ(0turn);} to{ transform:translate3d( 74px, -6px,0) rotateX(1.6turn) rotateY(1.1turn) rotateZ(-.60turn);} }
 
   .tumblingA{ animation:tumbleA .42s linear infinite; }
   .tumblingB{ animation:tumbleB .42s linear infinite; }
@@ -184,7 +185,7 @@
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
 
-<!-- Audio: silent-autoplay resilient -->
+<!-- Audio -->
 <script>
 (function(){
   const AudioCtx=window.AudioContext||window.webkitAudioContext; let AC=null, MASTER=null, lastTap=0, watchdog=null;
@@ -211,7 +212,6 @@
     o.connect(g).connect(MASTER); o.start(t); o.stop(t+.27); }
   window.__bagAudio={ chime, thud, resume:window.restartAudio };
 
-  // Roll sound (WebAudio primary, <audio> fallback)
   let diceBuf=null, diceGain=null, bufLoading=false;
   async function loadDiceBuffer(){
     if(diceBuf||bufLoading) return diceBuf; const ac=getAC(); if(!ac) return null;
@@ -233,13 +233,14 @@
 })();
 </script>
 
-<!-- Live pricing (XRPL AMM + cached fallback) -->
+<!-- Pricing: live first; fallback = last live cache, then view cache -->
 <script>
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
   const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
   const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
+
   function fmt(n){ return Number.isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:6}):'—'; }
   function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
   function cacheGet(k,ttl){ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } }
@@ -249,6 +250,7 @@
       return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal});
     } finally { setTimeout(()=>clearTimeout(id),0); }
   }
+
   function updateLine(){
     const liveDot=document.getElementById('liveDot');
     const liveBAG=document.getElementById('liveBAG');
@@ -267,6 +269,7 @@
     }
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
+
   async function fetchXrpUsdLive(){
     try{
       const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
@@ -278,6 +281,7 @@
   }
   function parseXrpAmount(a){ if(a==null) return null; if(typeof a==='string') return Number(a)/1_000_000; if(typeof a==='object'&&a.currency==='XRP') return Number(a.value); return null; }
   function parseIouAmount(a){ if(!a||typeof a!=='object') return null; return Number(a.value); }
+
   async function fetchBagViaAMMLive(){
     const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
     const xrpPerBag=await new Promise(resolve=>{
@@ -308,6 +312,7 @@
     cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd}); cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
     return true;
   }
+
   function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
   function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
     if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
@@ -315,6 +320,7 @@
     if(ok && PRICES.source==='—') PRICES.source='last-live';
     return ok;
   }
+
   async function refresh(){ const gotX=await fetchXrpUsdLive(); const gotB=await fetchBagViaAMMLive(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } updateLine(); }
   (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
   document.addEventListener('DOMContentLoaded', updateLine);
@@ -327,7 +333,6 @@
 })();
 </script>
 
-<!-- Stake wire-up -->
 <script>
 (function(global){
   const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
@@ -388,7 +393,6 @@
 </head>
 <body>
 <a href="/casino/" class="back-casino">Back to Casino</a>
-
 <section class="game-header">
   <picture>
     <source type="image/webp" srcset="/assets/bag-dice-960.webp 960w, /assets/bag-dice-1024.webp 1024w" sizes="(min-width:900px) 420px, 70vw">
@@ -490,10 +494,11 @@
               <img src="/casino/assets/img/green-felt-3d-1024.png"
                    srcset="/casino/assets/img/green-felt-3d-960.png 960w,
                            /casino/assets/img/green-felt-3d-1024.png 1024w"
-                   alt="3D Dice Table Felt">
+                   alt="3D Dice Table Felt"
+                   style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0;z-index:0;border-radius:10px;filter:brightness(1.08) contrast(1.05);">
             </picture>
 
-            <div class="cssstage">
+            <div class="cssstage" style="position:relative;z-index:2;">
               <div class="dice-row">
                 <div class="die dieA" id="dieA"></div>
                 <div class="die dieB" id="dieB"></div>
@@ -508,10 +513,10 @@
             <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
             <span class="pill">Bet: <b id="betLbl">1</b></span>
             <span class="pill">Last: <b id="lastLbl">—</b></span>
-            <!-- Rules pill REMOVED from HUD by request -->
           </div>
 
           <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">If you don't hear sound: tap ROLL once, turn off Silent, raise volume.</p>
+
           <div class="result"><div class="t" id="rollText" role="status" aria-live="polite">Come-out roll — Need 7 or 11 to WIN · 2/3/12 is CRAPS · otherwise sets the Point</div></div>
         </div>
       </div>
@@ -519,10 +524,8 @@
   </div>
 </section>
 
-<!-- Floating Rules FAB (ℹ️ added) -->
+<!-- Floating ℹ️ Rules pill -->
 <button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
-
-<!-- Rules modal -->
 <div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
   <div class="rules-modal" role="document">
     <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
@@ -537,7 +540,6 @@
   </div>
 </div>
 
-<!-- Demo/live session wiring -->
 <script>
 (function(){
   const qs=new URLSearchParams(location.search); const forceLive = qs.get('live')==='1';
@@ -607,7 +609,6 @@
 })();
 </script>
 
-<!-- HUD updater -->
 <script>
 (function(){
   const curToggle=document.getElementById('curToggle');
@@ -641,7 +642,6 @@
 })();
 </script>
 
-<!-- Payout preview module -->
 <script>
 (function(w){
   const nfBAG=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
@@ -681,7 +681,6 @@
 })(window);
 </script>
 
-<!-- Init stake wiring -->
 <script>
   BAGStakeWire.init({
     usdInput:'#usdBet',
@@ -697,20 +696,16 @@
   });
 </script>
 
-<!-- Rules open/close (FAB only) -->
 <script>
 (function(){
   const fab=document.getElementById('rulesFab'), ov=document.getElementById('rulesOverlay'), x=document.getElementById('rulesClose');
   function open(){ ov.style.display='grid'; }
   function close(){ ov.style.display='none'; }
-  fab?.addEventListener('click', open);
-  x?.addEventListener('click', close);
-  ov?.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  fab?.addEventListener('click', open); x?.addEventListener('click', close); ov?.addEventListener('click', e=>{ if(e.target===ov) close(); });
   addEventListener('keydown', e=>{ if(e.key==='Escape') close(); });
 })();
 </script>
 
-<!-- Dice logic (CSS 3D) -->
 <script>
 (function(){
   const dieA=document.getElementById('dieA'), dieB=document.getElementById('dieB');
@@ -740,9 +735,9 @@
     dieA.classList.remove('tumblingA'); dieB.classList.remove('tumblingB');
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     dieA.classList.add('tossing'); dieB.classList.add('tossing');
-    /* final settle poses higher on the felt */
-    dieA.style.transform=`translate3d(-74px,26px,0) ${pose(a)}`;
-    dieB.style.transform=`translate3d( 74px,30px,0) ${pose(b)}`;
+    /* 🔼 End pose moved up as well */
+    dieA.style.transform=`translate3d(-74px,68px,0) ${pose(a)}`;
+    dieB.style.transform=`translate3d( 74px,72px,0) ${pose(b)}`;
     await new Promise(r=>setTimeout(r,700));
     dieA.classList.remove('tossing'); dieB.classList.remove('tossing');
   }
@@ -792,8 +787,8 @@
     const isCO = !ROUND.active || ROUND.point==null;
 
     if(!window.__bagSession || !__bagSession.active()) { alert('Start a session at The Cage'); rollBtn.disabled=false; return; }
-    if(sUsdNow<MIN_USD){ alert(`Minimum $${MIN_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
-    if(sUsdNow>MAX_USD){ alert(`Maximum $${MAX_USD.toFixed(2)} stake`); rollBtn.disabled=false; return; }
+    if(sUsdNow<1){ alert(`Minimum $1.00 stake`); rollBtn.disabled=false; return; }
+    if(sUsdNow>2000){ alert(`Maximum $2000.00 stake`); rollBtn.disabled=false; return; }
 
     if(isCO){
       if(!(sBagNow>0)){ alert('Enter a stake first'); rollBtn.disabled=false; return; }
@@ -852,12 +847,12 @@
     rollBtn.disabled=false;
   });
 
-  // Initial higher pose
+  /* Initial pose, also higher */
   (function initPose(){
     const FRONT={1:()=>`rotateX(0rad) rotateY(0rad)`,2:()=>`rotateX(-1.5708rad)`,3:()=>`rotateY(-1.5708rad)`,4:()=>`rotateY(1.5708rad)`,5:()=>`rotateX(1.5708rad)`,6:()=>`rotateY(3.1416rad)`};
     const pose=v=>(FRONT[v]||FRONT[1])();
-    dieA.style.transform=`translate3d(-74px,6px,0) ${pose(5)}`;
-    dieB.style.transform=`translate3d( 74px,10px,0) ${pose(2)}`;
+    dieA.style.transform=`translate3d(-74px,64px,0) ${pose(5)}`;
+    dieB.style.transform=`translate3d( 74px,68px,0) ${pose(2)}`;
   })();
 })();
 </script>
