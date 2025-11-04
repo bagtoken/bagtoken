@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>$BAG Skeet Ball — Arcade P2E</title>
+
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
+<!-- Shared overlay + session -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
+
+<style>
+  :root {
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--line:#173524;
+  }
+  html,body {margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif;overflow:hidden;}
+  #game-container{position:relative;width:100vw;height:100vh;overflow:hidden;}
+  .ui-top{position:absolute;top:10px;left:0;right:0;display:flex;justify-content:space-between;padding:0 20px;z-index:10;font-size:18px;font-weight:600;}
+  .btn-back{cursor:pointer;color:var(--gold);}
+  .scoreboard{color:var(--gold);}
+  .play-again{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);padding:12px 24px;font-size:18px;border:2px solid var(--gold);border-radius:8px;background:var(--panel);color:var(--gold);cursor:pointer;display:none;}
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div class="ui-top">
+    <div class="btn-back" onclick="location.href='/arcade/'">← Back to Arcade</div>
+    <div class="scoreboard" id="scoreText">Score: 0 | Balls: 9</div>
+  </div>
+  <button class="play-again" id="playAgainBtn" onclick="restartGame()">Play Again</button>
+</div>
+
+<script>
+window.__BAG_FORCE_DEMO = true;
+
+// Audio setup
+const entrySound = new Audio("/arcade/assets/sounds/air-hockey-entry-sound.mp3");
+const scoreSound = new Audio("/arcade/assets/sounds/air-hockey-score.mp3");
+entrySound.volume = 0.4; scoreSound.volume = 0.5;
+window.addEventListener('load',()=>entrySound.play().catch(()=>{}));
+
+let game, score=0, ballsLeft=9, inPlay=false;
+
+const config = {
+  type: Phaser.AUTO,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  backgroundColor: "#0b1b13",
+  physics: { default: 'matter', matter: { gravity: { y: 0.8 }, debug: false } },
+  scene: { preload, create, update }
+};
+game = new Phaser.Game(config);
+
+let ball, lanes = [];
+
+function preload(){
+  this.load.image('ball', '/arcade/assets/img/bag-ball.png'); // $BAG ball image
+}
+
+function create(){
+  const w=this.sys.game.config.width, h=this.sys.game.config.height;
+  const lane=this.add.rectangle(w/2,h-150,w*0.9,20,0x173524).setOrigin(0.5);
+  this.matter.add.gameObject(lane,{isStatic:true});
+
+  // Create scoring rings
+  const ringY = h*0.25;
+  const rings = [ {x:w*0.25,pts:10}, {x:w*0.4,pts:20}, {x:w*0.55,pts:30}, {x:w*0.7,pts:40}, {x:w*0.85,pts:50}, {x:w*0.5,pts:100,y:h*0.15} ];
+  rings.forEach(r=>{
+    const ry=r.y||ringY;
+    const ring=this.add.circle(r.x,ry,40,0x244b35);
+    const label=this.add.text(r.x,ry-6,r.pts,{font:'16px Inter',color:'#ffe175'}).setOrigin(0.5);
+    const sensor=this.matter.add.circle(r.x,ry,40,{isSensor:true,isStatic:true});
+    sensor.points=r.pts;
+    lanes.push(sensor);
+  });
+
+  this.input.on('pointerdown', pointer=>{
+    if(inPlay || ballsLeft<=0) return;
+    inPlay=true;
+    ball=this.matter.add.image(pointer.x,h-100,'ball');
+    ball.setCircle(25);
+    ball.setFriction(0.005);
+    ball.setBounce(0.6);
+    ball.setVelocity((pointer.x-w/2)*0.01,-12);
+    ball.setScale(0.4);
+    ballsLeft--;
+    updateScoreText();
+  });
+
+  this.matter.world.on('collisionstart', (event)=>{
+    event.pairs.forEach(pair=>{
+      lanes.forEach(l=>{
+        if(pair.bodyA===l||pair.bodyB===l){
+          score+=l.points;
+          scoreSound.play().catch(()=>{});
+          updateScoreText();
+        }
+      });
+    });
+  });
+}
+
+function update(){
+  if(ball && ball.y>window.innerHeight){
+    inPlay=false;
+    ball.destroy();
+    if(ballsLeft<=0) endRound();
+  }
+}
+
+function updateScoreText(){
+  document.getElementById('scoreText').innerText = `Score: ${score} | Balls: ${ballsLeft}`;
+}
+
+function endRound(){
+  const btn=document.getElementById('playAgainBtn');
+  btn.style.display='block';
+}
+
+function restartGame(){
+  score=0; ballsLeft=9; inPlay=false;
+  updateScoreText();
+  document.getElementById('playAgainBtn').style.display='none';
+}
+</script>
+</body>
+</html>
