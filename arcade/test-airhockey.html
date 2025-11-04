@@ -49,28 +49,13 @@ canvas{display:block;margin:auto}
 .pill b{font-weight:800}
 .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
-
-/* Sound gate overlay */
-.sound-gate{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);z-index:2000}
-.sound-card{background:linear-gradient(180deg,#0d2217,#0b1b13);border:1px solid #244b35;border-radius:16px;box-shadow:0 10px 28px rgba(0,0,0,.4);padding:16px 18px;text-align:center;max-width:360px}
-.sound-card h3{margin:0 0 8px;font-size:1.1rem;color:#ffe175}
-.sound-btn{display:inline-block;margin-top:8px}
-.sound-toggle{position:fixed;right:18px;top:18px;z-index:1100;border-radius:999px;padding:8px 12px;font-weight:900}
 </style>
 </head>
 <body>
 
 <a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
-<button id="soundToggle" class="btn sound-toggle" aria-label="Mute/Unmute">🔊</button>
-<div id="soundGate" class="sound-gate" role="dialog" aria-modal="true" aria-label="Enable sound">
-  <div class="sound-card">
-    <h3>Tap to enable sound</h3>
-    <p class="micro">One quick tap to unlock audio on your device.</p>
-    <button id="soundEnable" class="btn sound-btn">Enable Sound</button>
-  </div>
-</div>
 
-<!-- HERO IMAGE (your files) -->
+<!-- HERO IMAGE -->
 <section class="hero-wrap" aria-label="$BAG Air Hockey">
   <picture>
     <source type="image/webp"
@@ -186,7 +171,6 @@ canvas{display:block;margin:auto}
 
 <!-- ===== LIVE PRICING (Dice engine with cache + AMM) ===== -->
 <script>
-/* unchanged — pricing engine */
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
@@ -268,7 +252,6 @@ canvas{display:block;margin:auto}
 
 <!-- ===== Stake Wire (Dice) ===== -->
 <script>
-/* unchanged — stake sync */
 (function(global){
   const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
   const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
@@ -333,7 +316,7 @@ canvas{display:block;margin:auto}
 })(window);
 </script>
 
-<!-- ===== Air Hockey Game (robust audio unlock + fallbacks + goal sink) ===== -->
+<!-- ===== Air Hockey Game (auto audio unlock + hardened goal sound) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -341,7 +324,7 @@ const config = {
   backgroundColor: '#021107',
   physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
   input: { activePointers: 5 },
-  audio: { disableWebAudio: false, noAudio: false, context: null, detune: 0, rate: 1 }
+  audio: { disableWebAudio: false, noAudio: false }
 };
 
 // sizes
@@ -358,10 +341,8 @@ let goalLock=false;
 // stuck tracking
 let stuckStart=0, lastKickAt=0;
 
-// UI refs
-const gateEl=document.getElementById('soundGate');
-const gateBtn=document.getElementById('soundEnable');
-const toggleBtn=document.getElementById('soundToggle');
+// auto-unlock control
+let entryPlayed=false;
 
 new Phaser.Game(Object.assign({}, config, { scene:{ preload, create, update }}));
 
@@ -371,36 +352,36 @@ function preload(){
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 
-  try{
-    this.load.audio('score','/arcade/assets/sounds/air-hockey-score.mp3');       // goal
-    this.load.audio('entry','/arcade/assets/sounds/air-hockey-entry-sound.mp3'); // entry
-    this.load.audio('hit1','/arcade/assets/sounds/hit1.mp3');                    // optional
-  }catch(e){ console.warn('Audio load exception', e); }
+  // your sounds
+  this.load.audio('score','/arcade/assets/sounds/air-hockey-score.mp3');       // goal
+  this.load.audio('entry','/arcade/assets/sounds/air-hockey-entry-sound.mp3'); // entry
+  // optional contact sound if present
+  this.load.audio('hit1','/arcade/assets/sounds/hit1.mp3');
 
-  this.load.on('filecomplete-audio-entry', ()=>console.log('[AUDIO] entry loaded'));
   this.load.on('filecomplete-audio-score', ()=>console.log('[AUDIO] score loaded'));
-  this.load.on('filecomplete-audio-hit1', ()=>console.log('[AUDIO] hit1 loaded'));
-  this.load.on('loaderror', (file)=>console.warn('[LOAD ERROR]', file?.key, file?.src));
+  this.load.on('filecomplete-audio-entry', ()=>console.log('[AUDIO] entry loaded'));
 }
 
 function create(){
-  console.log('[SOUND] locked=', this.sound.locked, ' usingWebAudio=', this.sound.usingWebAudio);
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
+  // don’t pause audio when tab blurred
   this.sound.pauseOnBlur=false;
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
   this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
+  // puck
   puck=this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
+  // paddles
   player=this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
   cpu   =this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
   [player,cpu].forEach(p=>{ p.setImmovable(true); p.setCollideWorldBounds(true); p.body.setCircle(p.displayWidth/2); centerBodyOnTexture(p); });
 
-  // goals
+  // goal sensors
   goalTop=this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
   goalBottom=this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
   this.physics.add.existing(goalTop, true);
@@ -409,39 +390,45 @@ function create(){
   this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
   // sounds
-  this.sfx={ hit1:null, score:null, entry:null, muted:false, htmlEntry:null, htmlScore:null };
-  try{
-    this.sfx.hit1  = this.sound.add('hit1',{volume:.35});
-    this.sfx.score = this.sound.add('score',{volume:.8});
-    this.sfx.entry = this.sound.add('entry',{volume:.8});
-  }catch(e){ console.warn('Phaser sound add failed', e); }
-
-  // HTMLAudio fallbacks (same-origin only)
-  this.sfx.htmlEntry = new Audio('/arcade/assets/sounds/air-hockey-entry-sound.mp3');
-  this.sfx.htmlScore = new Audio('/arcade/assets/sounds/air-hockey-score.mp3');
-
-  // Sound toggle
-  toggleBtn.addEventListener('click', ()=>{
-    this.sound.mute = !this.sound.mute;
-    this.sfx.muted = this.sound.mute;
-    toggleBtn.textContent = this.sound.mute ? '🔈' : '🔊';
-  });
-
-  // Gate if locked, else fire entry
-  if(this.sound.locked){ gateEl.style.display='flex'; }
-  else { unlockAndChime(this); }
-
-  // Explicit unlock paths on user gesture
-  const tryUnlock=()=>{
-    unlockAndChime(this);
-    gateEl.style.display='none';
+  this.sfx = {
+    hit1:  this.sound.add('hit1',  { volume:.45 }),
+    score: this.sound.add('score', { volume:1.0 }),
+    entry: this.sound.add('entry', { volume:.9 })
   };
-  gateBtn.addEventListener('click', tryUnlock, {once:true});
-  this.input.once('pointerdown', tryUnlock);
-  window.addEventListener('keydown', ()=>{ if(this.sound.locked) tryUnlock(); }, {once:true});
+  // HTMLAudio fallbacks (same-origin)
+  this.htmlAudio = {
+    score: new Audio('/arcade/assets/sounds/air-hockey-score.mp3'),
+    entry: new Audio('/arcade/assets/sounds/air-hockey-entry-sound.mp3')
+  };
+
+  // AUTO UNLOCK & ENTRY — no UI, fires on first interaction anywhere
+  const unlockOnce = async ()=>{
+    try{
+      if(this.sound.locked) this.sound.unlock();
+      if(this.sound.context && this.sound.context.state!=='running'){
+        await this.sound.context.resume();
+      }
+    }catch(e){ console.warn('[AUDIO] resume fail', e); }
+
+    if(!entryPlayed){
+      if(tryPhaser(this.sfx.entry)) console.log('[AUDIO] entry via Phaser');
+      else if(await tryHTML(this.htmlAudio.entry)) console.log('[AUDIO] entry via HTMLAudio');
+      else beep(this.sound.context), console.log('[AUDIO] entry via beep');
+      entryPlayed=true;
+    }
+  };
+  // bind once to multiple signals
+  window.addEventListener('pointerdown', unlockOnce, { once:true, passive:true });
+  window.addEventListener('touchstart', unlockOnce, { once:true, passive:true });
+  window.addEventListener('keydown', unlockOnce, { once:true });
+
+  // If policy allows autoplay already, try immediately
+  setTimeout(()=>{ if(!entryPlayed && !this.sound.locked) { tryPhaser(this.sfx.entry) || tryHTML(this.htmlAudio.entry) || beep(this.sound.context); entryPlayed=true; } }, 0);
 
   // touch ring + controls
-  ring=this.add.graphics({x:0,y:0}); ring.lineStyle(2,0xFFE175,0.8).strokeCircle(0,0,Math.max(22,player.displayWidth*0.35)); ring.setAlpha(0);
+  ring=this.add.graphics({ x:0, y:0 });
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
+  ring.setAlpha(0);
 
   const clamp=Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
@@ -449,8 +436,10 @@ function create(){
     const half=player.displayWidth*0.5;
     const tx=clamp(gx, WALL_MARGIN+half, ww-(WALL_MARGIN+half));
     const ty=clamp(gy+POINTER_OFFSET_Y, hh*0.5+half, hh-WALL_MARGIN);
-    player.x=tx; player.y=ty; ring.x=gx; ring.y=gy;
+    player.x=tx; player.y=ty;
+    ring.x=gx; ring.y=gy;
   };
+
   const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
   lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
   lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
@@ -465,53 +454,34 @@ function create(){
   this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
   this.input.on('pointerup', ()=> ring.setAlpha(0));
 
-  scoreText=this.add.text(cx,40,'0 - 0',{fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
+  scoreText=this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
   serve(this);
 }
 
-async function unlockAndChime(scene){
-  // 1) Resume WebAudio context if possible
+// helpers for audio paths
+function tryPhaser(snd){
+  try{ if(snd){ snd.stop(); snd.play(); return true; } }catch{}
+  return false;
+}
+async function tryHTML(aud){
+  try{ aud.currentTime=0; await aud.play(); return true; }catch{ return false; }
+}
+function beep(ctx){
   try{
-    if(scene.sound.locked){ scene.sound.unlock(); }
-    if(scene.sound.context && scene.sound.context.state!=='running'){
-      await scene.sound.context.resume();
-    }
-  }catch(e){ console.warn('[AUDIO] resume failed', e); }
-
-  console.log('[AUDIO] after unlock: locked=', scene.sound.locked, 'state=', scene.sound.context?.state);
-
-  // 2) Try Phaser playback
-  try{
-    const s=scene.sfx.entry;
-    if(s){ s.stop(); s.play(); console.log('[AUDIO] Phaser entry play OK'); return; }
-  }catch(e){ console.warn('[AUDIO] Phaser entry failed', e); }
-
-  // 3) HTMLAudio fallback
-  try{
-    await scene.sfx.htmlEntry.play();
-    console.log('[AUDIO] HTMLAudio entry play OK');
-    return;
-  }catch(e){ console.warn('[AUDIO] HTMLAudio entry failed', e); }
-
-  // 4) Oscillator beep fallback (guarantees *some* sound)
-  try{
-    const ctx = scene.sound.context || new (window.AudioContext||window.webkitAudioContext)();
-    const o=ctx.createOscillator(); const g=ctx.createGain();
-    o.type='square'; o.frequency.value=880; g.gain.value=0.1;
-    o.connect(g).connect(ctx.destination); o.start(); setTimeout(()=>{ o.stop(); },300);
-    console.log('[AUDIO] Oscillator beep played');
-  }catch(e){ console.warn('[AUDIO] Oscillator beep failed', e); }
+    const ac = ctx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type='square'; o.frequency.value=880; g.gain.value=0.09;
+    o.connect(g).connect(ac.destination); o.start(); setTimeout(()=>o.stop(),200);
+  }catch{}
 }
 
 function onGoal(side){
   if(goalLock || !puck || !puck.body || !puck.body.enable) return;
 
-  // Try Phaser, else HTMLAudio
-  let played=false;
-  try{ if(this.sfx.score){ this.sfx.score.stop(); this.sfx.score.play(); played=true; console.log('[AUDIO] Phaser goal'); } }catch{}
-  if(!played){
-    try{ this.sfx.htmlScore.currentTime=0; this.sfx.htmlScore.play(); console.log('[AUDIO] HTML goal'); }catch(e){ console.warn('[AUDIO] goal fallback failed', e); }
+  // Hardened goal sound: Phaser first, then HTMLAudio
+  if(!tryPhaser(this.sfx.score)){
+    tryHTML(this.htmlAudio.score);
   }
 
   if(side==='top') scorePlayer++; else scoreCPU++;
@@ -550,12 +520,11 @@ function update(){
   const w=this.scale.width, h=this.scale.height;
   if(goalLock) return;
 
-  // CPU AI with corner bias
+  // CPU AI w/ corner bias
   const cx=w/2, rCpu=cpu.displayWidth*0.5, rPuck=puck.displayWidth*0.5;
-
   const nearTop=puck.y < h*0.45;
   const nearSide=(puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
-  const pullToCenter=(nearTop && nearSide) ? 0.35 : 0;
+  const pullToCenter=(nearTop && nearSide) ? 0.35 : 0.0;
 
   const targetX=Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(Phaser.Math.Linear(puck.x, cx, pullToCenter), WALL_MARGIN+rCpu, w-(WALL_MARGIN+rCpu)), 0.10);
   const cpuChaseDepth=Math.min(puck.y, h*0.38);
@@ -573,13 +542,14 @@ function update(){
     cpu.y=Phaser.Math.Clamp(cpu.y, WALL_MARGIN+rCpu, h*0.45);
   }
 
-  // corner-escape
+  // corner-escape kick
   const now=performance.now();
   const v = puck.body ? puck.body.velocity : {x:0,y:0};
   const speed=Math.hypot(v.x,v.y);
 
   const inCpuHalf=puck.y < h*0.5;
-  const inCornerish=inCpuHalf && (puck.y < WALL_MARGIN + CORNER_BAND) &&
+  const inCornerish=inCpuHalf &&
+    (puck.y < WALL_MARGIN + CORNER_BAND) &&
     ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
 
   if(inCornerish && speed < STUCK_SPEED){
