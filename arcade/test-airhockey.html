@@ -357,9 +357,12 @@ function preload(){
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
+
+  // --- AUDIO ---
   try{
     this.load.audio('hit1','/arcade/assets/sounds/hit1.mp3');
-    this.load.audio('goal','/arcade/assets/sounds/goal.mp3');
+    this.load.audio('score','/arcade/assets/sounds/air-hockey-score.mp3');          // goal sound (your file)
+    this.load.audio('entry','/arcade/assets/sounds/air-hockey-entry-sound.mp3');    // entry sound (your file)
   }catch(e){}
 }
 
@@ -394,11 +397,15 @@ function create(){
   this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
   // sfx
-  this.sfx = {hit1:null,goal:null};
+  this.sfx = {hit1:null,score:null,entry:null};
   try{
     this.sfx.hit1 = this.sound.add('hit1',{volume:.35});
-    this.sfx.goal = this.sound.add('goal',{volume:.5});
+    this.sfx.score = this.sound.add('score',{volume:.6});
+    this.sfx.entry = this.sound.add('entry',{volume:.6});
   }catch(e){}
+
+  // --- Play entry sound once (handles mobile unlock) ---
+  playEntryOnce(this);
 
   // touch ring so finger doesn't hide the aim point
   ring = this.add.graphics({ x: 0, y: 0 });
@@ -435,9 +442,21 @@ function create(){
   serve(this);
 }
 
+function playEntryOnce(scene){
+  if(window.__AH_ENTRY_PLAYED__) return;
+  const doPlay=()=>{ try{ scene.sfx?.entry?.play(); }catch{} window.__AH_ENTRY_PLAYED__=true; };
+
+  if(!scene.sound.locked){
+    doPlay();
+  }else{
+    scene.sound.once('unlocked', ()=>{ if(!window.__AH_ENTRY_PLAYED__) doPlay(); });
+    scene.input.once('pointerdown', ()=>{ if(!window.__AH_ENTRY_PLAYED__) doPlay(); });
+  }
+}
+
 function onGoal(side){
   if(goalLock || !puck || !puck.body || !puck.body.enable) return;
-  try{ this.sfx?.goal?.play(); }catch{}
+  try{ this.sfx?.score?.play(); }catch{}
   if(side==='top') scorePlayer++; else scoreCPU++;
   startGoalSink.call(this, side);
 }
