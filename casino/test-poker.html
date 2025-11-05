@@ -1,1242 +1,299 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>$BAG Live Pricing — AMM Feed</title>
 <meta name="format-detection" content="telephone=no" />
-<title>BAG Poker — 5-Card Draw</title>
-
-<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
-<script>window.__BAG_FORCE_DEMO = false;</script>
 
 <style>
-  *{box-sizing:border-box}
   :root{
-    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
-    --lose:#e25b5b; --warn:#e8a85c;
-    --cardW:clamp(64px,16vw,96px); --cardH:calc(var(--cardW)*1.42);
-    --win-bg: rgba(10,12,16,.70);
+    --bg:#06120d;--panel:#0d2217;--line:#1c3b2a;--fg:#eaf3ee;--muted:#aeb7af;
+    --ok:#2fbf6b;--warn:#f0b429;--err:#ef4444;--gold:#ffe175;
   }
-  html,body{
-    margin:0;background:var(--bg);color:var(--fg);
-    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;
-    -webkit-text-size-adjust:100%;
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1120px;margin:0 auto;padding:16px}
+  .ticker{
+    display:flex;align-items:center;gap:12px;
+    background:linear-gradient(180deg,#0c2218,#091a13);
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
   }
-  body{ touch-action: manipulation; }
-  img{display:block;max-width:100%;height:auto}
-  button,input{font-size:16px}
-
-  .back-casino{
-    position:fixed;top:18px;left:18px;z-index:1000;
-    background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
-    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
-    box-shadow:0 4px 0 #b08a19;transition:all .15s ease
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 2px rgba(255,255,255,.06) inset}
+  .dot.ok{background:var(--ok)}
+  .dot.warn{background:var(--warn)}
+  .dot.err{background:var(--err)}
+  .label{font-weight:600;letter-spacing:.2px}
+  .value{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sep{opacity:.4}
+  .muted{color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}
+  .card{
+    background:linear-gradient(180deg,#0b1b13,#0a1812);
+    border:1px solid var(--line);border-radius:14px;padding:16px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
   }
-  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
-  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
-
-  .game-header{text-align:center;padding:36px 10px 14px}
-  .game-header img.hero-img{margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
-  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
-  @media (min-width:900px){
-    .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
+  h1{margin:0 0 10px;font-size:clamp(18px,3.5vw,24px)}
+  .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .pill{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.02)
   }
-
-  .game-teaser{padding:10px 16px 28px;background:
-    radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
-    radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
-    border-top:1px solid #131313;border-bottom:1px solid #131313}
-  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
-  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
-
-  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
-    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
-  .pad{padding:16px}
-
-  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
-  .stack{display:grid;gap:10px}
-  .choice{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
-  .chip input{accent-color:#2fbf6b}
-  .mono{font-variant-numeric:tabular-nums}
-  .micro{font-size:.85rem;color:#a8b5ab}
-  .muted{color:#cfd6cf}
-  .divider{height:1px;background:#123221;margin:10px 0}
-  .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
-
-  #liveDot{margin-right:6px}
-  .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
-
-  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px;overflow:hidden}
-
-  /* === MIRROR BLACKJACK FELT: skin layer + board offset === */
-  .felt{
-    position:relative;
-    border:1px solid #24533a;border-radius:12px;padding:12px;
-    min-height:1100px;
-    overflow:hidden;
-    background:none;
-  }
-  .felt::before{
-    content:"";
-    position:absolute; inset:0;
-    background:url("/casino/assets/img/poker-table-1024.webp") center top / cover no-repeat;
-    z-index:0; transform:translateZ(0);
-  }
-  @supports not (background: url("/casino/assets/img/poker-table-1024.webp")){
-    .felt::before{
-      background:url("/casino/assets/img/poker-table-1024.png") center top / cover no-repeat;
-    }
-  }
-  #tableBoard{ position:relative; z-index:1; margin-top:160px; }
-
-  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
-    border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
-
-  .hand{position:relative;min-height:calc(var(--cardH) + 36px);padding-top:20px}
-  .label{position:absolute;top:0;left:0;color:#bcd0c4;font-size:12px}
-  .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
-
-  .row-cards{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;width:100%;max-width:100%}
-  /* mirror BJ cards: transparent so felt shows through */
-  .card{width:var(--cardW);height:var(--cardH);border-radius:12px;border:2px solid #dcdcdc;background:transparent;overflow:hidden;box-shadow:0 10px 18px rgba(0,0,0,.32); animation:dealPop .18s ease; position:relative}
-  .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:transparent}
-  .hold-badge{position:absolute;right:6px;bottom:6px;font-size:10px;background:rgba(0,0,0,.55);color:#fff;padding:3px 6px;border-radius:6px;opacity:0;transform:translateY(4px);transition:all .18s ease}
-  .card.hold{outline:2px solid #2fbf6b; outline-offset:2px}
-  .card.hold .hold-badge{opacity:1; transform:translateY(0)}
-  /* tiny nudge like BJ player shift */
-  #youCards{ margin-left:24px; }
-
-  .btnbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
-  .btn{min-width:120px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c); transition:transform .06s ease, box-shadow .2s ease}
-  .btn.alt{color:#e9efe9;background:#15261c;border:1px solid #2b6a48}
-  .btn:disabled{opacity:.65;cursor:not-allowed}
-  .btn.pulse{transform:translateY(1px)}
-
-  /* --- Tiny HUD --- */
-  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:8px 2px 0; }
-  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
-  .hudbar .pill b{ font-weight:800 }
-
-  @keyframes dealPop{ from{ transform:scale(.98); opacity:.0 } to{ transform:scale(1); opacity:1 } }
-
-  /* Felt flashes + table shake (parity with Blackjack) */
-  #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
-  #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
-  #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
-  .table.shake { animation:shake .5s cubic-bezier(.36,.07,.19,.97); }
-  @keyframes shake{10%,90%{transform:translate3d(-1px,0,0)}20%,80%{transform:translate3d(2px,0,0)}30%,50%,70%{transform:translate3d(-4px,0,0)}40%,60%{transform:translate3d(4px,0,0)}}
-  @keyframes glowGreen{ from{ box-shadow:0 0 0 0 rgba(47,191,107,.0) inset } to{ box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset } }
-  @keyframes glowRed  { from{ box-shadow:0 0 0 0 rgba(226,91,91,.0) inset } to{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset } }
-  @keyframes glowGold { from{ box-shadow:0 0 0 0 rgba(255,225,117,.0) inset } to{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset } }
-  
-  /* Quick Amount buttons */
-  .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  .preset-chip{
-    appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
-    padding:8px 12px;font-weight:900;letter-spacing:.2px;cursor:pointer;
-    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
-    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
-  }
-  .preset-chip:hover{filter:brightness(1.03)}
-  .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
-  .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
-  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
-
-  /* Rules modal */
-  .rules-fab{position:fixed;right:16px;bottom:16px;z-index:1000;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:999px;padding:10px 14px;font-weight:800}
-  .rules-overlay{display:none;position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,.55);place-items:center;padding:16px}
-  .rules-modal{max-width:680px;width:100%;background:#0b1b13;border:1px solid #173524;border-radius:16px;padding:18px;position:relative}
-  .rules-close{position:absolute;right:22px;top:16px;border:0;background:transparent;color:#e9efe9;font-size:22px;cursor:pointer}
-  .rules-note{margin-top:10px;color:#a8b5ab}
-
-  /* —— Win Readout (Dice-parity) —— */
-  #pk-win-readout{
-    background: var(--panel2); border:1px solid var(--line); border-radius:14px;
-    padding:16px; box-shadow:0 10px 24px var(--shadow); color:var(--fg);
-  }
-  #pk-win-readout .row{display:flex; justify-content:space-between; gap:12px; margin:8px 0}
-  #pk-win-readout .title{font-weight:800; letter-spacing:.2px}
-  #pk-win-readout .muted{color:var(--muted)}
-  #pk-win-readout .note{color:var(--muted); font-size:.92rem; margin-top:10px; line-height:1.45}
+  code.kv{background:rgba(255,255,255,.04);padding:2px 6px;border-radius:6px;border:1px solid var(--line)}
+  .gold{color:var(--gold)}
+  @media (min-width:720px){ .grid{grid-template-columns:1fr 1fr} }
 </style>
-
-<!-- SHARED OVERLAY / SESSION + QUICK AMOUNTS -->
-<script src="/js/bag-overlay.js"></script>
-<script src="/js/bag-session.js"></script>
-<script src="/js/bag-quick-amounts.js"></script>
 </head>
-
 <body>
-<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+  <div class="wrap">
 
-<section class="game-header">
-  <picture>
-    <source type="image/webp" srcset="/assets/bag-poker-1024.webp 1024w, /assets/bag-poker-960.webp 960w" sizes="(min-width:900px) 420px, 90vw">
-    <source type="image/png"  srcset="/assets/bag-poker-1024.png 1024w, /assets/bag-poker-960.png 960w" sizes="(min-width:900px) 420px, 90vw">
-    <img src="/assets/bag-poker-960.png" alt="BAG Poker — 5-Card Draw" class="hero-img" loading="lazy" decoding="async">
-  </picture>
-  <h2>🃏 $BAG POKER — 5-CARD DRAW</h2>
-  <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
-</section>
-
-<section class="game-teaser" aria-labelledby="game-teaser-title">
-  <div class="game-wrap">
-
-    <!-- LEFT: Controls / Session / Prices -->
-    <div class="panel pad">
-      <!-- CONNECT -->
-      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
-        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
-        <button id="connectBtn" class="btn" style="min-width:auto;padding:10px 14px;">Connect Xaman</button>
-      </div>
-
-      <!-- SESSION -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
-        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
-          <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
-          <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
-        </div>
-      </div>
-
-      <div class="section-title">Stake & Prices</div>
-      <div class="stack">
-        <div>
-          <div class="micro">Amount</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <div style="display:flex;align-items:center;gap:6px">
-              <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="micro unit">USD</span>
-            </div>
-          </div>
-
-          <!-- Quick-picks -->
-          <div
-            class="preset-chips"
-            id="usdPresets"
-            data-quick-amounts
-            data-target-usd="#usdBet"
-            data-target-qty="#betQty"
-            data-currency-toggle="#curToggle"
-            data-min-usd="1"
-            data-max-usd="2000"
-            data-active-class="active"
-            data-sync-on-price="1"
-            role="group"
-            aria-label="Quick bet"
-          >
-            <button type="button" class="preset-chip" data-usd="1">$1</button>
-            <button type="button" class="preset-chip" data-usd="2">$2</button>
-            <button type="button" class="preset-chip" data-usd="5">$5</button>
-            <button type="button" class="preset-chip" data-usd="10">$10</button>
-            <button type="button" class="preset-chip" data-usd="20">$20</button>
-            <button type="button" class="preset-chip" data-usd="50">$50</button>
-            <button type="button" class="preset-chip" data-usd="100">$100</button>
-            <button type="button" class="preset-chip" data-usd="max">Max</button>
-          </div>
-        </div>
-
-        <div>
-          <div class="micro">Bet currency</div>
-          <div class="choice" id="curToggle">
-            <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
-            <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
-          </div>
-        </div>
-
-        <div>
-          <div class="micro">Bet amount</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <div>
-              <!-- Default 1 XRP -->
-              <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="unit">XRP</span>
-            </div>
-          </div>
-          <div class="micro" id="betLimits" style="margin-top:6px"></div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="micro">Live prices</div>
-        <div class="muted mono" id="liveLine">
-          <span id="liveDot" class="warn">●</span>
-          <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
-          <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="callout mono">5-Card Draw vs CPU · Win returns <b>2.00×</b> · Push returns <b>1.00×</b> · One draw only.</div>
-
-        <!-- WIN READOUT -->
-        <div id="pk-win-readout" class="winbox" aria-live="polite"></div>
-      </div>
+    <!-- TOP LIVE TICKER -->
+    <div class="ticker">
+      <div id="liveDot" class="dot err" aria-hidden="true"></div>
+      <div class="label">$BAG</div>
+      <div class="value" id="liveBAG">—</div>
+      <div class="sep">·</div>
+      <div class="label">XRP</div>
+      <div class="value" id="liveXRP">—</div>
+      <div class="muted" id="liveNote"> (unavailable)</div>
     </div>
 
-    <!-- RIGHT: Table -->
-    <div class="panel pad">
-      <div class="marquee">$BAG POKER TABLE</div>
-      <div class="felt" id="feltBoard">
-        <div class="table" id="tableBoard">
-          <div class="hand" id="cpu">
-            <div class="label">Dealer</div><div class="total" id="cpuRank">—</div>
-            <div class="row-cards" id="cpuCards"></div>
-          </div>
-          <div class="hand" id="you">
-            <div class="label">You</div><div class="total" id="youRank">—</div>
-            <div class="row-cards" id="youCards"></div>
-          </div>
-
-          <div class="btnbar">
-            <button id="deal" class="btn">Deal</button>
-            <button id="draw" class="btn" disabled>Draw</button>
-            <button id="again" class="btn" style="display:none">New Hand</button>
-          </div>
-
-          <div class="hudbar" aria-live="polite" id="pkHud">
-            <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
-            <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
-            <span class="pill">Bet: <b id="betHud">1</b></span>
-            <span class="pill">Last: <b id="lastLbl">—</b></span>
-          </div>
-
-          <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
-            🔊 If you don't hear sound: tap once, turn off Silent, raise volume.
-          </p>
-          <div id="status" class="micro" style="text-align:center;margin-top:8px">Place a stake, then Deal</div>
+    <div class="grid">
+      <section class="card">
+        <h1>$BAG ↔ XRP conversion</h1>
+        <div class="row">
+          <div class="pill"><strong>Spot</strong> <span id="liveConv" class="muted">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</span></div>
+          <div class="pill">Source <code class="kv" id="srcKv">AMM (BAG/XRP), XRP-USD via CoinGecko</code></div>
         </div>
-      </div>
+      </section>
+
+      <section class="card">
+        <h1>Notes</h1>
+        <ul class="muted" style="margin:0 0 0 18px;line-height:1.4">
+          <li>Green light = AMM pool live. Amber = last live. Red = unavailable.</li>
+          <li>No order book or OTC fallback. AMM only, per config.</li>
+          <li>UI never blanks; uses last good values while retrying.</li>
+        </ul>
+      </section>
     </div>
 
+    <p class="muted" style="margin-top:14px">XRPL’s Heaviest Meme… <span class="gold">getthebag.io</span></p>
   </div>
-</section>
 
-<!-- AUDIO (shared with BJ so SFX match) -->
-<script>
-(function(){
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  let AC=null, MASTER=null, primed=false, COMP=null;
+  <!-- PRICES (v12: multi-node AMM + resilient caching) -->
+  <script>
+  (function(){
+    const PRICE_REFRESH_MS = 15000;
+    const FETCH_TIMEOUT_MS = 7000;
+    const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+    const VIEW_CACHE_TTL_MS = 6*60*60*1000;
 
-  function getAC(){ if (AC && AC.state!=='closed') return AC; if (!AudioCtx) return null; AC = new AudioCtx(); MASTER = AC.createGain(); MASTER.gain.value = .28; MASTER.connect(AC.destination); return AC; }
-  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
+    // 🔐 $BAG AMM pair (BAG/XRP)
+    const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+    const BAG_CODE   = 'BAG';
 
-  function ensureFX(){ const ac=getAC(); if(!ac) return null; if(!COMP){ COMP=ac.createDynamicsCompressor();
-    COMP.threshold.value=-26; COMP.knee.value=24; COMP.ratio.value=10; COMP.attack.value=0.002; COMP.release.value=0.22; COMP.connect(MASTER); } return COMP; }
-  function outNode(){ return ensureFX() || MASTER; }
+    const VIEW_CACHE_KEY = 'bag_prices_v8';
+    const LAST_LIVE_KEY  = 'bag_last_live_v1';
+    const XRP_KEY        = 'xrp_usd';
 
-  function primeAll(){ if(primed) return; primed=true; resume().catch(()=>{}); loadShuffleBuffer(); }
-  ;['pointerdown','wheel','keydown','touchmove','touchstart','mousemove','scroll'].forEach(ev=> addEventListener(ev, primeAll, {once:true,passive:true}));
+    // UI refs
+    const liveDot = document.getElementById('liveDot');
+    const liveBAG = document.getElementById('liveBAG');
+    const liveXRP = document.getElementById('liveXRP');
+    const liveNote = document.getElementById('liveNote');
+    const liveConv = document.getElementById('liveConv');
 
-  const SHUFFLE_CANDS = ['/assets/sounds/card_shuffle.mp3','/assets/sounds/card-shuffle.mp3'];
+    // Shared state (kept global for other modules)
+    const PRICES = (window.__PRICES__ = window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
 
-  async function loadBuffer(url){
-    const ac=getAC(); if(!ac) return null;
-    try{ const res=await fetch(url,{cache:'force-cache'}); if(!res.ok) return null;
-      const arr=await res.arrayBuffer(); return await ac.decodeAudioData(arr.slice(0)); }catch{ return null; }
-  }
-  let shuffleBuf=null;
-  async function loadShuffleBuffer(){ if (shuffleBuf) return shuffleBuf; for(const u of SHUFFLE_CANDS){ const b = await loadBuffer(u); if (b){ shuffleBuf=b; break; } } return shuffleBuf; }
-  function playBuffer(buf, gain=1){ const ac=getAC(); if(!ac||!buf||ac.state!=='running') return false; const src=ac.createBufferSource(); src.buffer=buf;
-    const g=ac.createGain(); g.gain.value=gain; src.connect(g).connect(outNode()); try{ src.start(); return true; }catch{ return false; } }
+    // Keep last good in-memory values so the UI never blanks during a bad poll
+    let lastGood = { bagUsd: PRICES.bagUsd||0, xrpUsd: PRICES.xrpUsd||0, source: PRICES.source||'—' };
 
-  window.__playShuffle = async function(){ try{ await resume(); }catch{}; if (!playBuffer(shuffleBuf, 0.95)){ const a=new Audio(SHUFFLE_CANDS[0]); a.preload='auto'; a.setAttribute('playsinline',''); a.play().catch(()=>{}); } };
-
-  function snap(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
-    const n=ac.createBufferSource(), nb=ac.createBuffer(1, ac.sampleRate*0.08|0, ac.sampleRate);
-    const d=nb.getChannelData(0); for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*(1-i/d.length); }
-    n.buffer=nb; const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1400; hp.Q.value=0.7;
-    const g=ac.createGain(); g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.35,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
-    n.connect(hp).connect(g).connect(outNode()); n.start(t); n.stop(t+0.1); }
-  function heavyThud(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
-    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
-    o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(58,t+0.32);
-    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.55,t+0.018); g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
-    const n=ac.createBufferSource(), nb=ac.createBuffer(1, ac.sampleRate*0.22|0, ac.sampleRate);
-    const d=nb.getChannelData(0); for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*((1-i/d.length)**2)*0.32; }
-    n.buffer=nb; const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420;
-    const ng=ac.createGain(); ng.gain.setValueAtTime(0.16,t); ng.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
-    o.connect(g).connect(outNode()); n.connect(lp).connect(ng).connect(outNode());
-    o.start(t); o.stop(t+0.52); n.start(t); n.stop(t+0.22); }
-
-  window.__bagAudio = { chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
-      [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
-        const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
-        o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34); }); }, resume };
-
-  window.__playHit  = function(){ resume().then(()=>snap()); };
-  window.__playLose = function(){ resume().then(()=>heavyThud()); };
-})();
-</script>
-
-<!-- CARD FACTORY -->
-<script>
-(function(){
-  const ROOT = '/assets/cards';
-  const BACK = `${ROOT}/back-black.webp`;
-  const WORD = {'♠':'spades','♥':'hearts','♦':'diamonds','♣':'clubs'};
-  const R2B  = r => (r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r);
-
-  (new Image()).src = BACK;
-
-  function faceUrl(card){ return `${ROOT}/${R2B(card.r)}-${(WORD[card.s]||'spades')}.webp`; }
-
-  function svgFallback(label){
-    const wrap = document.createElement('div');
-    wrap.className = 'card';
-    wrap.innerHTML = `
-      <svg viewBox="0 0 256 364" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\${label}">
-        <rect x="3" y="3" rx="16" ry="16" width="250" height="358" fill="#fff" stroke="#dcdcdc" stroke-width="6"/>
-        <text x="18" y="40" font-family="system-ui,Segoe UI,Arial" font-weight="700" font-size="28" fill="#111">\${label}</text>
-      </svg>`;
-    return wrap;
-  }
-
-  function imgCard(src, isBack, label){
-    const wrap = document.createElement('div');
-    wrap.className = 'card' + (isBack ? ' back' : '');
-    const img = document.createElement('img');
-
-    img.decoding = 'async';
-    img.loading  = isBack ? 'eager' : 'lazy';
-    if (!isBack) img.fetchPriority = 'low';
-    img.width = 256;
-    img.height = Math.round(256*1.42);
-
-    let triedBack = false;
-    img.onerror = () => {
-      if (!triedBack && !isBack) {
-        triedBack = true;
-        img.onerror = () => { const fb = svgFallback(label); wrap.replaceWith(fb); };
-        img.src = BACK; return;
-      }
-      const fb = svgFallback(label); wrap.replaceWith(fb);
+    // utils
+    const fmt = n => Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:6}) : '—';
+    const cacheSet = (k,v) => { try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
+    const cacheGet = (k, ttlMs) => {
+      try{
+        const o = JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null;
+        return (Date.now()-(o.t||0) <= ttlMs) ? o.v : null;
+      }catch{ return null; }
     };
-
-    img.src = src;
-    wrap.appendChild(img);
-
-    // hold badge for Poker
-    const badge=document.createElement('div'); badge.className='hold-badge'; badge.textContent='HOLD';
-    wrap.appendChild(badge);
-
-    return wrap;
-  }
-
-  window.__CARD_FACTORY__ = {
-    makeCardEl(card, faceDown=false){
-      const label = faceDown ? 'Card back' : `${card.r} ${WORD[card.s]||''}`.trim();
-      const src   = faceDown ? BACK : faceUrl(card);
-      return imgCard(src, faceDown, label);
+    function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+      const ctrl = new AbortController();
+      const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+      try{
+        const u = new URL(url, location.origin);
+        u.searchParams.set('_ts', Date.now().toString());
+        return fetch(u.toString(), {
+          ...opts,
+          headers: { Accept:'application/json', ...(opts.headers||{}) },
+          mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+          signal: ctrl.signal
+        });
+      } finally { setTimeout(()=>clearTimeout(id),0); }
     }
-  };
-})();
-</script>
 
-<!-- PRICES (AMM-first, last-live fallback) -->
-<script>
-(function(){
-  const PRICE_REFRESH_MS = 15000;
-  const FETCH_TIMEOUT_MS = 8000;
-  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
-  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+    function updateLiveLine(){
+      if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
+      if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
+        ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
+        : '—';
 
-  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
-  const BAG_CODE = 'BAG';
+      if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'dot ok' : PRICES.source==='last-live' ? 'dot warn' : 'dot err');
+      if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
 
-  const VIEW_CACHE_KEY = 'bag_prices_v8';
-  const LAST_LIVE_KEY  = 'bag_last_live_v1';
-  const XRP_KEY        = 'xrp_usd';
-
-  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
-
-  const liveDot = document.getElementById('liveDot');
-  const liveBAG = document.getElementById('liveBAG');
-  const liveXRP = document.getElementById('liveXRP');
-  const liveNote = document.getElementById('liveNote');
-  const liveConv = document.getElementById('liveConv');
-
-  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
-  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
-  function cacheGet(k, ttlMs){
-    try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; const age=Date.now()-(o.t||0); return age<=ttlMs?o.v:null; }catch{ return null; }
-  }
-  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
-    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
-    try{
-      const u=new URL(url, location.origin); u.searchParams.set('_ts', Date.now().toString());
-      return fetch(u.toString(),{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal});
-    } finally { setTimeout(()=>clearTimeout(id),0); }
-  }
-
-  function updateLiveLine(){
-    if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
-    if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd) ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
-    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
-    if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : ' (last live)' : ' (unavailable)');
-    if (liveConv){
-      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
-        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
-        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
-      } else {
-        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+      if (liveConv){
+        if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+          const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+          const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+          liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+        } else {
+          liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
+        }
       }
+
+      // remember last good
+      if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        lastGood = { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, source: PRICES.source };
+      }
+      window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
     }
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-  }
 
-  async function fetchXrpUsdLive(){
-    try{ const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-      if(!r.ok) throw 0; const v=(await r.json())?.ripple?.usd;
-      if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY, PRICES.xrpUsd); return true; }
-    }catch(_){}
-    return false;
-  }
-  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
-  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
-  async function fetchBagViaAMMLive(){
-    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
-    const xrpPerBag = await new Promise((resolve)=>{
-      const ws = new WebSocket('wss://s1.ripple.com');
-      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
-      ws.onopen = ()=> ws.send(JSON.stringify(req));
-      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
-      ws.onmessage = (ev)=>{
-        try{
-          const msg = JSON.parse(ev.data);
-          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
-          clearTimeout(t); try{ws.close();}catch{};
-          const amm = msg.result.amm;
-          const bagBal = parseIouAmount(amm.amount);
-          const xrpBal = parseXrpAmount(amm.amount2);
-          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
-          const price = xrpBal / bagBal;
-          if (!(price>0) || !isFinite(price)) return resolve(null);
-          resolve(price);
-        }catch{ resolve(null); }
-      };
-    });
-    if (!(xrpPerBag>0)) return false;
-    if (!(PRICES.xrpUsd>0)) return false;
-    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
-    PRICES.source = 'live-amm';
-    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-    return true;
-  }
+    async function fetchXrpUsdLive(){
+      // Live first; if it fails, keep cache; don’t blank UI
+      try{
+        const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+        if(!r.ok) throw 0;
+        const v = (await r.json())?.ripple?.usd;
+        if(Number(v)>0){
+          PRICES.xrpUsd = Number(v);
+          cacheSet(XRP_KEY, PRICES.xrpUsd);
+          return true;
+        }
+      }catch(_){}
+      // fallback to cached XRP USD if exists
+      const cachedX = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+      if (Number(cachedX)>0){ PRICES.xrpUsd = Number(cachedX); return false; }
+      return false;
+    }
 
-  function loadLastLiveBundle(){
-    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
-    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); PRICES.source='last-live'; return true; }
-    return false;
-  }
-  function loadViewCache(){
-    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
-    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
-    let ok=false;
-    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); ok=true; }
-    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok=true; }
-    if (ok && PRICES.source==='—') PRICES.source='last-live';
-    return ok;
-  }
+    function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
+    function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
 
-  async function refreshPrices(){
-    const gotX = await fetchXrpUsdLive();
-    const gotB = await fetchBagViaAMMLive();
-    if(!(gotX && gotB)){ if(!loadLastLiveBundle()) loadViewCache(); }
-    updateLiveLine();
-  }
+    async function fetchBagViaAMMLive(){
+      // Try multiple XRPL nodes; first to succeed wins
+      const NODES = [
+        'wss://xrplcluster.com',
+        'wss://s1.ripple.com',
+        'wss://s2.ripple.com'
+      ];
+      const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
 
-  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+      for (const url of NODES){
+        const price = await new Promise((resolve)=>{
+          let done=false;
+          const ws = new WebSocket(url);
+          const killer = setTimeout(()=>{ if(done) return; done=true; try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
 
-  addEventListener('storage', (e)=>{
-    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
-      if (!loadLastLiveBundle()) loadViewCache();
+          ws.onopen = ()=> { try{ ws.send(JSON.stringify(req)); }catch{ clearTimeout(killer); resolve(null); } };
+          ws.onerror = ()=> { clearTimeout(killer); if(done) return; done=true; resolve(null); };
+          ws.onclose = ()=> {};
+          ws.onmessage = (ev)=>{
+            if (done) return;
+            try{
+              const msg = JSON.parse(ev.data);
+              if (msg.id!==1 || !msg.result || !msg.result.amm) return; // wait until amm present or timeout
+              const amm = msg.result.amm;
+              const bagBal = parseIouAmount(amm.amount);
+              const xrpBal = parseXrpAmount(amm.amount2);
+              if (!(bagBal>0) || !(xrpBal>0)) { /* not a valid pool */ }
+              const p = xrpBal / bagBal;
+              if (p>0 && isFinite(p)){
+                done = true; clearTimeout(killer);
+                try{ ws.close(); }catch{};
+                resolve(p);
+                return;
+              }
+            }catch{ /* ignore */ }
+          };
+        });
+
+        if (price && price>0){
+          // convert to USD with whatever XRP price we have (live or cached)
+          if (PRICES.xrpUsd>0){
+            PRICES.bagUsd = PRICES.xrpUsd * price;
+            PRICES.source = 'live-amm';
+            cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+            cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+            return true;
+          } else {
+            const cachedX = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+            if (Number(cachedX)>0){
+              PRICES.xrpUsd = Number(cachedX);
+              PRICES.bagUsd = PRICES.xrpUsd * price;
+              PRICES.source = 'live-amm';
+              cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+              cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+              return true;
+            }
+            return false;
+          }
+        }
+      }
+      return false;
+    }
+
+    function loadLastLiveBundle(){
+      const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+      if (v && Number(v.bagUsd)>0){
+        PRICES.bagUsd = Number(v.bagUsd);
+        if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+        PRICES.source = 'last-live';
+        return true;
+      }
+      return false;
+    }
+    function loadViewCache(){
+      const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+      const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+      let ok=false;
+      if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); ok=true; }
+      if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok=true; }
+      if (ok && PRICES.source==='—') PRICES.source = 'last-live';
+      return ok;
+    }
+
+    async function refreshPrices(){
+      // 1) Try to refresh XRP USD (live or cached)
+      await fetchXrpUsdLive();
+
+      // 2) Try AMM live across multiple nodes
+      const ammOk = await fetchBagViaAMMLive();
+
+      // 3) If AMM not live, keep the best cached bundle
+      if (!ammOk){
+        if (!loadLastLiveBundle()) loadViewCache();
+
+        // If still nothing, restore last known good in-memory values so UI doesn’t blank
+        if (!(PRICES.bagUsd>0) && lastGood.bagUsd>0){
+          PRICES.bagUsd = lastGood.bagUsd;
+          PRICES.xrpUsd = lastGood.xrpUsd;
+          PRICES.source = lastGood.source || 'last-live';
+        }
+      }
+
       updateLiveLine();
     }
-  });
-})();
-</script>
 
-<!-- UNIVERSAL STAKE WIRE -->
-<script>
-(function(global){
-  const PR = ()=>global.__PRICES__ || { bagUsd:0, xrpUsd:0 };
+    (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
 
-  function getCur(curToggle){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-  function priceFor(cur){
-    const { bagUsd, xrpUsd } = PR();
-    return cur === 'BAG' ? bagUsd : xrpUsd;
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-  function computeSessionMaxUsd(cur, minUsd, maxUsd){
-    const sess = (global.__bagSession && global.__bagSession.get && global.__bagSession.get()) || {};
-    const bagBal = Number(sess.bag) || 0;
-
-    let unitsAvail;
-    if (cur === 'BAG'){ unitsAvail = bagBal; }
-    else { const { bagUsd, xrpUsd } = PR(); unitsAvail = (bagUsd>0 && xrpUsd>0) ? (bagBal * (bagUsd / xrpUsd)) : 0; }
-    const px = priceFor(cur);
-    const usdAvail = (px>0 && unitsAvail>0) ? unitsAvail * px : maxUsd;
-    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
-  }
-
-  function init(opts){
-    const cfg = Object.assign({
-      usdInput:'#usdBet',
-      qtyInput:'#betQty',
-      currencyToggle:'#curToggle',
-      unitLabels:'.unit',
-      limitsLabel:'#betLimits',
-      presetsRoot:'#usdPresets',
-      minUsd:1,
-      maxUsd:2000,
-      activeClass:'active',
-      syncOnPrice:true
-    }, opts||{});
-
-    const usdEl = document.querySelector(cfg.usdInput);
-    const qtyEl = document.querySelector(cfg.qtyInput);
-    const curToggle = document.querySelector(cfg.currencyToggle);
-    const unitEls = document.querySelectorAll(cfg.unitLabels);
-    const limitsEl = document.querySelector(cfg.limitsLabel);
-    const presets = document.querySelector(cfg.presetsRoot);
-
-    const STATE = { lastEdited:'qty', lastCur:null, syncing:false };
-
-    function paintUnits(){ const cur = getCur(curToggle); unitEls.forEach(s=> s.textContent = cur); }
-    function readUsd(){ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-    function readQty(){ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
-    function writeUsd(u){ if(!usdEl) return; usdEl.value = u ? (Math.round(u*100)/100).toFixed(2) : ''; }
-    function writeQty(q){ if(!qtyEl) return; const d=6; qtyEl.value = q ? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,'') : ''; }
-
-    function renderLimits(){
-      if(!limitsEl) return;
-      const cur = getCur(curToggle);
-      const px  = priceFor(cur);
-      const u = readUsd() || (readQty() * (px>0?px:0)) || 0;
-      const warn = (u>0 && u<cfg.minUsd) ? ` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>` :
-                   (u>cfg.maxUsd) ? ` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>` : '';
-      limitsEl.innerHTML = `Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`;
-    }
-
-    function syncFromUSD(){
-      if(STATE.syncing) return; STATE.syncing = true;
-      const cur = getCur(curToggle); const px = priceFor(cur); const usd = readUsd();
-      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ /* keep qty; default 1 enforced elsewhere */ }
-      renderLimits(); STATE.syncing = false;
-    }
-    function syncFromQty(){
-      if(STATE.syncing) return; STATE.syncing = true;
-      const cur = getCur(curToggle); const px = priceFor(cur); const qty = readQty();
-      if (qty && px>0){ writeUsd(qty * px); } else if(!qty){ writeUsd(''); }
-      renderLimits(); STATE.syncing = false;
-    }
-    function convertOnCurrencyChange(prevCur, nextCur){
-      const pxPrev = priceFor(prevCur); const pxNext = priceFor(nextCur);
-      let usd = readUsd(); const qtyPrev = readQty();
-      if(!(usd>0)) usd = (qtyPrev>0 && pxPrev>0) ? qtyPrev*pxPrev : 0;
-      if (usd>0 && pxNext>0){ writeUsd(usd); writeQty(usd/pxNext); }
-      renderLimits();
-    }
-
-    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-    STATE.lastCur = getCur(curToggle);
-    curToggle?.addEventListener('change', ()=>{
-      const prev = STATE.lastCur; const next = getCur(curToggle);
-      STATE.lastCur = next; paintUnits(); convertOnCurrencyChange(prev, next);
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    });
-
-    if (cfg.syncOnPrice){
-      addEventListener('bag:pricesUpdated', ()=>{ if (STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); });
-    }
-
-    if (presets){
-      const setActive = (btn)=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn && btn.classList.add(cfg.activeClass); };
-      const applyUsd = (usd)=>{ writeUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
-      const clampUsd = (u)=> Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
-
-      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const val = btn.getAttribute('data-usd');
-          let usd = 0;
-          if (val === 'max'){ usd = computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd); }
-          else { usd = parseFloat(val)||0; }
-          usd = clampUsd(usd); setActive(btn); applyUsd(usd);
-        });
-      });
-
-      const resyncActive = ()=>{
-        const btn = presets.querySelector('.'+cfg.activeClass);
-        if (!btn) return;
-        const v = btn.getAttribute('data-usd');
-        if (v === 'max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); }
-        else { applyUsd(parseFloat(v)||0); }
-      };
-      addEventListener('bag:pricesUpdated', resyncActive);
-      curToggle?.addEventListener('change', resyncActive);
-    }
-
-    paintUnits();
-    if (readUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); }
-    else { STATE.lastEdited='qty'; syncFromQty(); }
-    renderLimits();
-  }
-
-  global.BAGStakeWire = { init };
-})(window);
-</script>
-
-<!-- Initialize universal wire -->
-<script>
-  BAGStakeWire.init({
-    usdInput:'#usdBet',
-    qtyInput:'#betQty',
-    currencyToggle:'#curToggle',
-    unitLabels:'.unit',
-    limitsLabel:'#betLimits',
-    presetsRoot:'#usdPresets',
-    minUsd:1,
-    maxUsd:2000,
-    activeClass:'active',
-    syncOnPrice:true
-  });
-
-  /* Final guard: ensure default 1 XRP after init */
-  (function enforceDefault1XRP(){
-    const bet  = document.getElementById('betQty');
-    const curX = document.querySelector('#curToggle input[value="XRP"]');
-    if (curX && !curX.checked) { curX.checked = true; curX.dispatchEvent(new Event('change',{bubbles:true})); }
-    if (bet && (!bet.value || Number(bet.value) <= 0)) {
-      bet.value = '1';
-      bet.dispatchEvent(new Event('input',{bubbles:true}));
-      bet.dispatchEvent(new Event('change',{bubbles:true}));
-    }
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  })();
-</script>
-
-<!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice/BJ -->
-<script>
-(function(){
-  const qs = new URLSearchParams(location.search);
-  const forceLive = qs.get('live') === '1';
-
-  const $ = (s)=>document.querySelector(s);
-  const statusEl  = $('#sessionStatus');
-  const startBtn  = $('#startSessionBtn');
-  const topUpBtn  = $('#topUpBtn');
-  const endBtn    = $('#endSessionBtn');
-  const connectEl = $('#connectBtn');
-  const dealBtn   = $('#deal');
-
-  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
-  const DEMO_INIT_KEY  = '__bag_demo_init_v2';
-  const START_USD      = 2000;
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n){
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  }
-  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
-
-  function getCachedBagUsd(){
-    try{
-      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
-    }catch{}
-    return 0;
-  }
-
-  function ensureSeedNowOrWhenReady(){
-    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live = Number(PR().bagUsd||0);
-    theCached = getCachedBagUsd();
-    const bagUsd = live>0 ? live : (theCached>0 ? theCached : 0);
-    if (bagUsd>0){
-      const startBag = START_USD / bagUsd;
-      setBag(startBag);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      return true;
-    }
-    return false;
-  }
-
-  function renderDemo(){
-    const bag=getBag();
-    const { bagUsd, xrpUsd } = PR();
-    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
-
-    if(statusEl){
-      statusEl.innerHTML =
-        `<div class="practiceBlock" style="-webkit-touch-callout:none;">
-          <div class="title" style="font-weight:800;margin-bottom:4px;">Practice:</div>
-          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
-          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
-          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
-        </div>`;
-    }
-
-    if(startBtn) startBtn.style.display='inline-block';
-    if(topUpBtn) topUpBtn.style.display='none';
-    if(endBtn)   endBtn.style.display='none';
-  }
-
-  const demoSession={
-    active:()=>true,
-    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
-    set:()=>{},
-    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
-    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
-  };
-
-  function enforceBet1XRP(){
-    const bet  = document.getElementById('betQty');
-    const unit = document.querySelector('.unit');
-    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-
-    if (xrpRadio && !xrpRadio.checked){
-      xrpRadio.checked = true;
-      xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    if (unit) unit.textContent = 'XRP';
-
-    if (bet && (!bet.value || Number(bet.value) <= 0)){
-      bet.value = '1';
-      bet.dispatchEvent(new Event('input', {bubbles:true}));
-      bet.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
-
-  function enableDemo(){
-    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); } catch{ window.__BAG_FORCE_DEMO=true; }
-    window.__bagSession = demoSession;
-
-    const seeded = ensureSeedNowOrWhenReady();
-    renderDemo();
-    if (dealBtn) dealBtn.disabled = !seeded;
-
-    addEventListener('bag:pricesUpdated', ()=>{
-      if (!localStorage.getItem(DEMO_INIT_KEY)){
-        const ok = ensureSeedNowOrWhenReady();
-        if (ok && dealBtn) dealBtn.disabled = false;
-        renderDemo();
-      } else { renderDemo(); }
-    });
-
-    enforceBet1XRP();
-    if (connectEl) connectEl.style.opacity='0.9';
-  }
-
-  function enableLive(){
-    window.__BAG_FORCE_DEMO=false;
-    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    enforceBet1XRP(); /* mirror BJ: enforce default in live, too */
-  }
-
-  if (forceLive) enableLive(); else enableDemo();
-
-  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
-
-  topUpBtn?.addEventListener('click', ()=>{
-    const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
-    if (bagUsd>0){
-      setBag(START_USD/bagUsd);
-      renderDemo();
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    }
-  });
-})();
-</script>
-
-<!-- HUD updater -->
-<script>
-(function(){
-  const curToggle = document.getElementById('curToggle');
-
-  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
-
-  function els(){ 
-    return { 
-      hud: document.getElementById('pkHud'),
-      balLbl: document.getElementById('balLbl'),
-      ccyLbl: document.getElementById('ccyLbl'),
-      betLbl: document.getElementById('betHud'),
-      modeLbl: document.getElementById('modeLbl'),
-      lastLbl: document.getElementById('lastLbl'),
-      betQtyEl: document.getElementById('betQty'),
-    }; 
-  }
-
-  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
-  function currentCurrency(){
-    const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
-
-  function getBalances(){
-    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
-    const bag = Number(sess.bag) || 0;
-    let xrp = Number(sess.xrp);
-    if (!(xrp > 0)) {
-      const { bagUsd, xrpUsd } = PR();
-      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
-      else xrp = 0;
-    }
-    return { bag, xrp };
-  }
-
-  function currentBet(){
-    const { betQtyEl } = els();
-    const v = parseFloat(betQtyEl?.value || '0');
-    if (!Number.isFinite(v) || v < 0) return 0;
-    return Number(v) || 1; /* mirror BJ HUD: default 1 */
-  }
-
-  function styleBalanceRow(){
-    const { hud } = els(); if (!hud) return;
-    hud.style.display = 'grid';
-    hud.style.gridTemplateColumns = '1fr';
-    hud.style.gap = '6px';
-    const pills = hud.querySelectorAll('.pill');
-    if (pills.length){
-      pills.forEach(p=>{ p.style.fontSize='12px'; p.style.padding='6px 10px'; });
-      if (pills[1]){ pills[1].style.fontSize='14px'; pills[1].style.padding='8px 12px'; pills[1].style.fontWeight='800'; }
-      const row = document.createElement('div');
-      row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='6px';
-      hud.appendChild(row);
-      [pills[0], pills[2], pills[3]].forEach(p=> row.appendChild(p));
-    }
-  }
-
-  function renderHud(){
-    try{
-      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-      const mode = selectedMode();
-      const ccy  = currentCurrency();
-      const { bag, xrp } = getBalances();
-
-      if (modeLbl) modeLbl.textContent = mode;
-      if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);
-      if (lastLbl) lastLbl.textContent = String(window.__PK_LAST__ || '—');
-
-      if (balLbl && ccyLbl){
-        if (ccy === 'XRP'){ balLbl.textContent = fmt(xrp, 6); ccyLbl.textContent = 'XRP'; }
-        else { balLbl.textContent = fmt(bag, 6); ccyLbl.textContent = 'BAG'; }
+    addEventListener('storage', (e)=>{
+      if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+        if (!loadLastLiveBundle()) loadViewCache();
+        updateLiveLine();
       }
-    }catch(e){}
-  }
-
-  [
-    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
-    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
-    'bag:hudRefresh'
-  ].forEach(ev => addEventListener(ev, renderHud));
-
-  document.getElementById('betQty')?.addEventListener('input', renderHud);
-  curToggle?.addEventListener('change', renderHud);
-
-  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
-
-  renderHud();
-  styleBalanceRow();
-  let tries = 0; 
-  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
-})();
-</script>
-
-<!-- POKER WIN READOUT (complete) -->
-<script>
-(function(w){
-  const nfBAG = new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
-  const nfUSD = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
-
-  const PK = {
-    el:null,
-    rules:{ win:2.00, push:1.00 },
-    state:{ stakeBag:0, usdPerBag:0, handStatus:'idle' },
-
-    init(el, opts={}){
-      this.el = typeof el==='string' ? document.querySelector(el) : el;
-      if (opts.rules) this.rules = Object.assign({}, this.rules, opts.rules);
-      this.render();
-    },
-    update({stakeBag, usdPerBag, handStatus}={}){
-      if (typeof stakeBag==='number') this.state.stakeBag = stakeBag;
-      if (typeof usdPerBag==='number') this.state.usdPerBag = usdPerBag;
-      if (handStatus) this.state.handStatus = handStatus;
-      this.render();
-    },
-    amt(bag){ const usd = (bag||0) * (this.state.usdPerBag||0); return `${nfBAG.format(bag||0)} BAG (${nfUSD.format(usd)})`; },
-    render(){
-      if(!this.el) return;
-      const s = this.state.stakeBag||0, r=this.rules;
-      const win  = s * r.win;
-      const push = s * r.push;
-      const statusLine = (this.state.handStatus==='active')
-        ? `<div class="row"><div>Hand in progress <span class="muted">(no payout yet)</span>:</div><div>Stake held</div></div>`
-        : `<div class="row"><div>Ready:</div><div>${this.amt(s)}</div></div>`;
-      this.el.innerHTML = `
-        <div class="row"><div class="title">WIN:</div><div>${this.amt(win)}</div></div>
-        <div class="row"><div>Push <span class="muted">(stake returned)</span>:</div><div>${this.amt(push)}</div></div>
-        <div class="row"><div>Lose:</div><div>${this.amt(0)}</div></div>
-        ${statusLine}
-        <div class="note">Win pays ${r.win.toFixed(2)}× · Push pays ${r.push.toFixed(2)}×.</div>`;
-    }
-  };
-
-  w.BAGPK = {
-    init: (el, opts)=>PK.init(el, opts),
-    update: (data)=>PK.update(data),
-    setRules: (rules)=>{ PK.rules = Object.assign({}, PK.rules, rules); PK.render(); }
-  };
-})(window);
-
-// boot + stake/price hooks
-document.addEventListener('DOMContentLoaded', ()=>{
-  BAGPK.init('#pk-win-readout');
-  const upd = ()=>{
-    const PR = window.__PRICES__ || { bagUsd:0, xrpUsd:0 };
-    const cur = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
-    const qty = parseFloat(document.getElementById('betQty')?.value || '0') || 0;
-    let stakeBag = 0;
-    if (cur === 'BAG'){ stakeBag = qty; }
-    else { if (PR.bagUsd>0 && PR.xrpUsd>0) stakeBag = qty * (PR.xrpUsd/PR.bagUsd); }
-    BAGPK.update({ stakeBag, usdPerBag: PR.bagUsd||0 });
-  };
-  upd();
-  addEventListener('bag:hudRefresh', upd);
-  addEventListener('bag:pricesUpdated', upd);
-  document.getElementById('betQty')?.addEventListener('input', upd);
-  document.querySelector('#curToggle')?.addEventListener('change', upd);
-});
-</script>
-
-<!-- SIMPLE 5-CARD DRAW CORE (unchanged rules; minimal, for completeness) -->
-<script>
-(function(){
-  const D = (id)=>document.getElementById(id);
-  const youRow = D('youCards'), cpuRow = D('cpuCards');
-  const youRankEl = D('youRank'), cpuRankEl = D('cpuRank');
-  const btnDeal = D('deal'), btnDraw = D('draw'), btnAgain = D('again');
-  const felt = D('feltBoard'), table = D('tableBoard');
-
-  const R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'], S=['♠','♥','♦','♣'];
-  let deck=[], your=[], cpu=[], held=[false,false,false,false,false], drew=false, lockedStakeBag=0, lockedUsd=0;
-
-  function buildDeck(){ deck=[]; for(const r of R) for(const s of S) deck.push({r,s});
-    for(let i=deck.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [deck[i],deck[j]]=[deck[j],deck[i]]; } }
-  function draw(){ if(!deck.length) buildDeck(); return deck.pop(); }
-
-  function flash(kind){
-    felt.classList.remove('flash-win','flash-lose','flash-push'); table.classList.remove('shake');
-    if(kind==='win'){ felt.classList.add('flash-win'); setTimeout(()=>felt.classList.remove('flash-win'), 900); }
-    else if(kind==='lose'){ felt.classList.add('flash-lose'); table.classList.add('shake'); setTimeout(()=>{ felt.classList.remove('flash-lose'); table.classList.remove('shake'); }, 600); }
-    else if(kind==='push'){ felt.classList.add('flash-push'); setTimeout(()=>felt.classList.remove('flash-push'), 1000); }
-  }
-  function setStatus(t){ const el=D('status'); if(el) el.textContent=t; }
-  function last(t){ window.__PK_LAST__=t; const el=D('lastLbl'); if(el) el.textContent=t; }
-
-  function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
-  function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
-  function stakeBagFromInputs(){
-    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
-    if(!q) return 0;
-    const {bagUsd,xrpUsd}=PR();
-    return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
-  }
-  function stakeUsdFromInputs(){
-    const u=parseFloat(document.getElementById('usdBet')?.value||'');
-    if(Number.isFinite(u)&&u>0) return u;
-    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
-    const {bagUsd,xrpUsd}=PR();
-    if(currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
-    return xrpUsd>0 ? q*xrpUsd : 0;
-  }
-
-  function cardEl(c){
-    return window.__CARD_FACTORY__.makeCardEl(c,false);
-  }
-
-  function rankValue(h){
-    // basic 5-card hand rank (pair/two pair/three/straight/flush/full house/four/straight flush)
-    const order={'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
-    const counts={}; const suits={}; const vals=h.map(c=>order[c.r]).sort((a,b)=>a-b);
-    h.forEach(c=>{ counts[c.r]=(counts[c.r]||0)+1; suits[c.s]=(suits[c.s]||0)+1; });
-    const pairs=Object.values(counts).sort((a,b)=>b-a);
-    const isFlush = Object.values(suits).some(v=>v===5);
-    const isStraight = vals.every((v,i)=> i===0 || v===vals[i-1]+1) || (JSON.stringify(vals)==='[2,3,4,5,14]'); // wheel
-    const score =
-      isStraight && isFlush ? 8 :
-      pairs[0]===4           ? 7 :
-      (pairs[0]===3 && pairs[1]===2) ? 6 :
-      isFlush               ? 5 :
-      isStraight            ? 4 :
-      pairs[0]===3          ? 3 :
-      (pairs[0]===2 && pairs[1]===2) ? 2 :
-      pairs[0]===2          ? 1 : 0;
-    return score;
-  }
-  function rankName(score){
-    return ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'][score] || '—';
-  }
-
-  function clearBoard(){
-    youRow.innerHTML=''; cpuRow.innerHTML='';
-    youRankEl.textContent='—'; cpuRankEl.textContent='—';
-    held=[false,false,false,false,false]; drew=false;
-  }
-
-  function spendStake(){
-    const bag = stakeBagFromInputs();
-    const usd = stakeUsdFromInputs();
-    if (!(bag>0)) { alert('Enter a stake first'); return false; }
-    if (!window.__bagSession || !__bagSession.active || !__bagSession.active()){ alert('Start a session at The Cage'); return false; }
-    if (!__bagSession.spend(bag)){ alert('Insufficient balance'); return false; }
-    lockedStakeBag = bag; lockedUsd = usd;
-    return true;
-  }
-
-  function winSubtext(mult){
-    const gainBag = lockedStakeBag*(mult-1);
-    const fromUsd = lockedUsd;
-    const toUsd   = lockedUsd*mult;
-    const fmtUsd = (n)=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-    return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(fromUsd)} → ${fmtUsd(toUsd)}`;
-  }
-
-  function resolve(){
-    const y = rankValue(your), c = rankValue(cpu);
-    youRankEl.textContent = rankName(y); cpuRankEl.textContent = rankName(c);
-    if (y>c){ __bagSession.credit(lockedStakeBag*2.00); last('Win 2×'); flash('win'); try{ BAGOverlay.showWin({ message:'WIN', subtext: winSubtext(2.00), duration:4200, sound:true }); }catch{} }
-    else if (y===c){ __bagSession.credit(lockedStakeBag*1.00); last('Push'); flash('push'); }
-    else { last('Scratch'); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{} }
-  }
-
-  function paintYou(){
-    youRow.innerHTML='';
-    your.forEach((c,i)=>{
-      const el = cardEl(c);
-      if (held[i]) el.classList.add('hold');
-      el.addEventListener('click', ()=>{
-        if (!drew){ held[i]=!held[i]; el.classList.toggle('hold', held[i]); }
-      });
-      youRow.appendChild(el);
     });
-  }
-
-  function deal(){
-    // limits parity with other games
-    const MIN_USD=1, MAX_USD=2000;
-    const usdNow = stakeUsdFromInputs();
-    if (usdNow < MIN_USD) return alert(`Minimum $${MIN_USD.toFixed(2)} stake`);
-    if (usdNow > MAX_USD) return alert(`Maximum $${MAX_USD.toFixed(2)} stake`);
-    if (!spendStake()) return;
-
-    clearBoard(); buildDeck();
-    try{ window.__playShuffle && window.__playShuffle(); }catch{}
-    your=[draw(),draw(),draw(),draw(),draw()];
-    cpu =[draw(),draw(),draw(),draw(),draw()];
-    paintYou();
-    cpuRow.innerHTML=''; // keep facedown look by not rendering CPU yet
-    btnDeal.disabled=true; btnDraw.disabled=false; btnAgain.style.display='none';
-    setStatus('Tap cards to HOLD, then Draw'); last('Dealt');
-    BAGPK.update({handStatus:'active'});
-  }
-
-  function drawPhase(){
-    drew=true;
-    // replace non-held
-    your = your.map((c,i)=> held[i] ? c : draw());
-    paintYou();
-    // reveal CPU now
-    cpuRow.innerHTML='';
-    cpu.forEach(c=> cpuRow.appendChild(cardEl(c)));
-    resolve();
-    btnDraw.disabled=true; btnAgain.style.display='inline-block';
-    setStatus('Hand resolved');
-    BAGPK.update({handStatus:'idle'});
-  }
-
-  btnDeal.addEventListener('click', deal);
-  btnDraw.addEventListener('click', drawPhase);
-  btnAgain.addEventListener('click', ()=>{
-    clearBoard();
-    btnDeal.disabled=false; btnDraw.disabled=true; btnAgain.style.display='none';
-    setStatus('Place a stake, then Deal'); last('—');
-  });
-
-  // boot
-  buildDeck();
-})();
-</script>
-
-<!-- Rules FAB + Modal -->
-<button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
-<div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
-  <div class="rules-modal" role="document">
-    <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
-    <h3 id="rulesTitle">🃏 5-Card Draw — Quick Rules</h3>
-    <ul>
-      <li><b>Goal:</b> Make the best 5-card hand</li>
-      <li><b>Deal:</b> You and the dealer get 5 cards</li>
-      <li><b>Hold:</b> Tap cards to hold; one draw only</li>
-      <li><b>Draw:</b> Non-held cards are replaced once</li>
-      <li><b>Payouts:</b> Win pays <b>2.00×</b> · Push pays <b>1.00×</b></li>
-    </ul>
-    <div class="rules-note">House visuals and payouts shown apply.</div>
-  </div>
-</div>
-
-<!-- Rules modal logic -->
-<script>
-(function(){
-  const fab = document.getElementById('rulesFab');
-  const ov  = document.getElementById('rulesOverlay');
-  const x   = document.getElementById('rulesClose');
-  function open(){ ov.style.display='grid'; }
-  function close(){ ov.style.display='none'; }
-  fab?.addEventListener('click', open);
-  x?.addEventListener('click', close);
-  ov?.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
-  addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
-})();
-</script>
-
-<script>
-if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
-</script>
-
-<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
-  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
-  <br>
-  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a>
-  &nbsp;|&nbsp;
-  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
-</footer>
-
+  })();
+  </script>
 </body>
 </html>
