@@ -309,6 +309,7 @@
           <div class="micro">Bet amount</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <div>
+              <!-- Default to 1 XRP -->
               <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
               <span class="unit">XRP</span>
             </div>
@@ -802,11 +803,16 @@
     const usdEl = document.querySelector(cfg.usdInput);
     const qtyEl = document.querySelector(cfg.qtyInput);
     const curToggle = document.querySelector(cfg.currencyToggle);
-    const unitEls = document.querySelector(cfg.unitLabels);
+    const unitEls = document.querySelectorAll(cfg.unitLabels); /* fixed: querySelectorAll */
     const limitsEl = document.querySelector(cfg.limitsLabel);
     const presets = document.querySelector(cfg.presetsRoot);
 
     const STATE = { lastEdited:'qty', lastCur:null, syncing:false };
+
+    /* enforce default 1 XRP if empty or invalid */
+    if (qtyEl && (!qtyEl.value || Number(qtyEl.value) <= 0)) {
+      qtyEl.value = '1';
+    }
 
     function paintUnits(){
       const cur = getCur(curToggle);
@@ -833,7 +839,7 @@
       const cur = getCur(curToggle);
       const px = priceFor(cur);
       const usd = readUsd();
-      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ writeQty(''); }
+      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ /* leave qty as-is to preserve 1 XRP default */ }
       renderLimits();
       STATE.syncing = false;
     }
@@ -934,6 +940,19 @@
     activeClass:'active',
     syncOnPrice:true
   });
+
+  /* Final guard: ensure default 1 XRP after init */
+  (function enforceDefault1XRP(){
+    const bet  = document.getElementById('betQty');
+    const curX = document.querySelector('#curToggle input[value="XRP"]');
+    if (curX && !curX.checked) { curX.checked = true; curX.dispatchEvent(new Event('change',{bubbles:true})); }
+    if (bet && (!bet.value || Number(bet.value) <= 0)) {
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input',{bubbles:true}));
+      bet.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  })();
 </script>
 
 <!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice -->
@@ -1021,7 +1040,6 @@
 
   function forceBetXRP1Once(){
     const bet  = document.getElementById('betQty');
-    const usd  = document.getElementById('usdBet');
     const unit = document.querySelector('.unit');
     const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
 
@@ -1035,11 +1053,6 @@
       bet.value = '1';
       bet.dispatchEvent(new Event('input', {bubbles:true}));
       bet.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    if (usd){
-      usd.dataset.userTyped = '0';
-      usd.dispatchEvent(new Event('input', {bubbles:true}));
-      usd.dispatchEvent(new Event('change', {bubbles:true}));
     }
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
@@ -1072,6 +1085,18 @@
   function enableLive(){
     window.__BAG_FORCE_DEMO=false;
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    /* also enforce 1 XRP default in live mode */
+    (function(){
+      const bet  = document.getElementById('betQty');
+      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+      if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+      if (bet && (!bet.value || Number(bet.value) <= 0)){
+        bet.value = '1';
+        bet.dispatchEvent(new Event('input',{bubbles:true}));
+        bet.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    })();
   }
 
   if (forceLive) enableLive(); else enableDemo();
@@ -1131,7 +1156,7 @@
     const { betQtyEl } = els();
     const v = parseFloat(betQtyEl?.value || '0');
     if (!Number.isFinite(v) || v < 0) return 0;
-    return Number(v);
+    return Number(v) || 1; /* keep the HUD showing 1 by default */
   }
 
   function styleBalanceRow(){
