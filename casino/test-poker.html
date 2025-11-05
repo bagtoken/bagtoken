@@ -3,297 +3,329 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>$BAG Live Pricing — AMM Feed</title>
-<meta name="format-detection" content="telephone=no" />
+<title>$BAG — Live Pricing (AMM)</title>
+
+<!-- XRPL + UI base -->
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/xrpl@2.13.0/dist/xrpl-latest.min.js"></script>
+
+<!-- Domains to try for TOML discovery -->
+<meta name="x-bag-toml-domains" content="https://getthebag.io/.well-known/xrp-ledger.toml,https://bagtoken.net/.well-known/xrp-ledger.toml" />
 
 <style>
   :root{
-    --bg:#06120d;--panel:#0d2217;--line:#1c3b2a;--fg:#eaf3ee;--muted:#aeb7af;
-    --ok:#2fbf6b;--warn:#f0b429;--err:#ef4444;--gold:#ffe175;
+    --bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--fg:#eaf3ee;--muted:#aeb7af;--gold:#ffe175;
+    --ok:#2fbf6b;--warn:#caa93a;--err:#d86161;--line:#173524
   }
+  *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  .wrap{max-width:1120px;margin:0 auto;padding:16px}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  h1{margin:0 0 6px;font-size:clamp(1rem,3vw,1.4rem);letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:.9rem;margin-bottom:16px}
+
   .ticker{
-    display:flex;align-items:center;gap:12px;
-    background:linear-gradient(180deg,#0c2218,#091a13);
-    border:1px solid var(--line);border-radius:14px;padding:14px 16px;
-    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    display:grid;gap:12px;
+    grid-template-columns: repeat(auto-fit,minmax(270px,1fr));
   }
-  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 2px rgba(255,255,255,.06) inset}
-  .dot.ok{background:var(--ok)}
-  .dot.warn{background:var(--warn)}
-  .dot.err{background:var(--err)}
-  .label{font-weight:600;letter-spacing:.2px}
-  .value{font-variant-numeric:tabular-nums;white-space:nowrap}
-  .sep{opacity:.4}
-  .muted{color:var(--muted)}
-  .grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}
   .card{
-    background:linear-gradient(180deg,#0b1b13,#0a1812);
-    border:1px solid var(--line);border-radius:14px;padding:16px;
-    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid #1a3a28;border-radius:14px;padding:14px 14px 16px;
+    box-shadow:0 6px 22px rgba(0,0,0,.35)
   }
-  h1{margin:0 0 10px;font-size:clamp(18px,3.5vw,24px)}
-  .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
+  .label{color:var(--muted);font-size:.92rem}
+  .value{font-variant-numeric:tabular-nums;letter-spacing:.2px}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+  .big{font-size:1.25rem}
   .pill{
-    display:inline-flex;align-items:center;gap:8px;
-    padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.02)
+    display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+    background:#0f2319;border:1px solid #1a3a28;font-size:.85rem
   }
-  code.kv{background:rgba(255,255,255,.04);padding:2px 6px;border-radius:6px;border:1px solid var(--line)}
-  .gold{color:var(--gold)}
-  @media (min-width:720px){ .grid{grid-template-columns:1fr 1fr} }
+  .dot{width:10px;height:10px;border-radius:50%}
+  .green{background:var(--ok)}
+  .amber{background:var(--warn)}
+  .red{background:var(--err)}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .muted{color:var(--muted)}
+  .hr{height:1px;background:#153a26;margin:10px 0}
+  .foot{font-size:.82rem;color:var(--muted);margin-top:12px}
+  code.k{font-size:.82rem;background:#0c2017;border:1px solid #1a3a28;border-radius:6px;padding:2px 6px}
 </style>
 </head>
 <body>
   <div class="wrap">
+    <h1>$BAG — Live Pricing</h1>
+    <div class="sub">Source of truth: XRPL AMM BAG/XRP. Fallback: last known live AMM price only.</div>
 
-    <!-- TOP LIVE TICKER -->
     <div class="ticker">
-      <div id="liveDot" class="dot err" aria-hidden="true"></div>
-      <div class="label">$BAG</div>
-      <div class="value" id="liveBAG">—</div>
-      <div class="sep">·</div>
-      <div class="label">XRP</div>
-      <div class="value" id="liveXRP">—</div>
-      <div class="muted" id="liveNote"> (unavailable)</div>
-    </div>
-
-    <div class="grid">
-      <section class="card">
-        <h1>$BAG ↔ XRP conversion</h1>
+      <section class="card" id="statusCard">
         <div class="row">
-          <div class="pill"><strong>Spot</strong> <span id="liveConv" class="muted">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</span></div>
-          <div class="pill">Source <code class="kv" id="srcKv">AMM (BAG/XRP), XRP-USD via CoinGecko</code></div>
+          <div class="label">Status</div>
+          <div class="pill" id="livePill"><span class="dot red" id="liveDot"></span><span id="liveTxt">Connecting</span></div>
         </div>
+        <div class="row"><div class="label">Resolved Issuer</div><div class="value mono" id="issuerVal">—</div></div>
+        <div class="row"><div class="label">XRPL Node</div><div class="value mono" id="nodeVal">—</div></div>
+        <div class="row"><div class="label">Last Updated</div><div class="value" id="tsVal">—</div></div>
+      </section>
+
+      <section class="card" id="priceCard">
+        <div class="row"><div class="label">BAG/XRP</div><div class="value big mono" id="bagXrp">—</div></div>
+        <div class="row"><div class="label">XRP/USD</div><div class="value mono" id="xrpUsd">—</div></div>
+        <div class="hr"></div>
+        <div class="row"><div class="label">$BAG (USD)</div><div class="value big mono" id="bagUsd">—</div></div>
+        <div class="foot">Computed from AMM reserves. <code class="k">USD = (XRP/USD) × (XRP per BAG)</code></div>
       </section>
 
       <section class="card">
-        <h1>Notes</h1>
-        <ul class="muted" style="margin:0 0 0 18px;line-height:1.4">
-          <li>Green light = AMM pool live. Amber = last live. Red = unavailable.</li>
-          <li>No order book or OTC fallback. AMM only, per config.</li>
-          <li>UI never blanks; uses last good values while retrying.</li>
-        </ul>
+        <div class="row"><div class="label">Cache Policy</div><div class="value">Last Live Only</div></div>
+        <div class="row"><div class="label">Order Book</div><div class="value">Never</div></div>
+        <div class="row"><div class="label">OTC</div><div class="value">Never</div></div>
+        <div class="row"><div class="label">Cache TTL</div><div class="value">15 minutes soft</div></div>
+        <div class="foot">If live AMM fetch fails, UI shows the most recent live snapshot from local cache.</div>
       </section>
     </div>
-
-    <p class="muted" style="margin-top:14px">XRPL’s Heaviest Meme… <span class="gold">getthebag.io</span></p>
   </div>
 
-  <!-- PRICES (v12: multi-node AMM + resilient caching) -->
-  <script>
-  (function(){
-    const PRICE_REFRESH_MS = 15000;
-    const FETCH_TIMEOUT_MS = 7000;
-    const LIVE_CACHE_TTL_MS = 24*60*60*1000;
-    const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+<script>
+/* =========================
+   $BAG Live Pricing Engine
+   =========================
+   - Discovers BAG issuer via xrp-ledger.toml on your domains
+   - Connects to XRPL via multiple WebSocket endpoints (race-first)
+   - Requests AMM reserves for BAG/XRP and computes price
+   - Fetches XRP/USD from CoinGecko
+   - Strict fallback: last live cached snapshot only
+*/
+(function(){
+  const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
+  const XRPL_ENDPOINTS = [
+    'wss://xrplcluster.com',        // community cluster
+    'wss://s1.ripple.com',          // Ripple primary
+    'wss://xrpl.ws'                 // public
+  ];
 
-    // 🔐 $BAG AMM pair (BAG/XRP)
-    const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
-    const BAG_CODE   = 'BAG';
+  const DOM = {
+    dot: document.getElementById('liveDot'),
+    txt: document.getElementById('liveTxt'),
+    node: document.getElementById('nodeVal'),
+    issuer: document.getElementById('issuerVal'),
+    bagxrp: document.getElementById('bagXrp'),
+    xrpUsd: document.getElementById('xrpUsd'),
+    bagUsd: document.getElementById('bagUsd'),
+    ts: document.getElementById('tsVal'),
+  };
 
-    const VIEW_CACHE_KEY = 'bag_prices_v8';
-    const LAST_LIVE_KEY  = 'bag_last_live_v1';
-    const XRP_KEY        = 'xrp_usd';
+  const CACHE_KEY = 'bag_live_amm_snapshot_v2';
+  const SOFT_TTL_MS = 15 * 60 * 1000;
 
-    // UI refs
-    const liveDot = document.getElementById('liveDot');
-    const liveBAG = document.getElementById('liveBAG');
-    const liveXRP = document.getElementById('liveXRP');
-    const liveNote = document.getElementById('liveNote');
-    const liveConv = document.getElementById('liveConv');
+  const state = {
+    issuer: null,
+    client: null,
+    node: null,
+    xrpUsd: null,
+    bagPerXrp: null, // XRP per 1 BAG
+    ts: null
+  };
 
-    // Shared state (kept global for other modules)
-    const PRICES = (window.__PRICES__ = window.__PRICES__ || { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+  function setStatus(color, text){
+    DOM.dot.className = 'dot ' + color;
+    DOM.txt.textContent = text;
+  }
 
-    // Keep last good in-memory values so the UI never blanks during a bad poll
-    let lastGood = { bagUsd: PRICES.bagUsd||0, xrpUsd: PRICES.xrpUsd||0, source: PRICES.source||'—' };
+  function fmt(n, dp=6){
+    if(n===null || n===undefined || Number.isNaN(n)) return '—';
+    return Number(n).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
+  }
 
-    // utils
-    const fmt = n => Number.isFinite(n) ? n.toLocaleString(undefined,{maximumFractionDigits:6}) : '—';
-    const cacheSet = (k,v) => { try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
-    const cacheGet = (k, ttlMs) => {
-      try{
-        const o = JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null;
-        return (Date.now()-(o.t||0) <= ttlMs) ? o.v : null;
-      }catch{ return null; }
+  function saveCache(snap){
+    const payload = {
+      v:2, ts: Date.now(),
+      issuer: snap.issuer,
+      node: snap.node,
+      xrpUsd: snap.xrpUsd,
+      bagXrp: snap.bagXrp // XRP per BAG
     };
-    function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
-      const ctrl = new AbortController();
-      const id = setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{ localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); }catch(e){}
+  }
+
+  function loadCache(){
+    try{
+      const raw = localStorage.getItem(CACHE_KEY);
+      if(!raw) return null;
+      const obj = JSON.parse(raw);
+      return obj;
+    }catch(e){ return null; }
+  }
+
+  async function fetchToml(url){
+    const res = await fetch(url, {cache:'no-store'});
+    if(!res.ok) throw new Error('TOML not found ' + url);
+    return await res.text();
+  }
+
+  function parseIssuerFromToml(tomlText){
+    // Minimal TOML scan for a [CURRENCIES] block with code/name = "BAG" and 'issuer'
+    // Accepts either 'code' or 'currency' fields.
+    const blocks = tomlText.split(/\n\[/).map((x,i)=> i?('['+x):x);
+    for(const b of blocks){
+      if(!/\[CURRENCIES\]/i.test(b)) continue;
+      const hasBAG = /(^|\n)\s*(code|currency)\s*=\s*"(?:BAG)"/i.test(b);
+      if(!hasBAG) continue;
+      const m = b.match(/(^|\n)\s*issuer\s*=\s*"([rX][1-9A-HJ-NP-Za-km-z]{24,})"/i);
+      if(m) return m[2];
+    }
+    return null;
+  }
+
+  async function resolveIssuer(){
+    // Try meta list first
+    const meta = document.querySelector('meta[name="x-bag-toml-domains"]');
+    const urls = meta ? meta.content.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    const tried = [];
+    for(const u of urls){
       try{
-        const u = new URL(url, location.origin);
-        u.searchParams.set('_ts', Date.now().toString());
-        return fetch(u.toString(), {
-          ...opts,
-          headers: { Accept:'application/json', ...(opts.headers||{}) },
-          mode:'cors', cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
-          signal: ctrl.signal
-        });
-      } finally { setTimeout(()=>clearTimeout(id),0); }
-    }
-
-    function updateLiveLine(){
-      if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
-      if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd)
-        ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})
-        : '—';
-
-      if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'dot ok' : PRICES.source==='last-live' ? 'dot warn' : 'dot err');
-      if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
-
-      if (liveConv){
-        if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-          const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
-          const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
-          liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
-        } else {
-          liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
-        }
+        const txt = await fetchToml(u);
+        const iss = parseIssuerFromToml(txt);
+        if(iss) return iss;
+        tried.push(u+' (no issuer BAG)');
+      }catch(e){
+        tried.push(u+' (fail)');
       }
-
-      // remember last good
-      if (PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        lastGood = { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, source: PRICES.source };
-      }
-      window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
     }
+    // Last resort: cached issuer inside previous snapshot
+    const snap = loadCache();
+    if(snap && snap.issuer){
+      return snap.issuer;
+    }
+    throw new Error('Issuer not found via TOML. Tried: ' + tried.join(', '));
+  }
 
-    async function fetchXrpUsdLive(){
-      // Live first; if it fails, keep cache; don’t blank UI
+  async function connectXRPL(){
+    // race the endpoints — first successful wins
+    const races = XRPL_ENDPOINTS.map(ep => new Promise(async (resolve, reject)=>{
       try{
-        const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-        if(!r.ok) throw 0;
-        const v = (await r.json())?.ripple?.usd;
-        if(Number(v)>0){
-          PRICES.xrpUsd = Number(v);
-          cacheSet(XRP_KEY, PRICES.xrpUsd);
-          return true;
-        }
-      }catch(_){}
-      // fallback to cached XRP USD if exists
-      const cachedX = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
-      if (Number(cachedX)>0){ PRICES.xrpUsd = Number(cachedX); return false; }
-      return false;
+        const c = new xrpl.Client(ep, { connectionTimeout: 10000 });
+        await c.connect();
+        resolve({client:c, ep});
+      }catch(e){ reject(e); }
+    }));
+    // Promise.any polyfill-ish
+    try{
+      const winner = await Promise.any(races);
+      // Close losers
+      races.forEach(p => p.then(({client,ep})=>{
+        if(ep!==winner.ep){ try{ client.disconnect(); }catch(e){} }
+      }).catch(()=>{}));
+      return winner;
+    }catch(e){
+      // All failed
+      throw new Error('XRPL endpoints unreachable');
     }
+  }
 
-    function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
-    function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+  async function getAMMPrice(client, issuer){
+    // AMM reserves for BAG/XRP
+    // XRP is denoted as currency: "XRP" with no issuer
+    const req = {
+      command: 'amm_info',
+      asset:  { currency: 'BAG', issuer },
+      asset2: { currency: 'XRP' }
+    };
+    const res = await client.request(req);
+    if(!res?.result?.amm?.amount || !res?.result?.amm?.amount2){
+      throw new Error('AMM reserves missing');
+    }
+    const A = res.result.amm.amount;   // BAG side reserve
+    const B = res.result.amm.amount2;  // XRP side reserve
+    const bagReserve = parseFloat(A.value);
+    const xrpReserve = parseFloat(B.value);
+    if(!(bagReserve>0) || !(xrpReserve>0)) throw new Error('Invalid reserves');
+    // Price of 1 BAG in XRP = XRP_reserve / BAG_reserve
+    const xrpPerBag = xrpReserve / bagReserve;
+    return xrpPerBag;
+  }
 
-    async function fetchBagViaAMMLive(){
-      // Try multiple XRPL nodes; first to succeed wins
-      const NODES = [
-        'wss://xrplcluster.com',
-        'wss://s1.ripple.com',
-        'wss://s2.ripple.com'
-      ];
-      const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+  async function getXrpUsd(){
+    const r = await fetch(COINGECKO, {cache:'no-store'});
+    if(!r.ok) throw new Error('XRP/USD fetch failed');
+    const j = await r.json();
+    const v = j?.ripple?.usd;
+    if(!(v>0)) throw new Error('XRP/USD invalid');
+    return Number(v);
+  }
 
-      for (const url of NODES){
-        const price = await new Promise((resolve)=>{
-          let done=false;
-          const ws = new WebSocket(url);
-          const killer = setTimeout(()=>{ if(done) return; done=true; try{ws.close();}catch{}; resolve(null); }, FETCH_TIMEOUT_MS);
+  function renderSnapshot({issuer,node,xrpUsd,bagXrp,ts}, live){
+    DOM.issuer.textContent = issuer || '—';
+    DOM.node.textContent = node || '—';
+    DOM.xrpUsd.textContent = fmt(xrpUsd, 4);
+    DOM.bagxrp.textContent = fmt(bagXrp, 6);
+    const usd = (xrpUsd && bagXrp) ? (xrpUsd * bagXrp) : null;
+    DOM.bagUsd.textContent = usd===null ? '—' : fmt(usd, 6);
+    DOM.ts.textContent = ts ? new Date(ts).toLocaleString() : '—';
 
-          ws.onopen = ()=> { try{ ws.send(JSON.stringify(req)); }catch{ clearTimeout(killer); resolve(null); } };
-          ws.onerror = ()=> { clearTimeout(killer); if(done) return; done=true; resolve(null); };
-          ws.onclose = ()=> {};
-          ws.onmessage = (ev)=>{
-            if (done) return;
-            try{
-              const msg = JSON.parse(ev.data);
-              if (msg.id!==1 || !msg.result || !msg.result.amm) return; // wait until amm present or timeout
-              const amm = msg.result.amm;
-              const bagBal = parseIouAmount(amm.amount);
-              const xrpBal = parseXrpAmount(amm.amount2);
-              if (!(bagBal>0) || !(xrpBal>0)) { /* not a valid pool */ }
-              const p = xrpBal / bagBal;
-              if (p>0 && isFinite(p)){
-                done = true; clearTimeout(killer);
-                try{ ws.close(); }catch{};
-                resolve(p);
-                return;
-              }
-            }catch{ /* ignore */ }
-          };
-        });
+    if(live) setStatus('green', 'Live AMM');
+    else setStatus('amber', 'Cached snapshot');
+  }
 
-        if (price && price>0){
-          // convert to USD with whatever XRP price we have (live or cached)
-          if (PRICES.xrpUsd>0){
-            PRICES.bagUsd = PRICES.xrpUsd * price;
-            PRICES.source = 'live-amm';
-            cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-            cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-            return true;
-          } else {
-            const cachedX = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
-            if (Number(cachedX)>0){
-              PRICES.xrpUsd = Number(cachedX);
-              PRICES.bagUsd = PRICES.xrpUsd * price;
-              PRICES.source = 'live-amm';
-              cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-              cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
-              return true;
-            }
-            return false;
-          }
-        }
+  function renderUnavailable(){
+    setStatus('red', 'Unavailable');
+    DOM.node.textContent = '—';
+    DOM.bagxrp.textContent = '—';
+    DOM.bagUsd.textContent = '—';
+  }
+
+  async function runOnce(){
+    try{
+      setStatus('amber','Resolving issuer');
+      const issuer = await resolveIssuer();
+      state.issuer = issuer;
+      DOM.issuer.textContent = issuer;
+
+      setStatus('amber','Connecting XRPL');
+      const {client, ep} = await connectXRPL();
+      state.client = client;
+      state.node = ep;
+      DOM.node.textContent = ep;
+
+      setStatus('amber','Pulling AMM');
+      const bagXrp = await getAMMPrice(client, issuer);
+
+      setStatus('amber','XRP/USD');
+      const xrpUsd = await getXrpUsd();
+
+      const ts = Date.now();
+      state.xrpUsd = xrpUsd;
+      state.bagPerXrp = bagXrp;
+      state.ts = ts;
+
+      const snap = { issuer, node: ep, xrpUsd, bagXrp, ts };
+      saveCache(snap);
+      renderSnapshot(snap, true);
+
+      try{ await client.disconnect(); }catch(e){}
+    }catch(e){
+      // Strict fallback: last live only
+      const cached = loadCache();
+      if(cached && cached.xrpUsd>0 && cached.bagXrp>0){
+        renderSnapshot({
+          issuer: cached.issuer || state.issuer || '—',
+          node: cached.node || '—',
+          xrpUsd: cached.xrpUsd,
+          bagXrp: cached.bagXrp,
+          ts: cached.ts
+        }, false);
+      }else{
+        renderUnavailable();
       }
-      return false;
     }
+  }
 
-    function loadLastLiveBundle(){
-      const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
-      if (v && Number(v.bagUsd)>0){
-        PRICES.bagUsd = Number(v.bagUsd);
-        if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
-        PRICES.source = 'last-live';
-        return true;
-      }
-      return false;
-    }
-    function loadViewCache(){
-      const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
-      const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
-      let ok=false;
-      if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); ok=true; }
-      if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok=true; }
-      if (ok && PRICES.source==='—') PRICES.source = 'last-live';
-      return ok;
-    }
+  // Scheduler: refresh on load, then every 60s
+  runOnce();
+  setInterval(runOnce, 60_000);
 
-    async function refreshPrices(){
-      // 1) Try to refresh XRP USD (live or cached)
-      await fetchXrpUsdLive();
-
-      // 2) Try AMM live across multiple nodes
-      const ammOk = await fetchBagViaAMMLive();
-
-      // 3) If AMM not live, keep the best cached bundle
-      if (!ammOk){
-        if (!loadLastLiveBundle()) loadViewCache();
-
-        // If still nothing, restore last known good in-memory values so UI doesn’t blank
-        if (!(PRICES.bagUsd>0) && lastGood.bagUsd>0){
-          PRICES.bagUsd = lastGood.bagUsd;
-          PRICES.xrpUsd = lastGood.xrpUsd;
-          PRICES.source = lastGood.source || 'last-live';
-        }
-      }
-
-      updateLiveLine();
-    }
-
-    (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
-
-    addEventListener('storage', (e)=>{
-      if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
-        if (!loadLastLiveBundle()) loadViewCache();
-        updateLiveLine();
-      }
-    });
-  })();
-  </script>
+})();
+</script>
 </body>
 </html>
