@@ -95,7 +95,7 @@
   /* Board sits above skin and is nudged down so cards rest on the table cloth */
   #tableBoard{
     position:relative; z-index:1;
-    margin-top: 160px;   /* shift game down over the skin so cards sit on the felt */
+    margin-top: 160px;
   }
 
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
@@ -111,7 +111,7 @@
 
   .card{
     width:var(--cardW);height:var(--cardH);border-radius:12px;border:2px solid #dcdcdc;
-    background:transparent;           /* transparent so felt shows through */
+    background:transparent;
     overflow:hidden;box-shadow:0 10px 18px rgba(0,0,0,.32); animation:dealPop .18s ease
   }
   .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:transparent}
@@ -166,7 +166,7 @@
   #bj-win-readout .muted{color:var(--muted)}
   #bj-win-readout .note{color:var(--muted);font-size:.92rem;margin-top:10px;line-height:1.45}
 
-  /* --- Rules pill: FLOATING bottom-right (restored) --- */
+  /* --- Rules pill: FLOATING bottom-right --- */
   .rules-fab{
     position:fixed;
     right:16px;
@@ -309,7 +309,6 @@
           <div class="micro">Bet amount</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <div>
-              <!-- Default to 1 XRP -->
               <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
               <span class="unit">XRP</span>
             </div>
@@ -396,7 +395,7 @@
   </div>
 </div>
 
-<!-- AUDIO (shared pattern with Dice) -->
+<!-- AUDIO -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -596,7 +595,7 @@
 })();
 </script>
 
-<!-- PRICES (identical logic to Dice) -->
+<!-- PRICES (fallback to last live, then view cache) -->
 <script>
 (function(){
   const PRICE_REFRESH_MS = 15000;
@@ -755,7 +754,7 @@
 })();
 </script>
 
-<!-- UNIVERSAL STAKE WIRE (same as Dice) -->
+<!-- UNIVERSAL STAKE WIRE -->
 <script>
 (function(global){
   const PR = ()=>global.__PRICES__ || { bagUsd:0, xrpUsd:0 };
@@ -803,16 +802,11 @@
     const usdEl = document.querySelector(cfg.usdInput);
     const qtyEl = document.querySelector(cfg.qtyInput);
     const curToggle = document.querySelector(cfg.currencyToggle);
-    const unitEls = document.querySelectorAll(cfg.unitLabels); /* fixed: querySelectorAll */
+    const unitEls = document.querySelectorAll(cfg.unitLabels);
     const limitsEl = document.querySelector(cfg.limitsLabel);
     const presets = document.querySelector(cfg.presetsRoot);
 
     const STATE = { lastEdited:'qty', lastCur:null, syncing:false };
-
-    /* enforce default 1 XRP if empty or invalid */
-    if (qtyEl && (!qtyEl.value || Number(qtyEl.value) <= 0)) {
-      qtyEl.value = '1';
-    }
 
     function paintUnits(){
       const cur = getCur(curToggle);
@@ -839,7 +833,7 @@
       const cur = getCur(curToggle);
       const px = priceFor(cur);
       const usd = readUsd();
-      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ /* leave qty as-is to preserve 1 XRP default */ }
+      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ writeQty(''); }
       renderLimits();
       STATE.syncing = false;
     }
@@ -917,8 +911,15 @@
     }
 
     paintUnits();
-    if (readUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); }
-    else { STATE.lastEdited='qty'; syncFromQty(); }
+
+    /* Default to 1 XRP on load */
+    try{
+      curToggle.querySelector('input[value="XRP"]').checked = true;
+      qtyEl.value = '1';
+      unitEls.forEach(s=> s.textContent = 'XRP');
+      STATE.lastEdited='qty'; syncFromQty();
+    }catch{}
+
     renderLimits();
   }
 
@@ -940,19 +941,6 @@
     activeClass:'active',
     syncOnPrice:true
   });
-
-  /* Final guard: ensure default 1 XRP after init */
-  (function enforceDefault1XRP(){
-    const bet  = document.getElementById('betQty');
-    const curX = document.querySelector('#curToggle input[value="XRP"]');
-    if (curX && !curX.checked) { curX.checked = true; curX.dispatchEvent(new Event('change',{bubbles:true})); }
-    if (bet && (!bet.value || Number(bet.value) <= 0)) {
-      bet.value = '1';
-      bet.dispatchEvent(new Event('input',{bubbles:true}));
-      bet.dispatchEvent(new Event('change',{bubbles:true}));
-    }
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  })();
 </script>
 
 <!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice -->
@@ -1040,19 +1028,25 @@
 
   function forceBetXRP1Once(){
     const bet  = document.getElementById('betQty');
-    const unit = document.querySelector('.unit');
+    const usd  = document.getElementById('usdBet');
+    const unitEls = document.querySelectorAll('.unit');
     const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
 
     if (xrpRadio && !xrpRadio.checked){
       xrpRadio.checked = true;
       xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
     }
-    if (unit) unit.textContent = 'XRP';
+    unitEls.forEach(s=> s.textContent = 'XRP');
 
     if (bet && (!bet.value || Number(bet.value) <= 0)){
       bet.value = '1';
       bet.dispatchEvent(new Event('input', {bubbles:true}));
       bet.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    if (usd){
+      usd.dataset.userTyped = '0';
+      usd.dispatchEvent(new Event('input', {bubbles:true}));
+      usd.dispatchEvent(new Event('change', {bubbles:true}));
     }
     window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
@@ -1085,18 +1079,6 @@
   function enableLive(){
     window.__BAG_FORCE_DEMO=false;
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    /* also enforce 1 XRP default in live mode */
-    (function(){
-      const bet  = document.getElementById('betQty');
-      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-      if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
-      if (bet && (!bet.value || Number(bet.value) <= 0)){
-        bet.value = '1';
-        bet.dispatchEvent(new Event('input',{bubbles:true}));
-        bet.dispatchEvent(new Event('change',{bubbles:true}));
-      }
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    })();
   }
 
   if (forceLive) enableLive(); else enableDemo();
@@ -1114,7 +1096,7 @@
 })();
 </script>
 
-<!-- HUD updater (Balance pill row like Dice) -->
+<!-- HUD updater -->
 <script>
 (function(){
   const curToggle = document.getElementById('curToggle');
@@ -1156,7 +1138,7 @@
     const { betQtyEl } = els();
     const v = parseFloat(betQtyEl?.value || '0');
     if (!Number.isFinite(v) || v < 0) return 0;
-    return Number(v) || 1; /* keep the HUD showing 1 by default */
+    return Number(v);
   }
 
   function styleBalanceRow(){
@@ -1216,7 +1198,7 @@
 })();
 </script>
 
-<!-- BLACKJACK WIN READOUT MODULE (Surrender & Jackpot REMOVED) -->
+<!-- BLACKJACK WIN READOUT MODULE -->
 <script>
 (function(w){
   const nfBAG = new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
@@ -1224,9 +1206,9 @@
 
   const BJ = {
     el:null,
-    rules:{            // tweak here if needed
-      regular:1.25,    // regular win
-      blackjack:2.00   // natural 21
+    rules:{
+      regular:1.25,
+      blackjack:2.00
     },
     state:{stakeBag:0, usdPerBag:0},
 
@@ -1248,8 +1230,8 @@
       const s = this.state.stakeBag||0, r=this.rules;
       const blackjack = s * r.blackjack;
       const regular   = s * r.regular;
-      const doubled   = s * r.regular * 2;   // double-down win
-      const split     = s * r.regular;       // per hand
+      const doubled   = s * r.regular * 2;
+      const split     = s * r.regular;
 
       this.el.innerHTML = `
         <div class="row"><div class="title">BLACKJACK WIN (natural 21):</div><div>${this.amt(blackjack)}</div></div>
@@ -1274,7 +1256,6 @@
   };
 })(window);
 
-// Boot + wiring: recalc on stake/price changes
 document.addEventListener('DOMContentLoaded', ()=>{
   BAGBJ.init('#bj-win-readout');
   const upd = ()=>{
@@ -1300,7 +1281,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
 <!-- GAME CORE -->
 <script>
 const CFG = { decks:1, hitSoft17:true, allowDouble:true, allowSplit:true, mBJ:2.00, mWIN:1.25, mPUSH:1.00 };
-// Keep WIN box in sync with live rules
 try{ BAGBJ && BAGBJ.setRules && BAGBJ.setRules({ blackjack: CFG.mBJ, regular: CFG.mWIN }); }catch{}
 
 let shoe=[];
@@ -1384,7 +1364,6 @@ function startRound(){
   const sBagNow = stakeBag();
   const sUsdNow = stakeUsd();
 
-  // Mirror Dice: enforce session and limits in BOTH modes
   if (!window.__bagSession || !__bagSession.active || !__bagSession.active()) return alert('Start a session at The Cage');
   if (sUsdNow < MIN_USD) return alert(`Minimum $${MIN_USD.toFixed(2)} stake`);
   if (sUsdNow > MAX_USD) return alert(`Maximum $${MAX_USD.toFixed(2)} stake`);
