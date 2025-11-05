@@ -1,331 +1,1305 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>$BAG — Live Pricing (AMM)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="format-detection" content="telephone=no" />
+<title>BAG Poker — 5-Card Draw</title>
 
-<!-- XRPL + UI base -->
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<script src="https://cdn.jsdelivr.net/npm/xrpl@2.13.0/dist/xrpl-latest.min.js"></script>
-
-<!-- Domains to try for TOML discovery -->
-<meta name="x-bag-toml-domains" content="https://getthebag.io/.well-known/xrp-ledger.toml,https://bagtoken.net/.well-known/xrp-ledger.toml" />
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<script>window.__BAG_FORCE_DEMO = false;</script>
 
 <style>
-  :root{
-    --bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--fg:#eaf3ee;--muted:#aeb7af;--gold:#ffe175;
-    --ok:#2fbf6b;--warn:#caa93a;--err:#d86161;--line:#173524
-  }
   *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  .wrap{max-width:980px;margin:0 auto;padding:16px}
-  h1{margin:0 0 6px;font-size:clamp(1rem,3vw,1.4rem);letter-spacing:.2px}
-  .sub{color:var(--muted);font-size:.9rem;margin-bottom:16px}
+  :root{
+    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+    --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
+    --lose:#e25b5b; --warn:#e8a85c;
+    --cardW:clamp(64px,16vw,96px); --cardH:calc(var(--cardW)*1.42);
+    --win-bg: rgba(10,12,16,.70);
+  }
+  html,body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;
+    -webkit-text-size-adjust:100%;
+  }
+  body{ touch-action: manipulation; }
+  img{display:block;max-width:100%;height:auto}
+  button,input{font-size:16px}
 
-  .ticker{
-    display:grid;gap:12px;
-    grid-template-columns: repeat(auto-fit,minmax(270px,1fr));
+  .back-casino{
+    position:fixed;top:18px;left:18px;z-index:1000;
+    background:linear-gradient(180deg,#ffe175 0%,#f5c94c 100%);
+    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;
+    box-shadow:0 4px 0 #b08a19;transition:all .15s ease
   }
-  .card{
-    background:linear-gradient(180deg,var(--panel),var(--panel2));
-    border:1px solid #1a3a28;border-radius:14px;padding:14px 14px 16px;
-    box-shadow:0 6px 22px rgba(0,0,0,.35)
+  .back-casino:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+  .back-casino:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+
+  .game-header{text-align:center;padding:36px 10px 14px}
+  .game-header img.hero-img{margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+  .game-header h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:6px 0 0}
+  @media (min-width:900px){
+    .game-header img.hero-img{width:34vw;max-width:420px;margin-left:auto;margin-right:auto}
   }
-  .row{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
-  .label{color:var(--muted);font-size:.92rem}
-  .value{font-variant-numeric:tabular-nums;letter-spacing:.2px}
-  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
-  .big{font-size:1.25rem}
-  .pill{
-    display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
-    background:#0f2319;border:1px solid #1a3a28;font-size:.85rem
+
+  .game-teaser{padding:10px 16px 28px;background:
+    radial-gradient(1200px 600px at 10% -10%, #0e2c1d 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 20%, #0b2318 0%, transparent 55%),#060806;
+    border-top:1px solid #131313;border-bottom:1px solid #131313}
+  .game-wrap{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:22px}
+  @media (max-width:900px){.game-wrap{grid-template-columns:1fr}}
+
+  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
+  .pad{padding:16px}
+
+  .section-title{font-weight:800;font-size:1.2rem;margin:0 0 12px}
+  .stack{display:grid;gap:10px}
+  .choice{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+  .chip input{accent-color:#2fbf6b}
+  .mono{font-variant-numeric:tabular-nums}
+  .micro{font-size:.85rem;color:#a8b5ab}
+  .muted{color:#cfd6cf}
+  .divider{height:1px;background:#123221;margin:10px 0}
+  .callout{margin-top:12px;padding:12px;border:1px dashed #29543d;border-radius:12px;background:#0c2418;color:#e4efe7}
+
+  #liveDot{margin-right:6px}
+  .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
+
+  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px;overflow:hidden}
+  .felt{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px}
+  .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
+    border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
+
+  .hand{position:relative;min-height:calc(var(--cardH) + 36px);padding-top:20px}
+  .label{position:absolute;top:0;left:0;color:#bcd0c4;font-size:12px}
+  .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
+
+  .row-cards{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;width:100%;max-width:100%}
+  .card{width:var(--cardW);height:var(--cardH);border-radius:12px;border:2px solid #dcdcdc;background:#fff;overflow:hidden;box-shadow:0 10px 18px rgba(0,0,0,.32); animation:dealPop .18s ease; position:relative}
+  .card img{width:100%;height:100%;object-fit:contain;display:block;padding:2%;background:#fff}
+  .hold-badge{position:absolute;right:6px;bottom:6px;font-size:10px;background:rgba(0,0,0,.55);color:#fff;padding:3px 6px;border-radius:6px;opacity:0;transform:translateY(4px);transition:all .18s ease}
+  .card.hold{outline:2px solid #2fbf6b; outline-offset:2px}
+  .card.hold .hold-badge{opacity:1; transform:translateY(0)}
+
+  .btnbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
+  .btn{min-width:120px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c); transition:transform .06s ease, box-shadow .2s ease}
+  .btn.alt{color:#e9efe9;background:#15261c;border:1px solid #2b6a48}
+  .btn:disabled{opacity:.65;cursor:not-allowed}
+  .btn.pulse{transform:translateY(1px)}
+
+  /* --- Tiny HUD --- */
+  .hudbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:8px 2px 0; }
+  .pill{ background:#0a1e15; border:1px solid #244330; border-radius:999px; padding:6px 10px; font-size:12px; color:#cfe6d8 }
+  .hudbar .pill b{ font-weight:800 }
+
+  @keyframes dealPop{ from{ transform:scale(.98); opacity:.0 } to{ transform:scale(1); opacity:1 } }
+
+  /* Felt flashes + table shake (parity with Blackjack) */
+  #feltBoard.flash-win { box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset; animation:glowGreen 900ms ease; }
+  #feltBoard.flash-lose{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset; animation:glowRed 900ms ease; }
+  #feltBoard.flash-push{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset; animation:glowGold 1000ms ease; }
+  .table.shake { animation:shake .5s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes shake{10%,90%{transform:translate3d(-1px,0,0)}20%,80%{transform:translate3d(2px,0,0)}30%,50%,70%{transform:translate3d(-4px,0,0)}40%,60%{transform:translate3d(4px,0,0)}}
+  @keyframes glowGreen{ from{ box-shadow:0 0 0 0 rgba(47,191,107,.0) inset } to{ box-shadow:0 0 0 2px #2fbf6b, 0 0 48px rgba(47,191,107,.35) inset } }
+  @keyframes glowRed  { from{ box-shadow:0 0 0 0 rgba(226,91,91,.0) inset } to{ box-shadow:0 0 0 2px #e25b5b, 0 0 48px rgba(226,91,91,.28) inset } }
+  @keyframes glowGold { from{ box-shadow:0 0 0 0 rgba(255,225,117,.0) inset } to{ box-shadow:0 0 0 2px #ffe175, 0 0 48px rgba(255,225,117,.25) inset } }
+  
+  /* Quick Amount buttons */
+  .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .preset-chip{
+    appearance:none;border:1px solid var(--green-600);background:var(--green);color:#ffffff;border-radius:999px;
+    padding:8px 12px;font-weight:900;letter-spacing:.2px;cursor:pointer;
+    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12);
+    transition:transform .06s ease, box-shadow .2s ease, filter .2s ease;
   }
-  .dot{width:10px;height:10px;border-radius:50%}
-  .green{background:var(--ok)}
-  .amber{background:var(--warn)}
-  .red{background:var(--err)}
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .muted{color:var(--muted)}
-  .hr{height:1px;background:#153a26;margin:10px 0}
-  .foot{font-size:.82rem;color:var(--muted);margin-top:12px}
-  code.k{font-size:.82rem;background:#0c2017;border:1px solid #1a3a28;border-radius:6px;padding:2px 6px}
+  .preset-chip:hover{filter:brightness(1.03)}
+  .preset-chip:active{transform:translateY(1px);box-shadow:0 3px 8px rgba(47,191,107,.16), inset 0 1px 0 rgba(255,255,255,.1)}
+  .preset-chip:focus-visible{outline:2px solid #ffffff; outline-offset:2px}
+  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
+
+  /* Rules modal */
+  .rules-fab{position:fixed;right:16px;bottom:16px;z-index:1000;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:999px;padding:10px 14px;font-weight:800}
+  .rules-overlay{display:none;position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,.55);place-items:center;padding:16px}
+  .rules-modal{max-width:680px;width:100%;background:#0b1b13;border:1px solid #173524;border-radius:16px;padding:18px}
+  .rules-close{position:absolute;right:22px;top:16px;border:0;background:transparent;color:#e9efe9;font-size:22px;cursor:pointer}
+  .rules-note{margin-top:10px;color:#a8b5ab}
+
+  /* —— Win Readout (Dice-parity) —— */
+  #pk-win-readout{
+    background: var(--panel2); border:1px solid var(--line); border-radius:14px;
+    padding:16px; box-shadow:0 10px 24px var(--shadow); color:var(--fg);
+  }
+  #pk-win-readout .row{display:flex; justify-content:space-between; gap:12px; margin:8px 0}
+  #pk-win-readout .title{font-weight:800; letter-spacing:.2px}
+  #pk-win-readout .muted{color:var(--muted)}
+  #pk-win-readout .note{color:var(--muted); font-size:.92rem; margin-top:10px; line-height:1.45}
 </style>
+
+ <!-- SHARED OVERLAY / SESSION + QUICK AMOUNTS (same assets as Blackjack/Dice) -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
 </head>
+
 <body>
-  <div class="wrap">
-    <h1>$BAG — Live Pricing</h1>
-    <div class="sub">Source of truth: XRPL AMM BAG/XRP. Fallback: last known live AMM price only.</div>
+<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
 
-    <div class="ticker">
-      <section class="card" id="statusCard">
-        <div class="row">
-          <div class="label">Status</div>
-          <div class="pill" id="livePill"><span class="dot red" id="liveDot"></span><span id="liveTxt">Connecting</span></div>
+<section class="game-header">
+  <picture>
+    <source type="image/webp" srcset="/assets/bag-poker-1024.webp 1024w, /assets/bag-poker-960.webp 960w" sizes="(min-width:900px) 420px, 90vw">
+    <source type="image/png"  srcset="/assets/bag-poker-1024.png 1024w, /assets/bag-poker-960.png 960w" sizes="(min-width:900px) 420px, 90vw">
+    <img src="/assets/bag-poker-960.png" alt="BAG Poker — 5-Card Draw" class="hero-img" loading="lazy" decoding="async">
+  </picture>
+  <h2>🃏 $BAG POKER — 5-CARD DRAW</h2>
+  <p class="micro" style="margin-top:4px;opacity:.9;">💰 <strong>All payouts are in $BAG.</strong> $XRP bets convert automatically at the live rate.</p>
+</section>
+
+<section class="game-teaser" aria-labelledby="game-teaser-title">
+  <div class="game-wrap">
+
+    <!-- LEFT: Controls / Session / Prices -->
+    <div class="panel pad">
+      <!-- CONNECT -->
+      <div id="connectRow" style="display:flex;justify-content:space-between;align-items:center;margin:-2px 0 10px 0%;">
+        <div id="connectStatus" class="micro" style="opacity:.9">Wallet: <span style="color:#e8a85c">not connected</span></div>
+        <button id="connectBtn" class="btn" style="min-width:auto;padding:10px 14px;">Connect Xaman</button>
+      </div>
+
+      <!-- SESSION -->
+      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
+        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
+          <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
+          <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
         </div>
-        <div class="row"><div class="label">Resolved Issuer</div><div class="value mono" id="issuerVal">—</div></div>
-        <div class="row"><div class="label">XRPL Node</div><div class="value mono" id="nodeVal">—</div></div>
-        <div class="row"><div class="label">Last Updated</div><div class="value" id="tsVal">—</div></div>
-      </section>
+      </div>
 
-      <section class="card" id="priceCard">
-        <div class="row"><div class="label">BAG/XRP</div><div class="value big mono" id="bagXrp">—</div></div>
-        <div class="row"><div class="label">XRP/USD</div><div class="value mono" id="xrpUsd">—</div></div>
-        <div class="hr"></div>
-        <div class="row"><div class="label">$BAG (USD)</div><div class="value big mono" id="bagUsd">—</div></div>
-        <div class="foot">Computed from AMM reserves. <code class="k">USD = (XRP/USD) × (XRP per BAG)</code></div>
-      </section>
+      <div class="section-title">Stake & Prices</div>
+      <div class="stack">
+        <div>
+          <div class="micro">Amount</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+              <span class="micro unit">USD</span>
+            </div>
+          </div>
 
-      <section class="card">
-        <div class="row"><div class="label">Cache Policy</div><div class="value">Last Live Only</div></div>
-        <div class="row"><div class="label">Order Book</div><div class="value">Never</div></div>
-        <div class="row"><div class="label">OTC</div><div class="value">Never</div></div>
-        <div class="row"><div class="label">Cache TTL</div><div class="value">15 minutes soft</div></div>
-        <div class="foot">If live AMM fetch fails, UI shows the most recent live snapshot from local cache.</div>
-      </section>
+          <!-- Quick-picks -->
+          <div
+            class="preset-chips"
+            id="usdPresets"
+            data-quick-amounts
+            data-target-usd="#usdBet"
+            data-target-qty="#betQty"
+            data-currency-toggle="#curToggle"
+            data-min-usd="1"
+            data-max-usd="2000"
+            data-active-class="active"
+            data-sync-on-price="1"
+            role="group"
+            aria-label="Quick bet"
+          >
+            <button type="button" class="preset-chip" data-usd="1">$1</button>
+            <button type="button" class="preset-chip" data-usd="2">$2</button>
+            <button type="button" class="preset-chip" data-usd="5">$5</button>
+            <button type="button" class="preset-chip" data-usd="10">$10</button>
+            <button type="button" class="preset-chip" data-usd="20">$20</button>
+            <button type="button" class="preset-chip" data-usd="50">$50</button>
+            <button type="button" class="preset-chip" data-usd="100">$100</button>
+            <button type="button" class="preset-chip" data-usd="max">Max</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="micro">Bet currency</div>
+          <div class="choice" id="curToggle">
+            <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+            <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+          </div>
+        </div>
+
+        <div>
+          <div class="micro">Bet amount</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <div>
+              <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+              <span class="unit">XRP</span>
+            </div>
+          </div>
+          <div class="micro" id="betLimits" style="margin-top:6px"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="micro">Live prices</div>
+        <div class="muted mono" id="liveLine">
+          <span id="liveDot" class="warn">●</span>
+          <span> BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span> <span id="liveNote"></span></span>
+          <div class="micro" id="liveConv" style="margin-top:4px;opacity:.9;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="callout mono">5-Card Draw vs CPU · Win returns <b>2.00×</b> · Push returns <b>1.00×</b> · One draw only.</div>
+
+        <!-- WIN READOUT (Dice-parity) -->
+        <div id="pk-win-readout" class="winbox" aria-live="polite"></div>
+      </div>
     </div>
+
+    <!-- RIGHT: Table -->
+    <div class="panel pad">
+      <div class="marquee">$BAG POKER TABLE</div>
+      <div class="felt" id="feltBoard">
+        <div class="table" id="tableBoard">
+          <div class="hand" id="cpu">
+            <div class="label">Dealer</div><div class="total" id="cpuRank">—</div>
+            <div class="row-cards" id="cpuCards"></div>
+          </div>
+          <div class="hand" id="you">
+            <div class="label">You</div><div class="total" id="youRank">—</div>
+            <div class="row-cards" id="youCards"></div>
+          </div>
+
+          <div class="btnbar">
+            <button id="deal" class="btn">Deal</button>
+            <button id="draw" class="btn" disabled>Draw</button>
+            <button id="again" class="btn" style="display:none">New Hand</button>
+          </div>
+
+          <div class="hudbar" aria-live="polite" id="pkHud">
+            <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+            <span class="pill">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+            <span class="pill">Bet: <b id="betHud">1</b></span>
+            <span class="pill">Last: <b id="lastLbl">—</b></span>
+          </div>
+
+          <p class="micro" style="text-align:center;margin-top:8px;opacity:.75;">
+            🔊 If you don't hear sound: tap once, turn off Silent, raise volume.
+          </p>
+          <div id="status" class="micro" style="text-align:center;margin-top:8px">Place a stake, then Deal</div>
+        </div>
+      </div>
+    </div>
+
   </div>
+</section>
 
+<!-- AUDIO (same pattern as Blackjack so SFX line up across the floor) -->
 <script>
-/* =========================
-   $BAG Live Pricing Engine
-   =========================
-   - Discovers BAG issuer via xrp-ledger.toml on your domains
-   - Connects to XRPL via multiple WebSocket endpoints (race-first)
-   - Requests AMM reserves for BAG/XRP and computes price
-   - Fetches XRP/USD from CoinGecko
-   - Strict fallback: last live cached snapshot only
-*/
 (function(){
-  const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd';
-  const XRPL_ENDPOINTS = [
-    'wss://xrplcluster.com',        // community cluster
-    'wss://s1.ripple.com',          // Ripple primary
-    'wss://xrpl.ws'                 // public
-  ];
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let AC=null, MASTER=null, primed=false, COMP=null;
 
-  const DOM = {
-    dot: document.getElementById('liveDot'),
-    txt: document.getElementById('liveTxt'),
-    node: document.getElementById('nodeVal'),
-    issuer: document.getElementById('issuerVal'),
-    bagxrp: document.getElementById('bagXrp'),
-    xrpUsd: document.getElementById('xrpUsd'),
-    bagUsd: document.getElementById('bagUsd'),
-    ts: document.getElementById('tsVal'),
-  };
-
-  const CACHE_KEY = 'bag_live_amm_snapshot_v2';
-  const SOFT_TTL_MS = 15 * 60 * 1000;
-
-  const state = {
-    issuer: null,
-    client: null,
-    node: null,
-    xrpUsd: null,
-    bagPerXrp: null, // XRP per 1 BAG
-    ts: null
-  };
-
-  function setStatus(color, text){
-    DOM.dot.className = 'dot ' + color;
-    DOM.txt.textContent = text;
+  function getAC(){
+    if (AC && AC.state!=='closed') return AC;
+    if (!AudioCtx) return null;
+    AC = new AudioCtx();
+    MASTER = AC.createGain(); MASTER.gain.value = .28; MASTER.connect(AC.destination);
+    return AC;
   }
+  async function resume(){ const ac=getAC(); if(!ac) return; if(ac.state==='suspended'){ try{ await ac.resume(); }catch{} } }
 
-  function fmt(n, dp=6){
-    if(n===null || n===undefined || Number.isNaN(n)) return '—';
-    return Number(n).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
-  }
-
-  function saveCache(snap){
-    const payload = {
-      v:2, ts: Date.now(),
-      issuer: snap.issuer,
-      node: snap.node,
-      xrpUsd: snap.xrpUsd,
-      bagXrp: snap.bagXrp // XRP per BAG
-    };
-    try{ localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); }catch(e){}
-  }
-
-  function loadCache(){
-    try{
-      const raw = localStorage.getItem(CACHE_KEY);
-      if(!raw) return null;
-      const obj = JSON.parse(raw);
-      return obj;
-    }catch(e){ return null; }
-  }
-
-  async function fetchToml(url){
-    const res = await fetch(url, {cache:'no-store'});
-    if(!res.ok) throw new Error('TOML not found ' + url);
-    return await res.text();
-  }
-
-  function parseIssuerFromToml(tomlText){
-    // Minimal TOML scan for a [CURRENCIES] block with code/name = "BAG" and 'issuer'
-    // Accepts either 'code' or 'currency' fields.
-    const blocks = tomlText.split(/\n\[/).map((x,i)=> i?('['+x):x);
-    for(const b of blocks){
-      if(!/\[CURRENCIES\]/i.test(b)) continue;
-      const hasBAG = /(^|\n)\s*(code|currency)\s*=\s*"(?:BAG)"/i.test(b);
-      if(!hasBAG) continue;
-      const m = b.match(/(^|\n)\s*issuer\s*=\s*"([rX][1-9A-HJ-NP-Za-km-z]{24,})"/i);
-      if(m) return m[2];
+  function ensureFX(){
+    const ac=getAC(); if(!ac) return null;
+    if(!COMP){
+      COMP=ac.createDynamicsCompressor();
+      COMP.threshold.value=-26; COMP.knee.value=24; COMP.ratio.value=10;
+      COMP.attack.value=0.002; COMP.release.value=0.22;
+      COMP.connect(MASTER);
     }
-    return null;
+    return COMP;
+  }
+  function outNode(){ return ensureFX() || MASTER; }
+
+  function primeAll(){
+    if(primed) return; primed=true;
+    resume().catch(()=>{});
+    loadShuffleBuffer();
+  }
+  ['pointerdown','wheel','keydown','touchmove','touchstart','mousemove','scroll'].forEach(ev=>{
+    addEventListener(ev, primeAll, {once:true,passive:true});
+  });
+
+  const SHUFFLE_CANDS = ['/assets/sounds/card_shuffle.mp3','/assets/sounds/card-shuffle.mp3'];
+  const LOSE_CANDS    = ['/assets/sounds/lose_thud.mp3'];
+
+  async function loadBuffer(url){
+    const ac=getAC(); if(!ac) return null;
+    try{
+      const res=await fetch(url,{cache:'force-cache'}); if(!res.ok) return null;
+      const arr=await res.arrayBuffer(); return await ac.decodeAudioData(arr.slice(0));
+    }catch{ return null; }
+  }
+  let shuffleBuf=null;
+  async function loadShuffleBuffer(){
+    if (shuffleBuf) return shuffleBuf;
+    for(const u of SHUFFLE_CANDS){ const b = await loadBuffer(u); if (b){ shuffleBuf=b; break; } }
+    return shuffleBuf;
+  }
+  function playBuffer(buf, gain=1){
+    const ac=getAC(); if(!ac||!buf||ac.state!=='running') return false;
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const g=ac.createGain(); g.gain.value=gain; src.connect(g).connect(outNode());
+    try{ src.start(); return true; }catch{ return false; }
+  }
+  window.__playShuffle = async function(){ try{ await resume(); }catch{}; if (!playBuffer(shuffleBuf, 0.95)){ const a=new Audio(SHUFFLE_CANDS[0]); a.preload='auto'; a.setAttribute('playsinline',''); a.play().catch(()=>{}); } };
+
+  function snap(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
+    const n=ac.createBufferSource(), nb=ac.createBuffer(1, ac.sampleRate*0.08|0, ac.sampleRate);
+    const d=nb.getChannelData(0); for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*(1-i/d.length); }
+    n.buffer=nb;
+    const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1400; hp.Q.value=0.7;
+    const g=ac.createGain(); g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.35,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+    n.connect(hp).connect(g).connect(outNode()); n.start(t); n.stop(t+0.1);
+  }
+  function heavyThud(){
+    const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
+    const o=ac.createOscillator(), g=ac.createGain(); o.type='sine';
+    o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(58,t+0.32);
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.55,t+0.018); g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+    const n=ac.createBufferSource(), nb=ac.createBuffer(1, ac.sampleRate*0.22|0, ac.sampleRate);
+    const d=nb.getChannelData(0); for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*((1-i/d.length)**2)*0.32; }
+    n.buffer=nb;
+    const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420;
+    const ng=ac.createGain(); ng.gain.setValueAtTime(0.16,t); ng.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+    o.connect(g).connect(outNode()); n.connect(lp).connect(ng).connect(outNode());
+    o.start(t); o.stop(t+0.52); n.start(t); n.stop(t+0.22);
   }
 
-  async function resolveIssuer(){
-    // Try meta list first
-    const meta = document.querySelector('meta[name="x-bag-toml-domains"]');
-    const urls = meta ? meta.content.split(',').map(s=>s.trim()).filter(Boolean) : [];
-    const tried = [];
-    for(const u of urls){
-      try{
-        const txt = await fetchToml(u);
-        const iss = parseIssuerFromToml(txt);
-        if(iss) return iss;
-        tried.push(u+' (no issuer BAG)');
-      }catch(e){
-        tried.push(u+' (fail)');
+  window.__bagAudio = {
+    chime(){ const ac=getAC(); if(!ac||ac.state!=='running') return; const now=ac.currentTime;
+      [880,1320,1760].forEach((f,i)=>{ const o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f;
+        const g=ac.createGain(); g.gain.setValueAtTime(.0001,now+i*.02); g.gain.linearRampToValueAtTime(.18,now+i*.02+.04); g.gain.exponentialRampToValueAtTime(.0001,now+i*.02+.32);
+        o.connect(g).connect(MASTER); o.start(now+i*.02); o.stop(now+i*.02+.34);
+      });
+    },
+    resume
+  };
+
+  window.__playHit  = function(){ resume().then(()=>snap()); };
+  window.__playLose = function(){ resume().then(()=>heavyThud()); };
+})();
+</script>
+
+<!-- CARD FACTORY (shared across games) -->
+<script>
+(function(){
+  const ROOT = '/assets/cards';
+  const BACK = `${ROOT}/back-black.webp`;
+  const WORD = {'♠':'spades','♥':'hearts','♦':'diamonds','♣':'clubs'};
+  const R2B  = r => (r==='A'?'ace':r==='K'?'king':r==='Q'?'queen':r==='J'?'jack':r);
+
+  (new Image()).src = BACK;
+
+  function faceUrl(card){ return `${ROOT}/${R2B(card.r)}-${(WORD[card.s]||'spades')}.webp`; }
+
+  function svgFallback(label){
+    const wrap = document.createElement('div');
+    wrap.className = 'card';
+    wrap.innerHTML = `
+      <svg viewBox="0 0 256 364" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${label}">
+        <rect x="3" y="3" rx="16" ry="16" width="250" height="358" fill="#fff" stroke="#dcdcdc" stroke-width="6"/>
+        <text x="18" y="40" font-family="system-ui,Segoe UI,Arial" font-weight="700" font-size="28" fill="#111">${label}</text>
+      </svg>`;
+    return wrap;
+  }
+
+  function imgCard(src, isBack, label){
+    const wrap = document.createElement('div');
+    wrap.className = 'card' + (isBack ? ' back' : '');
+    const img = document.createElement('img');
+
+    img.decoding = 'async';
+    img.loading  = isBack ? 'eager' : 'lazy';
+    if (!isBack) img.fetchPriority = 'low';
+    img.width = 256;
+    img.height = Math.round(256*1.42);
+
+    let triedBack = false;
+    img.onerror = () => {
+      if (!triedBack && !isBack) {
+        triedBack = true;
+        img.onerror = () => {
+          const fb = svgFallback(label);
+          wrap.replaceWith(fb);
+        };
+        img.src = BACK;
+        return;
+      }
+      const fb = svgFallback(label);
+      wrap.replaceWith(fb);
+    };
+
+    img.src = src;
+    wrap.appendChild(img);
+
+    const badge=document.createElement('div'); badge.className='hold-badge'; badge.textContent='HOLD';
+    wrap.appendChild(badge);
+
+    return wrap;
+  }
+
+  window.__CARD_FACTORY__ = {
+    makeCardEl(card, faceDown=false){
+      const label = faceDown ? 'Card back' : `${card.r} ${WORD[card.s]||''}`.trim();
+      const src   = faceDown ? BACK : faceUrl(card);
+      return imgCard(src, faceDown, label);
+    }
+  };
+})();
+</script>
+
+<!-- PRICES (AMM-first, last-live fallback, cache sync) -->
+<script>
+(function(){
+  const PRICE_REFRESH_MS = 15000;
+  const FETCH_TIMEOUT_MS = 8000;
+  const LIVE_CACHE_TTL_MS = 24*60*60*1000;
+  const VIEW_CACHE_TTL_MS = 6*60*60*1000;
+
+  const BAG_ISSUER = 'rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr';
+  const BAG_CODE = 'BAG';
+
+  const VIEW_CACHE_KEY = 'bag_prices_v8';
+  const LAST_LIVE_KEY  = 'bag_last_live_v1';
+  const XRP_KEY        = 'xrp_usd';
+
+  const PRICES = (window.__PRICES__ = { bagUsd:0, xrpUsd:0, source:'—', ts:0 });
+
+  const liveDot = document.getElementById('liveDot');
+  const liveBAG = document.getElementById('liveBAG');
+  const liveXRP = document.getElementById('liveXRP');
+  const liveNote = document.getElementById('liveNote');
+  const liveConv = document.getElementById('liveConv');
+
+  function fmt(n){ if (!Number.isFinite(n)) return '—'; return n.toLocaleString(undefined,{maximumFractionDigits:6}); }
+  function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} }
+  function cacheGet(k, ttlMs){
+    try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; const age=Date.now()-(o.t||0); return age<=ttlMs?o.v:null; }catch{ return null; }
+  }
+  function timedFetch(url, opts={}, timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')), timeout);
+    try{
+      const u=new URL(url, location.origin); u.searchParams.set('_ts', Date.now().toString());
+      return fetch(u.toString(),{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal});
+    } finally { setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  function updateLiveLine(){
+    if (liveBAG)  liveBAG.textContent  = fmt(PRICES.bagUsd);
+    if (liveXRP)  liveXRP.textContent  = Number.isFinite(PRICES.xrpUsd) ? PRICES.xrpUsd.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
+    if (liveDot)  liveDot.className    = (PRICES.source==='live-amm' ? 'ok' : PRICES.source==='last-live' ? 'warn' : 'err');
+    if (liveNote) liveNote.textContent = (PRICES.source==='live-amm' ? ' (AMM live)' : PRICES.source==='last-live' ? ' (last live)' : ' (unavailable)');
+    if (liveConv){
+      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+        const xrpPerBag = PRICES.bagUsd/PRICES.xrpUsd;
+        const bagPerXrp = PRICES.xrpUsd/PRICES.bagUsd;
+        liveConv.textContent = `1 BAG ≈ ${xrpPerBag.toLocaleString(undefined,{maximumFractionDigits:6})} XRP · 1 XRP ≈ ${bagPerXrp.toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
+      } else {
+        liveConv.textContent = '1 BAG ≈ — XRP · 1 XRP ≈ — BAG';
       }
     }
-    // Last resort: cached issuer inside previous snapshot
-    const snap = loadCache();
-    if(snap && snap.issuer){
-      return snap.issuer;
-    }
-    throw new Error('Issuer not found via TOML. Tried: ' + tried.join(', '));
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
   }
 
-  async function connectXRPL(){
-    // race the endpoints — first successful wins
-    const races = XRPL_ENDPOINTS.map(ep => new Promise(async (resolve, reject)=>{
-      try{
-        const c = new xrpl.Client(ep, { connectionTimeout: 10000 });
-        await c.connect();
-        resolve({client:c, ep});
-      }catch(e){ reject(e); }
-    }));
-    // Promise.any polyfill-ish
+  async function fetchXrpUsdLive(){
     try{
-      const winner = await Promise.any(races);
-      // Close losers
-      races.forEach(p => p.then(({client,ep})=>{
-        if(ep!==winner.ep){ try{ client.disconnect(); }catch(e){} }
-      }).catch(()=>{}));
-      return winner;
-    }catch(e){
-      // All failed
-      throw new Error('XRPL endpoints unreachable');
-    }
+      const r = await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      if(!r.ok) throw 0;
+      const v = (await r.json())?.ripple?.usd;
+      if(Number(v)>0){ PRICES.xrpUsd = Number(v); cacheSet(XRP_KEY, PRICES.xrpUsd); return true; }
+    }catch(_){}
+    return false;
   }
 
-  async function getAMMPrice(client, issuer){
-    // AMM reserves for BAG/XRP
-    // XRP is denoted as currency: "XRP" with no issuer
-    const req = {
-      command: 'amm_info',
-      asset:  { currency: 'BAG', issuer },
-      asset2: { currency: 'XRP' }
-    };
-    const res = await client.request(req);
-    if(!res?.result?.amm?.amount || !res?.result?.amm?.amount2){
-      throw new Error('AMM reserves missing');
-    }
-    const A = res.result.amm.amount;   // BAG side reserve
-    const B = res.result.amm.amount2;  // XRP side reserve
-    const bagReserve = parseFloat(A.value);
-    const xrpReserve = parseFloat(B.value);
-    if(!(bagReserve>0) || !(xrpReserve>0)) throw new Error('Invalid reserves');
-    // Price of 1 BAG in XRP = XRP_reserve / BAG_reserve
-    const xrpPerBag = xrpReserve / bagReserve;
-    return xrpPerBag;
+  // ---- XRPL AMM (race-first multi-endpoint) ----
+  const XRPL_WSS = [
+    'wss://xrplcluster.com',
+    'wss://s1.ripple.com',
+    'wss://xrpl.ws'
+  ];
+
+  function wsAMM(endpoint){
+    return new Promise((resolve)=>{
+      let settled=false;
+      const ws = new WebSocket(endpoint);
+      const to = setTimeout(()=>{ if(!settled){ settled=true; try{ws.close();}catch{}; resolve(null); }}, 8000);
+      ws.onopen = ()=> {
+        try{
+          ws.send(JSON.stringify({
+            id: 1,
+            command:'amm_info',
+            asset:{currency:BAG_CODE,issuer:BAG_ISSUER},
+            asset2:{currency:'XRP'}
+          }));
+        }catch{ /* noop */ }
+      };
+      ws.onerror = ()=>{ if(!settled){ settled=true; clearTimeout(to); try{ws.close();}catch{}; resolve(null); } };
+      ws.onclose  = ()=>{ if(!settled){ settled=true; clearTimeout(to); resolve(null); } };
+      ws.onmessage = (ev)=>{
+        if(settled) return;
+        try{
+          const m = JSON.parse(ev.data);
+          if(m.id!==1 || !m.result || !m.result.amm) return;
+          const A = m.result.amm.amount;   // BAG IOU
+          const B = m.result.amm.amount2;  // XRP
+          const bag = Number(A && A.value);
+          const xrp = typeof B==='string' ? Number(B)/1_000_000 : Number(B && B.value);
+          const xrpPerBag = (bag>0 && xrp>0) ? (xrp/bag) : 0;
+          clearTimeout(to);
+          settled=true;
+          try{ ws.close(); }catch{}
+          resolve(xrpPerBag>0 ? { xrpPerBag, ep:endpoint } : null);
+        }catch{
+          settled=true; clearTimeout(to);
+          try{ws.close();}catch{}; resolve(null);
+        }
+      };
+    });
   }
 
-  async function getXrpUsd(){
-    const r = await fetch(COINGECKO, {cache:'no-store'});
-    if(!r.ok) throw new Error('XRP/USD fetch failed');
-    const j = await r.json();
-    const v = j?.ripple?.usd;
-    if(!(v>0)) throw new Error('XRP/USD invalid');
+  async function fetchBagViaAMMLive(){
+    // race endpoints; take first good result
+    const racers = XRPL_WSS.map(ep => wsAMM(ep));
+    let winner = null;
+    try{
+      winner = await Promise.any(racers);
+    }catch{ winner = null; }
+    if(!winner || !(winner.xrpPerBag>0)) return false;
+    if (!(PRICES.xrpUsd>0)) return false;
+
+    PRICES.bagUsd = PRICES.xrpUsd * winner.xrpPerBag;
+    PRICES.source = 'live-amm';
+    PRICES.ts = Date.now();
+
+    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, ep:winner.ep, ts:PRICES.ts });
+    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, ts:PRICES.ts });
+    return true;
+  }
+
+  function loadLastLiveBundle(){
+    const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
+    if (v && Number(v.bagUsd)>0){
+      PRICES.bagUsd = Number(v.bagUsd);
+      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
+      PRICES.source = 'last-live';
+      PRICES.ts = v.ts || 0;
+      return true;
+    }
+    return false;
+  }
+  function loadViewCache(){
+    const v = cacheGet(VIEW_CACHE_KEY, VIEW_CACHE_TTL_MS);
+    const x = cacheGet(XRP_KEY, VIEW_CACHE_TTL_MS);
+    let ok=false;
+    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); ok=true; }
+    if (!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd = Number(x); ok=true; }
+    if (ok && PRICES.source==='—') PRICES.source = 'last-live';
+    return ok;
+  }
+
+  async function refreshPrices(){
+    const gotX = await fetchXrpUsdLive();
+    const gotB = await fetchBagViaAMMLive();
+    if(!(gotX && gotB)){ if(!loadLastLiveBundle()) loadViewCache(); }
+    updateLiveLine();
+  }
+
+  (async ()=>{ await refreshPrices(); setInterval(refreshPrices, PRICE_REFRESH_MS); })();
+
+  addEventListener('storage', (e)=>{
+    if (e.key === VIEW_CACHE_KEY || e.key === XRP_KEY || e.key === LAST_LIVE_KEY){
+      if (!loadLastLiveBundle()) loadViewCache();
+      updateLiveLine();
+    }
+  });
+})();
+</script>
+
+<!-- UNIVERSAL STAKE WIRE (same API as Blackjack) -->
+<script>
+(function(global){
+  const PR = ()=>global.__PRICES__ || { bagUsd:0, xrpUsd:0 };
+
+  function getCur(curToggle){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+  function priceFor(cur){
+    const { bagUsd, xrpUsd } = PR();
+    return cur === 'BAG' ? bagUsd : xrpUsd;
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  function computeSessionMaxUsd(cur, minUsd, maxUsd){
+    const sess = (global.__bagSession && global.__bagSession.get && global.__bagSession.get()) || {};
+    const bagBal = Number(sess.bag) || 0;
+
+    let unitsAvail;
+    if (cur === 'BAG'){ unitsAvail = bagBal; }
+    else { const { bagUsd, xrpUsd } = PR(); unitsAvail = (bagUsd>0 && xrpUsd>0) ? (bagBal * (bagUsd / xrpUsd)) : 0; }
+    const px = priceFor(cur);
+    const usdAvail = (px>0 && unitsAvail>0) ? unitsAvail * px : maxUsd;
+    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  }
+
+  function init(opts){
+    const cfg = Object.assign({
+      usdInput:'#usdBet',
+      qtyInput:'#betQty',
+      currencyToggle:'#curToggle',
+      unitLabels:'.unit',
+      limitsLabel:'#betLimits',
+      presetsRoot:'#usdPresets',
+      minUsd:1,
+      maxUsd:2000,
+      activeClass:'active',
+      syncOnPrice:true
+    }, opts||{});
+
+    const usdEl = document.querySelector(cfg.usdInput);
+    const qtyEl = document.querySelector(cfg.qtyInput);
+    const curToggle = document.querySelector(cfg.currencyToggle);
+    const unitEls = document.querySelectorAll(cfg.unitLabels);
+    const limitsEl = document.querySelector(cfg.limitsLabel);
+    const presets = document.querySelector(cfg.presetsRoot);
+
+    const STATE = { lastEdited:'qty', lastCur:null, syncing:false };
+
+    function paintUnits(){ const cur = getCur(curToggle); unitEls.forEach(s=> s.textContent = cur); }
+    function readUsd(){ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+    function readQty(){ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; }
+    function writeUsd(u){ if(!usdEl) return; usdEl.value = u ? (Math.round(u*100)/100).toFixed(2) : ''; }
+    function writeQty(q){ if(!qtyEl) return; const d=6; qtyEl.value = q ? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,'') : ''; }
+
+    function renderLimits(){
+      if(!limitsEl) return;
+      const cur = getCur(curToggle);
+      const px  = priceFor(cur);
+      const u = readUsd() || (readQty() * (px>0?px:0)) || 0;
+      const warn = (u>0 && u<cfg.minUsd) ? ` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>` :
+                   (u>cfg.maxUsd) ? ` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>` : '';
+      limitsEl.innerHTML = `Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`;
+    }
+
+    function syncFromUSD(){
+      if(STATE.syncing) return; STATE.syncing = true;
+      const cur = getCur(curToggle); const px = priceFor(cur); const usd = readUsd();
+      if (usd && px>0){ writeQty(usd / px); } else if(!usd){ writeQty(''); }
+      renderLimits(); STATE.syncing = false;
+    }
+    function syncFromQty(){
+      if(STATE.syncing) return; STATE.syncing = true;
+      const cur = getCur(curToggle); const px = priceFor(cur); const qty = readQty();
+      if (qty && px>0){ writeUsd(qty * px); } else if(!qty){ writeUsd(''); }
+      renderLimits(); STATE.syncing = false;
+    }
+    function convertOnCurrencyChange(prevCur, nextCur){
+      const pxPrev = priceFor(prevCur); const pxNext = priceFor(nextCur);
+      let usd = readUsd(); const qtyPrev = readQty();
+      if(!(usd>0)) usd = (qtyPrev>0 && pxPrev>0) ? qtyPrev*pxPrev : 0;
+      if (usd>0 && pxNext>0){ writeUsd(usd); writeQty(usd/pxNext); }
+      renderLimits();
+    }
+
+    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+
+    STATE.lastCur = getCur(curToggle);
+    curToggle?.addEventListener('change', ()=>{
+      const prev = STATE.lastCur; const next = getCur(curToggle);
+      STATE.lastCur = next; paintUnits(); convertOnCurrencyChange(prev, next);
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    });
+
+    if (cfg.syncOnPrice){
+      addEventListener('bag:pricesUpdated', ()=>{ if (STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); });
+    }
+
+    if (presets){
+      const setActive = (btn)=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn && btn.classList.add(cfg.activeClass); };
+      const applyUsd = (usd)=>{ writeUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
+      const clampUsd = (u)=> Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
+
+      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const val = btn.getAttribute('data-usd');
+          let usd = 0;
+          if (val === 'max'){ usd = computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd); }
+          else { usd = parseFloat(val)||0; }
+          usd = clampUsd(usd); setActive(btn); applyUsd(usd);
+        });
+      });
+
+      const resyncActive = ()=>{
+        const btn = presets.querySelector('.'+cfg.activeClass);
+        if (!btn) return;
+        const v = btn.getAttribute('data-usd');
+        if (v === 'max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); }
+        else { applyUsd(parseFloat(v)||0); }
+      };
+      addEventListener('bag:pricesUpdated', resyncActive);
+      curToggle?.addEventListener('change', resyncActive);
+    }
+
+    paintUnits();
+    if (readUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); }
+    else { STATE.lastEdited='qty'; syncFromQty(); }
+    renderLimits();
+  }
+
+  global.BAGStakeWire = { init };
+})(window);
+</script>
+
+<!-- Initialize universal wire -->
+<script>
+  BAGStakeWire.init({
+    usdInput:'#usdBet',
+    qtyInput:'#betQty',
+    currencyToggle:'#curToggle',
+    unitLabels:'.unit',
+    limitsLabel:'#betLimits',
+    presetsRoot:'#usdPresets',
+    minUsd:1,
+    maxUsd:2000,
+    activeClass:'active',
+    syncOnPrice:true
+  });
+</script>
+
+<!-- DEMO / LIVE SESSION — seed exact $2,000 like Dice/Blackjack -->
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const forceLive = qs.get('live') === '1';
+
+  const $ = (s)=>document.querySelector(s);
+  const statusEl  = $('#sessionStatus');
+  const startBtn  = $('#startSessionBtn');
+  const topUpBtn  = $('#topUpBtn');
+  const endBtn    = $('#endSessionBtn');
+  const connectEl = $('#connectBtn');
+  const dealBtn   = $('#deal');
+
+  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
+  const DEMO_INIT_KEY  = '__bag_demo_init_v2';
+  const START_USD      = 2000;
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n){
+    if(!Number.isFinite(n)) return '—';
+    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
+    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
+    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
+    return n.toLocaleString(undefined,{maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
+  function getCachedBagUsd(){
+    try{
+      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
+      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
+    }catch{}
+    return 0;
+  }
+
+  function ensureSeedNowOrWhenReady(){
+    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
+    const live = Number(PR().bagUsd||0);
+    const cached = getCachedBagUsd();
+    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
+    if (bagUsd>0){
+      const startBag = START_USD / bagUsd;
+      setBag(startBag);
+      localStorage.setItem(DEMO_INIT_KEY,'1');
+      return true;
+    }
+    return false;
+  }
+
+  function renderDemo(){
+    const bag=getBag();
+    const { bagUsd, xrpUsd } = PR();
+    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
+    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
+
+    if(statusEl){
+      statusEl.innerHTML =
+        `<div class="practiceBlock" style="-webkit-touch-callout:none;">
+          <div class="title" style="font-weight:800;margin-bottom:4px;">Practice:</div>
+          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
+          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
+          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
+        </div>`;
+    }
+
+    if(startBtn) startBtn.style.display='inline-block';
+    if(topUpBtn) topUpBtn.style.display='none';
+    if(endBtn)   endBtn.style.display='none';
+  }
+
+  const demoSession={
+    active:()=>true,
+    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
+    set:()=>{},
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
+  };
+
+  function forceBetXRP1Once(){
+    const bet  = document.getElementById('betQty');
+    const usd  = document.getElementById('usdBet');
+    const unit = document.querySelector('.unit');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+
+    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change', {bubbles:true})); }
+    if (unit) unit.textContent = 'XRP';
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input', {bubbles:true}));
+      bet.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    if (usd){ usd.dataset.userTyped = '0'; usd.dispatchEvent(new Event('input', {bubbles:true})); usd.dispatchEvent(new Event('change', {bubbles:true})); }
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+
+  function enableDemo(){
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); } catch{ window.__BAG_FORCE_DEMO=true; }
+    window.__bagSession = demoSession;
+    const seeded = ensureSeedNowOrWhenReady();
+    renderDemo();
+    if (dealBtn) dealBtn.disabled = !seeded;
+    addEventListener('bag:pricesUpdated', ()=>{
+      if (!localStorage.getItem(DEMO_INIT_KEY)){
+        const ok = ensureSeedNowOrWhenReady();
+        if (ok && dealBtn) dealBtn.disabled = false;
+        renderDemo();
+      } else { renderDemo(); }
+    });
+    forceBetXRP1Once();
+    if (connectEl) connectEl.style.opacity='0.9';
+  }
+
+  function enableLive(){
+    window.__BAG_FORCE_DEMO=false;
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+  }
+
+  if (forceLive) enableLive(); else enableDemo();
+
+  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
+
+  topUpBtn?.addEventListener('click', ()=>{
+    const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
+    if (bagUsd>0){
+      setBag(START_USD/bagUsd);
+      renderDemo();
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    }
+  });
+})();
+</script>
+
+<!-- HUD updater (parity with BJ, adapted to Poker IDs) -->
+<script>
+(function(){
+  const curToggle = document.getElementById('curToggle');
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
+
+  function els(){ 
+    return { 
+      hud: document.getElementById('pkHud'),
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betHud'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
+    }; 
+  }
+
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+  }
+
+  function getBalances(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
+    }
+    return { bag, xrp };
+  }
+
+  function currentBet(){
+    const { betQtyEl } = els();
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
     return Number(v);
   }
 
-  function renderSnapshot({issuer,node,xrpUsd,bagXrp,ts}, live){
-    DOM.issuer.textContent = issuer || '—';
-    DOM.node.textContent = node || '—';
-    DOM.xrpUsd.textContent = fmt(xrpUsd, 4);
-    DOM.bagxrp.textContent = fmt(bagXrp, 6);
-    const usd = (xrpUsd && bagXrp) ? (xrpUsd * bagXrp) : null;
-    DOM.bagUsd.textContent = usd===null ? '—' : fmt(usd, 6);
-    DOM.ts.textContent = ts ? new Date(ts).toLocaleString() : '—';
-
-    if(live) setStatus('green', 'Live AMM');
-    else setStatus('amber', 'Cached snapshot');
-  }
-
-  function renderUnavailable(){
-    setStatus('red', 'Unavailable');
-    DOM.node.textContent = '—';
-    DOM.bagxrp.textContent = '—';
-    DOM.bagUsd.textContent = '—';
-  }
-
-  async function runOnce(){
-    try{
-      setStatus('amber','Resolving issuer');
-      const issuer = await resolveIssuer();
-      state.issuer = issuer;
-      DOM.issuer.textContent = issuer;
-
-      setStatus('amber','Connecting XRPL');
-      const {client, ep} = await connectXRPL();
-      state.client = client;
-      state.node = ep;
-      DOM.node.textContent = ep;
-
-      setStatus('amber','Pulling AMM');
-      const bagXrp = await getAMMPrice(client, issuer);
-
-      setStatus('amber','XRP/USD');
-      const xrpUsd = await getXrpUsd();
-
-      const ts = Date.now();
-      state.xrpUsd = xrpUsd;
-      state.bagPerXrp = bagXrp;
-      state.ts = ts;
-
-      const snap = { issuer, node: ep, xrpUsd, bagXrp, ts };
-      saveCache(snap);
-      renderSnapshot(snap, true);
-
-      try{ await client.disconnect(); }catch(e){}
-    }catch(e){
-      // Strict fallback: last live only
-      const cached = loadCache();
-      if(cached && cached.xrpUsd>0 && cached.bagXrp>0){
-        renderSnapshot({
-          issuer: cached.issuer || state.issuer || '—',
-          node: cached.node || '—',
-          xrpUsd: cached.xrpUsd,
-          bagXrp: cached.bagXrp,
-          ts: cached.ts
-        }, false);
-      }else{
-        renderUnavailable();
-      }
+  function styleBalanceRow(){
+    const { hud } = els(); if (!hud) return;
+    hud.style.display = 'grid';
+    hud.style.gridTemplateColumns = '1fr';
+    hud.style.gap = '6px';
+    const pills = hud.querySelectorAll('.pill');
+    if (pills.length){
+      pills.forEach(p=>{ p.style.fontSize='12px'; p.style.padding='6px 10px'; });
+      if (pills[1]){ pills[1].style.fontSize='14px'; pills[1].style.padding='8px 12px'; pills[1].style.fontWeight='800'; }
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='6px';
+      hud.appendChild(row);
+      [pills[0], pills[2], pills[3]].forEach(p=> row.appendChild(p));
     }
   }
 
-  // Scheduler: refresh on load, then every 60s
-  runOnce();
-  setInterval(runOnce, 60_000);
+  function renderHud(){
+    try{
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      const mode = selectedMode();
+      const ccy  = currentCurrency();
+      const { bag, xrp } = getBalances();
 
+      if (modeLbl) modeLbl.textContent = mode;
+      if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);
+      if (lastLbl) lastLbl.textContent = String(window.__PK_LAST__ || '—');
+
+      if (balLbl && ccyLbl){
+        if (ccy === 'XRP'){ balLbl.textContent = fmt(xrp, 6); ccyLbl.textContent = 'XRP'; }
+        else { balLbl.textContent = fmt(bag, 6); ccyLbl.textContent = 'BAG'; }
+      }
+    }catch(e){}
+  }
+
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+    'bag:hudRefresh'
+  ].forEach(ev => addEventListener(ev, renderHud));
+
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
+
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
+
+  renderHud();
+  styleBalanceRow();
+  let tries = 0; 
+  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
 })();
+</script>
+
+<script>
+const PK = { decks:1, mWIN:2.00, mPUSH:1.00 };
+
+const R=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const S=['♠','♥','♦','♣'];
+const RVAL = Object.fromEntries(R.map((r,i)=>[r,i+2])); // 2..14
+
+let deck=[];
+
+function buildDeck(){
+  const t=[]; for(let d=0; d<PK.decks; d++) for(const r of R) for(const s of S) t.push({r,s});
+  for(let i=t.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [t[i],t[j]]=[t[j],t[i]]; }
+  deck=t;
+}
+function draw(){ if(!deck.length) buildDeck(); return deck.pop(); }
+
+function rankHand(cards){
+  const vals = cards.map(c=>RVAL[c.r]).sort((a,b)=>a-b);
+  const counts = {}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+  const byCount = Object.entries(counts).sort((a,b)=>b[1]-a[1] || b[0]-a[0]);
+  const isFlush = cards.every(c=>c.s===cards[0].s);
+  let isStraight=false, high=vals[4];
+  if(vals.join(',')==='2,3,4,5,14'){ isStraight=true; high=5; }
+  else if(vals[0]+4===vals[4] && new Set(vals).size===5){ isStraight=true; }
+  const kind = byCount.map(x=>x[1]).join('');
+  let cat=0, tiebreak=[];
+  if(isStraight && isFlush){ cat=8; tiebreak=[high]; }
+  else if(kind==='41'){ cat=7; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+  else if(kind==='32'){ cat=6; tiebreak=[+byCount[0][0], +byCount[1][0]]; }
+  else if(isFlush){ cat=5; tiebreak=vals.slice().reverse(); }
+  else if(isStraight){ cat=4; tiebreak=[high]; }
+  else if(kind==='311'){ cat=3; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+  else if(kind==='221'){
+    const ps=byCount.filter(x=>x[1]===2).map(x=>+x[0]).sort((a,b)=>b-a);
+    const kicker=vals.slice().reverse().find(v=>v!==ps[0]&&v!==ps[1]);
+    tiebreak=[...ps, kicker];
+  }
+  else if(kind==='2111'){ cat=1; tiebreak=[+byCount[0][0], ...vals.slice().reverse().filter(v=>v!=byCount[0][0])]; }
+  else { cat=0; tiebreak=vals.slice().reverse(); }
+  return {cat, tiebreak};
+}
+function cmpHands(a,b){
+  if(a.cat!==b.cat) return a.cat-b.cat;
+  const L=Math.max(a.tiebreak.length, b.tiebreak.length);
+  for(let i=0;i<L;i++){ const av=a.tiebreak[i]||0, bv=b.tiebreak[i]||0; if(av!==bv) return av-bv; }
+  return 0;
+}
+function handName(cat){
+  return ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'][cat] || '—';
+}
+
+/* DOM */
+const D=(id)=>document.getElementById(id);
+const cpuCards=D('cpuCards'), youCards=D('youCards');
+const cpuRank=D('cpuRank'), youRank=D('youRank');
+const btnDeal=D('deal'), btnDraw=D('draw'), btnAgain=D('again');
+const felt = D('feltBoard'); const table = D('tableBoard'); const statusEl = D('status');
+
+function flash(kind){
+  felt.classList.remove('flash-win','flash-lose','flash-push'); table.classList.remove('shake');
+  if(kind==='win'){ felt.classList.add('flash-win'); setTimeout(()=>felt.classList.remove('flash-win'), 900); }
+  else if(kind==='lose'){ felt.classList.add('flash-lose'); table.classList.add('shake'); setTimeout(()=>{ felt.classList.remove('flash-lose'); table.classList.remove('shake'); }, 600); }
+  else if(kind==='push'){ felt.classList.add('flash-push'); setTimeout(()=>felt.classList.remove('flash-push'), 1000); }
+}
+function setStatus(t){ statusEl.textContent=t; }
+function last(t){ window.__PK_LAST__=t; const el=D('lastLbl'); if(el) el.textContent=t; }
+function updateBetHud(){ const v=parseFloat(D('betQty')?.value||'0'); D('betHud').textContent=String(v && v>0 ? v : 1); }
+D('betQty').addEventListener('input', updateBetHud);
+
+/* Session + stake helpers (same as Blackjack patterns) */
+function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
+function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
+function stakeBag(){
+  const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+  if(!q) return 0;
+  const {bagUsd,xrpUsd}=PR();
+  return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
+}
+function stakeUsd(){
+  const direct=parseFloat(document.getElementById('usdBet')?.value||'');
+  if(Number.isFinite(direct)&&direct>0) return direct;
+  const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+  const {bagUsd,xrpUsd}=PR();
+  if(currentCurrency()==='BAG') return bagUsd>0 ? q*bagUsd : 0;
+  return xrpUsd>0 ? q*xrpUsd : 0;
+}
+
+/* State */
+let STATE = { phase:'IDLE', you:[], cpu:[], lockedBag:0, lockedUsd:0, holds:[false,false,false,false,false] };
+
+function clearBoard(){
+  cpuCards.innerHTML=''; youCards.innerHTML='';
+  cpuRank.textContent='—'; youRank.textContent='—';
+}
+
+/* Deal / Draw */
+function addCard(node, card, faceDown){
+  const el = window.__CARD_FACTORY__.makeCardEl(card, !!faceDown);
+  node.appendChild(el);
+  try{ window.__playHit && window.__playHit(); }catch{}
+  return el;
+}
+
+function startDeal(){
+  const MIN_USD=1, MAX_USD=2000;
+  const sBagNow = stakeBag();
+  const sUsdNow = stakeUsd();
+
+  if (!window.__bagSession || !__bagSession.active || !__bagSession.active()) return alert('Start a session at The Cage');
+  if (sUsdNow < MIN_USD) return alert(`Minimum $${MIN_USD.toFixed(2)} stake`);
+  if (sUsdNow > MAX_USD) return alert(`Maximum $${MAX_USD.toFixed(2)} stake`);
+  if (!(sBagNow>0)) return alert('Enter a stake first');
+  if (!__bagSession.spend(sBagNow)) return alert('Insufficient balance');
+
+  STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow;
+
+  try{ BAGPKWIN.update({ handStatus:'active' }); }catch{}
+
+  clearBoard(); STATE.you=[]; STATE.cpu=[]; STATE.holds=[false,false,false,false,false]; STATE.phase='DEALT';
+
+  try{ window.__bagAudio && window.__bagAudio.resume && window.__bagAudio.resume(); }catch{}
+  try{ window.__playShuffle && window.__playShuffle(); }catch{}
+
+  buildDeck();
+  for(let i=0;i<5;i++){
+    const yc = draw(); STATE.you.push(yc); addCard(youCards, yc, false);
+    const cc = draw(); STATE.cpu.push(cc); addCard(cpuCards, cc, true);
+  }
+
+  Array.from(youCards.children).forEach((el,idx)=>{
+    el.tabIndex=0;
+    const toggle=()=>{ if(STATE.phase!=='DEALT') return; el.classList.toggle('hold'); STATE.holds[idx]=el.classList.contains('hold'); try{ window.__playHit && window.__playHit(); }catch{} };
+    el.addEventListener('click', toggle, {passive:true});
+    el.addEventListener('keydown', (e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggle(); }});
+  });
+
+  youRank.textContent='—'; cpuRank.textContent='—';
+  btnDeal.disabled=true; btnDraw.disabled=false; btnAgain.style.display='none';
+  setStatus('Tap cards to HOLD, then Draw'); last('Dealt');
+}
+
+function cpuHoldLogic(hand){
+  const holds = [false,false,false,false,false];
+  const vals = hand.map(c=>RVAL[c.r]);
+  const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+  const pairs = Object.entries(counts).filter(([v,c])=>c>=2).map(([v,c])=>+v);
+  if(pairs.length){ hand.forEach((c,i)=>{ if(pairs.includes(RVAL[c.r])) holds[i]=true; }); return holds; }
+  const idxs = vals.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,2).map(x=>x[1]);
+  idxs.forEach(i=>holds[i]=true);
+  return holds;
+}
+
+function doDraw(){
+  if(STATE.phase!=='DEALT') return;
+  STATE.phase='DRAWN';
+  Array.from(youCards.children).forEach((el,idx)=>{
+    if(!STATE.holds[idx]){
+      const nc = draw(); STATE.you[idx]=nc;
+      const repl = window.__CARD_FACTORY__.makeCardEl(nc,false);
+      el.replaceWith(repl);
+    }
+  });
+  const ch = cpuHoldLogic(STATE.cpu);
+  Array.from(cpuCards.children).forEach((el,idx)=>{
+    if(!ch[idx]){
+      const nc = draw(); STATE.cpu[idx]=nc;
+      const repl = window.__CARD_FACTORY__.makeCardEl(nc,true);
+      el.replaceWith(repl);
+    }
+  });
+  setStatus('Showdown…');
+  setTimeout(showdown, 300);
+}
+
+function revealCpu(){
+  Array.from(cpuCards.children).forEach((el,idx)=>{
+    if(el.classList.contains('back')){
+      const repl = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
+      el.replaceWith(repl);
+    }else{
+      const r = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
+      el.replaceWith(r);
+    }
+  });
+}
+
+/* Settle */
+function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function winSubtext(mult){
+  const gainBag = STATE.lockedBag*(mult-1);
+  const fromUsd = STATE.lockedUsd;
+  const toUsd   = STATE.lockedUsd*mult;
+  return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(fromUsd)} → ${fmtUsd(toUsd)}`;
+}
+
+function showdown(){
+  revealCpu();
+
+  const yr = rankHand(STATE.you);
+  const cr = rankHand(STATE.cpu);
+  youRank.textContent = handName(yr.cat);
+  cpuRank.textContent = handName(cr.cat);
+
+  const cmp = cmpHands(yr, cr);
+  let credit=0;
+
+  if(cmp>0){
+    credit = STATE.lockedBag*PK.mWIN;
+    last('Win 2×'); flash('win');
+    try{ BAGOverlay.showWin({ message:'WIN', subtext: winSubtext(PK.mWIN), duration:4200, sound:true }); }catch{}
+  } else if(cmp===0){
+    credit = STATE.lockedBag*PK.mPUSH;
+    last('Push'); flash('push');
+  } else {
+    last('Scratch'); flash('lose'); try{ window.__playLose && window.__playLose(); }catch{}
+  }
+
+  if(credit>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(credit);
+
+  try{ BAGPKWIN.update({ handStatus:'idle' }); }catch{}
+
+  btnDraw.disabled=true; btnDeal.disabled=true; btnAgain.style.display='inline-block';
+  STATE.phase='SHOWDOWN';
+  setStatus(`Dealer: ${handName(cr.cat)} · You: ${handName(yr.cat)}`);
+
+  setTimeout(()=>{ try{ window.__bagAudio && window.__bagAudio.resume(); }catch{} },100);
+}
+
+btnDeal.addEventListener('click', startDeal);
+btnDraw.addEventListener('click', doDraw);
+btnAgain.addEventListener('click', ()=>{
+  clearBoard(); STATE={ phase:'IDLE', you:[], cpu:[], lockedBag:0, lockedUsd:0, holds:[false,false,false,false,false] };
+  btnDeal.disabled=false; btnDraw.disabled=true; btnAgain.style.display='none';
+  setStatus('Place a stake, then Deal'); last('—');
+  try{ BAGPKWIN.update({ handStatus:'idle' }); }catch{}
+});
+
+(function boot(){ buildDeck(); updateBetHud(); })();
+setInterval(()=>{ if(deck.length<10) buildDeck(); }, 2000);
+</script>
+
+<!-- Rules FAB + Modal -->
+<button class="rules-fab" id="rulesFab" aria-haspopup="dialog" aria-controls="rulesOverlay">ℹ️ Rules</button>
+<div class="rules-overlay" id="rulesOverlay" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+  <div class="rules-modal" role="document">
+    <button class="rules-close" id="rulesClose" aria-label="Close">×</button>
+    <h3 id="rulesTitle">🃏 5-Card Draw — Quick Rules</h3>
+    <ul>
+      <li><b>Goal:</b> Make a stronger 5-card poker hand than the dealer.</li>
+      <li><b>Deal:</b> 5 cards to you and the dealer (dealer hidden).</li>
+      <li><b>Hold/Draw:</b> Tap cards you want to <b>HOLD</b>. Press <b>Draw</b> to replace the rest (one draw only).</li>
+      <li><b>Showdown:</b> Dealer reveals, best hand wins. Standard rankings apply (Straight Flush → High Card).</li>
+      <li><b>Payouts:</b> Win returns <b>2.00×</b> (even money). Push returns <b>1.00×</b>.</li>
+    </ul>
+    <div class="rules-note">House visuals and payouts shown on this page apply.</div>
+  </div>
+</div>
+
+<!-- Rules modal logic -->
+<script>
+(function(){
+  const fab = document.getElementById('rulesFab');
+  const ov  = document.getElementById('rulesOverlay');
+  const x   = document.getElementById('rulesClose');
+  function open(){ ov.style.display='grid'; }
+  function close(){ ov.style.display='none'; }
+  fab?.addEventListener('click', open);
+  x?.addEventListener('click', close);
+  ov?.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
+  addEventListener('keydown', (e)=>{ if(e.key==='Escape') close(); });
+})();
+</script>
+
+<script>
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('/service-worker.js').catch(()=>{}); }
+</script>
+
+<footer class="footer" style="text-align:center; padding:12px 0; line-height:1.6;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+  <br>
+  <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a>
+  &nbsp;|&nbsp;
+  <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+</footer>
+
+<!-- Disable pinch/double-tap/ctrl+wheel zoom -->
+<script>
+  document.addEventListener('gesturestart', (e)=>{ e.preventDefault(); }, {passive:false});
+  document.addEventListener('dblclick', (e)=>{ e.preventDefault(); }, {capture:true});
+  window.addEventListener('wheel', (e)=>{ if(e.ctrlKey){ e.preventDefault(); } }, {passive:false});
 </script>
 </body>
 </html>
