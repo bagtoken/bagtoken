@@ -69,12 +69,16 @@
   #liveDot{margin-right:6px}
   .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 
-  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px;overflow:hidden}
-  .felt{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px}
+  .table{background:#07140e;border:1px solid #1b4a2f;border-radius:14px;padding:14px;overflow:hidden;position:relative;z-index:1}
+  .felt{background:#091a13;border:1px solid #24533a;border-radius:12px;padding:12px;position:relative;overflow:hidden}
+  /* >>> TABLE SKIN under felt <<< */
+  .felt-skin{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.22;mix-blend-mode:normal}
+  .felt-skin img{width:100%;height:100%;object-fit:cover;display:block}
+
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
 
-  .hand{position:relative;min-height:calc(var(--cardH) + 36px);padding-top:20px}
+  .hand{position:relative;min-height:calc(var(--cardH) + 36px);padding-top:20px;z-index:1}
   .label{position:absolute;top:0;left:0;color:#bcd0c4;font-size:12px}
   .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
 
@@ -170,7 +174,7 @@
       </div>
 
       <!-- SESSION -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
+      <div class="panel-section" id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
         <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
@@ -186,7 +190,7 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <div style="display:flex;align-items:center;gap:6px">
               <input id="usdBet" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" max="2000" step="0.01" placeholder="0.00" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="micro unit">USD</span>
+              <span class="micro unit">XRP</span>
             </div>
           </div>
 
@@ -257,6 +261,16 @@
     <div class="panel pad">
       <div class="marquee">$BAG POKER TABLE</div>
       <div class="felt" id="feltBoard">
+        <!-- >>> SKIN sits under the table (with PNG fallback) <<< -->
+        <picture class="felt-skin" aria-hidden="true">
+          <source type="image/webp"
+                  srcset="/casino/assets/img/bag-poker-skin-1024.webp 1024w, /casino/assets/img/bag-poker-skin-960.webp 960w"
+                  sizes="100vw" />
+          <img src="/casino/assets/img/bag-poker-skin-1024.png"
+               srcset="/casino/assets/img/bag-poker-skin-960.png 960w, /casino/assets/img/bag-poker-skin-1024.png 1024w"
+               sizes="100vw" alt="" decoding="async" loading="lazy">
+        </picture>
+
         <div class="table" id="tableBoard">
           <div class="hand" id="cpu">
             <div class="label">Dealer</div><div class="total" id="cpuRank">—</div>
@@ -519,81 +533,42 @@
     }catch(_){}
     return false;
   }
-
-  // ---- XRPL AMM (race-first multi-endpoint) ----
-  const XRPL_WSS = [
-    'wss://xrplcluster.com',
-    'wss://s1.ripple.com',
-    'wss://xrpl.ws'
-  ];
-
-  function wsAMM(endpoint){
-    return new Promise((resolve)=>{
-      let settled=false;
-      const ws = new WebSocket(endpoint);
-      const to = setTimeout(()=>{ if(!settled){ settled=true; try{ws.close();}catch{}; resolve(null); }}, 8000);
-      ws.onopen = ()=> {
-        try{
-          ws.send(JSON.stringify({
-            id: 1,
-            command:'amm_info',
-            asset:{currency:BAG_CODE,issuer:BAG_ISSUER},
-            asset2:{currency:'XRP'}
-          }));
-        }catch{ /* noop */ }
-      };
-      ws.onerror = ()=>{ if(!settled){ settled=true; clearTimeout(to); try{ws.close();}catch{}; resolve(null); } };
-      ws.onclose  = ()=>{ if(!settled){ settled=true; clearTimeout(to); resolve(null); } };
+  function parseXrpAmount(a){ if (a==null) return null; if (typeof a==='string') return Number(a)/1_000_000; if (typeof a==='object' && a.currency==='XRP') return Number(a.value); return null; }
+  function parseIouAmount(a){ if (!a || typeof a!=='object') return null; return Number(a.value); }
+  async function fetchBagViaAMMLive(){
+    const req = { id:1, command:'amm_info', asset:{currency:BAG_CODE,issuer:BAG_ISSUER}, asset2:{currency:'XRP'} };
+    const xrpPerBag = await new Promise((resolve)=>{
+      const ws = new WebSocket('wss://s1.ripple.com');
+      const t = setTimeout(()=>{ try{ws.close();}catch{}; resolve(null); }, 8000);
+      ws.onopen = ()=> ws.send(JSON.stringify(req));
+      ws.onerror = ()=>{ clearTimeout(t); try{ws.close();}catch{}; resolve(null); };
       ws.onmessage = (ev)=>{
-        if(settled) return;
         try{
-          const m = JSON.parse(ev.data);
-          if(m.id!==1 || !m.result || !m.result.amm) return;
-          const A = m.result.amm.amount;   // BAG IOU
-          const B = m.result.amm.amount2;  // XRP
-          const bag = Number(A && A.value);
-          const xrp = typeof B==='string' ? Number(B)/1_000_000 : Number(B && B.value);
-          const xrpPerBag = (bag>0 && xrp>0) ? (xrp/bag) : 0;
-          clearTimeout(to);
-          settled=true;
-          try{ ws.close(); }catch{}
-          resolve(xrpPerBag>0 ? { xrpPerBag, ep:endpoint } : null);
-        }catch{
-          settled=true; clearTimeout(to);
-          try{ws.close();}catch{}; resolve(null);
-        }
+          const msg = JSON.parse(ev.data);
+          if (msg.id!==1 || !msg.result || !msg.result.amm) return;
+          clearTimeout(t); try{ws.close();}catch{};
+          const amm = msg.result.amm;
+          const bagBal = parseIouAmount(amm.amount);
+          const xrpBal = parseXrpAmount(amm.amount2);
+          if (!(bagBal>0) || !(xrpBal>0)) return resolve(null);
+          const price = xrpBal / bagBal;
+          if (!(price>0) || !isFinite(price)) return resolve(null);
+          resolve(price);
+        }catch{ resolve(null); }
       };
     });
-  }
-
-  async function fetchBagViaAMMLive(){
-    // race endpoints; take first good result
-    const racers = XRPL_WSS.map(ep => wsAMM(ep));
-    let winner = null;
-    try{
-      winner = await Promise.any(racers);
-    }catch{ winner = null; }
-    if(!winner || !(winner.xrpPerBag>0)) return false;
+    if (!(xrpPerBag>0)) return false;
     if (!(PRICES.xrpUsd>0)) return false;
-
-    PRICES.bagUsd = PRICES.xrpUsd * winner.xrpPerBag;
+    PRICES.bagUsd = PRICES.xrpUsd * xrpPerBag;
     PRICES.source = 'live-amm';
-    PRICES.ts = Date.now();
-
-    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, ep:winner.ep, ts:PRICES.ts });
-    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd, ts:PRICES.ts });
+    cacheSet(LAST_LIVE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
+    cacheSet(VIEW_CACHE_KEY, { bagUsd: PRICES.bagUsd, xrpUsd: PRICES.xrpUsd });
     return true;
   }
 
   function loadLastLiveBundle(){
     const v = cacheGet(LAST_LIVE_KEY, LIVE_CACHE_TTL_MS);
-    if (v && Number(v.bagUsd)>0){
-      PRICES.bagUsd = Number(v.bagUsd);
-      if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd);
-      PRICES.source = 'last-live';
-      PRICES.ts = v.ts || 0;
-      return true;
-    }
+    if (v && Number(v.bagUsd)>0){ PRICES.bagUsd = Number(v.bagUsd); if (Number(v.xrpUsd)>0) PRICES.xrpUsd = Number(v.xrpUsd); PRICES.source = 'last-live'; return true; }
     return false;
   }
   function loadViewCache(){
@@ -816,6 +791,22 @@
     return 0;
   }
 
+  // === Hard force XRP @ 1, always ===
+  function forceXrpDefault1(){
+    try{
+      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+      const bagRadio = document.querySelector('#curToggle input[value="BAG"]');
+      if (xrpRadio){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+      if (bagRadio){ bagRadio.checked = false; }
+      const unitEls = document.querySelectorAll('.unit'); unitEls.forEach(u => u.textContent = 'XRP');
+      const bet = document.getElementById('betQty');
+      if (bet){ bet.value = '1'; bet.dispatchEvent(new Event('input',{bubbles:true})); bet.dispatchEvent(new Event('change',{bubbles:true})); }
+      const usd = document.getElementById('usdBet');
+      if (usd){ usd.dispatchEvent(new Event('input',{bubbles:true})); usd.dispatchEvent(new Event('change',{bubbles:true})); }
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    }catch{}
+  }
+
   function ensureSeedNowOrWhenReady(){
     if (localStorage.getItem(DEMO_INIT_KEY)) return true;
     const live = Number(PR().bagUsd||0);
@@ -855,26 +846,9 @@
     active:()=>true,
     get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
     set:()=>{},
-    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<b) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
     credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
   };
-
-  function forceBetXRP1Once(){
-    const bet  = document.getElementById('betQty');
-    const usd  = document.getElementById('usdBet');
-    const unit = document.querySelector('.unit');
-    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-
-    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change', {bubbles:true})); }
-    if (unit) unit.textContent = 'XRP';
-    if (bet && (!bet.value || Number(bet.value) <= 0)){
-      bet.value = '1';
-      bet.dispatchEvent(new Event('input', {bubbles:true}));
-      bet.dispatchEvent(new Event('change', {bubbles:true}));
-    }
-    if (usd){ usd.dataset.userTyped = '0'; usd.dispatchEvent(new Event('input', {bubbles:true})); usd.dispatchEvent(new Event('change', {bubbles:true})); }
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  }
 
   function enableDemo(){
     try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); } catch{ window.__BAG_FORCE_DEMO=true; }
@@ -889,13 +863,14 @@
         renderDemo();
       } else { renderDemo(); }
     });
-    forceBetXRP1Once();
+    forceXrpDefault1(); // <<< enforce XRP@1 in Demo too
     if (connectEl) connectEl.style.opacity='0.9';
   }
 
   function enableLive(){
     window.__BAG_FORCE_DEMO=false;
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    forceXrpDefault1(); // <<< enforce on Live
   }
 
   if (forceLive) enableLive(); else enableDemo();
@@ -910,6 +885,9 @@
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
     }
   });
+
+  // Also enforce on DOM ready, just in case.
+  document.addEventListener('DOMContentLoaded', forceXrpDefault1);
 })();
 </script>
 
@@ -1079,7 +1057,7 @@ function last(t){ window.__PK_LAST__=t; const el=D('lastLbl'); if(el) el.textCon
 function updateBetHud(){ const v=parseFloat(D('betQty')?.value||'0'); D('betHud').textContent=String(v && v>0 ? v : 1); }
 D('betQty').addEventListener('input', updateBetHud);
 
-/* Session + stake helpers (same as Blackjack patterns) */
+/* Session + stake helpers */
 function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
 function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
 function stakeBag(){
@@ -1186,23 +1164,18 @@ function doDraw(){
 
 function revealCpu(){
   Array.from(cpuCards.children).forEach((el,idx)=>{
-    if(el.classList.contains('back')){
-      const repl = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
-      el.replaceWith(repl);
-    }else{
-      const r = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
-      el.replaceWith(r);
-    }
+    const r = window.__CARD_FACTORY__.makeCardEl(STATE.cpu[idx], false);
+    el.replaceWith(r);
   });
 }
 
 /* Settle */
-function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtUsd2(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function winSubtext(mult){
   const gainBag = STATE.lockedBag*(mult-1);
   const fromUsd = STATE.lockedUsd;
   const toUsd   = STATE.lockedUsd*mult;
-  return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd(fromUsd)} → ${fmtUsd(toUsd)}`;
+  return `+${gainBag.toLocaleString(undefined,{maximumFractionDigits:6})} BAG · ${fmtUsd2(fromUsd)} → ${fmtUsd2(toUsd)}`;
 }
 
 function showdown(){
@@ -1249,6 +1222,85 @@ btnAgain.addEventListener('click', ()=>{
 
 (function boot(){ buildDeck(); updateBetHud(); })();
 setInterval(()=>{ if(deck.length<10) buildDeck(); }, 2000);
+</script>
+
+<!-- Win Readout (Poker) -->
+<script>
+(function(w){
+  const nfBAG = new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
+  const nfUSD = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const PKWIN = {
+    el:null,
+    rules:{ win:2.00, push:1.00 },
+    state:{ stakeBag:0, usdPerBag:0, handStatus:'idle' },
+
+    init(el, opts={}){
+      this.el = typeof el==='string' ? document.querySelector(el) : el;
+      if (opts.rules) this.rules = Object.assign({}, this.rules, opts.rules);
+      this.render();
+    },
+    update({stakeBag, usdPerBag, handStatus}={}){
+      if (typeof stakeBag==='number') this.state.stakeBag = stakeBag;
+      if (typeof usdPerBag==='number') this.state.usdPerBag = usdPerBag;
+      if (handStatus) this.state.handStatus = handStatus;
+      this.render();
+    },
+    amt(bag){
+      const usd = (bag||0) * (this.state.usdPerBag||0);
+      return `${nfBAG.format(bag||0)} BAG (${nfUSD.format(usd)})`;
+    },
+    render(){
+      if(!this.el) return;
+      const s = this.state.stakeBag||0, r=this.rules;
+      const win  = s * r.win;
+      const push = s * r.push;
+      const lose = 0;
+
+      const statusLine = (this.state.handStatus==='active')
+        ? `<div class="row"><div>Hand in progress <span class="muted">(no payout yet)</span>:</div><div>Stake held</div></div>`
+        : '';
+
+      this.el.innerHTML = `
+        <div class="row"><div class="title">POKER WIN:</div><div>${this.amt(win)}</div></div>
+        <div class="row"><div>Push <span class="muted">(stake returned)</span>:</div><div>${this.amt(push)}</div></div>
+        <div class="row"><div>Bust / Loss:</div><div>${this.amt(lose)}</div></div>
+        ${statusLine}
+        <div class="note">
+          Win pays ${r.win.toFixed(2)}× · Push returns ${r.push.toFixed(2)}×. Stake shown in BAG with live USD equivalent.
+        </div>`;
+    }
+  };
+
+  w.BAGPKWIN = {
+    init:(el,opts)=>PKWIN.init(el,opts),
+    update:(data)=>PKWIN.update(data),
+    setRules:(rules)=>{ PKWIN.rules = Object.assign({}, PKWIN.rules, rules); PKWIN.render(); }
+  };
+
+  function PR(){ return w.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function currentCurrency(){
+    const el=document.querySelector('#curToggle input[name="betCur"]:checked');
+    return el?String(el.value).toUpperCase():'XRP';
+    }
+  function stakeBag(){
+    const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
+    if(!q) return 0;
+    const {bagUsd,xrpUsd}=PR();
+    return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
+  }
+  function repaint(){ BAGPKWIN.update({ stakeBag: stakeBag(), usdPerBag: PR().bagUsd }); }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    BAGPKWIN.init('#pk-win-readout');
+    repaint();
+  });
+  addEventListener('bag:pricesUpdated', repaint);
+  addEventListener('bag:hudRefresh', repaint);
+  document.getElementById('usdBet')?.addEventListener('input', repaint);
+  document.getElementById('betQty')?.addEventListener('input', repaint);
+  document.getElementById('curToggle')?.addEventListener('change', repaint);
+})(window);
 </script>
 
 <!-- Rules FAB + Modal -->
