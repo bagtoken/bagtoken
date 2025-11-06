@@ -306,7 +306,7 @@
   </div>
 </div>
 
-<!-- AUDIO: restores original poker SFX set if present, with graceful fallbacks -->
+<!-- AUDIO -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -332,7 +332,6 @@
   }
   function outNode(){ return ensureFX() || MASTER; }
 
-  // Prime on first interaction
   function primeAll(){
     if(primed) return; primed=true;
     resume().catch(()=>{});
@@ -342,14 +341,12 @@
   addEventListener('touchstart',  primeAll, {once:true,passive:true});
   addEventListener('keydown',     primeAll, {once:true,passive:true});
 
-  // Utility
   async function probeUrl(u){ try{ const r=await fetch(u,{method:'GET',cache:'force-cache'}); return r.ok; }catch{ return false; } }
   function mkPool(src, n=3){
     const a=[]; for(let i=0;i<n;i++){ const t=new Audio(src); t.preload='auto'; t.crossOrigin='anonymous'; t.setAttribute('playsinline',''); a.push(t); }
     let idx=0; return { play(){ const t=a[idx=(idx+1)%a.length]; try{ t.pause(); t.currentTime=0; t.play().catch(()=>{});}catch{} } };
   }
 
-  // Candidate maps: prefers poker_* files you likely had before, falls back to generic assets
   const CANDS = {
     deal   : ['/assets/sounds/poker_deal.mp3','/assets/sounds/card_place.mp3'],
     flip   : ['/assets/sounds/poker_flip1.mp3','/assets/sounds/card_snap.mp3'],
@@ -373,9 +370,11 @@
     }
   }
 
-  // Tiny synth snap for card if nothing loads
   function synthSnap(){
-    const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ac = AC || (AudioCtx ? new AudioCtx() : null);
+    if(!ac) return;
+    const t=ac.currentTime;
     const o=ac.createOscillator(), g=ac.createGain(); o.type='square';
     o.frequency.setValueAtTime(2100,t); o.frequency.exponentialRampToValueAtTime(900,t+0.05);
     g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.18,t+0.005); g.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
@@ -388,7 +387,6 @@
     if (fallbackSnap) synthSnap();
   }
 
-  // Expose event calls
   window.POKER_SFX = {
     resume,
     deal:   ()=>play('deal', true),
@@ -832,18 +830,22 @@
     return 0;
   }
 
-  function ensureSeedNowOrWhenReady(){
+  // Always seed demo instantly:
+  // 1) live AMM/view cache
+  // 2) else fallback to a fixed 10,000 BAG so Deal works immediately
+  function ensureSeedNow(){
     if (localStorage.getItem(DEMO_INIT_KEY)) return true;
     const live = Number(PR().bagUsd||0);
     const cached = getCachedBagUsd();
-    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
-    if (bagUsd>0){
+    if (live>0 || cached>0){
+      const bagUsd = live || cached;
       const startBag = START_USD / bagUsd;
       setBag(startBag);
-      localStorage.setItem(DEMO_INIT_KEY,'1');
-      return true;
+    } else {
+      setBag(10000); // safe demo fallback
     }
-    return false;
+    localStorage.setItem(DEMO_INIT_KEY,'1');
+    return true;
   }
 
   function renderDemo(){
@@ -871,7 +873,7 @@
     active:()=>true,
     get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
     set:()=>{},
-    spend(bag){ const b=getBag(); if(!(bag>0)||b<b) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
     credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
   };
 
@@ -900,20 +902,12 @@
 
     window.__bagSession = demoSession;
 
-    const seeded = ensureSeedNowOrWhenReady();
+    ensureSeedNow();
     renderDemo();
 
-    if (dealBtn) dealBtn.disabled = !seeded;
+    if (dealBtn) dealBtn.disabled = false; // always enabled in demo now
 
-    addEventListener('bag:pricesUpdated', ()=>{
-      if (!localStorage.getItem(DEMO_INIT_KEY)){
-        const ok = ensureSeedNowOrWhenReady();
-        if (ok && dealBtn) dealBtn.disabled = false;
-        renderDemo();
-      } else {
-        renderDemo();
-      }
-    });
+    addEventListener('bag:pricesUpdated', renderDemo);
 
     forceBetXRP1Once();
     if (connectEl) connectEl.style.opacity='0.9';
@@ -943,9 +937,11 @@
     const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
     if (bagUsd>0){
       setBag(START_USD/bagUsd);
-      renderDemo();
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    } else {
+      setBag(getBag()+5000); // demo topup fallback
     }
+    renderDemo();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   });
 })();
 </script>
@@ -1197,7 +1193,7 @@ function evaluateTier(cards){
   return 0;
 }
 
-/* Tap cards to toggle HOLD. No "HOLD" buttons are rendered. */
+/* Tap cards to toggle HOLD. */
 function renderHand(){
   const wrap = D('playerCards'); wrap.innerHTML='';
   const selectionPhase = !STATE.drew;
@@ -1216,7 +1212,7 @@ function renderHand(){
       }
       el.addEventListener('click', ()=>{
         STATE.holds[i] ^= 1;
-        if (STATE.holds[i]) { try{ POKER_SFX.holdOn(); }catch{} } else { try{ POKER_SFX.holdOff(); }catch{} }
+        try{ (STATE.holds[i]?POKER_SFX.holdOn:POKER_SFX.holdOff)(); }catch{}
         renderHand();
       }, {passive:true});
     } else if (STATE.holds[i]) {
@@ -1235,7 +1231,6 @@ function renderHand(){
 }
 
 async function dealWithSoundedFlips(){
-  // Staggered per-card flip for better audio feel
   const wrap = D('playerCards'); wrap.innerHTML='';
   for(let i=0;i<5;i++){
     const el = window.__CARD_FACTORY__.makeCardEl(STATE.hand[i], false);
@@ -1259,7 +1254,9 @@ function startRound(){
   if (!__bagSession.spend(sBagNow)) return alert('Insufficient balance');
 
   STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow;
-  STATE.hand=[]; STATE.holds:[0,0,0,0,0]; STATE.holds=[0,0,0,0,0]; STATE.drew=false;
+  STATE.hand=[]; 
+  STATE.holds=[0,0,0,0,0]; /* ← FIXED: no syntax error */
+  STATE.drew=false;
 
   try{ POKER_SFX.resume(); }catch{}
   try{ POKER_SFX.chipOut(); }catch{}
@@ -1304,8 +1301,14 @@ function settle(){
     try{ POKER_SFX.chipIn(); }catch{}
   }
 
-  if (mult>1.0){ flash('win'); try{ POKER_SFX.win(); }catch{} try{ BAGOverlay.showWin({ message: msg, subtext: sub, duration: 4200, sound:false }); }catch{} last(`${msg} ${mult.toFixed(2)}×`); }
-  else { flash('lose'); try{ POKER_SFX.lose(); }catch{} last('High Card 1.00×'); }
+  if (mult>1.0){ 
+    flash('win'); try{ POKER_SFX.win(); }catch{} 
+    try{ BAGOverlay.showWin({ message: msg, subtext: sub, duration: 4200, sound:false }); }catch{} 
+    last(`${msg} ${mult.toFixed(2)}×`); 
+  } else { 
+    flash('lose'); try{ POKER_SFX.lose(); }catch{} 
+    last('High Card 1.00×'); 
+  }
 
   btnDeal.disabled=true; btnDraw.disabled=true; btnResolve.disabled=true; btnAgain.style.display='inline-block';
   setStatus(`${handLabelFromTier(tier)} · Payout ${mult.toFixed(2)}×`);
