@@ -223,8 +223,8 @@
         <div>
           <div class="micro">Bet currency</div>
           <div class="choice" id="curToggle">
-            <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
-            <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+            <label class="chip"><input type="radio" name="betCur" value="XRP"> XRP</label>
+            <label class="chip"><input type="radio" name="betCur" value="BAG" checked> BAG</label>
           </div>
         </div>
 
@@ -233,7 +233,7 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <div>
               <input id="betQty" class="mono" type="number" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="1" style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="unit">XRP</span>
+              <span class="unit">BAG</span>
             </div>
           </div>
           <div class="micro" id="betLimits" style="margin-top:6px"></div>
@@ -600,7 +600,7 @@
 
   function getCur(curToggle){
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
+    return el ? String(el.value).toUpperCase() : 'BAG';
   }
   function priceFor(cur){
     const { bagUsd, xrpUsd } = PR();
@@ -777,10 +777,11 @@
     syncOnPrice:true
   });
 
-  (function enforceDefault1XRP(){
+  (function enforceDefaultDemoBet(){
+    // Default to BAG 1 in Demo so stake never depends on live prices
     const bet  = document.getElementById('betQty');
-    const curX = document.querySelector('#curToggle input[value="XRP"]');
-    if (curX && !curX.checked) { curX.checked = true; curX.dispatchEvent(new Event('change',{bubbles:true})); }
+    const bagRadio = document.querySelector('#curToggle input[value="BAG"]');
+    if (bagRadio && !bagRadio.checked) { bagRadio.checked = true; bagRadio.dispatchEvent(new Event('change',{bubbles:true})); }
     if (bet && (!bet.value || Number(bet.value) <= 0)) {
       bet.value = '1';
       bet.dispatchEvent(new Event('input',{bubbles:true}));
@@ -877,16 +878,16 @@
     credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
   };
 
-  function forceBetXRP1Once(){
+  function forceBetBAG1(){
     const bet  = document.getElementById('betQty');
     const unit = document.querySelector('.unit');
-    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+    const bagRadio = document.querySelector('#curToggle input[value="BAG"]');
 
-    if (xrpRadio && !xrpRadio.checked){
-      xrpRadio.checked = true;
-      xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
+    if (bagRadio && !bagRadio.checked){
+      bagRadio.checked = true;
+      bagRadio.dispatchEvent(new Event('change', {bubbles:true}));
     }
-    if (unit) unit.textContent = 'XRP';
+    if (unit) unit.textContent = 'BAG';
 
     if (bet && (!bet.value || Number(bet.value) <= 0)){
       bet.value = '1';
@@ -909,7 +910,7 @@
 
     addEventListener('bag:pricesUpdated', renderDemo);
 
-    forceBetXRP1Once();
+    forceBetBAG1();
     if (connectEl) connectEl.style.opacity='0.9';
   }
 
@@ -969,8 +970,8 @@
   function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
   function currentCurrency(){
     const el = curToggle?.querySelector('input[name="betCur"]:checked');
-    return el ? String(el.value).toUpperCase() : 'XRP';
-  }
+    return el ? String(el.value).toUpperCase() : 'BAG';
+    }
 
   function getBalances(){
     const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
@@ -1099,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   BAGPK.init('#poker-win-readout');
   const upd = ()=>{
     const PR = window.__PRICES__ || { bagUsd:0, xrpUsd:0 };
-    const cur = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP').toUpperCase();
+    const cur = (document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'BAG').toUpperCase();
     const qty = parseFloat(document.getElementById('betQty')?.value || '0') || 0;
     let stakeBag = 0;
     if (cur === 'BAG'){
@@ -1147,13 +1148,16 @@ D('betQty').addEventListener('input', updateBetHud);
 
 const STATE = { hand:[], holds:[0,0,0,0,0], drew:false, lockedBag:0, lockedUsd:0 };
 
-function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'XRP'; }
+function isDemo(){ return window.__BAG_FORCE_DEMO === true; }
+function currentCurrency(){ const el=document.querySelector('#curToggle input[name="betCur"]:checked'); return el?String(el.value).toUpperCase():'BAG'; }
 function PR(){ return window.__PRICES__||{bagUsd:0,xrpUsd:0}; }
+
 function stakeBag(){
   const q=parseFloat(document.getElementById('betQty')?.value||0)||0;
   if(!q) return 0;
   const {bagUsd,xrpUsd}=PR();
-  return currentCurrency()==='BAG' ? q : (bagUsd>0&&xrpUsd>0 ? q*(xrpUsd/bagUsd) : 0);
+  if(currentCurrency()==='BAG') return q;
+  return (bagUsd>0&&xrpUsd>0) ? q*(xrpUsd/bagUsd) : 0;
 }
 function stakeUsd(){
   const direct=parseFloat(document.getElementById('usdBet')?.value||'');
@@ -1246,16 +1250,23 @@ function startRound(){
   const MIN_USD=1, MAX_USD=2000;
   const sBagNow = stakeBag();
   const sUsdNow = stakeUsd();
+  const pricesReady = PR().bagUsd > 0 || currentCurrency()==='XRP';
 
   if (!window.__bagSession || !__bagSession.active || !__bagSession.active()) return alert('Start a session at The Cage');
-  if (sUsdNow < MIN_USD) return alert(`Minimum $${MIN_USD.toFixed(2)} stake`);
-  if (sUsdNow > MAX_USD) return alert(`Maximum $${MAX_USD.toFixed(2)} stake`);
+
+  // In DEMO with no prices yet, bypass the $1 min and allow BAG stake directly
+  if (!(isDemo() && !pricesReady)) {
+    if (sUsdNow < MIN_USD) return alert(`Minimum $${MIN_USD.toFixed(2)} stake`);
+    if (sUsdNow > MAX_USD) return alert(`Maximum $${MAX_USD.toFixed(2)} stake`);
+  }
+
   if (!(sBagNow>0)) return alert('Enter a stake first');
+
   if (!__bagSession.spend(sBagNow)) return alert('Insufficient balance');
 
-  STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow;
+  STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow||0;
   STATE.hand=[]; 
-  STATE.holds=[0,0,0,0,0]; /* ← FIXED: no syntax error */
+  STATE.holds=[0,0,0,0,0];
   STATE.drew=false;
 
   try{ POKER_SFX.resume(); }catch{}
