@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
-<!-- Shared arcade logic -->
+<!-- Arcade core -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
@@ -19,65 +19,30 @@
   --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;
   --muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--line:#173524;
 }
-html,body {
-  margin:0;padding:0;background:var(--bg);color:var(--fg);
-  font-family:Inter,system-ui,sans-serif;overflow:hidden;
-}
-.hero-wrap {
-  text-align:center;
-  background:var(--bg);
-  padding:0;
-}
-.hero-wrap picture img {
-  width:100%;
-  max-width:1024px;
-  display:block;
-  margin:0 auto;
-}
-#game-container {
-  position:relative;
-  width:100vw;
-  height:calc(100vh - 1024px);
-  overflow:hidden;
-  background:var(--panel);
-}
-.ui-top {
-  position:absolute;
-  top:10px;left:0;right:0;
-  display:flex;justify-content:space-between;
-  padding:0 20px;z-index:10;font-size:18px;font-weight:600;
-}
-.btn-back {cursor:pointer;color:var(--gold);}
-.scoreboard {color:var(--gold);}
-.play-again {
-  position:absolute;
-  bottom:40px;left:50%;
-  transform:translateX(-50%);
-  padding:12px 24px;font-size:18px;
-  border:2px solid var(--gold);border-radius:8px;
-  background:var(--panel2);color:var(--gold);
-  cursor:pointer;display:none;
-}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif;overflow:hidden;}
+.hero-wrap{text-align:center;background:var(--bg);}
+.hero-wrap picture img{width:100%;max-width:1024px;display:block;margin:0 auto;}
+#game-container{position:relative;width:100vw;height:calc(100vh - 1024px);overflow:hidden;background:var(--panel);}
+.ui-top{position:absolute;top:10px;left:0;right:0;display:flex;justify-content:space-between;padding:0 20px;z-index:10;font-size:18px;font-weight:600;}
+.btn-back{cursor:pointer;color:var(--gold);}
+.scoreboard{color:var(--gold);}
+.play-again{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);padding:12px 24px;font-size:18px;border:2px solid var(--gold);border-radius:8px;background:var(--panel2);color:var(--gold);cursor:pointer;display:none;}
 </style>
 </head>
 <body>
 
-<!-- HERO IMAGE -->
 <section class="hero-wrap">
   <picture>
     <source type="image/webp"
-            srcset="/arcade/assets/img/bag-skeet-ball-960.webp 960w,
-                    /arcade/assets/img/bag-skeet-ball-1024.webp 1024w"
+            srcset="/arcade/assets/img/bag-skeet-ball-960.webp 960w, /arcade/assets/img/bag-skeet-ball-1024.webp 1024w"
             sizes="(min-width:1024px) 1024px, 100vw">
     <img src="/arcade/assets/img/bag-skeet-ball-1024.png"
-         srcset="/arcade/assets/img/bag-skeet-ball-960.png 960w,
-                 /arcade/assets/img/bag-skeet-ball-1024.png 1024w"
+         srcset="/arcade/assets/img/bag-skeet-ball-960.png 960w, /arcade/assets/img/bag-skeet-ball-1024.png 1024w"
          alt="$BAG Skeet Ball" width="1024" height="1024"
          loading="eager" decoding="async">
   </picture>
 </section>
 
-<!-- GAME -->
 <div id="game-container">
   <div class="ui-top">
     <div class="btn-back" onclick="location.href='/arcade/'">← Back to Arcade</div>
@@ -86,71 +51,60 @@ html,body {
   <button class="play-again" id="playAgainBtn" onclick="restartGame()">Play Again</button>
 </div>
 
-<script>
+  <script>
 window.__BAG_FORCE_DEMO = true;
 
-// AUDIO
 const entrySound = new Audio("/arcade/assets/sounds/air-hockey-entry-sound.mp3");
 const scoreSound = new Audio("/arcade/assets/sounds/air-hockey-score.mp3");
 entrySound.volume = 0.5; scoreSound.volume = 0.6;
 window.addEventListener('load',()=>entrySound.play().catch(()=>{}));
 
 let game, score=0, ballsLeft=9, inPlay=false;
-let ball, lanes = [];
+let ball, lanes=[];
 
 const config = {
   type: Phaser.AUTO,
   width: window.innerWidth,
   height: window.innerHeight - 1024,
-  backgroundColor: "#0b1b13",
-  physics: { default: 'matter', matter: { gravity: { y: 1 }, debug: false } },
-  scene: { preload, create, update }
+  backgroundColor:"#0b1b13",
+  physics:{default:'matter',matter:{gravity:{y:1},debug:false}},
+  scene:{preload,create,update}
 };
 game = new Phaser.Game(config);
 
-function preload(){
-  this.load.image('ball', '/arcade/assets/img/bag-ball-1024.png');
-}
+function preload(){ this.load.image('ball','/arcade/assets/img/bag-ball-1024.png'); }
 
 function create(){
-  const w=this.sys.game.config.width, h=this.sys.game.config.height;
-  // Ground
+  const w=this.sys.game.config.width,h=this.sys.game.config.height;
   const lane=this.add.rectangle(w/2,h-20,w,20,0x173524).setOrigin(0.5);
   this.matter.add.gameObject(lane,{isStatic:true});
-  
-  // RINGS
-  const baseY = h*0.25;
-  const rings = [
-    {x:w*0.25,pts:10}, {x:w*0.4,pts:20}, {x:w*0.55,pts:30},
-    {x:w*0.7,pts:40}, {x:w*0.85,pts:50}, {x:w*0.5,pts:100,y:h*0.15}
+
+  const rings=[
+    {x:w*0.25,pts:10},{x:w*0.4,pts:20},{x:w*0.55,pts:30},
+    {x:w*0.7,pts:40},{x:w*0.85,pts:50},{x:w*0.5,pts:100,y:h*0.15}
   ];
   rings.forEach(r=>{
-    const ry=r.y||baseY;
-    const ring=this.add.circle(r.x,ry,40,0x244b35);
-    const label=this.add.text(r.x,ry-8,r.pts,{font:'16px Inter',color:'#ffe175'}).setOrigin(0.5);
+    const ry=r.y||h*0.25;
+    this.add.circle(r.x,ry,40,0x244b35);
+    this.add.text(r.x,ry-8,r.pts,{font:'16px Inter',color:'#ffe175'}).setOrigin(0.5);
     const sensor=this.matter.add.circle(r.x,ry,40,{isSensor:true,isStatic:true});
-    sensor.points=r.pts;
-    lanes.push(sensor);
+    sensor.points=r.pts;lanes.push(sensor);
   });
 
-  // CONTROL
-  this.input.on('pointerdown', pointer=>{
-    if(inPlay || ballsLeft<=0) return;
+  this.input.on('pointerdown',pointer=>{
+    if(inPlay||ballsLeft<=0)return;
     inPlay=true;
     ball=this.matter.add.image(pointer.x,h-100,'ball');
-    ball.setCircle(25);
-    ball.setFriction(0.005);
-    ball.setBounce(0.6);
+    ball.setCircle(25);ball.setFriction(0.005);ball.setBounce(0.6);
     ball.setVelocity((pointer.x-w/2)*0.015,-14);
     ball.setScale(0.4);
-    ballsLeft--;
-    updateScoreText();
+    ballsLeft--;updateScoreText();
   });
 
-  this.matter.world.on('collisionstart',(event)=>{
-    event.pairs.forEach(pair=>{
+  this.matter.world.on('collisionstart',e=>{
+    e.pairs.forEach(p=>{
       lanes.forEach(l=>{
-        if(pair.bodyA===l||pair.bodyB===l){
+        if(p.bodyA===l||p.bodyB===l){
           score+=l.points;
           scoreSound.play().catch(()=>{});
           updateScoreText();
@@ -162,25 +116,57 @@ function create(){
 
 function update(){
   if(ball && ball.y>window.innerHeight){
-    inPlay=false;
-    ball.destroy();
-    if(ballsLeft<=0) endRound();
+    inPlay=false;ball.destroy();
+    if(ballsLeft<=0)endRound();
   }
 }
 
 function updateScoreText(){
-  document.getElementById('scoreText').innerText = `Score: ${score} | Balls: ${ballsLeft}`;
+  document.getElementById('scoreText').innerText=`Score: ${score} | Balls: ${ballsLeft}`;
 }
 
-function endRound(){
-  document.getElementById('playAgainBtn').style.display='block';
-}
-
-function restartGame(){
-  score=0; ballsLeft=9; inPlay=false;
-  updateScoreText();
-  document.getElementById('playAgainBtn').style.display='none';
-}
+function endRound(){document.getElementById('playAgainBtn').style.display='block';}
+function restartGame(){score=0;ballsLeft=9;inPlay=false;updateScoreText();document.getElementById('playAgainBtn').style.display='none';}
 </script>
 </body>
 </html>
+
+// Example multiplier table (max 2x)
+const BAGSkeetBallPayouts = [
+  {min:0,max:100,mult:0},
+  {min:110,max:200,mult:0.5},
+  {min:210,max:300,mult:1.0},
+  {min:310,max:400,mult:1.25},
+  {min:410,max:500,mult:1.5},
+  {min:510,max:9999,mult:2.0}
+];
+
+// when round ends
+if(!window.__BAG_FORCE_DEMO){
+  const match=BAGSkeetBallPayouts.find(p=>score>=p.min&&score<=p.max);
+  if(match && match.mult>0){
+    BAGSession.sendPayout(match.mult, BAGSession.currentBet);
+  }
+}
+
+<!-- 🪙 SKEET BALL -->
+<article class="card">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-skeet-ball-960.webp 960w, /arcade/assets/img/bag-skeet-ball-1024.webp 1024w"
+            sizes="(min-width:1024px) 340px, 100vw">
+    <img class="card-img"
+         src="/arcade/assets/img/bag-skeet-ball-1024.png"
+         srcset="/arcade/assets/img/bag-skeet-ball-960.png 960w, /arcade/assets/img/bag-skeet-ball-1024.png 1024w"
+         sizes="(min-width:1024px) 340px, 100vw"
+         alt="$BAG Skeet Ball" width="1024" height="576"
+         loading="lazy" decoding="async">
+  </picture>
+  <div class="card-body">
+    <h3>🪙 $BAG Skeet Ball</h3>
+    <p class="meta">Arcade precision meets payout potential. Demo 🔴 · Betting 🔴</p>
+    <a class="btn" href="/arcade/skeetball.html" rel="noopener">
+      🕹️ DEMO 🔴 · LIVE 🔴
+    </a>
+  </div>
+</article>
