@@ -75,7 +75,7 @@
   .felt{
     position:relative;
     border:1px solid #24533a;border-radius:12px;padding:16px;
-    min-height: 1180px; /* was 1100 */
+    min-height: 1180px;
     overflow:hidden;
     background: none;
   }
@@ -94,18 +94,18 @@
 
   #tableBoard{
     position:relative; z-index:1;
-    margin-top: 176px; /* was 160 */
+    margin-top: 176px;
   }
 
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
 
   /* Hand area spacing increased so cards clear the 'HIGH CARD' pill */
-  .hand{position:relative;min-height:calc(var(--cardH) + 52px);padding-top:44px} /* was padding-top:20px */
+  .hand{position:relative;min-height:calc(var(--cardH) + 52px);padding-top:44px}
   .label{position:absolute;top:0;left:0;color:#bcd0c4;font-size:12px}
   .total{position:absolute;top:0;right:0;background:#0f2e20;border:1px solid #1a5136;color:#ffe175;padding:3px 10px;border-radius:999px;font-size:12px}
 
-  .cards{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;width:100%;max-width:100%;margin-top:8px} /* new margin-top */
+  .cards{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;width:100%;max-width:100%;margin-top:8px}
 
   .card{
     width:var(--cardW);
@@ -116,14 +116,14 @@
     background:#0b1b13;
     display:block;
     position:relative;
+    user-select:none;
   }
   .cards .card{ flex:0 0 var(--cardW); }
   .card img{ width:100%; height:100%; object-fit:cover; display:block; }
 
-  .hold-btn{
-    position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
-    font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #244330;background:#0a1e15;color:#cfe6d8;
-  }
+  /* New: toggle holds via tapping the card (no HOLD buttons shown) */
+  .card.toggleable{ cursor:pointer; }
+  .card.held{ outline:2px solid #2fbf6b; outline-offset:2px; }
   .held-badge{
     position:absolute;left:6px;top:6px;
     font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid #244330;background:#183f2b;color:#cfe6d8;
@@ -1172,7 +1172,7 @@ function evaluateTier(cards){
   return 0;
 }
 
-/* Only show HOLD buttons before draw; after draw show tiny HELD badge for kept cards */
+/* NEW: Tap cards to toggle HOLD. No "HOLD" buttons are rendered. */
 function renderHand(){
   const wrap = D('playerCards'); wrap.innerHTML='';
   const selectionPhase = !STATE.drew;
@@ -1181,16 +1181,20 @@ function renderHand(){
     const el = window.__CARD_FACTORY__.makeCardEl(c,false);
 
     if (selectionPhase){
-      const hold = document.createElement('button');
-      hold.className = 'hold-btn';
-      hold.textContent = STATE.holds[i] ? 'HELD' : 'HOLD';
-      hold.setAttribute('aria-pressed', STATE.holds[i] ? 'true' : 'false');
-      hold.addEventListener('click', ()=>{
+      el.classList.add('toggleable');
+      if (STATE.holds[i]) {
+        el.classList.add('held');
+        const badge = document.createElement('div');
+        badge.className = 'held-badge';
+        badge.textContent = 'HELD';
+        el.appendChild(badge);
+      }
+      el.addEventListener('click', ()=>{
         STATE.holds[i] ^= 1;
         renderHand();
-      });
-      el.appendChild(hold);
+      }, {passive:true});
     } else if (STATE.holds[i]) {
+      el.classList.add('held');
       const badge = document.createElement('div');
       badge.className = 'held-badge';
       badge.textContent = 'HELD';
@@ -1227,7 +1231,7 @@ function startRound(){
   renderHand();
 
   btnDeal.disabled=true; btnDraw.disabled=false; btnResolve.disabled=false; btnAgain.style.display='none';
-  setStatus('Tap HOLD to keep cards, then Draw');
+  setStatus('Tap cards to HOLD, then Draw');
   last('Dealt');
 }
 
