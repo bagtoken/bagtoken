@@ -92,10 +92,7 @@
     }
   }
 
-  #tableBoard{
-    position:relative; z-index:1;
-    margin-top: 176px;
-  }
+  #tableBoard{ position:relative; z-index:1; margin-top:176px; }
 
   .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);
     border:1px solid #254a33;border-radius:12px;padding:8px;margin-bottom:10px}
@@ -108,25 +105,15 @@
   .cards{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;width:100%;max-width:100%;margin-top:8px}
 
   .card{
-    width:var(--cardW);
-    height:var(--cardH);
-    border-radius:10px;
-    overflow:hidden;
-    box-shadow:0 6px 16px rgba(0,0,0,.35);
-    background:#0b1b13;
-    display:block;
-    position:relative;
-    user-select:none;
+    width:var(--cardW); height:var(--cardH); border-radius:10px; overflow:hidden;
+    box-shadow:0 6px 16px rgba(0,0,0,.35); background:#0b1b13; display:block; position:relative; user-select:none;
   }
   .cards .card{ flex:0 0 var(--cardW); }
   .card img{ width:100%; height:100%; object-fit:cover; display:block; }
-
-  /* New: toggle holds via tapping the card (no HOLD buttons shown) */
   .card.toggleable{ cursor:pointer; }
   .card.held{ outline:2px solid #2fbf6b; outline-offset:2px; }
   .held-badge{
-    position:absolute;left:6px;top:6px;
-    font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid #244330;background:#183f2b;color:#cfe6d8;
+    position:absolute;left:6px;top:6px;font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid #244330;background:#183f2b;color:#cfe6d8;
   }
 
   .btnbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0 0}
@@ -319,7 +306,7 @@
   </div>
 </div>
 
-<!-- AUDIO -->
+<!-- AUDIO: restores original poker SFX set if present, with graceful fallbacks -->
 <script>
 (function(){
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -344,38 +331,78 @@
     return COMP;
   }
   function outNode(){ return ensureFX() || MASTER; }
+
+  // Prime on first interaction
   function primeAll(){
     if(primed) return; primed=true;
     resume().catch(()=>{});
-    primePools();
+    preloadAll();
   }
   addEventListener('pointerdown', primeAll, {once:true,passive:true});
   addEventListener('touchstart',  primeAll, {once:true,passive:true});
   addEventListener('keydown',     primeAll, {once:true,passive:true});
 
-  const HIT_CANDS   = ['/assets/sounds/card_snap.mp3','/assets/sounds/card_smack.mp3','/assets/sounds/card_place.mp3'];
-  const LOSE_CANDS  = ['/assets/sounds/lose_thud.mp3'];
-
+  // Utility
   async function probeUrl(u){ try{ const r=await fetch(u,{method:'GET',cache:'force-cache'}); return r.ok; }catch{ return false; } }
-  function mkPool(src, n=2){
+  function mkPool(src, n=3){
     const a=[]; for(let i=0;i<n;i++){ const t=new Audio(src); t.preload='auto'; t.crossOrigin='anonymous'; t.setAttribute('playsinline',''); a.push(t); }
     let idx=0; return { play(){ const t=a[idx=(idx+1)%a.length]; try{ t.pause(); t.currentTime=0; t.play().catch(()=>{});}catch{} } };
   }
-  let poolHit=null, poolLose=null;
-  async function primePools(){
-    for(const u of HIT_CANDS){ if(await probeUrl(u)){ poolHit = mkPool(u,3); break; } }
-    for(const u of LOSE_CANDS){ if(await probeUrl(u)){ poolLose = mkPool(u,2); break; } }
+
+  // Candidate maps: prefers poker_* files you likely had before, falls back to generic assets
+  const CANDS = {
+    deal   : ['/assets/sounds/poker_deal.mp3','/assets/sounds/card_place.mp3'],
+    flip   : ['/assets/sounds/poker_flip1.mp3','/assets/sounds/card_snap.mp3'],
+    flip2  : ['/assets/sounds/poker_flip2.mp3','/assets/sounds/card_smack.mp3'],
+    holdOn : ['/assets/sounds/poker_hold_on.mp3','/assets/sounds/click_ui.mp3'],
+    holdOff: ['/assets/sounds/poker_hold_off.mp3','/assets/sounds/click_soft.mp3'],
+    draw   : ['/assets/sounds/poker_draw.mp3','/assets/sounds/card_smack.mp3'],
+    win    : ['/assets/sounds/poker_win.mp3','/assets/sounds/win_cash.mp3'],
+    lose   : ['/assets/sounds/poker_lose.mp3','/assets/sounds/lose_thud.mp3'],
+    chipIn : ['/assets/sounds/chip_in.mp3','/assets/sounds/chips.mp3'],
+    chipOut: ['/assets/sounds/chip_out.mp3','/assets/sounds/chips2.mp3'],
+    click  : ['/assets/sounds/click_ui.mp3','/assets/sounds/card_snap.mp3']
+  };
+
+  const POOLS = {};
+  async function chooseFirst(list){ for(const u of list){ if(await probeUrl(u)) return u; } return null; }
+  async function preloadAll(){
+    for(const k of Object.keys(CANDS)){
+      const src = await chooseFirst(CANDS[k]);
+      if (src) POOLS[k] = mkPool(src, k.startsWith('flip') ? 5 : 3);
+    }
   }
-  function snap(){
+
+  // Tiny synth snap for card if nothing loads
+  function synthSnap(){
     const ac=getAC(); if(!ac||ac.state!=='running') return; const t=ac.currentTime;
     const o=ac.createOscillator(), g=ac.createGain(); o.type='square';
     o.frequency.setValueAtTime(2100,t); o.frequency.exponentialRampToValueAtTime(900,t+0.05);
     g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.18,t+0.005); g.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
     o.connect(g).connect(outNode()); o.start(t); o.stop(t+0.09);
   }
-  window.__playHit   = async function(){ try{ await resume(); }catch{} snap(); if (poolHit) poolHit.play(); };
-  window.__playLose  = async function(){ try{ await resume(); }catch{} if (poolLose) poolLose.play(); };
-  window.__bagAudio = { resume };
+
+  function play(key, fallbackSnap=false){
+    const p = POOLS[key];
+    if (p) { p.play(); return; }
+    if (fallbackSnap) synthSnap();
+  }
+
+  // Expose event calls
+  window.POKER_SFX = {
+    resume,
+    deal:   ()=>play('deal', true),
+    flip1:  ()=>play('flip', true),
+    flip2:  ()=>play('flip2', true),
+    holdOn: ()=>play('holdOn'),
+    holdOff:()=>play('holdOff'),
+    draw:   ()=>play('draw', true),
+    win:    ()=>play('win'),
+    lose:   ()=>play('lose'),
+    chipIn: ()=>play('chipIn'),
+    chipOut:()=>play('chipOut'),
+    click:  ()=>play('click')
+  };
 })();
 </script>
 
@@ -404,13 +431,11 @@
     const wrap = document.createElement('div');
     wrap.className = 'card' + (isBack ? ' back' : '');
     const img = document.createElement('img');
-
     img.decoding = 'async';
     img.loading  = isBack ? 'eager' : 'lazy';
     if (!isBack) img.fetchPriority = 'low';
     img.width = 256;
     img.height = Math.round(256*1.42);
-
     let triedBack = false;
     img.onerror = () => {
       if (!triedBack && !isBack) {
@@ -1172,7 +1197,7 @@ function evaluateTier(cards){
   return 0;
 }
 
-/* NEW: Tap cards to toggle HOLD. No "HOLD" buttons are rendered. */
+/* Tap cards to toggle HOLD. No "HOLD" buttons are rendered. */
 function renderHand(){
   const wrap = D('playerCards'); wrap.innerHTML='';
   const selectionPhase = !STATE.drew;
@@ -1191,6 +1216,7 @@ function renderHand(){
       }
       el.addEventListener('click', ()=>{
         STATE.holds[i] ^= 1;
+        if (STATE.holds[i]) { try{ POKER_SFX.holdOn(); }catch{} } else { try{ POKER_SFX.holdOff(); }catch{} }
         renderHand();
       }, {passive:true});
     } else if (STATE.holds[i]) {
@@ -1208,6 +1234,19 @@ function renderHand(){
   D('handLabel').textContent = handLabelFromTier(tier);
 }
 
+async function dealWithSoundedFlips(){
+  // Staggered per-card flip for better audio feel
+  const wrap = D('playerCards'); wrap.innerHTML='';
+  for(let i=0;i<5;i++){
+    const el = window.__CARD_FACTORY__.makeCardEl(STATE.hand[i], false);
+    el.classList.add('toggleable');
+    wrap.appendChild(el);
+    try{ (i%2===0?POKER_SFX.flip1:POKER_SFX.flip2)(); }catch{}
+    await new Promise(r=>setTimeout(r, 70));
+  }
+  renderHand();
+}
+
 function startRound(){
   const MIN_USD=1, MAX_USD=2000;
   const sBagNow = stakeBag();
@@ -1220,15 +1259,16 @@ function startRound(){
   if (!__bagSession.spend(sBagNow)) return alert('Insufficient balance');
 
   STATE.lockedBag=sBagNow; STATE.lockedUsd=sUsdNow;
-  STATE.hand=[]; STATE.holds=[0,0,0,0,0]; STATE.drew=false;
+  STATE.hand=[]; STATE.holds:[0,0,0,0,0]; STATE.holds=[0,0,0,0,0]; STATE.drew=false;
 
-  try{ window.__bagAudio && window.__bagAudio.resume && window.__bagAudio.resume(); }catch{}
-  try{ window.__playHit && window.__playHit(); }catch{}
+  try{ POKER_SFX.resume(); }catch{}
+  try{ POKER_SFX.chipOut(); }catch{}
+  try{ POKER_SFX.deal(); }catch{}
 
   buildDeck(); shuffle(deck);
   for(let i=0;i<5;i++){ STATE.hand.push(drawCard()); }
 
-  renderHand();
+  dealWithSoundedFlips();
 
   btnDeal.disabled=true; btnDraw.disabled=false; btnResolve.disabled=false; btnAgain.style.display='none';
   setStatus('Tap cards to HOLD, then Draw');
@@ -1238,8 +1278,12 @@ function startRound(){
 function drawOnce(){
   if (STATE.drew) return;
   STATE.drew = true;
+  try{ POKER_SFX.draw(); }catch{}
   for(let i=0;i<5;i++){
-    if(!STATE.holds[i]) STATE.hand[i]=drawCard();
+    if(!STATE.holds[i]) {
+      STATE.hand[i]=drawCard();
+      try{ (i%2===0?POKER_SFX.flip1:POKER_SFX.flip2)(); }catch{}
+    }
   }
   renderHand();
   btnDraw.disabled=true;
@@ -1255,10 +1299,13 @@ function settle(){
   const msg  = handLabelFromTier(tier).toUpperCase();
   const sub  = `×${mult.toFixed(2)} · +${(STATE.lockedBag*(mult-1)).toLocaleString(undefined,{maximumFractionDigits:6})} BAG`;
 
-  if (gain>0 && window.__bagSession && __bagSession.credit) __bagSession.credit(gain);
+  if (gain>0 && window.__bagSession && __bagSession.credit) {
+    __bagSession.credit(gain);
+    try{ POKER_SFX.chipIn(); }catch{}
+  }
 
-  if (mult>1.0){ flash('win'); try{ BAGOverlay.showWin({ message: msg, subtext: sub, duration: 4200, sound:true }); }catch{} last(`${msg} ${mult.toFixed(2)}×`); }
-  else { flash('lose'); try{ window.__playLose && window.__playLose(); }catch{} last('High Card 1.00×'); }
+  if (mult>1.0){ flash('win'); try{ POKER_SFX.win(); }catch{} try{ BAGOverlay.showWin({ message: msg, subtext: sub, duration: 4200, sound:false }); }catch{} last(`${msg} ${mult.toFixed(2)}×`); }
+  else { flash('lose'); try{ POKER_SFX.lose(); }catch{} last('High Card 1.00×'); }
 
   btnDeal.disabled=true; btnDraw.disabled=true; btnResolve.disabled=true; btnAgain.style.display='inline-block';
   setStatus(`${handLabelFromTier(tier)} · Payout ${mult.toFixed(2)}×`);
@@ -1268,6 +1315,7 @@ btnDeal.addEventListener('click', startRound);
 btnDraw.addEventListener('click', drawOnce);
 btnResolve.addEventListener('click', settle);
 btnAgain.addEventListener('click', ()=>{
+  try{ POKER_SFX.click(); }catch{}
   D('playerCards').innerHTML='';
   D('handLabel').textContent='—';
   btnDeal.disabled=false; btnDraw.disabled=true; btnResolve.disabled=true; btnAgain.style.display='none';
