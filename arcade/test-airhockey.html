@@ -314,6 +314,31 @@ canvas{display:block;margin:auto}
   }
   global.BAGStakeWire={ init };
 })(window);
+
+// simple HUD wire-up
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ window.BAGStakeWire.init(); }catch{}
+  const betQty=document.getElementById('betQty');
+  const modeLbl=document.getElementById('modeLbl');
+  const betLbl=document.getElementById('betLbl');
+  const ccyLbl=document.getElementById('ccyLbl');
+  const lastLbl=document.getElementById('lastLbl');
+
+  const paintHUD=()=>{
+    betLbl.textContent = betQty.value || '1';
+    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
+    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
+    ccyLbl.textContent = cur;
+    modeLbl.textContent = 'Demo';
+    lastLbl.textContent = window.__AH_LAST__ || '—';
+  };
+  paintHUD();
+  document.addEventListener('bag:hudRefresh', paintHUD);
+  ['input','change'].forEach(evt=>{
+    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+  });
+});
 </script>
 
 <!-- ===== Air Hockey Game (anti-trap AI + goal sensors + audio) ===== -->
@@ -358,7 +383,7 @@ function preload(){
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 
-  // your uploaded audio files
+  // use your uploaded audio files
   try{
     this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
     this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
@@ -376,11 +401,11 @@ function create(){
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
-  // world-bounds collision -> wall sfx
+  // wall SFX
   puck.body.onWorldBounds = true;
-  this.physics.world.on('worldbounds', (body) => {
-    if (body.gameObject === puck && !goalLock) {
-      try { this.sfx?.hit?.play(); } catch {}
+  this.physics.world.on('worldbounds', (body/*, up, left, right, down*/)=>{
+    if(body.gameObject === puck && !goalLock){
+      try{ this.sfx?.hit?.play(); }catch{}
     }
   });
 
@@ -468,7 +493,6 @@ function resolvePaddle(paddle, prev, scene){
     const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
     const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
 
-    // slightly softened impulse for bigger faces
     const base=500, gainN=8.5, gainT=4.7, maxV=2000;
     const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
     const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
@@ -490,7 +514,6 @@ function update(){
   const rCpu = cpu.displayWidth * 0.5;
   const rPuck = puck.displayWidth * 0.5;
 
-  // Desired target follows puck but is pulled toward center when puck hugs walls at top half
   const nearTop = puck.y < h*0.45;
   const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
   const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
@@ -500,14 +523,12 @@ function update(){
                     WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
                   ), 0.10);
 
-  // Cap how deep CPU chases; hover a bit above the defense line to leave room
   const cpuChaseDepth = Math.min(puck.y, h*0.38);
   const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
 
   cpu.x = targetX;
   cpu.y = targetY;
 
-  // No-pin spacing: if puck is near a wall and CPU overlaps too closely, push CPU outward slightly
   const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
                    (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
                    (puck.y < WALL_MARGIN + rPuck + 8);
@@ -535,12 +556,10 @@ function update(){
   if(inCornerish && speed < STUCK_SPEED){
     if(!stuckStart) stuckStart = now;
     const longEnough = (now - stuckStart) > STUCK_TIME_MS;
-    aconst cooled = (now - lastKickAt) > STUCK_COOLDOWN;
+    const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
     if(longEnough && cooled){
-      // Kick puck toward center-lower area
       const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
       puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
-      // CPU retreats to open the lane
       cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
       lastKickAt = now;
       stuckStart = 0;
@@ -548,8 +567,6 @@ function update(){
   }else{
     stuckStart = 0;
   }
-
-  // -----------------------------------------------
 
   const curPlayer={x:player.x,y:player.y};
   const curCPU={x:cpu.x,y:cpu.y};
@@ -599,7 +616,7 @@ function serve(scene, scoredBy){
   if(!puck.body){ scene.physics.add.existing(puck); }
   puck.body.enable = true; puck.body.checkCollision.none = false;
   puck.setCollideWorldBounds(true);
-  puck.body.setCircle(puck.displayWidth/2); // sync to scale
+  puck.body.setCircle(puck.displayWidth/2);
   centerBodyOnTexture(puck);
 
   const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
