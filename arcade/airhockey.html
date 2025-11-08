@@ -9,6 +9,10 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
+<!-- Preload audio to cut first-tap latency -->
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
+
 <!-- Dice shared UI logic -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
@@ -314,9 +318,34 @@ canvas{display:block;margin:auto}
   }
   global.BAGStakeWire={ init };
 })(window);
+
+// simple HUD wire-up
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ window.BAGStakeWire.init(); }catch{}
+  const betQty=document.getElementById('betQty');
+  const modeLbl=document.getElementById('modeLbl');
+  const betLbl=document.getElementById('betLbl');
+  const ccyLbl=document.getElementById('ccyLbl');
+  const lastLbl=document.getElementById('lastLbl');
+
+  const paintHUD=()=>{
+    betLbl.textContent = betQty.value || '1';
+    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
+    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
+    ccyLbl.textContent = cur;
+    modeLbl.textContent = 'Demo';
+    lastLbl.textContent = window.__AH_LAST__ || '—';
+  };
+  paintHUD();
+  document.addEventListener('bag:hudRefresh', paintHUD);
+  ['input','change'].forEach(evt=>{
+    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+  });
+});
 </script>
 
-<!-- ===== Air Hockey Game (anti-trap AI + goal sensors) ===== -->
+<!-- ===== Air Hockey Game (audio only on paddle hits + goal) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -327,18 +356,18 @@ const config = {
 };
 
 // --- size + UX tuning ---
-const PADDLE_SCALE = 0.20;    // bigger for finger control
-const PUCK_SCALE   = 0.09;    // slightly bigger
-const GOAL_HALF    = 140;     // half-width of the mouth area
-const POINTER_OFFSET_Y = -56; // keep paddle above finger
-const WALL_MARGIN  = 100;     // world bounds margin
+const PADDLE_SCALE = 0.20;
+const PUCK_SCALE   = 0.09;
+const GOAL_HALF    = 140;
+const POINTER_OFFSET_Y = -56;
+const WALL_MARGIN  = 100;
 
 // --- anti-trap tuning ---
-const CORNER_BAND     = 150;   // region near walls considered "cornerish"
-const STUCK_SPEED     = 60;    // px/s below this means "slow"
-const STUCK_TIME_MS   = 600;   // how long the puck must be slow in corner
-const STUCK_COOLDOWN  = 800;   // cooldown between escape kicks
-const CPU_RETREAT_Y   = 280;   // target Y for CPU retreat after kick
+const CORNER_BAND     = 150;
+const STUCK_SPEED     = 60;
+const STUCK_TIME_MS   = 600;
+const STUCK_COOLDOWN  = 800;
+const CPU_RETREAT_Y   = 280;
 
 let puck, player, cpu, scoreText, ring;
 let goalTop, goalBottom;
@@ -350,6 +379,9 @@ let goalLock = false;
 let stuckStart = 0;
 let lastKickAt = 0;
 
+// sfx throttle (for paddle collisions)
+let lastHitAt = 0;
+
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
 function preload(){
@@ -357,13 +389,23 @@ function preload(){
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
-  try{
-    this.load.audio('hit1','/arcade/assets/sounds/hit1.mp3');
-    this.load.audio('goal','/arcade/assets/sounds/goal.mp3');
-  }catch(e){}
+
+  // uploaded audio files
+  this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
+  this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
 }
 
 function create(){
+  this.sound.pauseOnBlur = false;
+
+  // Explicit audio unlock on first gesture
+  const unlockAudio = ()=>{
+    try{ if (this.sound.locked) this.sound.unlock(); }catch{}
+    try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
+    this.input.off('pointerdown', unlockAudio);
+  };
+  this.input.on('pointerdown', unlockAudio);
+
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
@@ -384,7 +426,7 @@ function create(){
     centerBodyOnTexture(p);
   });
 
-  // --- invisible goal sensors (physics overlap) ---
+  // --- invisible goal sensors ---
   goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
   goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
   this.physics.add.existing(goalTop, true);
@@ -393,11 +435,11 @@ function create(){
   this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
   this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
-  // sfx
-  this.sfx = {hit1:null,goal:null};
+  // sfx handles
+  this.sfx = {hit:null,goal:null};
   try{
-    this.sfx.hit1 = this.sound.add('hit1',{volume:.35});
-    this.sfx.goal = this.sound.add('goal',{volume:.5});
+    this.sfx.hit  = this.sound.add('hit',{volume:.35});
+    this.sfx.goal = this.sound.add('goal',{volume:.55});
   }catch(e){}
 
   // touch ring so finger doesn't hide the aim point
@@ -405,7 +447,7 @@ function create(){
   ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
   ring.setAlpha(0);
 
-  // input — world coordinates work with FIT scaling
+  // input
   const clamp = Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
     const ww=this.scale.width, hh=this.scale.height;
@@ -458,7 +500,6 @@ function resolvePaddle(paddle, prev, scene){
     const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
     const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
 
-    // slightly softened impulse for bigger faces
     const base=500, gainN=8.5, gainT=4.7, maxV=2000;
     const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
     const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
@@ -467,7 +508,15 @@ function resolvePaddle(paddle, prev, scene){
     const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
     puck.setAngularVelocity(spin);
 
-    try{ scene.sfx?.hit1?.play(); }catch{}
+    // HIT SFX — only on paddle contact (no wall sounds)
+    try{
+      const now=performance.now();
+      if(now - lastHitAt > 70){
+        scene.sfx?.hit?.setDetune?.(Phaser.Math.Between(-60,50));
+        scene.sfx?.hit?.play({ volume:.38 });
+        lastHitAt = now;
+      }
+    }catch{}
   }
 }
 
@@ -480,7 +529,6 @@ function update(){
   const rCpu = cpu.displayWidth * 0.5;
   const rPuck = puck.displayWidth * 0.5;
 
-  // Desired target follows puck but is pulled toward center when puck hugs walls at top half
   const nearTop = puck.y < h*0.45;
   const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
   const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
@@ -490,14 +538,12 @@ function update(){
                     WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
                   ), 0.10);
 
-  // Cap how deep CPU chases; hover a bit above the defense line to leave room
   const cpuChaseDepth = Math.min(puck.y, h*0.38);
   const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
 
   cpu.x = targetX;
   cpu.y = targetY;
 
-  // No-pin spacing: if puck is near a wall and CPU overlaps too closely, push CPU outward slightly
   const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
                    (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
                    (puck.y < WALL_MARGIN + rPuck + 8);
@@ -527,10 +573,8 @@ function update(){
     const longEnough = (now - stuckStart) > STUCK_TIME_MS;
     const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
     if(longEnough && cooled){
-      // Kick puck toward center-lower area
       const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
       puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
-      // CPU retreats to open the lane
       cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
       lastKickAt = now;
       stuckStart = 0;
@@ -538,8 +582,6 @@ function update(){
   }else{
     stuckStart = 0;
   }
-
-  // -----------------------------------------------
 
   const curPlayer={x:player.x,y:player.y};
   const curCPU={x:cpu.x,y:cpu.y};
@@ -589,7 +631,7 @@ function serve(scene, scoredBy){
   if(!puck.body){ scene.physics.add.existing(puck); }
   puck.body.enable = true; puck.body.checkCollision.none = false;
   puck.setCollideWorldBounds(true);
-  puck.body.setCircle(puck.displayWidth/2); // sync to scale
+  puck.body.setCircle(puck.displayWidth/2);
   centerBodyOnTexture(puck);
 
   const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
