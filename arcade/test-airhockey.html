@@ -345,7 +345,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- ===== Air Hockey Game (audio unlock + anti-trap AI + goal sensors) ===== -->
+<!-- ===== Air Hockey Game (audio only on paddle hits + goal) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -379,7 +379,7 @@ let goalLock = false;
 let stuckStart = 0;
 let lastKickAt = 0;
 
-// sfx throttle
+// sfx throttle (for paddle collisions)
 let lastHitAt = 0;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
@@ -396,10 +396,9 @@ function preload(){
 }
 
 function create(){
-  // Allow audio when tab is unfocused (optional)
   this.sound.pauseOnBlur = false;
 
-  // Explicit audio unlock on first gesture (beats mobile autoplay blocks)
+  // Explicit audio unlock on first gesture
   const unlockAudio = ()=>{
     try{ if (this.sound.locked) this.sound.unlock(); }catch{}
     try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
@@ -416,21 +415,6 @@ function create(){
   puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
-
-  // wall SFX
-  puck.body.onWorldBounds = true;
-  this.physics.world.on('worldbounds', (body)=>{
-    if(body.gameObject === puck && !goalLock){
-      try{
-        const now=performance.now();
-        if(now - lastHitAt > 90){ // throttle
-          this.sfx?.hit?.setDetune?.(Phaser.Math.Between(-50,40));
-          this.sfx?.hit?.play({ volume:.35 });
-          lastHitAt = now;
-        }
-      }catch{}
-    }
-  });
 
   // paddles
   player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
@@ -524,7 +508,7 @@ function resolvePaddle(paddle, prev, scene){
     const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
     puck.setAngularVelocity(spin);
 
-    // play hit on paddle impact (also throttled)
+    // HIT SFX — only on paddle contact (no wall sounds)
     try{
       const now=performance.now();
       if(now - lastHitAt > 70){
