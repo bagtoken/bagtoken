@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>$BAG Arcade</title>
+
+<!-- Preload audio to reduce first-tap latency -->
+<link rel="preload" href="/arcade/assets/sounds/arcade-ambiance.mp3" as="audio" />
+
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --gold:#ffd700;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;
+    --muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;
+    --line:#173524;--shadow:rgba(0,0,0,.35);
+    --content:1200px;--backbar-h:56px;
+  }
+  html{scroll-behavior:smooth}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  img{display:block;max-width:100%;height:auto}
+
+  /* Back */
+  .backbar{position:sticky;top:0;z-index:1000;background:linear-gradient(180deg,#0f1f17,#0e271c);
+    border-bottom:1px solid #1b4a2f;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+  .backlink{display:inline-block;margin:10px 12px;padding:10px 14px;border-radius:12px;
+    color:#08130d;text-decoration:none;font-weight:900;letter-spacing:.2px;
+    background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+    box-shadow:0 3px 0 #b08a19;transition:transform .06s ease,box-shadow .2s ease,filter .2s ease}
+  .backlink:hover{filter:brightness(1.05)}
+  .backlink:active{transform:translateY(1px);box-shadow:0 2px 0 #9a7315}
+
+  /* Top-right actions (Casino + Speaker) */
+  .top-actions{
+    position:fixed;top:10px;right:12px;z-index:2147483647;
+    display:flex;gap:8px;align-items:center;
+    background:transparent;
+  }
+  .top-actions .backlink{
+    margin:0; /* tighter in cluster */
+    padding:10px 14px;
+    white-space:nowrap;
+  }
+
+  /* Page wrap */
+  .wrap{max-width:var(--content);margin:0 auto;padding:18px 16px 32px}
+  @media (min-width:1024px){.wrap{padding:24px 24px 40px}}
+
+  .top{text-align:center;padding:18px 0 6px}
+  .tag{color:var(--muted);font-weight:600;letter-spacing:.04em}
+  .tag.gold{color:var(--gold)}
+  .tag.gold strong{color:inherit}
+
+  /* Hero */
+  .casino-hero{padding:10px 0 0}
+  .casino-hero .poster{margin:0 auto 18px;border-radius:14px;box-shadow:0 8px 28px var(--shadow)}
+  @media (min-width:900px){.casino-hero .poster{max-width:1000px}}
+  @media (max-width:899px){.casino-hero .poster{width:100%;max-width:none;border-radius:0;box-shadow:none}}
+
+  /* Under Construction */
+  .under-construction{
+    max-width:900px;margin:0 auto 16px;text-align:center;color:#e9efe9;
+    padding:12px 14px;border:1px dashed #2b6a48;border-radius:12px;
+    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    box-shadow:0 6px 20px var(--shadow);
+  }
+  .under-construction p{margin:6px 0}
+
+  /* Promo */
+  .promo{margin:18px 0 24px}
+  .promo-panel{
+    display:flex;gap:16px;align-items:center;justify-content:space-between;
+    padding:14px 16px;border-radius:16px;
+    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border:1px solid var(--line);box-shadow:0 8px 24px var(--shadow);
+    position:relative;overflow:hidden;
+  }
+  .promo-panel::after{
+    content:"";position:absolute;inset:-1px;border-radius:16px;
+    pointer-events:none;box-shadow:0 0 0 1px rgba(255,215,0,.12), inset 0 0 60px rgba(47,191,107,.06);
+  }
+  .promo-badge{
+    display:inline-block;background:#173524;color:#e6f2ea;border:1px solid #2b6a48;
+    font-weight:800;letter-spacing:.06em;padding:6px 10px;border-radius:999px;margin-bottom:8px;
+  }
+  .promo-title{margin:0;color:var(--gold);font-size:1.25rem;font-weight:900;letter-spacing:.03em}
+  .promo-meta{margin:6px 0 0;color:#cfe1d6;max-width:60ch}
+  .promo-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .promo .btn{white-space:nowrap}
+  @media (max-width:720px){
+    .promo-panel{flex-direction:column;align-items:flex-start}
+    .promo .btn{width:100%}
+  }
+
+  /* Player’s Card */
+  .pcard{margin:24px 0 12px;padding:16px;border:1px solid var(--line);
+    border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+    box-shadow:0 8px 24px var(--shadow)}
+  .pcard h2{margin:0 0 8px;font-size:1.45rem}
+  .pcard-grid{display:grid;gap:16px;align-items:center}
+  @media (min-width:860px){.pcard-grid{grid-template-columns:1.1fr 1fr}}
+  .pcard-media{background:#0b0f0c;border:1px solid #1c3426;border-radius:14px;padding:8px}
+  .pcard-copy p{margin:.4rem 0;color:#dfe6df}
+  .pcard-copy .lead{color:#ffd700;font-weight:700}
+  .pcard-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .pcard .watchlist{background:#173524;color:#dfe9e2;border:1px solid #2b6a48}
+
+  /* Divider (reusable) */
+  .section-divider{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;
+    margin:36px auto 28px;font-size:1rem;opacity:.85;position:relative}
+  .section-divider::before,.section-divider::after{
+    content:"";display:inline-block;vertical-align:middle;width:60px;height:2px;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent);
+    margin:0 12px;opacity:.7}
+
+  /* THE CAGE (shared cashier) */
+  .cage{margin:0 0 24px}
+  .cage-panel{
+    display:flex;gap:16px;align-items:center;justify-content:space-between;
+    padding:14px 16px;border-radius:16px;
+    background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border:1px solid var(--line);box-shadow:0 8px 24px var(--shadow)
+  }
+  .cage-title{font-weight:900;letter-spacing:.06em;color:var(--gold)}
+  .cage-meta{margin:4px 0 0;color:#cfd6cf;font-size:.95rem;max-width:60ch}
+  .cage-actions{display:flex;gap:10px;flex-wrap:wrap}
+  @media (max-width:720px){.cage-panel{flex-direction:column;align-items:flex-start}}
+  @media (min-width:1024px){.cage-actions{justify-content:flex-end}}
+
+  /* ENTER THE FLOOR */
+  .vault-break{text-align:center;color:var(--gold);font-weight:900;letter-spacing:.12em;
+    margin:48px auto 24px;font-size:1rem;opacity:.85;position:relative}
+  .vault-break::before,.vault-break::after{
+    content:"";display:inline-block;vertical-align:middle;width:60px;height:2px;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent);
+    margin:0 12px;opacity:.7}
+  .scroll-anchor{scroll-margin-top:calc(var(--backbar-h) + 10px)}
+
+  /* Cards grid */
+  .grid{display:grid;gap:18px;margin-top:16px}
+  @media (min-width:720px){.grid{grid-template-columns:repeat(3,1fr)}}
+  @media (max-width:719px){.grid{grid-template-columns:1fr}}
+
+  .card{position:relative;background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);overflow:hidden}
+  .card-img{aspect-ratio:16/9;width:100%;object-fit:cover;background:#0b0b0c}
+  .card-body{padding:14px 14px 16px}
+  .card h3{margin:0 0 6px;font-size:clamp(1.05rem,1.2vw,1.2rem)}
+  .btn{display:inline-block;padding:10px 16px;font-weight:800;text-decoration:none;border-radius:12px;
+    color:#08130d;background:linear-gradient(180deg,#ffe175 0%, #f5c94c 100%);
+    box-shadow:0 4px 0 #b08a19;transition:transform .06s ease, filter .2s ease, box-shadow .2s ease}
+  .btn:hover{filter:brightness(1.05);box-shadow:0 4px 0 #b08a19,0 14px 28px rgba(255,225,117,.22)}
+  .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+  .btn.disabled, .btn[aria-disabled="true"]{opacity:.6;cursor:not-allowed}
+
+  /* Compliance (centered) */
+  .comp-wrap{margin-top:24px;border-top:1px solid var(--line);padding:16px 0;color:var(--muted);font-size:14px;line-height:1.5;
+    max-width:900px;margin-left:auto;margin-right:auto;text-align:center;}
+  .comp-grid{display:grid;gap:12px;justify-items:center;}
+  .comp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center;}
+  .comp-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--panel2);color:var(--fg);font-size:13px}
+  .comp-pill small{opacity:.8}
+  .comp-links{display:flex;gap:14px;justify-content:center;}
+  .comp-links a{color:var(--gold);text-decoration:none}
+  .comp-links a:hover{text-decoration:underline}
+  .comp-note{font-size:12px;color:var(--muted)}
+  .comp-rtp{padding:12px;border-radius:12px;background:var(--panel)}
+  .badge-21{background:#e25b5b;color:#111;padding:2px 8px;border-radius:999px;font-weight:700}
+  .comp-disclaimer{margin-top:8px;font-size:12px;color:#muted}
+
+  /* 🔊 Speaker button in top-actions cluster */
+  #soundToggle{
+    position:static; /* inside .top-actions */
+    background:rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(4px);
+    border:1px solid #2b6a48;border-radius:12px;padding:8px 10px;
+    color:var(--gold);font-size:1.2rem;cursor:pointer;opacity:.9;
+    transition:opacity .2s ease, transform .12s ease;
+  }
+  #soundToggle:hover{opacity:1;transform:scale(1.06)}
+  #soundToggle:active{transform:scale(.98)}
+
+  /* ✅ Center footer */
+  footer.footer{
+    text-align:center;
+    padding:20px 16px 40px;
+    line-height:1.6;
+  }
+
+  /* Demo memo under Cage — copied to match Casino hub */
+  .demo-memo{
+    margin:10px 0 0; padding:10px 12px; border:1px dashed var(--line);
+    border-radius:10px; background:linear-gradient(180deg,var(--panel),var(--panel2));
+    color:#e9efe9; font-size:.95rem;
+  }
+  .demo-memo strong{ color:var(--gold); }
+</style>
+
+<!-- Desktop layout cap -->
+<style id="casino-pc-fixes">
+  @media (min-width: 1024px){
+    .grid{
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      max-width: 1040px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .card{max-width: 340px;margin: 0 auto;}
+  }
+</style>
+
+<!-- Mobile overrides -->
+<style id="casino-mobile-fixes">
+  @media (max-width: 719px){
+    .wrap{ padding-left:12px; padding-right:12px; }
+    .grid{ grid-template-columns: 1fr !important; gap:14px; max-width:none; margin-left:0; margin-right:0; }
+    .card{ max-width:none !important; width:100%; margin:0; }
+    .card-img{ width:100%; aspect-ratio:16/9; }
+    .casino-hero .poster{ width:100%; max-width:100%; border-radius:0; box-shadow:none; }
+    html, body { overflow-x: hidden; }
+  }
+</style>
+
+<!-- Modal styles (reused) -->
+<style>
+  .gold{color:var(--gold)}
+  .muted{color:var(--muted)}
+  .bag-btn,.bag-cta,.bag-outline{
+    font:600 16px/1.1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    padding:.9rem 1.1rem;border-radius:10px;cursor:pointer;text-decoration:none;display:inline-block;
+  }
+  .bag-btn{background:var(--gold);color:#111;border:none}
+  .bag-cta{background:var(--gold);color:#111}
+  .bag-outline{background:transparent;color:var(--fg);border:1px solid var(--muted)}
+  .bag-modal{position:fixed;inset:0;display:none;z-index:9999}
+  .bag-modal[aria-hidden="false"]{display:block}
+  .bag-modal__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.65)}
+  .bag-modal__dialog{
+    position:relative;margin:4vh auto 0;max-width:720px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+    color:var(--fg);border:1px solid #273a2e;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:1rem 1rem 1.25rem;
+  }
+  .bag-modal__header h2{margin:.25rem 0 .25rem;font-size:1.6rem}
+  .bag-modal__close{
+    position:absolute;top:.35rem;right:.6rem;width:36px;height:36px;border-radius:8px;border:1px solid #243428;
+    background:#0f1f16;color:var(--fg);cursor:pointer;font-size:22px;line-height:32px;
+  }
+  .bag-steps{margin:1rem 0;padding-left:1.2rem}
+  .bag-steps > li{margin:.6rem 0}
+  .bag-steps ul{margin:.35rem 0 .25rem 0;padding-left:1rem}
+  .bag-perks{margin:1.1rem 0 .75rem;padding:.9rem;border:1px dashed #2a3c30;border-radius:10px;background:rgba(32,58,44,.25)}
+  .bag-modal__footer{display:flex;gap:.6rem;justify-content:flex-end;margin-top:.75rem}
+  .footnote{margin:.75rem 0 0}
+  .bag-modal__body a{color:#8dc8ff;text-decoration:underline}
+  .bag-modal__body a:hover{color:#cfe6ff}
+  @media (max-width:520px){
+    .bag-modal__dialog{margin:2vh .75rem 0;padding:.8rem}
+    .bag-modal__footer{flex-direction:column;align-items:stretch}
+    .bag-cta,.bag-outline,.bag-btn{width:100%}
+  }
+</style>
+
+<script src="/js/bag-session.js" defer></script>
+</head>
+<body>
+
+<nav class="backbar" role="navigation" aria-label="Back">
+  <a class="backlink" href="/" aria-label="Back to $BAG">⬅ Back to $BAG</a>
+</nav>
+
+<!-- 🔝 Top-right actions: Casino + Speaker -->
+<div class="top-actions" role="navigation" aria-label="Quick actions">
+  <a class="backlink" href="/casino/" aria-label="Go to Casino">🎰 Casino</a>
+  <button id="soundToggle" title="Toggle arcade ambiance" aria-pressed="false">🔇</button>
+</div>
+
+<audio id="casinoAmbience" src="/arcade/assets/sounds/arcade-ambiance.mp3" loop preload="auto" playsinline></audio>
+
+<div class="wrap">
+  <div class="top">
+    <div style="font-size:1.6rem;font-weight:900;letter-spacing:.03em">🕹️ $BAG ARCADE</div>
+    <div class="tag">Utility on Chain. Culture on Brand.</div>
+    <div class="tag gold" style="margin-top:6px">
+      P2E and PvP events on XRPL. Earn and play in <strong>$BAG</strong> — fast lanes, instant ledger moves.
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <section class="casino-hero" aria-label="$BAG Arcade">
+    <picture>
+      <source type="image/webp"
+              srcset="/arcade/assets/img/bag-arcade-960.webp 960w, /arcade/assets/img/bag-arcade-1024.webp 1024w"
+              sizes="(min-width:900px) 1000px, 100vw">
+      <img class="poster"
+           src="/arcade/assets/img/bag-arcade-1024.png"
+           srcset="/arcade/assets/img/bag-arcade-960.png 960w, /arcade/assets/img/bag-arcade-1024.png 1024w"
+           sizes="(min-width:900px) 1000px, 100vw"
+           alt="$BAG Arcade Entrance" width="1024" height="576" decoding="async" loading="lazy">
+    </picture>
+  </section>
+
+<!-- 🕹️ ARCADE BULLETIN -->
+<section id="casino-bulletin" style="
+  background:linear-gradient(180deg,#0b1b13,#06100b);
+  border:1px solid #173524;
+  padding:28px 16px;
+  margin:32px auto;
+  max-width:900px;
+  border-radius:10px;
+  box-shadow:0 0 20px rgba(255,215,0,.06);
+  text-align:left;">
+  <h2 style="color:#ffd700;text-align:center;letter-spacing:.5px;font-size:1.3rem;margin-top:0;">
+    🕹️ Arcade Bulletin
+  </h2>
+  <ul style="list-style:none;padding:0;margin:0;color:#f5f7f4;font-size:.95rem;line-height:1.6;">
+    <li>🎨 Updating skins and visuals across the floor</li>
+    <li>🔊 Integrating ambient and gameplay audio</li>
+    <li>⚙️ Fine-tuning existing games for smoother play</li>
+    <li>🎰 Expanding the lineup — more games loading soon</li>
+    <li>📈 <strong>Betting limits and payout multipliers will rise automatically as $BAG liquidity grows.</strong></li>
+  </ul>
+</section>
+
+ 
+  <!-- 🚧 Under Construction -->
+  <div class="under-construction" role="status" aria-live="polite">
+    <p>🚧 <strong>Arcade games are coming online</strong></p>
+    <p>Leaderboards wiring in. Physics tuned. PvP matchmaker in progress.</p>
+    <p>🎮 <strong>$BAG Arcade launching one game at a time.</strong></p>
+  </div>
+
+  <!-- 🎁 Promo -->
+  <section class="promo" aria-label="Free Arcade Demo">
+    <div class="promo-panel">
+      <div>
+        <div class="promo-badge">FREE DEMO</div>
+        <h2 class="promo-title">Grab free demo $BAG and test the games</h2>
+        <p class="promo-meta">
+          Warm up on Air Hockey, then watch for new games. When you’re done, the house keeps the demo <strong>$BAG</strong>.
+        </p>
+      </div>
+      <div class="promo-actions">
+        <a class="btn" id="jumpGamesBtn" href="#floor">Play Free — Jump to Games</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 🪪 PLAYER’S CARD -->
+  <section class="pcard" aria-label="$BAG Player’s Card">
+    <h2>💳 <em>$BAG Player’s Card — Loyalty Has Perks</em></h2>
+    <div class="pcard-grid">
+      <div class="pcard-media">
+        <picture>
+          <source type="image/webp"
+                  srcset="/assets/bag-players-card-960.webp 960w, /assets/bag-players-card-1024.webp 1024w"
+                  sizes="(min-width:860px) 560px, 100vw">
+          <img src="/assets/bag-players-card-1024.png"
+               srcset="/assets/bag-players-card-960.png 960w, /assets/bag-players-card-1024.png 1024w"
+               width="1024" height="576"
+               alt="$BAG Player’s Card (front & back)" loading="lazy" decoding="async">
+        </picture>
+      </div>
+      <div class="pcard-copy">
+        <p class="lead">Real loyalty. Real rewards.</p>
+        <p>The <strong>$BAG Player’s Card NFT</strong> unlocks exclusive perks, early drops, and <strong>Free Play Fridays</strong>. Powered by <strong>$XRP</strong>.</p>
+        <p>Consistency wins. We’re watching for the ones who show up early and often.</p>
+        <div class="pcard-actions">
+          <a class="btn watchlist" aria-disabled="true" role="button">🎮 COMING SOON — JOIN THE WATCHLIST</a>
+          <button id="bagCardHowBtn" class="bag-btn" type="button">How to get the $BAG Player’s Card</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Divider before THE CAGE -->
+  <div class="section-divider">LIVE PLAY FUNDING</div>
+
+  <!-- 🏦 THE CAGE (shared across Casino & Arcade) -->
+  <section class="cage" aria-label="The Cage (Cashier)">
+    <div class="cage-panel">
+      <div>
+        <div class="cage-title">🏦 THE CAGE</div>
+        <p class="cage-meta">
+          Connect once, play anywhere — Arcade or Casino. Bet or earn in <strong>$XRP</strong> or <strong>$BAG</strong>.
+          (XRP auto-converts; payouts settle in <strong>$BAG</strong>).
+        </p>
+      </div>
+      <div class="cage-actions">
+        <button class="btn" id="btnConnect">Connect Wallet</button>
+        <button class="btn" id="btnStart">Start Session</button>
+        <button class="btn" id="btnTopup">Top Up</button>
+        <button class="btn" id="btnEnd" style="background:#15261c;color:#dfe9e2;border:1px solid #2b6a48;">End</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO MEMO UNDER THE CAGE -->
+  <div class="demo-memo" role="note">
+    <strong>Demo players:</strong> House refill — clear cache, reload, and your demo $BAG is back on the felt.
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    $('#btnConnect').onclick = async ()=>{ try{ await __bagSession.connect(); alert('Wallet connected'); }catch(e){ alert(e.message||'Connect failed'); } };
+    $('#btnStart').onclick   = async ()=>{ try{ await __bagSession.start({ usdDeposit: 10 }); alert('Session started'); }catch(e){ alert(e.message||'Start failed'); } };
+    $('#btnTopup').onclick   = async ()=>{ try{ await __bagSession.topUp({ usdDeposit: 10 }); alert('Topped up'); }catch(e){ alert(e.message||'Top-up failed'); } };
+    $('#btnEnd').onclick     = ()=>{ __bagSession.end(); alert('Session ended'); };
+    window.addEventListener('bag:sessionSynced', ()=>{});
+  </script>
+
+  <!-- Divider -->
+  <div id="floor" class="vault-break scroll-anchor">ENTER THE FLOOR</div>
+
+  <!-- Games -->
+  <section id="games" aria-label="Games" class="grid">
+
+<!-- 🏒 AIR HOCKEY -->
+<article class="card">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-airhockey-960.webp 960w, /arcade/assets/img/bag-airhockey-1024.webp 1024w"
+            sizes="(min-width:1024px) 340px, 100vw">
+    <img class="card-img"
+         src="/arcade/assets/img/bag-airhockey-1024.png"
+         srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
+         sizes="(min-width:1024px) 340px, 100vw"
+         alt="$BAG Air Hockey" width="1024" height="576"
+         loading="lazy" decoding="async">
+  </picture>
+  <div class="card-body">
+    <h3>🏒 $BAG Air Hockey</h3>
+    <p class="meta">Pure PvP physics. Leaderboard and matchmaker wired next.</p>
+    <a class="btn" href="/arcade/airhockey.html" rel="noopener">
+      🕹️ DEMO 🟢 · LIVE 🔴
+    </a>
+  </div>
+</article>
+
+
+<!-- 🪙 SKEET BALL -->
+<article class="card">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-skeet-ball-960.webp 960w, /arcade/assets/img/bag-skeet-ball-1024.webp 1024w"
+            sizes="(min-width:1024px) 340px, 100vw">
+    <img class="card-img"
+         src="/arcade/assets/img/bag-skeet-ball-1024.png"
+         srcset="/arcade/assets/img/bag-skeet-ball-960.png 960w, /arcade/assets/img/bag-skeet-ball-1024.png 1024w"
+         sizes="(min-width:1024px) 340px, 100vw"
+         alt="$BAG Skeet Ball" width="1024" height="576"
+         loading="lazy" decoding="async">
+  </picture>
+  <div class="card-body">
+    <h3>🪙 $BAG Skeet Ball</h3>
+    <p class="meta">Arcade precision meets payout potential. Free demo live now.</p>
+    <a class="btn" href="/arcade/" rel="noopener">
+      🕹️ DEMO 🔴 · LIVE 🔴
+    </a>
+  </div>
+</article>
+
+    <!-- Placeholder 2 -->
+    <article class="card">
+      <picture>
+        <img class="card-img"
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1024' height='576'%3E%3Crect width='100%25' height='100%25' fill='%230b1b13'/%3E%3C/svg%3E"
+             alt="Next game" width="1024" height="576"
+             loading="lazy" decoding="async">
+      </picture>
+      <div class="card-body">
+        <h3>🕹️ Next Game</h3>
+        <p class="meta">Assets arriving</p>
+        <a class="btn" aria-disabled="true">Coming soon</a>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- Compliance -->
+  <div class="comp-wrap" role="complementary" aria-label="Compliance">
+    <div class="comp-grid">
+      <div class="comp-rtp">
+        <strong>Game disclosure</strong>
+        <div id="rtpBlock" class="comp-note"></div>
+        <div class="comp-disclaimer">
+          $BAG Arcade runs on XRPL. All transfers are on-ledger. Crypto carries risk. Play responsibly.
+        </div>
+      </div>
+
+      <div class="comp-row comp-links">
+        <span class="comp-pill"><span class="badge-21">21+</span> <small>Play responsibly</small></span>
+        <a href="/support/" rel="noopener">Support</a>
+        <a href="/terms/" rel="noopener">Terms</a>
+        <a href="/privacy/" rel="noopener">Privacy</a>
+      </div>
+
+      <div class="comp-note">
+        By playing you confirm you meet the legal minimum age in your region. Availability may be restricted by jurisdiction.
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+    <br>
+    <a href="https://x.com/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">𝕏 @getthebag_io</a> |
+    <a href="https://t.me/getthebag_io" target="_blank" rel="noopener" style="color:#e0c66f;text-decoration:none;font-weight:700;">Telegram @getthebag_io</a>
+  </footer>
+
+</div>
+
+<!-- (1) 🔊 Sound -->
+<script>
+(function(){
+  const btn   = document.getElementById('soundToggle');
+  const audio = document.getElementById('casinoAmbience');
+  const KEY   = 'bag_sound_pref';
+  let playing = false, armed = false;
+
+  audio.setAttribute('playsinline','');
+  audio.preload = 'auto';
+  audio.loop = true;
+  audio.volume = 0.08;
+
+  function setIcon(){ btn.textContent = playing ? '🔊' : '🔇'; btn.setAttribute('aria-pressed', String(playing)); }
+
+  async function playAudio(){
+    try{
+      await audio.play();
+      playing = true; setIcon();
+      localStorage.setItem(KEY,'on');
+      removeUnlock();
+    }catch(e){}
+  }
+  function pauseAudio(){
+    try{ audio.pause(); }catch(_){}
+    playing = false; setIcon();
+    localStorage.setItem(KEY,'off');
+    addUnlock();
+  }
+
+  btn.addEventListener('pointerdown', ev => { ev.preventDefault(); playing ? pauseAudio() : playAudio(); }, {passive:false});
+
+  if (localStorage.getItem(KEY) !== 'off') {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') playAudio();
+    else document.addEventListener('DOMContentLoaded', playAudio, {once:true});
+  }
+
+  const UNLOCK_EVENTS = ['scroll','wheel','touchstart','pointerdown','mousedown','keydown'];
+  function unlockHandler(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
+  function addUnlock(){
+    if (armed) return; armed = true;
+    UNLOCK_EVENTS.forEach(t => window.addEventListener(t, unlockHandler, {once:true, passive:true, capture:true}));
+  }
+  function removeUnlock(){ armed = false; }
+  function softResume(){ if (localStorage.getItem(KEY) !== 'off' && !playing) playAudio(); }
+  window.addEventListener('focus', softResume);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) softResume(); });
+
+  setIcon();
+  addUnlock();
+})();
+</script>
+
+<!-- Smooth jump -->
+<script>
+(function(){
+  const jump = document.getElementById('jumpGamesBtn');
+  const target = document.getElementById('floor');
+  if (!jump || !target) return;
+  jump.addEventListener('click', function(e){
+    e.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+})();
+</script>
+
+<!-- ======== HOW-TO MODAL (LOYALTY) ======== -->
+<div id="bagCardModal" class="bag-modal" aria-hidden="true" role="dialog" aria-labelledby="bagCardTitle" aria-modal="true">
+  <div class="bag-modal__backdrop" data-close></div>
+  <div class="bag-modal__dialog" role="document" tabindex="-1">
+    <button class="bag-modal__close" aria-label="Close" data-close>&times;</button>
+
+    <header class="bag-modal__header">
+      <h2 id="bagCardTitle">How to earn the <span class="gold">$BAG Player’s Card</span></h2>
+      <p class="muted">Loyalty unlocks access. Real people only. No bots.</p>
+    </header>
+
+    <section class="bag-modal__body">
+      <ol class="bag-steps">
+        <li><strong>Follow all three</strong>:
+          <ul>
+            <li>𝕏: <a href="https://x.com/getthebag_io" target="_blank" rel="noopener">@getthebag_io</a></li>
+            <li>Telegram (Main): <a href="https://t.me/getthebag_io" target="_blank" rel="noopener">t.me/getthebag_io</a></li>
+            <li>Telegram (XCHANGE): <a href="https://t.me/bagxchange" target="_blank" rel="noopener">t.me/bagxchange</a></li>
+          </ul>
+        </li>
+        <li><strong>Engage consistently</strong> on 𝕏:
+          <div class="muted">Like, repost, and comment on new posts. Signal over noise.</div>
+        </li>
+        <li><strong>Share the brand</strong>:
+          <div class="muted">Post your own mentions of $BAG and tag us. Use real accounts only.</div>
+        </li>
+        <li><strong>Show up in Telegram</strong>:
+          <div class="muted">Be active. Add value. No spam. Respect the floor.</div>
+        </li>
+        <li><strong>Stay verified</strong>:
+          <div class="muted">We review manually. We’re watching for real people, not botted activity.</div>
+        </li>
+      </ol>
+
+      <div class="bag-perks">
+        <h3>What the card gives you</h3>
+        <ul>
+          <li><strong>Free Play Fridays</strong> for card holders</li>
+          <li>Early access to drops & arcade features</li>
+          <li>XRPL membership status — powered by $XRP</li>
+        </ul>
+      </div>
+
+      <p class="footnote muted">First Player’s Card NFTs go to the ones proving it. If you’re early and consistent, you’re on our radar.</p>
+    </section>
+
+    <footer class="bag-modal__footer">
+      <button class="bag-outline" data-close>Got it</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Modal open/close -->
+<script>
+(function(){
+  const openBtn = document.getElementById('bagCardHowBtn');
+  const modal   = document.getElementById('bagCardModal');
+  const dialog  = modal?.querySelector('.bag-modal__dialog');
+
+  function open(){ modal.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; setTimeout(()=>dialog && dialog.focus(), 0); }
+  function close(){ modal.setAttribute('aria-hidden','true'); document.body.style.overflow=''; openBtn && openBtn.focus(); }
+
+  openBtn && openBtn.addEventListener('click', open);
+  modal?.addEventListener('click', e => { if (e.target.hasAttribute('data-close')) close(); });
+  window.addEventListener('keydown', e => {
+    if (modal.getAttribute('aria-hidden')==='false' && e.key==='Escape') close();
+  });
+})();
+</script>
+
+</body>
+</html>
