@@ -58,6 +58,11 @@ canvas{display:block;margin:auto}
 .start-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:5}
 #startBtn{font-size:1.1rem;padding:14px 18px}
 #countdown{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:Orbitron,system-ui,Arial,sans-serif;font-size:96px;color:#ffe175;text-shadow:0 0 18px rgba(47,191,107,.35);z-index:6;display:none}
+
+/* Practice status block (balances) */
+.practiceBlock{user-select:none;-webkit-touch-callout:none}
+.practiceBlock .title{font-weight:800;margin-bottom:4px}
+.practiceBlock .line b{font-weight:800}
 </style>
 </head>
 <body>
@@ -85,7 +90,7 @@ canvas{display:block;margin:auto}
   <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
-<!-- GAMEPLAY OPTIONS (Practice / CPU / PvP) -->
+<!-- GAMEPLAY OPTIONS -->
 <section style="padding:0 16px 12px;">
   <div class="panel" id="gameplayPanel">
     <div style="font-weight:900;margin-bottom:8px">Gameplay</div>
@@ -100,15 +105,18 @@ canvas{display:block;margin:auto}
   </div>
 </section>
 
-<!-- CONTROL + PRICES + SESSION (Practice section preserved) -->
+<!-- CONTROL + PRICES + PRACTICE SESSION -->
 <section style="padding:0 16px 20px;">
   <div class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
-      <div style="display:flex;gap:8px">
-        <button id="startSessionBtn" class="btn">Start Session</button>
-        <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
-        <button id="endSessionBtn" class="btn" style="display:none">End</button>
+    <!-- PRACTICE / SESSION ROW (LOCKED PACKAGE) -->
+    <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
+      <div id="sessionStatus" class="micro" style="opacity:.9">
+        Session: <span style="color:#2fbf6b">Practice:</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
+        <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
+        <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
       </div>
     </div>
 
@@ -323,117 +331,260 @@ canvas{display:block;margin:auto}
 })();
 </script>
 
-<!-- ===== Stake Wire (Dice parity) ===== -->
+<!-- ===== PRACTICE / DEMO SESSION CORE (LOCKED PACKAGE, adapted to Air Hockey) ===== -->
 <script>
-(function(global){
-  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
-  const priceFor=cur=>{ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd:xrpUsd; };
-  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+/* PRACTICE / DEMO SESSION CORE — adapted for Air Hockey
+   - Auto-seeds $2,000 USD worth of BAG on first load (based on live/last-live price)
+   - Stores demo BAG in localStorage (__bag_demo_bag_v2)
+   - Exposes window.__bagSession with spend() / credit()
+   - Forces default stake to 1 XRP once
+   - Depends on window.__PRICES__ and 'bag:pricesUpdated'
+*/
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const forceLive = qs.get('live') === '1';
 
-  function computeSessionMaxUsd(cur,minUsd,maxUsd){
-    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
-    const bagBal=Number(sess.bag)||0; let unitsAvail;
-    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
-    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
-    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  const $ = (s)=>document.querySelector(s);
+  const statusEl  = $('#sessionStatus');
+  const startBtn  = $('#startSessionBtn');
+  const topUpBtn  = $('#topUpBtn');
+  const endBtn    = $('#endSessionBtn');
+
+  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
+  const DEMO_INIT_KEY  = '__bag_demo_init_v2';
+  const START_USD      = 2000;
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n){
+    if(!Number.isFinite(n)) return '—';
+    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
+    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
+    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
+    return n.toLocaleString(undefined,{maximumFractionDigits:10});
+  }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+
+  function getCachedBagUsd(){
+    try{
+      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
+      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
+    }catch{}
+    return 0;
   }
 
-  function init(opts){
-    const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
-      presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
-    const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
-          unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
-    const STATE={lastEdited:'qty', lastCur:null, syncing:false};
-    const rUsd=()=>{ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
-    const rQty=()=>{ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
-    const wUsd=u=>{ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; };
-    const wQty=q=>{ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; };
-    const paintUnits=()=>{ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); };
-    const renderLimits=()=>{ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
-      const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
-      limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; };
-
-    function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
-      if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
-    function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
-      if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
-    function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
-      if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
-
-    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-    STATE.lastCur=getCur(curToggle);
-    curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-    if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
-
-    if(presets){
-      const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
-      const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
-      const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
-      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
-          usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
-          usd=clamp(usd); setActive(btn); applyUsd(usd);
-        });
-      });
-      const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
-        if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
-      addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
+  function ensureSeedNowOrWhenReady(){
+    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
+    const live = Number((PR().bagUsd)||0);
+    const cached = getCachedBagUsd();
+    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
+    if (bagUsd>0){
+      const startBag = START_USD / bagUsd;
+      setBag(startBag);
+      localStorage.setItem(DEMO_INIT_KEY,'1');
+      return true;
     }
-    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+    return false;
   }
-  global.BAGStakeWire={ init };
-})(window);
 
-// simple HUD wire-up
-document.addEventListener('DOMContentLoaded', ()=>{
-  try{ window.BAGStakeWire.init(); }catch{}
-  const betQty=document.getElementById('betQty');
-  const modeLbl=document.getElementById('modeLbl');
-  const betLbl=document.getElementById('betLbl');
-  const ccyLbl=document.getElementById('ccyLbl');
-  const lastLbl=document.getElementById('lastLbl');
+  function renderDemo(){
+    const bag=getBag();
+    const { bagUsd, xrpUsd } = PR();
+    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
+    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
 
-  const paintHUD=()=>{
-    betLbl.textContent = betQty.value || '1';
-    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
-    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
-    ccyLbl.textContent = cur;
-    modeLbl.textContent = (window.__AH_MODE__ || 'Demo');
-    lastLbl.textContent = window.__AH_LAST__ || '—';
+    if(statusEl){
+      statusEl.innerHTML =
+        `<div class="practiceBlock">
+          <div class="title">Practice:</div>
+          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
+          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
+          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
+        </div>`;
+    }
+
+    if(startBtn) startBtn.style.display='inline-block';
+    if(topUpBtn) topUpBtn.style.display='none';
+    if(endBtn)   endBtn.style.display='none';
+  }
+
+  const demoSession={
+    active:()=>true,
+    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
+    set:()=>{},
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
   };
-  paintHUD();
-  document.addEventListener('bag:hudRefresh', paintHUD);
-  ['input','change'].forEach(evt=>{
-    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
-    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+
+  function forceBetXRP1Once(){
+    const bet  = document.getElementById('betQty');
+    const unit = document.querySelector('.unit');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+
+    if (xrpRadio && !xrpRadio.checked){
+      xrpRadio.checked = true;
+      xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    if (unit) unit.textContent = 'XRP';
+
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input', {bubbles:true}));
+      bet.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+
+  function enableDemo(){
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
+    catch{ window.__BAG_FORCE_DEMO=true; }
+
+    window.__bagSession = demoSession;
+
+    const seeded = ensureSeedNowOrWhenReady();
+    renderDemo();
+
+    addEventListener('bag:pricesUpdated', ()=>{
+      if (!localStorage.getItem(DEMO_INIT_KEY)){
+        const ok = ensureSeedNowOrWhenReady();
+        if (ok) renderDemo();
+      } else {
+        renderDemo();
+      }
+    });
+
+    forceBetXRP1Once();
+  }
+
+  function enableLive(){
+    window.__BAG_FORCE_DEMO=false;
+    window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    const bet  = document.getElementById('betQty');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input',{bubbles:true}));
+      bet.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+
+  if (forceLive) enableLive(); else enableDemo();
+
+  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
+
+  // Top Up: refill to $2,000 USD equivalent
+  document.getElementById('topUpBtn')?.addEventListener('click', ()=>{
+    const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
+    if (bagUsd>0){
+      setBag(START_USD/bagUsd);
+      renderDemo();
+      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    }
   });
-});
+})();
+</script>
+
+<!-- ===== HUD GLUE (reads demo balance) — adapted to AH IDs ===== -->
+<script>
+(function(){
+  const curToggle = document.getElementById('curToggle');
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
+
+  function els(){ 
+    return { 
+      hud: document.getElementById('ahHud'),
+      balLbl: document.getElementById('balLbl'),
+      ccyLbl: document.getElementById('ccyLbl'),
+      betLbl: document.getElementById('betLbl'),
+      modeLbl: document.getElementById('modeLbl'),
+      lastLbl: document.getElementById('lastLbl'),
+      betQtyEl: document.getElementById('betQty'),
+    }; 
+  }
+
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live'; }
+  function currentCurrency(){
+    const el = curToggle?.querySelector('input[name="betCur"]:checked');
+    return el ? String(el.value).toUpperCase() : 'XRP';
+    }
+
+  function getBalances(){
+    const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
+    const bag = Number(sess.bag) || 0;
+    let xrp = Number(sess.xrp);
+    if (!(xrp > 0)) {
+      const { bagUsd, xrpUsd } = PR();
+      if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
+      else xrp = 0;
+    }
+    return { bag, xrp };
+  }
+
+  function currentBet(){
+    const { betQtyEl } = els();
+    const v = parseFloat(betQtyEl?.value || '0');
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return Number(v) || 1;
+  }
+
+  function renderHud(){
+    try{
+      const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
+      const mode = selectedMode();
+      const ccy  = currentCurrency();
+      const { bag, xrp } = getBalances();
+
+      if (modeLbl) modeLbl.textContent = mode;
+      if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);
+      if (lastLbl) lastLbl.textContent = String(window.__AH_LAST__ || '—');
+
+      if (balLbl && ccyLbl){
+        if (ccy === 'XRP'){
+          balLbl.textContent = fmt(xrp, 6);
+          ccyLbl.textContent = 'XRP';
+        } else {
+          balLbl.textContent = fmt(bag, 6);
+          ccyLbl.textContent = 'BAG';
+        }
+      }
+    }catch(e){}
+  }
+
+  [
+    'bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded',
+    'bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected',
+    'bag:hudRefresh'
+  ].forEach(ev => addEventListener(ev, renderHud));
+
+  document.getElementById('betQty')?.addEventListener('input', renderHud);
+  curToggle?.addEventListener('change', renderHud);
+  addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
+
+  renderHud();
+  let tries = 0; 
+  const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
+})();
 </script>
 
 <!-- ===== Gameplay options + PvP modal wire ===== -->
 <script>
 (function(){
   const $=s=>document.querySelector(s);
-  const $$=s=>document.querySelectorAll(s);
   const startOverlay=$("#startOverlay");
   const startBtn=$("#startBtn");
   const countdown=$("#countdown");
 
-  // Mode buttons
   $("#optPractice").addEventListener('click',()=>{ window.__AH_MODE__='Practice'; $("#gameModeNote").textContent='Practice with CPU keeper. No ledger stakes.'; document.dispatchEvent(new Event('bag:hudRefresh')); });
   $("#optCPU").addEventListener('click',()=>{ window.__AH_MODE__='Solo vs CPU'; $("#gameModeNote").textContent='Play against CPU. Stakes apply only when session is Live.'; document.dispatchEvent(new Event('bag:hudRefresh')); });
   $("#optPVP").addEventListener('click',()=>{ window.__AH_MODE__='PvP Online'; openPvP(); document.dispatchEvent(new Event('bag:hudRefresh')); });
 
-  // Session buttons (visual only for now)
-  $("#startSessionBtn").addEventListener('click',()=>{ $("#sessionStatus").innerHTML='Session: <span style="color:#2fbf6b">Live</span>'; document.getElementById('topUpBtn').style.display='inline-block'; document.getElementById('endSessionBtn').style.display='inline-block'; });
-  $("#endSessionBtn").addEventListener('click',()=>{ $("#sessionStatus").innerHTML='Session: <span style="color:#e8a85c">Ended</span>'; });
-  $("#topUpBtn").addEventListener('click',()=>{ alert('Top up flow (Xaman) WIP'); });
-
-  // Start overlay + countdown -> game start
   function doCountdownThenStart(){
     let n=3;
     countdown.style.display='block';
@@ -486,14 +637,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
       if(hostReady && guestReady){
         modal.style.display='none';
         startOverlay.style.display='flex';
-        // optional auto-start for PvP
       }
     }
   });
 })();
 </script>
 
-<!-- ===== Air Hockey Game (keep gameplay intact) ===== -->
+<!-- ===== Air Hockey Game (unchanged core gameplay) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
