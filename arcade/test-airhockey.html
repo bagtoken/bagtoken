@@ -1,5 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
 <!-- =========================================================
   $BAG Air Hockey — Arcade P2E (FULL PAGE, NO PLACEHOLDERS)
   Sections:
@@ -16,1265 +14,1084 @@
   11) AIR HOCKEY GAME (your original game, untouched)
   12) GAMEPLAY OPTIONS + P2P VERSUS LOGIC (affects scene without editing game)
 ========================================================= -->
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>$BAG Air Hockey — Arcade P2E</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>$BAG Air Hockey — Arcade P2E</title>
 
-  <!-- Libs -->
-  <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
-  <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
-  <!-- Preload audio -->
-  <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
-  <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
+<!-- Preload audio to cut first-tap latency -->
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
-  <!-- Shared UI (kept) -->
-  <script src="/js/bag-overlay.js"></script>
-  <script src="/js/bag-session.js"></script>
-  <script src="/js/bag-quick-amounts.js"></script>
+<!-- Dice shared UI logic -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
 
-  <!-- ========== BASE CSS (kept) + tiny Practice block styles ========== -->
-  <style>
-    :root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
-    .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
-    .btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
-    .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
-    .divider{height:1px;background:#123221;margin:14px 0}
-    .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
-    a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
-    a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
-    img{display:block;max-width:100%;height:auto}
-    canvas{display:block;margin:auto}
-    #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
-    #gameContainer canvas{touch-action:none;-ms-touch-action:none}
+<style>
+:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
+.btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+.btn.alt{background:linear-gradient(180deg,#d8e3dc,#b9c8bf);box-shadow:0 4px 0 #829588}
+.btn.ghost{background:#0a1e15;border:1px solid #244330;color:#cfe6d8;box-shadow:none}
+.divider{height:1px;background:#123221;margin:14px 0}
+.marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
+a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
+a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
+img{display:block;max-width:100%;height:auto}
+canvas{display:block;margin:auto}
+#gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
+#gameContainer canvas{touch-action:none;-ms-touch-action:none}
 
-    /* Hero image sizing */
-    .hero-wrap{padding:68px 12px 6px}
-    .hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
-    @media (min-width:900px){ .hero-img{max-width:720px}}
+/* Hero image sizing (mobile-first) */
+.hero-wrap{padding:68px 12px 6px}
+.hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+@media (min-width:900px){ .hero-img{max-width:720px}}
 
-    /* Stake/HUD (kept) */
-    .stack{display:grid;gap:10px}
-    .choice{display:flex;gap:10px;flex-wrap:wrap}
-    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
-    .chip input{accent-color:#2fbf6b}
-    .mono{font-variant-numeric:tabular-nums}
-    .micro{font-size:.85rem;color:#aeb7af}
-    .preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .preset-chip{appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
-    .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
-    .hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
-    .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
-    .pill b{font-weight:800}
-    .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
-    .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
+/* Stake/HUD (Dice parity) */
+.stack{display:grid;gap:10px}
+.choice{display:flex;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+.chip input{accent-color:#2fbf6b}
+.mono{font-variant-numeric:tabular-nums}
+.micro{font-size:.85rem;color:#aeb7af}
+.preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.preset-chip{appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+.preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
+.hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
+.pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+.pill b{font-weight:800}
+.pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 
-    /* Practice block tiny styles */
-    .practiceBlock{user-select:none;-webkit-touch-callout:none}
-    .practiceBlock .title{font-weight:800;margin-bottom:4px}
-    .practiceBlock .line b{font-weight:800}
-  </style>
+/* Practice status block */
+.practiceBlock{user-select:none;-webkit-touch-callout:none}
+.practiceBlock .title{font-weight:800;margin-bottom:4px}
+.practiceBlock .line b{font-weight:800}
+
+/* === Gameplay Options + P2P === */
+.opt-grid{display:grid;gap:10px}
+.opt-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.opt-col{flex:1 1 260px}
+.textbox{width:100%;min-height:70px;background:#07150f;border:1px solid #244330;border-radius:10px;color:#e8f2ec;padding:10px;font-family:ui-monospace,Consolas,monospace}
+.status{font-family:ui-monospace,Consolas,monospace;font-size:.85rem;color:#cfe6d8}
+.badge{display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800}
+.ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
+</style>
 </head>
-
 <body>
-  <!-- ========== BACK LINK ========== -->
-  <a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
 
-  <!-- ========== (2) HERO + HEADER (unchanged) ========== -->
-  <section class="hero-wrap" aria-label="$BAG Air Hockey">
-    <picture>
-      <source type="image/webp"
-              srcset="/arcade/assets/img/bag-airhockey-960.webp 960w, /arcade/assets/img/bag-airhockey-1024.webp 1024w"
-              sizes="100vw">
-      <img class="hero-img"
-           src="/arcade/assets/img/bag-airhockey-1024.png"
-           srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
-           sizes="100vw"
-           width="1024" height="576"
-           alt="$BAG Air Hockey — hero">
-    </picture>
-  </section>
+<a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
 
-  <section style="text-align:center;padding:0 12px 10px">
-    <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
-    <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
-  </section>
+<!-- HERO IMAGE -->
+<section class="hero-wrap" aria-label="$BAG Air Hockey">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-airhockey-960.webp 960w, /arcade/assets/img/bag-airhockey-1024.webp 1024w"
+            sizes="100vw">
+    <img class="hero-img"
+         src="/arcade/assets/img/bag-airhockey-1024.png"
+         srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
+         sizes="100vw"
+         width="1024" height="576"
+         alt="$BAG Air Hockey — hero">
+  </picture>
+</section>
 
-  <!-- ========== (3) CONTROL PANEL — SESSION + STAKE + LIVE PRICES ========== -->
-  <section style="padding:0 16px 20px;">
-    <div class="panel">
-      <!-- Practice / Session Row (IDs kept) -->
-      <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
-        <div id="sessionStatus" class="micro" style="opacity:.9">
-          Session: <span style="color:#2fbf6b">Practice:</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
-          <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
-          <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
-        </div>
+<!-- HEADER -->
+<section style="text-align:center;padding:0 12px 10px">
+  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
+  <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
+</section>
+
+<!-- CONTROL + PRICES + SESSION -->
+<section style="padding:0 16px 20px;">
+  <div class="panel">
+    <!-- PRACTICE / SESSION ROW -->
+    <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
+      <div id="sessionStatus" class="micro" style="opacity:.9">
+        Session: <span style="color:#2fbf6b">Practice:</span>
       </div>
-
-      <div class="divider"></div>
-
-      <!-- Stake (kept) -->
-      <div class="stack">
-        <div>
-          <div class="micro">Amount</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <div>
-              <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
-                     style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="micro unit">USD</span>
-            </div>
-          </div>
-          <div class="preset-chips" id="usdPresets" data-quick-amounts data-target-usd="#usdBet" data-target-qty="#betQty"
-               data-currency-toggle="#curToggle" data-min-usd="1" data-max-usd="2000" data-active-class="active" data-sync-on-price="1">
-            <button type="button" class="preset-chip" data-usd="1">$1</button>
-            <button type="button" class="preset-chip" data-usd="2">$2</button>
-            <button type="button" class="preset-chip" data-usd="5">$5</button>
-            <button type="button" class="preset-chip" data-usd="10">$10</button>
-            <button type="button" class="preset-chip" data-usd="20">$20</button>
-            <button type="button" class="preset-chip" data-usd="50">$50</button>
-            <button type="button" class="preset-chip" data-usd="100">$100</button>
-            <button type="button" class="preset-chip" data-usd="max">Max</button>
-          </div>
-        </div>
-
-        <div>
-          <div class="micro">Bet currency</div>
-          <div class="choice" id="curToggle">
-            <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
-            <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
-          </div>
-        </div>
-
-        <div>
-          <div class="micro">Bet amount</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            <div>
-              <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
-                     style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-              <span class="unit">XRP</span>
-            </div>
-          </div>
-          <div class="micro" id="betLimits" style="margin-top:6px"></div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <!-- Live Prices (kept) -->
-      <div class="marquee">Live Prices</div>
-      <div style="text-align:center;font-family:monospace;">
-        <span id="liveDot" class="warn">●</span>
-        BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span><span id="liveNote"></span>
-        <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
+        <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
+        <button id="endSessionBtn" class="btn alt" style="min-width:auto;padding:8px 12px;display:none;">End</button>
       </div>
     </div>
-  </section>
 
-  <!-- ========== (4) GAMEPLAY OPTIONS + VERSUS (add-on; safe) ========== -->
-  <section style="padding:0 16px 20px;">
-    <div class="panel" id="optsVersusPanel">
-      <div class="marquee">Gameplay Options</div>
+    <div class="divider"></div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end">
-        <label class="micro" style="display:flex;flex-direction:column;gap:6px">
-          Target score to win
-          <select id="optTargetScore" style="background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-            <option value="5">5</option>
-            <option value="7" selected>7</option>
-            <option value="11">11</option>
-          </select>
-        </label>
-
-        <label class="micro" style="display:flex;flex-direction:column;gap:6px">
-          Puck speed
-          <select id="optPuckSpeed" style="background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-            <option value="slow">Slow</option>
-            <option value="normal" selected>Normal</option>
-            <option value="fast">Fast</option>
-          </select>
-        </label>
-
-        <label class="micro" style="display:flex;flex-direction:column;gap:6px">
-          Audio
-          <select id="optAudio" style="background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
-            <option value="on" selected>On</option>
-            <option value="off">Off</option>
-          </select>
-        </label>
-
-        <button id="applyGameplayBtn" class="btn" style="height:44px">Apply Options</button>
+    <!-- Stake (Dice-style) -->
+    <div class="stack">
+      <div>
+        <div class="micro">Amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="micro unit">USD</span>
+          </div>
+        </div>
+        <div class="preset-chips" id="usdPresets" data-quick-amounts data-target-usd="#usdBet" data-target-qty="#betQty"
+             data-currency-toggle="#curToggle" data-min-usd="1" data-max-usd="2000" data-active-class="active" data-sync-on-price="1">
+          <button type="button" class="preset-chip" data-usd="1">$1</button>
+          <button type="button" class="preset-chip" data-usd="2">$2</button>
+          <button type="button" class="preset-chip" data-usd="5">$5</button>
+          <button type="button" class="preset-chip" data-usd="10">$10</button>
+          <button type="button" class="preset-chip" data-usd="20">$20</button>
+          <button type="button" class="preset-chip" data-usd="50">$50</button>
+          <button type="button" class="preset-chip" data-usd="100">$100</button>
+          <button type="button" class="preset-chip" data-usd="max">Max</button>
+        </div>
       </div>
 
-      <div class="divider"></div>
+      <div>
+        <div class="micro">Bet currency</div>
+        <div class="choice" id="curToggle">
+          <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+          <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+        </div>
+      </div>
 
-      <div class="marquee">Versus • Connect & Wager</div>
-      <div class="micro" style="margin:6px 0 10px">Wager uses your selected currency + amount from the Stake section above.</div>
+      <div>
+        <div class="micro">Bet amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="unit">XRP</span>
+          </div>
+        </div>
+        <div class="micro" id="betLimits" style="margin-top:6px"></div>
+      </div>
+    </div>
 
-      <div style="display:grid;grid-template-columns:1fr;gap:12px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn" id="tabHost">Host</button>
-          <button class="btn" id="tabJoin">Join</button>
-          <span id="p2pStatus" class="micro" style="align-self:center;opacity:.9">Status: <b>Idle</b></span>
+    <div class="divider"></div>
+
+    <!-- Live Prices -->
+    <div class="marquee">Live Prices</div>
+    <div style="text-align:center;font-family:monospace;">
+      <span id="liveDot" class="warn">●</span>
+      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span><span id="liveNote"></span>
+      <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================
+     4) GAMEPLAY OPTIONS + P2P VERSUS (add-on; does not touch game)
+========================================================= -->
+<section style="padding:0 16px 20px;">
+  <div class="panel" id="gpPanel">
+    <div class="marquee">Gameplay Options</div>
+    <div class="opt-grid">
+      <div class="opt-row">
+        <span class="badge">Mode</span>
+        <label class="chip"><input type="radio" name="gpMode" value="practice" checked> Solo Practice (CPU)</label>
+        <label class="chip"><input type="radio" name="gpMode" value="p2p"> Versus P2P (copy-paste link)</label>
+        <button id="gpStartBtn" class="btn ghost" title="Start with current stake">Start Match</button>
+        <span id="gpModeStatus" class="status" style="margin-left:8px;opacity:.9">CPU match. First to 7 wins.</span>
+      </div>
+
+      <div id="gpP2PBox" style="display:none">
+        <div class="divider"></div>
+        <div class="opt-row">
+          <span class="badge">P2P</span>
+          <button id="p2pCreate" class="btn">Create Match</button>
+          <button id="p2pJoin" class="btn alt">Join Match</button>
+          <span id="p2pState" class="status">Not connected</span>
         </div>
 
-        <!-- Host pane -->
-        <div id="hostPane" style="display:block">
-          <div class="micro">1. Create an offer then copy it to your opponent.</div>
-          <button class="btn" id="hostCreate">Create Match</button>
-          <textarea id="hostOffer" class="mono" style="width:100%;min-height:120px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px;margin-top:8px" placeholder="Host offer (copy this)"></textarea>
-
-          <div class="micro" style="margin-top:8px">2. Paste their answer below and connect.</div>
-          <textarea id="hostAnswer" class="mono" style="width:100%;min-height:120px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px" placeholder="Paste joiner answer here"></textarea>
-          <button class="btn" id="hostAccept" style="margin-top:8px">Accept Answer</button>
-        </div>
-
-        <!-- Join pane -->
-        <div id="joinPane" style="display:none">
-          <div class="micro">1. Paste the host offer below, then generate your answer.</div>
-          <textarea id="joinOffer" class="mono" style="width:100%;min-height:120px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px" placeholder="Paste host offer here"></textarea>
-          <button class="btn" id="joinCreate" style="margin-top:8px">Create Answer</button>
-
-          <div class="micro" style="margin-top:8px">2. Copy your answer and send it back to the host.</div>
-          <textarea id="joinAnswer" class="mono" style="width:100%;min-height:120px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px" placeholder="Your answer (send this to host)"></textarea>
+        <div class="opt-row">
+          <div class="opt-col">
+            <div class="micro">Your Offer / Answer</div>
+            <textarea id="p2pLocal" class="textbox" placeholder="Click Create or Join to generate…"></textarea>
+            <button id="p2pCopy" class="btn ghost" style="margin-top:8px">Copy</button>
+          </div>
+          <div class="opt-col">
+            <div class="micro">Paste Opponent Offer/Answer</div>
+            <textarea id="p2pRemote" class="textbox" placeholder="Paste here… then click Apply"></textarea>
+            <div class="opt-row" style="margin-top:8px">
+              <button id="p2pApply" class="btn">Apply</button>
+              <span id="p2pHint" class="status">Create → copy Offer → opponent Apply → they send Answer → you Apply.</span>
+            </div>
+          </div>
         </div>
 
         <div class="divider"></div>
-
-        <!-- Escrow / lock -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn" id="lockStakeBtn">Lock Stake</button>
-          <span id="escrowInfo" class="micro">Pot: — (waiting)</span>
-        </div>
-
-        <!-- Resolve -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-          <button class="btn" id="iWonBtn">I Won</button>
-          <button class="btn" id="iLostBtn">I Lost</button>
-          <span id="resultInfo" class="micro"></span>
+        <div class="opt-row">
+          <span class="badge">Wager</span>
+          <button id="gpLock" class="btn">Lock Wager (escrow)</button>
+          <span id="gpEscrowStatus" class="status">Both sides must lock before Start.</span>
         </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ========== (5) GAME PANEL — Phaser + HUD (kept) ========== -->
-  <section style="padding:0 16px 80px;">
-    <div class="panel">
-      <div class="marquee">$BAG AIR HOCKEY</div>
-      <div id="gameContainer"></div>
+<!-- GAME PANEL (game first, HUD below it) -->
+<section style="padding:0 16px 80px;">
+  <div class="panel">
+    <div class="marquee">$BAG AIR HOCKEY</div>
+    <div id="gameContainer"></div>
 
-      <div class="divider"></div>
+    <div class="divider"></div>
 
-      <!-- HUD pills (kept IDs; target with HUD glue) -->
-      <div class="hudbar" id="ahHud" aria-live="polite">
-        <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
-        <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
-        <span class="pill">Bet: <b id="betLbl">1</b></span>
-        <span class="pill">Last: <b id="lastLbl">—</b></span>
-      </div>
+    <!-- HUD pills -->
+    <div class="hudbar" id="ahHud" aria-live="polite">
+      <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+      <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+      <span class="pill">Bet: <b id="betLbl">1</b></span>
+      <span class="pill">Last: <b id="lastLbl">—</b></span>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ========== (6) FOOTER ========== -->
-  <footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
-    © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
-  </footer>
+<footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
+</footer>
 
-  <!-- =========================================================
-       (7) PRICES MODULE (live AMM + cache; XRP key = 'xrp_usd')
-  ========================================================== -->
-  <script>
-  (function(){
-    const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
-    const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
-    const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
-    const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
+<!-- ===== 7) LIVE PRICING (AMM + cache) ===== -->
+<script>
+(function(){
+  const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
+  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
+  const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
+  const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
 
-    const fmt=n=>Number.isFinite(n)? n.toFixed(6):'—';
-    const cacheSet=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
-    const cacheGet=(k,ttl)=>{ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } };
+  const fmt=n=>Number.isFinite(n)? n.toFixed(6):'—';
+  const cacheSet=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
+  const cacheGet=(k,ttl)=>{ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } };
 
-    function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
-      const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
-      try{ return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
-      finally{ setTimeout(()=>clearTimeout(id),0); }
+  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    finally{ setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  function paint(){
+    const d=document; d.getElementById('liveBAG').textContent=fmt(PRICES.bagUsd);
+    d.getElementById('liveXRP').textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
+    const dot=d.getElementById('liveDot'), note=d.getElementById('liveNote');
+    if(dot) dot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
+    if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
+      d.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
     }
+    document.dispatchEvent(new Event('bag:pricesUpdated'));
+  }
 
-    function paint(){
-      const d=document; d.getElementById('liveBAG').textContent=fmt(PRICES.bagUsd);
-      d.getElementById('liveXRP').textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
-      const dot=d.getElementById('liveDot'), note=d.getElementById('liveNote');
-      if(dot) dot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
-      if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
-      if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
-        const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
-        d.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
-      }
-      document.dispatchEvent(new Event('bag:pricesUpdated'));
-    }
+  async function fetchXrpUsd(){
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=+v; cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+    }catch{} return false;
+  }
+  const parseXRP=a=> (typeof a==='string')? Number(a)/1_000_000 : (a&&a.currency==='XRP'? Number(a.value):null);
+  const parseIOU=a=> (a&&typeof a==='object')? Number(a.value):null;
 
-    async function fetchXrpUsd(){
+  async function fetchBAGViaAMM(){
+    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+    const price=await new Promise(resolve=>{
+      let ws; const t=setTimeout(()=>{ try{ws&&ws.close();}catch{} resolve(null); },8000);
       try{
-        const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-        const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=+v; cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
-      }catch{} return false;
-    }
-    const parseXRP=a=> (typeof a==='string')? Number(a)/1_000_000 : (a&&a.currency==='XRP'? Number(a.value):null);
-    const parseIOU=a=> (a&&typeof a==='object')? Number(a.value):null;
+        ws=new WebSocket('wss://s1.ripple.com');
+        ws.onopen=()=>ws.send(JSON.stringify(req));
+        ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
+        ws.onmessage=e=>{
+          try{
+            const m=JSON.parse(e.data); if(m.id!==1||!m.result||!m.result.amm) return;
+            clearTimeout(t); try{ws.close();}catch{};
+            const amm=m.result.amm; const bag=parseIOU(amm.amount), xrp=parseXRP(amm.amount2);
+            if(!(bag>0)&&!(xrp>0)) return resolve(null);
+            const px=xrp/bag; resolve(isFinite(px)&&px>0?px:null);
+          }catch{ resolve(null); }
+        };
+      }catch{ clearTimeout(t); resolve(null); }
+    });
+    if(!(price>0)) return false;
+    if(!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd=PRICES.xrpUsd*price; PRICES.source='live-amm';
+    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    return true;
+  }
 
-    async function fetchBAGViaAMM(){
-      const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
-      const price=await new Promise(resolve=>{
-        let ws; const t=setTimeout(()=>{ try{ws&&ws.close();}catch{} resolve(null); },8000);
-        try{
-          ws=new WebSocket('wss://s1.ripple.com');
-          ws.onopen=()=>ws.send(JSON.stringify(req));
-          ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
-          ws.onmessage=e=>{
-            try{
-              const m=JSON.parse(e.data); if(m.id!==1||!m.result||!m.result.amm) return;
-              clearTimeout(t); try{ws.close();}catch{};
-              const amm=m.result.amm; const bag=parseIOU(amm.amount), xrp=parseXRP(amm.amount2);
-              if(!(bag>0)&&!(xrp>0)) return resolve(null);
-              const px=xrp/bag; resolve(isFinite(px)&&px>0?px:null);
-            }catch{ resolve(null); }
-          };
-        }catch{ clearTimeout(t); resolve(null); }
+  function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
+  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
+    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
+    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
+    if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok;
+  }
+
+  async function refresh(){ const gotX=await fetchXrpUsd(); const gotB=await fetchBAGViaAMM(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } paint(); }
+  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
+  document.addEventListener('DOMContentLoaded', paint);
+  addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); paint(); } });
+})();
+</script>
+
+<!-- ===== 8) Stake Wire (Dice parity) ===== -->
+<script>
+(function(global){
+  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
+  const priceFor=cur=>{ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd:xrpUsd; };
+  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function computeSessionMaxUsd(cur,minUsd,maxUsd){
+    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
+    const bagBal=Number(sess.bag)||0; let unitsAvail;
+    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
+    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
+    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  }
+
+  function init(opts){
+    const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
+      presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
+    const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
+          unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
+    const STATE={lastEdited:'qty', lastCur:null, syncing:false};
+    const rUsd=()=>{ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const rQty=()=>{ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const wUsd=u=>{ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; };
+    const wQty=q=>{ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; };
+    const paintUnits=()=>{ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); };
+    const renderLimits=()=>{ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
+      const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
+      limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; };
+
+    function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
+      if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
+    function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
+      if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
+    function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
+      if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
+
+    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+
+    STATE.lastCur=getCur(curToggle);
+    curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
+
+    if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
+
+    if(presets){
+      const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
+      const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
+      const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
+      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
+          usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
+          usd=clamp(usd); setActive(btn); applyUsd(usd);
+        });
       });
-      if(!(price>0)) return false;
-      if(!(PRICES.xrpUsd>0)) return false;
-      PRICES.bagUsd=PRICES.xrpUsd*price; PRICES.source='live-amm';
-      cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
-      cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+      const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
+        if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
+      addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
+    }
+    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+  }
+  global.BAGStakeWire={ init };
+})(window);
+
+// simple HUD wire-up
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ window.BAGStakeWire.init(); }catch{}
+  const betQty=document.getElementById('betQty');
+  const modeLbl=document.getElementById('modeLbl');
+  const betLbl=document.getElementById('betLbl');
+  const ccyLbl=document.getElementById('ccyLbl');
+  const lastLbl=document.getElementById('lastLbl');
+
+  const paintHUD=()=>{
+    betLbl.textContent = betQty.value || '1';
+    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
+    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
+    ccyLbl.textContent = cur;
+    modeLbl.textContent = (window.__BAG_FORCE_DEMO===true)?'Demo':'Live';
+    lastLbl.textContent = window.__AH_LAST__ || '—';
+  };
+  paintHUD();
+  document.addEventListener('bag:hudRefresh', paintHUD);
+  ['input','change'].forEach(evt=>{
+    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+  });
+});
+</script>
+
+<!-- ===== 9) HUD glue (targets #ahHud + __AH_LAST__) ===== -->
+<script>
+(function(){
+  const curToggle = document.getElementById('curToggle');
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
+  function els(){return{balLbl:document.getElementById('balLbl'),ccyLbl:document.getElementById('ccyLbl'),betLbl:document.getElementById('betLbl'),modeLbl:document.getElementById('modeLbl'),lastLbl:document.getElementById('lastLbl'),betQtyEl:document.getElementById('betQty')};}
+  function selectedMode(){ return (window.__BAG_FORCE_DEMO===true)?'Demo':'Live'; }
+  function currentCurrency(){ const el=curToggle?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; }
+  function getBalances(){
+    const sess=(window.__bagSession&&window.__bagSession.get&&window.__bagSession.get())||{};
+    const bag=Number(sess.bag)||0; let xrp=Number(sess.xrp);
+    if(!(xrp>0)){ const {bagUsd,xrpUsd}=PR(); xrp=(bagUsd>0&&xrpUsd>0)? bag*(bagUsd/xrpUsd):0; }
+    return {bag,xrp};
+  }
+  function currentBet(){ const v=parseFloat(els().betQtyEl?.value||'0'); return (Number.isFinite(v)&&v>0)?v:1; }
+  function renderHud(){
+    const {balLbl,ccyLbl,betLbl,modeLbl,lastLbl}=els();
+    const {bag,xrp}=getBalances(); const ccy=currentCurrency();
+    if(modeLbl) modeLbl.textContent=selectedMode();
+    if(betLbl)  betLbl.textContent=fmt(currentBet(),6);
+    if(lastLbl) lastLbl.textContent=String(window.__AH_LAST__||'—');
+    if(balLbl&&ccyLbl){ if(ccy==='XRP'){ balLbl.textContent=fmt(xrp,6); ccyLbl.textContent='XRP'; } else { balLbl.textContent=fmt(bag,6); ccyLbl.textContent='BAG'; } }
+  }
+  ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:hudRefresh']
+    .forEach(ev=>addEventListener(ev,renderHud));
+  document.getElementById('betQty')?.addEventListener('input',renderHud);
+  curToggle?.addEventListener('change',renderHud);
+  addEventListener('storage',(e)=>{ if(e&&e.key==='__bag_demo_bag_v2') renderHud(); });
+  renderHud(); let tries=0; const iv=setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); },500);
+})();
+</script>
+
+<!-- ===== 10) PRACTICE / DEMO CORE ===== -->
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const forceLive = qs.get('live') === '1';
+
+  const $ = (s)=>document.querySelector(s);
+  const statusEl  = $('#sessionStatus');
+  const startBtn  = $('#startSessionBtn');
+  const topUpBtn  = $('#topUpBtn');
+  const endBtn    = $('#endSessionBtn');
+
+  const DEMO_BAL_KEY='__bag_demo_bag_v2';
+  const DEMO_INIT_KEY='__bag_demo_init_v2';
+  const START_USD=2000;
+
+  function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
+  function fmt(n){ if(!Number.isFinite(n)) return '—'; if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4}); if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6}); if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8}); return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
+  function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
+  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+  function getCachedBagUsd(){
+    try{
+      const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
+      if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
+      const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
+      if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
+    }catch{}
+    return 0;
+  }
+  function ensureSeedNowOrWhenReady(){
+    if (localStorage.getItem(DEMO_INIT_KEY)) return true;
+    const live = Number((PR().bagUsd)||0);
+    const cached = getCachedBagUsd();
+    const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
+    if (bagUsd>0){
+      const startBag = START_USD / bagUsd;
+      setBag(startBag);
+      localStorage.setItem(DEMO_INIT_KEY,'1');
       return true;
     }
-
-    function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
-    function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
-      if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
-      if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
-      if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok;
+    return false;
+  }
+  function renderDemo(){
+    const bag=getBag(); const { bagUsd, xrpUsd } = PR();
+    const usd=(bagUsd>0)? bag*bagUsd : START_USD;
+    const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
+    if(statusEl){
+      statusEl.innerHTML =
+        `<div class="practiceBlock">
+          <div class="title">Practice:</div>
+          <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
+          <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
+          <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
+        </div>`;
     }
-
-    async function refresh(){ const gotX=await fetchXrpUsd(); const gotB=await fetchBAGViaAMM(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } paint(); }
-    (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
-    document.addEventListener('DOMContentLoaded', paint);
-    addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); paint(); } });
-  })();
-  </script>
-
-  <!-- =========================================================
-       (8) STAKE WIRE (kept API; uses __bagSession.get() if present)
-  ========================================================== -->
-  <script>
-  (function(global){
-    const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
-    const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
-    const priceFor=cur=>{ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd:xrpUsd; };
-    const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-
-    function computeSessionMaxUsd(cur,minUsd,maxUsd){
-      const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
-      const bagBal=Number(sess.bag)||0; let unitsAvail;
-      if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
-      const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
-      return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+    if(startBtn) startBtn.style.display='inline-block';
+    if(topUpBtn) topUpBtn.style.display='none';
+    if(endBtn)   endBtn.style.display='none';
+  }
+  const demoSession={
+    active:()=>true,
+    get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
+    set:()=>{},
+    spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
+    credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
+  };
+  function forceBetXRP1Once(){
+    const bet  = document.getElementById('betQty');
+    const unit = document.querySelector('.unit');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+    if (unit) unit.textContent = 'XRP';
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input',{bubbles:true}));
+      bet.dispatchEvent(new Event('change',{bubbles:true}));
     }
-
-    function init(opts){
-      const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
-        presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
-      const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
-            unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
-      const STATE={lastEdited:'qty', lastCur:null, syncing:false};
-      const rUsd=()=>{ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
-      const rQty=()=>{ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
-      const wUsd=u=>{ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; };
-      const wQty=q=>{ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; };
-      const paintUnits=()=>{ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); };
-      const renderLimits=()=>{ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
-        const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
-        limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; };
-
-      function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
-        if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
-      function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
-        if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
-      function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
-        if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
-
-      usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-      qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-      STATE.lastCur=getCur(curToggle);
-      curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); });
-
-      if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
-
-      if(presets){
-        const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
-        const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); };
-        const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
-        presets.querySelectorAll('button[data-usd]').forEach(btn=>{
-          btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
-            usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
-            usd=clamp(usd); setActive(btn); applyUsd(usd);
-          });
-        });
-        const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
-          if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
-        addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
-      }
-      paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+  function enableDemo(){
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); } catch{ window.__BAG_FORCE_DEMO=true; }
+    window.__bagSession = demoSession;
+    const seeded = ensureSeedNowOrWhenReady(); renderDemo();
+    addEventListener('bag:pricesUpdated', ()=>{ if (!localStorage.getItem(DEMO_INIT_KEY)){ const ok=ensureSeedNowOrWhenReady(); if(ok) renderDemo(); } else { renderDemo(); } });
+    forceBetXRP1Once();
+  }
+  function enableLive(){
+    window.__BAG_FORCE_DEMO=false; window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
+    const bet  = document.getElementById('betQty'); const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1'; bet.dispatchEvent(new Event('input',{bubbles:true})); bet.dispatchEvent(new Event('change',{bubbles:true}));
     }
-    global.BAGStakeWire={ init };
-  })(window);
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  }
+  if (forceLive) enableLive(); else enableDemo();
+  addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  // simple HUD wire-up to keep your labels synced
-  document.addEventListener('DOMContentLoaded', ()=>{
-    try{ window.BAGStakeWire.init(); }catch{}
-    const betQty=document.getElementById('betQty');
-    const modeLbl=document.getElementById('modeLbl');
-    const betLbl=document.getElementById('betLbl');
-    const ccyLbl=document.getElementById('ccyLbl');
-    const lastLbl=document.getElementById('lastLbl');
-
-    const paintHUD=()=>{
-      betLbl.textContent = betQty.value || '1';
-      const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
-      document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
-      ccyLbl.textContent = cur;
-      modeLbl.textContent = (window.__BAG_FORCE_DEMO===true)?'Demo':'Live';
-      lastLbl.textContent = window.__AH_LAST__ || '—';
-    };
-    paintHUD();
-    document.addEventListener('bag:hudRefresh', paintHUD);
-    ['input','change'].forEach(evt=>{
-      betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
-      document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
-    });
+  topUpBtn?.addEventListener('click', ()=>{
+    const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
+    if (bagUsd>0){ setBag(START_USD/bagUsd); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); }
   });
-  </script>
+})();
+</script>
 
-  <!-- =========================================================
-       (9) HUD GLUE — reads __bagSession and updates #ahHud pills
-  ========================================================== -->
-  <script>
-  (function(){
-    const curToggle = document.getElementById('curToggle');
+<!-- ===== 11) AIR HOCKEY GAME (UNCHANGED) ===== -->
+<script>
+const config = {
+  type: Phaser.AUTO,
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1024, height: 1536, parent: 'gameContainer' },
+  backgroundColor: '#021107',
+  physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
+  input: { activePointers: 5 }
+};
 
-    function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-    function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
-    function els(){ 
-      return { 
-        hud: document.getElementById('ahHud'),
-        balLbl: document.getElementById('balLbl'),
-        ccyLbl: document.getElementById('ccyLbl'),
-        betLbl: document.getElementById('betLbl'),
-        modeLbl: document.getElementById('modeLbl'),
-        lastLbl: document.getElementById('lastLbl'),
-        betQtyEl: document.getElementById('betQty'),
-      }; 
-    }
-    function currentCurrency(){
-      const el = curToggle?.querySelector('input[name="betCur"]:checked');
-      return el ? String(el.value).toUpperCase() : 'XRP';
-    }
-    function getBalances(){
-      const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) || {};
-      const bag = Number(sess.bag) || 0;
-      let xrp = Number(sess.xrp);
-      if (!(xrp > 0)) {
-        const { bagUsd, xrpUsd } = PR();
-        if (bagUsd > 0 && xrpUsd > 0) xrp = bag * (bagUsd / xrpUsd);
-        else xrp = 0;
-      }
-      return { bag, xrp };
-    }
-    function currentBet(){
-      const { betQtyEl } = els();
-      const v = parseFloat(betQtyEl?.value || '0');
-      if (!Number.isFinite(v) || v < 0) return 0;
-      return Number(v) || 1;
-    }
-    function styleBalanceRow(){
-      const { hud } = els(); if (!hud) return;
-      hud.style.display = 'grid';
-      hud.style.gridTemplateColumns = '1fr';
-      hud.style.gap = '6px';
-      const pills = hud.querySelectorAll('.pill');
-      if (pills.length){
-        pills.forEach(p=>{ p.style.fontSize='12px'; p.style.padding='6px 10px'; });
-        if (pills[1]){ pills[1].style.fontSize='14px'; pills[1].style.padding='8px 12px'; pills[1].style.fontWeight='800'; }
-        const row = document.createElement('div');
-        row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='6px';
-        hud.appendChild(row);
-        [pills[0], pills[2], pills[3]].forEach(p=> row.appendChild(p));
-      }
-    }
-    function renderHud(){
-      try{
-        const { balLbl, ccyLbl, betLbl, modeLbl, lastLbl } = els();
-        const mode = (window.__BAG_FORCE_DEMO === true) ? 'Demo' : 'Live';
-        const ccy  = currentCurrency();
-        const { bag, xrp } = getBalances();
+// --- size + UX tuning ---
+const PADDLE_SCALE = 0.20;
+const PUCK_SCALE   = 0.09;
+const GOAL_HALF    = 140;
+const POINTER_OFFSET_Y = -56;
+const WALL_MARGIN  = 100;
 
-        if (modeLbl) modeLbl.textContent = mode;
-        if (betLbl)  betLbl.textContent  = fmt(currentBet(), 6);
-        if (lastLbl) lastLbl.textContent = String(window.__AH_LAST__ || '—');
+// --- anti-trap tuning ---
+const CORNER_BAND     = 150;
+const STUCK_SPEED     = 60;
+const STUCK_TIME_MS   = 600;
+const STUCK_COOLDOWN  = 800;
+const CPU_RETREAT_Y   = 280;
 
-        if (balLbl && ccyLbl){
-          if (ccy === 'XRP'){ balLbl.textContent = fmt(xrp, 6); ccyLbl.textContent = 'XRP'; }
-          else { balLbl.textContent = fmt(bag, 6); ccyLbl.textContent = 'BAG'; }
-        }
-      }catch(e){}
-    }
-    ['bag:sessionStarted','bag:sessionToppedUp','bag:sessionEnded','bag:pricesUpdated','bag:walletConnected','bag:walletDisconnected','bag:hudRefresh']
-      .forEach(ev => addEventListener(ev, renderHud));
-    document.getElementById('betQty')?.addEventListener('input', renderHud);
-    curToggle?.addEventListener('change', renderHud);
-    addEventListener('storage', (e)=>{ if (e && e.key === '__bag_demo_bag_v2') renderHud(); });
-    renderHud();
-    styleBalanceRow();
-    let tries = 0; const iv = setInterval(()=>{ renderHud(); if(++tries>40) clearInterval(iv); }, 500);
-  })();
-  </script>
+let puck, player, cpu, scoreText, ring;
+let goalTop, goalBottom;
+let scorePlayer = 0, scoreCPU = 0;
+let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
+let goalLock = false;
 
-  <!-- =========================================================
-      (10) PRACTICE/DEMO CORE — seeds $2,000 USD in BAG, forces 1 XRP
-  ========================================================== -->
-  <script>
-  (function(){
-    const qs = new URLSearchParams(location.search);
-    const forceLive = qs.get('live') === '1';
+// stuck tracking
+let stuckStart = 0;
+let lastKickAt = 0;
 
-    const $ = (s)=>document.querySelector(s);
-    const statusEl  = $('#sessionStatus');
-    const startBtn  = $('#startSessionBtn');
-    const topUpBtn  = $('#topUpBtn');
-    const endBtn    = $('#endSessionBtn');
-    const connectEl = $('#connectBtn'); // optional
-    const dealBtn   = $('#deal');       // optional
+// sfx throttle (for paddle collisions)
+let lastHitAt = 0;
 
-    const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
-    const DEMO_INIT_KEY  = '__bag_demo_init_v2';
-    const START_USD      = 2000;
+new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
-    function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-    function fmt(n){
-      if(!Number.isFinite(n)) return '—';
-      if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-      if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-      if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-      return n.toLocaleString(undefined,{maximumFractionDigits:10});
-    }
-    function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-    function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-    function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+function preload(){
+  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
+  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
+  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
+  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
 
-    function getCachedBagUsd(){
-      try{
-        const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-        if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-        const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-        if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
-      }catch{}
-      return 0;
-    }
+  // uploaded audio files
+  this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
+  this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
+}
 
-    function ensureSeedNowOrWhenReady(){
-      if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-      const live = Number((PR().bagUsd)||0);
-      const cached = getCachedBagUsd();
-      const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
-      if (bagUsd>0){
-        const startBag = START_USD / bagUsd;
-        setBag(startBag);
-        localStorage.setItem(DEMO_INIT_KEY,'1');
-        return true;
-      }
-      return false;
-    }
+function create(){
+  this.sound.pauseOnBlur = false;
 
-    function renderDemo(){
-      const bag=getBag();
-      const { bagUsd, xrpUsd } = PR();
-      const usd=(bagUsd>0)? bag*bagUsd : START_USD;
-      const xrp=(bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
+  // Explicit audio unlock on first gesture
+  const unlockAudio = ()=>{
+    try{ if (this.sound.locked) this.sound.unlock(); }catch{}
+    try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
+    this.input.off('pointerdown', unlockAudio);
+  };
+  this.input.on('pointerdown', unlockAudio);
 
-      if(statusEl){
-        statusEl.innerHTML =
-          `<div class="practiceBlock">
-            <div class="title">Practice:</div>
-            <div class="line">BAG: <b style="color:#2fbf6b">${fmt(bag)} BAG</b></div>
-            <div class="line">XRP: <b style="color:#7cc7ff">${fmt(xrp)} XRP</b></div>
-            <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
-          </div>`;
-      }
+  const w=this.scale.width, h=this.scale.height, cx=w/2;
 
-      if(startBtn) startBtn.style.display='inline-block';
-      if(topUpBtn) topUpBtn.style.display='none';
-      if(endBtn)   endBtn.style.display='none';
-    }
+  this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
+  this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
-    const demoSession={
-      active:()=>true,
-      get:()=>({addr:'demo', bag:getBag(), ts:Date.now()}),
-      set:()=>{},
-      spend(bag){ const b=getBag(); if(!(bag>0)||b<bag) return false; setBag(b-bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; },
-      credit(bag){ if(!(bag>0)) return false; setBag(getBag()+bag); renderDemo(); window.dispatchEvent(new CustomEvent('bag:hudRefresh')); return true; }
-    };
+  // puck
+  puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
+  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
+  puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
 
-    function forceBetXRP1Once(){
-      const bet  = document.getElementById('betQty');
-      const unit = document.querySelector('.unit');
-      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-      if (xrpRadio && !xrpRadio.checked){
-        xrpRadio.checked = true;
-        xrpRadio.dispatchEvent(new Event('change', {bubbles:true}));
-      }
-      if (unit) unit.textContent = 'XRP';
-      if (bet && (!bet.value || Number(bet.value) <= 0)){
-        bet.value = '1';
-        bet.dispatchEvent(new Event('input', {bubbles:true}));
-        bet.dispatchEvent(new Event('change', {bubbles:true}));
-      }
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    }
+  // paddles
+  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
+  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
+  [player,cpu].forEach(p=>{
+    p.setImmovable(true);
+    p.setCollideWorldBounds(true);
+    p.body.setCircle(p.displayWidth/2);
+    centerBodyOnTexture(p);
+  });
 
-    function enableDemo(){
-      try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
-      catch{ window.__BAG_FORCE_DEMO=true; }
-      window.__bagSession = demoSession;
+  // --- invisible goal sensors ---
+  goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
+  goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
+  this.physics.add.existing(goalTop, true);
+  this.physics.add.existing(goalBottom, true);
 
-      const seeded = ensureSeedNowOrWhenReady();
-      renderDemo();
-      if (dealBtn) dealBtn.disabled = !seeded;
+  this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
+  this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
-      addEventListener('bag:pricesUpdated', ()=>{
-        if (!localStorage.getItem(DEMO_INIT_KEY)){
-          const ok = ensureSeedNowOrWhenReady();
-          if (ok && dealBtn) dealBtn.disabled = false;
-          renderDemo();
-        } else {
-          renderDemo();
-        }
-      });
+  // sfx handles
+  this.sfx = {hit:null,goal:null};
+  try{
+    this.sfx.hit  = this.sound.add('hit',{volume:.35});
+    this.sfx.goal = this.sound.add('goal',{volume:.55});
+  }catch(e){}
 
-      forceBetXRP1Once();
-      if (connectEl) connectEl.style.opacity='0.9';
-    }
+  // touch ring so finger doesn't hide the aim point
+  ring = this.add.graphics({ x: 0, y: 0 });
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
+  ring.setAlpha(0);
 
-    function enableLive(){
-      window.__BAG_FORCE_DEMO=false;
-      window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-      (function(){
-        const bet  = document.getElementById('betQty');
-        const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-        if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
-        if (bet && (!bet.value || Number(bet.value) <= 0)){
-          bet.value = '1';
-          bet.dispatchEvent(new Event('input',{bubbles:true}));
-          bet.dispatchEvent(new Event('change',{bubbles:true}));
-        }
-        window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-      })();
-    }
-
-    if (forceLive) enableLive(); else enableDemo();
-    addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
-
-    // TopUp to $2,000 USD equiv
-    topUpBtn?.addEventListener('click', ()=>{
-      const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || (function(){
-        try{
-          const lastLive = JSON.parse(localStorage.getItem('bag_last_live_v1')||'null');
-          if (lastLive && lastLive.v && Number(lastLive.v.bagUsd)>0) return Number(lastLive.v.bagUsd);
-          const viewCache = JSON.parse(localStorage.getItem('bag_prices_v8')||'null');
-          if (viewCache && viewCache.v && Number(viewCache.v.bagUsd)>0) return Number(viewCache.v.bagUsd);
-        }catch{}
-        return 0;
-      })();
-      if (bagUsd>0){
-        setBag(START_USD/bagUsd);
-        renderDemo();
-        window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-      }
-    });
-  })();
-  </script>
-
-  <!-- =========================================================
-       (11) AIR HOCKEY GAME — YOUR ORIGINAL (UNTOUCHED)
-  ========================================================== -->
-  <script>
-  const config = {
-    type: Phaser.AUTO,
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1024, height: 1536, parent: 'gameContainer' },
-    backgroundColor: '#021107',
-    physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
-    input: { activePointers: 5 }
+  // input
+  const clamp = Phaser.Math.Clamp;
+  const moveTo=(gx,gy)=>{
+    const ww=this.scale.width, hh=this.scale.height;
+    const half = player.displayWidth*0.5;
+    const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
+    const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
+    player.x = targetX; player.y = targetY;
+    ring.x = gx; ring.y = gy;
   };
 
-  const PADDLE_SCALE = 0.20;
-  const PUCK_SCALE   = 0.09;
-  const GOAL_HALF    = 140;
-  const POINTER_OFFSET_Y = -56;
-  const WALL_MARGIN  = 100;
+  const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
+  lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
+  lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
+  lowerZone.on('pointerout', ()=> ring.setAlpha(0));
+  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
 
-  const CORNER_BAND     = 150;
-  const STUCK_SPEED     = 60;
-  const STUCK_TIME_MS   = 600;
-  const STUCK_COOLDOWN  = 800;
-  const CPU_RETREAT_Y   = 280;
+  const r = player.displayWidth*0.5;
+  player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
+  this.input.setDraggable(player);
+  this.input.dragDistanceThreshold=0;
+  player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
+  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
+  this.input.on('pointerup', ()=> ring.setAlpha(0));
 
-  let puck, player, cpu, scoreText, ring;
-  let goalTop, goalBottom;
-  let scorePlayer = 0, scoreCPU = 0;
-  let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
-  let goalLock = false;
+  scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  let stuckStart = 0;
-  let lastKickAt = 0;
-  let lastHitAt = 0;
+  serve(this);
+}
 
-  new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
+function onGoal(side){
+  if(goalLock || !puck || !puck.body || !puck.body.enable) return;
+  try{ this.sfx?.goal?.play(); }catch{}
+  if(side==='top') scorePlayer++; else scoreCPU++;
+  startGoalSink.call(this, side);
+}
 
-  function preload(){
-    this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
-    this.load.image('puck','/arcade/assets/img/puck-1024.webp');
-    this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
-    this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
+function centerBodyOnTexture(img){
+  const bw=img.body.width, bh=img.body.height;
+  img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
+}
 
-    this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
-    this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
-  }
+function resolvePaddle(paddle, prev, scene){
+  if(goalLock || !puck.body || !puck.body.enable) return;
+  const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
+  const rSum=puck.displayWidth/2+paddle.displayWidth/2;
+  if(dist<rSum){
+    const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
+    puck.x+=nx*pen; puck.y+=ny*pen;
 
-  function create(){
-    this.sound.pauseOnBlur = false;
+    const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
+    const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
 
-    const unlockAudio = ()=>{
-      try{ if (this.sound.locked) this.sound.unlock(); }catch{}
-      try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
-      this.input.off('pointerdown', unlockAudio);
-    };
-    this.input.on('pointerdown', unlockAudio);
+    const base=500, gainN=8.5, gainT=4.7, maxV=2000;
+    const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
+    const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
+    puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
 
-    const w=this.scale.width, h=this.scale.height, cx=w/2;
+    const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
+    puck.setAngularVelocity(spin);
 
-    this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
-    this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
-
-    puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
-    puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
-    puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
-
-    player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
-    cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
-    [player,cpu].forEach(p=>{
-      p.setImmovable(true);
-      p.setCollideWorldBounds(true);
-      p.body.setCircle(p.displayWidth/2);
-      centerBodyOnTexture(p);
-    });
-
-    goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
-    goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
-    this.physics.add.existing(goalTop, true);
-    this.physics.add.existing(goalBottom, true);
-
-    this.physics.add.overlap(puck, goalTop,   ()=>onGoal.call(this,'top'), null, this);
-    this.physics.add.overlap(puck, goalBottom,()=>onGoal.call(this,'bottom'), null, this);
-
-    this.sfx = {hit:null,goal:null};
     try{
-      this.sfx.hit  = this.sound.add('hit',{volume:.35});
-      this.sfx.goal = this.sound.add('goal',{volume:.55});
-    }catch(e){}
-
-    ring = this.add.graphics({ x: 0, y: 0 });
-    ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
-    ring.setAlpha(0);
-
-    const clamp = Phaser.Math.Clamp;
-    const moveTo=(gx,gy)=>{
-      const ww=this.scale.width, hh=this.scale.height;
-      const half = player.displayWidth*0.5;
-      const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
-      const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
-      player.x = targetX; player.y = targetY;
-      ring.x = gx; ring.y = gy;
-    };
-
-    const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
-    lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
-    lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
-    lowerZone.on('pointerout', ()=> ring.setAlpha(0));
-    lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
-
-    const r = player.displayWidth*0.5;
-    player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
-    this.input.setDraggable(player);
-    this.input.dragDistanceThreshold=0;
-    player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
-    this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
-    this.input.on('pointerup', ()=> ring.setAlpha(0));
-
-    scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
-
-    serve(this);
-  }
-
-  function onGoal(side){
-    if(goalLock || !puck || !puck.body || !puck.body.enable) return;
-    try{ this.sfx?.goal?.play(); }catch{}
-    if(side==='top') scorePlayer++; else scoreCPU++;
-    startGoalSink.call(this, side);
-  }
-
-  function centerBodyOnTexture(img){
-    const bw=img.body.width, bh=img.body.height;
-    img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
-  }
-
-  function resolvePaddle(paddle, prev, scene){
-    if(goalLock || !puck.body || !puck.body.enable) return;
-    const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
-    const rSum=puck.displayWidth/2+paddle.displayWidth/2;
-    if(dist<rSum){
-      const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
-      puck.x+=nx*pen; puck.y+=ny*pen;
-
-      const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
-      const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
-
-      const base=500, gainN=8.5, gainT=4.7, maxV=2000;
-      const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
-      const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
-      puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
-
-      const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
-      puck.setAngularVelocity(spin);
-
-      try{
-        const now=performance.now();
-        if(now - lastHitAt > 70){
-          scene.sfx?.hit?.setDetune?.(Phaser.Math.Between(-60,50));
-          scene.sfx?.hit?.play({ volume:.38 });
-          lastHitAt = now;
-        }
-      }catch{}
-    }
-  }
-
-  function update(){
-    const w=this.scale.width, h=this.scale.height;
-    if(goalLock) return;
-
-    const cx = w/2;
-    const rCpu = cpu.displayWidth * 0.5;
-    const rPuck = puck.displayWidth * 0.5;
-
-    const nearTop = puck.y < h*0.45;
-    const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
-    const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
-
-    const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(
-                      Phaser.Math.Linear(puck.x, cx, pullToCenter),
-                      WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
-                    ), 0.10);
-
-    const cpuChaseDepth = Math.min(puck.y, h*0.38);
-    const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
-
-    cpu.x = targetX; cpu.y = targetY;
-
-    const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
-                     (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
-                     (puck.y < WALL_MARGIN + rPuck + 8);
-
-    const dxPC = puck.x - cpu.x, dyPC = puck.y - cpu.y, dPC = Math.hypot(dxPC, dyPC) || 1;
-    const minGap = (rCpu + rPuck) * 0.95;
-    if(nearWall && dPC < minGap){
-      const push = (minGap - dPC) * 0.6;
-      cpu.x -= (dxPC / dPC) * push;
-      cpu.y -= (dyPC / dPC) * push;
-      cpu.x = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu));
-      cpu.y = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + rCpu, h*0.45);
-    }
-
-    const now = performance.now();
-    const v = puck.body ? puck.body.velocity : {x:0,y:0};
-    const speed = Math.hypot(v.x, v.y);
-
-    const inCpuHalf = puck.y < h * 0.5;
-    const inCornerish = inCpuHalf &&
-      (puck.y < WALL_MARGIN + CORNER_BAND) &&
-      ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
-
-    if(inCornerish && speed < STUCK_SPEED){
-      if(!stuckStart) stuckStart = now;
-      const longEnough = (now - stuckStart) > STUCK_TIME_MS;
-      const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
-      if(longEnough && cooled){
-        const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
-        puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
-        cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
-        lastKickAt = now;
-        stuckStart = 0;
+      const now=performance.now();
+      if(now - lastHitAt > 70){
+        scene.sfx?.hit?.setDetune?.(Phaser.Math.Between(-60,50));
+        scene.sfx?.hit?.play({ volume:.38 });
+        lastHitAt = now;
       }
-    }else{
+    }catch{}
+  }
+}
+
+function update(){
+  const w=this.scale.width, h=this.scale.height;
+  if(goalLock) return;
+
+  // CPU AI
+  const cx = w/2;
+  const rCpu = cpu.displayWidth * 0.5;
+  const rPuck = puck.displayWidth * 0.5;
+
+  const nearTop = puck.y < h*0.45;
+  const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
+  const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
+
+  const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(
+                    Phaser.Math.Linear(puck.x, cx, pullToCenter),
+                    WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
+                  ), 0.10);
+
+  const cpuChaseDepth = Math.min(puck.y, h*0.38);
+  const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
+
+  cpu.x = targetX;
+  cpu.y = targetY;
+
+  const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
+                   (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
+                   (puck.y < WALL_MARGIN + rPuck + 8);
+
+  const dxPC = puck.x - cpu.x, dyPC = puck.y - cpu.y, dPC = Math.hypot(dxPC, dyPC) || 1;
+  const minGap = (rCpu + rPuck) * 0.95;
+  if(nearWall && dPC < minGap){
+    const push = (minGap - dPC) * 0.6;
+    cpu.x -= (dxPC / dPC) * push;
+    cpu.y -= (dyPC / dPC) * push;
+    cpu.x = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu));
+    cpu.y = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + rCpu, h*0.45);
+  }
+
+  // Corner-escape kick (CPU side)
+  const now = performance.now();
+  const v = puck.body ? puck.body.velocity : {x:0,y:0};
+  const speed = Math.hypot(v.x, v.y);
+
+  const inCpuHalf = puck.y < h * 0.5;
+  const inCornerish = inCpuHalf &&
+    (puck.y < WALL_MARGIN + CORNER_BAND) &&
+    ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
+
+  if(inCornerish && speed < STUCK_SPEED){
+    if(!stuckStart) stuckStart = now;
+    const longEnough = (now - stuckStart) > STUCK_TIME_MS;
+    const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
+    if(longEnough && cooled){
+      const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
+      puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
+      cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
+      lastKickAt = now;
       stuckStart = 0;
     }
-
-    const curPlayer={x:player.x,y:player.y};
-    const curCPU={x:cpu.x,y:cpu.y};
-
-    resolvePaddle(player, prevPlayer, this);
-    resolvePaddle(cpu,    prevCPU,  this);
-
-    prevPlayer=curPlayer; prevCPU=curCPU;
-
-    if(puck.body && puck.body.enable){
-      const v2=puck.body.velocity, vmax=2000, keep=0.999;
-      v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
-      v2.y = Phaser.Math.Clamp(v2.y*keep,-vmax,vmax);
-    }
-
-    scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+  }else{
+    stuckStart = 0;
   }
 
-  function startGoalSink(side){
-    if(goalLock || !puck) return;
-    const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
-    goalLock = true;
+  const curPlayer={x:player.x,y:player.y};
+  const curCPU={x:cpu.x,y:cpu.y};
 
-    puck.setVelocity(0,0);
-    puck.setAngularVelocity(0);
-    if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
-    puck.setCollideWorldBounds(false);
+  resolvePaddle(player, prevPlayer, this);
+  resolvePaddle(cpu,    prevCPU,  this);
 
-    const targetY = (side==='top') ? -40 : (h+40);
+  prevPlayer=curPlayer; prevCPU=curCPU;
 
-    scene.tweens.add({
-      targets: puck,
-      x: cx,
-      y: targetY,
-      scaleX: puck.scaleX*0.55,
-      scaleY: puck.scaleY*0.55,
-      alpha: 0,
-      duration: 230,
-      ease: 'Quad.easeIn',
-      onComplete: ()=>{ serve(scene, side==='top' ? 'player' : 'cpu'); goalLock=false; }
-    });
+  if(puck.body && puck.body.enable){
+    const v2=puck.body.velocity, vmax=2000, keep=0.999;
+    v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
+    v2.y = Phaser.Math.Clamp(v2.y*keep,-vmax,vmax);
   }
 
-  function serve(scene, scoredBy){
-    const w=scene.scale.width, h=scene.scale.height;
-    puck.setPosition(w/2, h/2).setAlpha(1).setScale(PUCK_SCALE);
-    if(!puck.body){ scene.physics.add.existing(puck); }
-    puck.body.enable = true; puck.body.checkCollision.none = false;
-    puck.setCollideWorldBounds(true);
-    puck.body.setCircle(puck.displayWidth/2);
-    centerBodyOnTexture(puck);
+  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+}
 
-    const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
-    const speed=Phaser.Math.Between(650,800);
-    const vx=Math.cos(angle*Math.PI/180)*speed;
-    const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
-    puck.setVelocity(vx,vy);
-    puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+function startGoalSink(side){
+  if(goalLock || !puck) return;
+  const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
+  goalLock = true;
 
-    window.__AH_LAST__ = scoredBy==='player' ? 'You scored' : (scoredBy==='cpu' ? 'CPU scored' : 'Serve');
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+  puck.setVelocity(0,0);
+  puck.setAngularVelocity(0);
+  if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
+  puck.setCollideWorldBounds(false);
+
+  const targetY = (side==='top') ? -40 : (h+40);
+
+  scene.tweens.add({
+    targets: puck,
+    x: cx,
+    y: targetY,
+    scaleX: puck.scaleX*0.55,
+    scaleY: puck.scaleY*0.55,
+    alpha: 0,
+    duration: 230,
+    ease: 'Quad.easeIn',
+    onComplete: ()=>{ serve(scene, side==='top' ? 'player' : 'cpu'); goalLock=false; }
+  });
+}
+
+function serve(scene, scoredBy){
+  const w=scene.scale.width, h=scene.scale.height;
+  puck.setPosition(w/2, h/2).setAlpha(1).setScale(PUCK_SCALE);
+  if(!puck.body){ scene.physics.add.existing(puck); }
+  puck.body.enable = true; puck.body.checkCollision.none = false;
+  puck.setCollideWorldBounds(true);
+  puck.body.setCircle(puck.displayWidth/2);
+  centerBodyOnTexture(puck);
+
+  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+  const speed=Phaser.Math.Between(650,800);
+  const vx=Math.cos(angle*Math.PI/180)*speed;
+  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+  puck.setVelocity(vx,vy);
+  puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+
+  window.__AH_LAST__ = scoredBy==='player' ? 'You scored' : (scoredBy==='cpu' ? 'CPU scored' : 'Serve');
+  window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+}
+</script>
+
+<!-- ===== 12) GAMEPLAY OPTIONS + P2P VERSUS LOGIC ===== -->
+<script>
+(function(){
+  // UI refs
+  const modeRadios = Array.from(document.querySelectorAll('input[name="gpMode"]'));
+  const modeStatus = document.getElementById('gpModeStatus');
+  const gpPanel    = document.getElementById('gpPanel');
+  const p2pBox     = document.getElementById('gpP2PBox');
+  const startBtn   = document.getElementById('gpStartBtn');
+
+  // P2P refs
+  const p2pCreate  = document.getElementById('p2pCreate');
+  const p2pJoin    = document.getElementById('p2pJoin');
+  const p2pState   = document.getElementById('p2pState');
+  const p2pLocal   = document.getElementById('p2pLocal');
+  const p2pRemote  = document.getElementById('p2pRemote');
+  const p2pApply   = document.getElementById('p2pApply');
+  const p2pCopy    = document.getElementById('p2pCopy');
+  const p2pHint    = document.getElementById('p2pHint');
+
+  // Wager refs
+  const lockBtn    = document.getElementById('gpLock');
+  const escrowLbl  = document.getElementById('gpEscrowStatus');
+
+  // Price helpers
+  const PR = ()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
+
+  // Match state
+  let mode='practice';
+  let pc=null, dc=null, isCreator=false, p2pConnected=false;
+  let meLocked=false, themLocked=false;
+  let escrowBag=0; // local escrow (BAG)
+  let goalTarget=7; // first to 7
+  let watcher=null;
+
+  function setMode(next){
+    mode = next;
+    if(mode==='practice'){
+      p2pBox.style.display='none';
+      modeStatus.textContent='CPU match. First to 7 wins.';
+    }else{
+      p2pBox.style.display='';
+      modeStatus.textContent='P2P. Copy-paste handshake. First to 7 wins.';
+    }
   }
-  </script>
 
-  <!-- =========================================================
-       (12) GAMEPLAY OPTIONS + P2P VERSUS LOGIC
-  ========================================================== -->
-  <script>
-  (function(){
-    const $ = (s, r=document)=>r.querySelector(s);
+  modeRadios.forEach(r=>r.addEventListener('change',()=> setMode(r.value)));
 
-    function prices(){ return window.__PRICES__ || {bagUsd:0,xrpUsd:0}; }
-    function cachedXRP(){
-      try{
-        const raw=localStorage.getItem('xrp_usd'); if(!raw) return 0;
-        const j=JSON.parse(raw); const v=(j && j.v!=null)? Number(j.v):Number(raw);
-        return Number(v)>0?Number(v):0;
-      }catch{ return 0; }
+  // ================= P2P core (copy-paste WebRTC) =================
+  function newPC(){
+    if(pc){ try{pc.close();}catch{} }
+    pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+    pc.onicecandidate = e=>{
+      if(!p2pLocal) return;
+      if(e.candidate) return; // wait for gathering complete
+      p2pLocal.value = btoa(JSON.stringify(pc.localDescription));
+    };
+    pc.onconnectionstatechange = ()=>{
+      const s=pc.connectionState;
+      if(s==='connected'){ p2pConnected=true; p2pState.textContent='Connected'; p2pState.className='status ok'; }
+      else if(s==='failed' || s==='disconnected'){ p2pConnected=false; p2pState.textContent='Disconnected'; p2pState.className='status err'; }
+      else { p2pState.textContent=s; p2pState.className='status'; }
+    };
+    return pc;
+  }
+  function ensureDC(isOfferer){
+    if(dc){ return dc; }
+    if(isOfferer){
+      dc = pc.createDataChannel('bag-p2p',{ordered:true});
+      wireDC();
+    }else{
+      pc.ondatachannel = ev=>{ dc=ev.channel; wireDC(); };
     }
-    function currentCurrency(){
-      const curRoot = $('#curToggle');
-      const el = curRoot?.querySelector('input[name="betCur"]:checked');
-      return el ? String(el.value).toUpperCase() : 'XRP';
-    }
-    function currentBetQty(){
-      const v = parseFloat( $('#betQty')?.value || '0' );
-      return (Number.isFinite(v) && v>0) ? v : 1;
-    }
-    function toBag(amount, cur){
-      const {bagUsd, xrpUsd} = prices();
-      const xr = xrpUsd>0? xrpUsd : cachedXRP();
-      if(cur==='BAG'){
-        return amount;
-      }else{
-        if(bagUsd>0 && xr>0) return amount * (xr / bagUsd);
-        return 0;
-      }
-    }
-    function getActiveScene(){
-      try{
-        const games = window.Phaser && window.Phaser.GAMES || [];
-        const game = games[games.length-1];
-        if(!game) return null;
-        return game.scene.scenes.find(Boolean) || null;
-      }catch{ return null; }
-    }
-    function findByKey(scene, key){
-      try{ return scene.children.list.find(x => x.texture && x.texture.key===key) || null; }catch{ return null; }
-    }
-    function getScorePair(){
-      const scene = getActiveScene(); if(!scene) return {a:0,b:0};
-      const txt = scene.children.list.find(o => o.text && typeof o.text==='string' && o.text.includes(' - '));
-      if(!txt) return {a:0,b:0};
-      const m = /(\d+)\s*-\s*(\d+)/.exec(txt.text||'');
-      return m ? {a:+m[1], b:+m[2]} : {a:0,b:0};
-    }
+    return dc;
+  }
+  function wireDC(){
+    dc.onopen = ()=>{ p2pConnected=true; p2pState.textContent='Connected'; p2pState.className='status ok'; send({type:'hello'}); };
+    dc.onclose= ()=>{ p2pConnected=false; p2pState.textContent='Closed'; p2pState.className='status err'; };
+    dc.onmessage = (e)=>{ try{ onMsg(JSON.parse(e.data)); }catch{} };
+  }
+  function send(obj){ if(dc && dc.readyState==='open'){ dc.send(JSON.stringify(obj)); } }
 
-    // Gameplay Options
-    const optTargetScore = $('#optTargetScore');
-    const optPuckSpeed   = $('#optPuckSpeed');
-    const optAudio       = $('#optAudio');
-    const applyBtn       = $('#applyGameplayBtn');
+  async function createOffer(){
+    isCreator=true; newPC(); ensureDC(true);
+    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+    p2pState.textContent='Offer created. Send to opponent.'; p2pState.className='status';
+  }
+  async function acceptOfferSetAnswer(remoteB64){
+    isCreator=false; newPC(); ensureDC(false);
+    const offer = JSON.parse(atob(remoteB64||''));
+    await pc.setRemoteDescription(offer);
+    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+    p2pState.textContent='Answer created. Send back to creator.'; p2pState.className='status';
+  }
+  async function acceptAnswer(remoteB64){
+    const ans = JSON.parse(atob(remoteB64||'')); await pc.setRemoteDescription(ans);
+    p2pState.textContent='Answer applied. Awaiting connection…'; p2pState.className='status';
+  }
 
-    window.__AH_TARGET_SCORE = Number(optTargetScore?.value||7);
+  p2pCreate?.addEventListener('click', async()=>{ try{ await createOffer(); }catch(e){ p2pState.textContent='Offer failed'; p2pState.className='status err'; }});
+  p2pJoin?.addEventListener('click',   ()=>{ p2pLocal.value=''; p2pRemote.value=''; p2pHint.textContent='Paste creator Offer → Apply → copy your Answer back.'; });
+  p2pApply?.addEventListener('click', async()=>{
+    try{
+      const str=(p2pRemote.value||'').trim(); if(!str) return;
+      const obj=JSON.parse(atob(str));
+      if(obj.type==='offer'){ await acceptOfferSetAnswer(str); }
+      else if(obj.type==='answer'){ await acceptAnswer(str); }
+      else { p2pState.textContent='Invalid SDP'; p2pState.className='status err'; }
+    }catch{ p2pState.textContent='Bad paste'; p2pState.className='status err'; }
+  });
+  p2pCopy?.addEventListener('click', ()=>{ try{ p2pLocal.select(); document.execCommand('copy'); p2pCopy.textContent='Copied'; setTimeout(()=>p2pCopy.textContent='Copy',900); }catch{} });
 
-    applyBtn?.addEventListener('click', ()=>{
-      window.__AH_TARGET_SCORE = Number(optTargetScore.value||7);
+  // =============== Wager lock (practice escrow in BAG) ===============
+  function stakeToBag(){
+    const betQty = Number(document.getElementById('betQty')?.value||'0') || 1;
+    const cur = document.querySelector('#curToggle input[name="betCur"]:checked')?.value || 'XRP';
+    const {bagUsd,xrpUsd} = PR();
+    if(!(bagUsd>0 && xrpUsd>0)) return 0;
 
-      try{
-        const scene = getActiveScene();
-        if(scene && scene.sound){
-          scene.sound.mute = (optAudio.value==='off');
+    let bag=0;
+    if(cur==='XRP'){
+      const usd = betQty * xrpUsd;
+      bag = usd / bagUsd;
+    }else{
+      bag = betQty; // already in BAG
+    }
+    return bag;
+  }
+
+  function lockWager(){
+    const amtBag = stakeToBag();
+    if(!(amtBag>0)) { escrowLbl.textContent='Price not ready or stake invalid.'; escrowLbl.className='status err'; return; }
+    // spend into local escrow (practice)
+    const ok = window.__bagSession && window.__bagSession.spend && window.__bagSession.spend(amtBag);
+    if(!ok){ escrowLbl.textContent='Insufficient practice balance.'; escrowLbl.className='status err'; return; }
+    escrowBag = amtBag;
+    meLocked = true;
+    escrowLbl.textContent=`Locked ${amtBag.toFixed(6)} BAG. Waiting for opponent…`;
+    escrowLbl.className='status warn';
+    send({type:'lock', bag:amtBag});
+  }
+
+  lockBtn?.addEventListener('click', lockWager);
+
+  function onBothLocked(){
+    escrowLbl.textContent='Both locked. Ready to start.';
+    escrowLbl.className='status ok';
+  }
+
+  // =============== Start + watch game (first to 7) ===============
+  function startMatch(){
+    if(mode==='practice'){
+      // reset score and serve; nothing else needed
+      scorePlayer=0; scoreCPU=0; window.__AH_LAST__='Match start'; window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+      if(typeof serve==='function'){ try{ serve(Phaser.GAMES?.[0]?.scene.scenes?.[0]||null); }catch{} }
+      watchScores();
+      return;
+    }
+    if(!p2pConnected){ modeStatus.textContent='Not connected.'; return; }
+    if(!(meLocked && themLocked)){ modeStatus.textContent='Both must lock the wager.'; return; }
+
+    scorePlayer=0; scoreCPU=0; window.__AH_LAST__='Match start (P2P)'; window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    watchScores();
+    send({type:'start'});
+  }
+  startBtn?.addEventListener('click', startMatch);
+
+  function watchScores(){
+    if(watcher) clearInterval(watcher);
+    watcher = setInterval(()=>{
+      const p=Number(scorePlayer)||0, c=Number(scoreCPU)||0;
+      if(p>=goalTarget || c>=goalTarget){
+        clearInterval(watcher);
+        const iWon = p>=goalTarget;
+        // Payout locally
+        if(meLocked && themLocked){
+          const pot = (escrowBag + (themLocked?themLocked:0)); // local view only
         }
-      }catch{}
-
-      try{
-        const scene = getActiveScene();
-        if(scene){
-          const puck = findByKey(scene, 'puck');
-          if(puck && puck.body){
-            if(optPuckSpeed.value==='slow'){
-              puck.setDrag(0.996,0.996).setMaxVelocity(1400);
-            }else if(optPuckSpeed.value==='fast'){
-              puck.setDrag(0.992,0.992).setMaxVelocity(2600);
-            }else{
-              puck.setDrag(0.995,0.995).setMaxVelocity(2000);
-            }
-          }
-        }
-      }catch{}
-
-      applyBtn.disabled=true; setTimeout(()=>applyBtn.disabled=false,400);
-    });
-
-    setInterval(()=>{
-      const t = Number(window.__AH_TARGET_SCORE||7);
-      const {a,b} = getScorePair();
-      if(t>0 && (a>=t || b>=t)){
-        const who = (a>b)? 'local' : 'remote';
-        if(!window.__AH_LAST_EMIT || (Date.now()-window.__AH_LAST_EMIT>1500)){
-          window.__AH_LAST_EMIT = Date.now();
-          window.dispatchEvent(new CustomEvent('ah:gameOver', {detail:{winner:who, score:`${a}-${b}`}}));
-        }
+        // Inform opponent
+        send({type:'end', winner: iWon ? 'me' : 'you', p, c});
+        settle(iWon);
       }
-    }, 600);
+    }, 250);
+  }
 
-    // WebRTC P2P + Demo Escrow
-    const tabHost   = $('#tabHost');
-    const tabJoin   = $('#tabJoin');
-    const hostPane  = $('#hostPane');
-    const joinPane  = $('#joinPane');
-    const p2pStatus = $('#p2pStatus');
-
-    const hostCreate = $('#hostCreate');
-    const hostOffer  = $('#hostOffer');
-    const hostAnswer = $('#hostAnswer');
-    const hostAccept = $('#hostAccept');
-
-    const joinOffer  = $('#joinOffer');
-    const joinCreate = $('#joinCreate');
-    const joinAnswer = $('#joinAnswer');
-
-    const lockStakeBtn = $('#lockStakeBtn');
-    const escrowInfo   = $('#escrowInfo');
-    const iWonBtn      = $('#iWonBtn');
-    const iLostBtn     = $('#iLostBtn');
-    const resultInfo   = $('#resultInfo');
-
-    function setStatus(s){ if(p2pStatus) p2pStatus.innerHTML = 'Status: <b>'+s+'</b>'; }
-
-    let pc=null, dc=null, role=null;
-    let bothLocked = false;
-    let myLocked   = false;
-    let theirLocked= false;
-    let escrowBAG  = 0;
-    let potBAG     = 0;
-
-    function ensurePC(){
-      const iceServers=[{urls:'stun:stun.l.google.com:19302'}];
-      pc = new RTCPeerConnection({iceServers});
-      pc.oniceconnectionstatechange = ()=> setStatus(pc.iceConnectionState);
-      pc.ondatachannel = (e)=> bindDC(e.channel);
+  function settle(iWon){
+    if(!(escrowBag>0)) return;
+    if(iWon){
+      const prize = escrowBag*2; // symmetric assumption
+      window.__bagSession?.credit?.(prize);
+      escrowLbl.textContent = `You won: +${prize.toFixed(6)} BAG`;
+      escrowLbl.className='status ok';
+    }else{
+      escrowLbl.textContent = `You lost: −${escrowBag.toFixed(6)} BAG`;
+      escrowLbl.className='status err';
     }
-    function bindDC(channel){
-      dc = channel;
-      dc.onopen  = ()=> setStatus('Connected');
-      dc.onclose = ()=> setStatus('Disconnected');
-      dc.onmessage = (e)=> onPeerMsg(e.data);
+    // reset locks
+    meLocked=false; themLocked=false; escrowBag=0;
+  }
+
+  // =============== P2P messaging ===============
+  function onMsg(msg){
+    if(msg.type==='hello'){ /* noop */ }
+    if(msg.type==='lock'){
+      themLocked = Number(msg.bag)||0;
+      if(meLocked && themLocked) onBothLocked();
+      else { escrowLbl.textContent=`Opponent locked ${Number(themLocked).toFixed(6)} BAG. Lock yours.`; escrowLbl.className='status warn'; }
     }
-    function send(msg){ try{ dc && dc.readyState==='open' && dc.send(msg); }catch{} }
-
-    tabHost?.addEventListener('click', ()=>{ hostPane.style.display='block'; joinPane.style.display='none'; });
-    tabJoin?.addEventListener('click', ()=>{ hostPane.style.display='none';  joinPane.style.display='block'; });
-
-    hostCreate?.addEventListener('click', async ()=>{
-      role='host';
-      ensurePC();
-      bindDC(pc.createDataChannel('bag-arcade'));
-      setStatus('Creating offer…');
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await waitForIce(pc);
-      hostOffer.value = btoa(JSON.stringify(pc.localDescription));
-      setStatus('Offer ready (copy it)');
-    });
-    hostAccept?.addEventListener('click', async ()=>{
-      try{
-        const ans = JSON.parse(atob(hostAnswer.value.trim()));
-        await pc.setRemoteDescription(new RTCSessionDescription(ans));
-        setStatus('Connecting…');
-      }catch(e){ setStatus('Bad answer'); }
-    });
-
-    joinCreate?.addEventListener('click', async ()=>{
-      role='join';
-      ensurePC();
-      setStatus('Creating answer…');
-      try{
-        const off = JSON.parse(atob(joinOffer.value.trim()));
-        await pc.setRemoteDescription(new RTCSessionDescription(off));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await waitForIce(pc);
-        joinAnswer.value = btoa(JSON.stringify(pc.localDescription));
-        setStatus('Answer ready (send it to host)');
-      }catch(e){ setStatus('Bad offer'); }
-    });
-
-    function waitForIce(pc){
-      return new Promise(res=>{
-        if(pc.iceGatheringState==='complete') return res();
-        const chk=()=>{ if(pc.iceGatheringState==='complete') { pc.removeEventListener('icegatheringstatechange',chk); res(); } };
-        pc.addEventListener('icegatheringstatechange',chk);
-        setTimeout(()=>res(),1500);
-      });
+    if(msg.type==='start'){
+      // start on remote start if not started
+      if(watcher==null) startMatch();
     }
-
-    function onPeerMsg(data){
-      try{
-        const msg = JSON.parse(data);
-        if(msg.t==='LOCK'){
-          theirLocked = true;
-          updateEscrowUI();
-          if(myLocked && !bothLocked){
-            bothLocked = true; potBAG = escrowBAG*2; updateEscrowUI(); send(JSON.stringify({t:'POT',pot:potBAG}));
-          }
-        }else if(msg.t==='POT'){
-          bothLocked = true; potBAG = Number(msg.pot)||0; updateEscrowUI();
-        }else if(msg.t==='RESULT'){
-          handleIncomingResult(msg.v);
-        }
-      }catch{}
+    if(msg.type==='end'){
+      // remote declares end — mirror locally
+      const iWon = (msg.winner === 'you'); // if they say "you", I won
+      settle(iWon);
     }
+  }
 
-    function updateEscrowUI(){
-      const cur = currentCurrency();
-      const amt = currentBetQty();
-      const oneSideBag = toBag(amt, cur);
-      const potTxt = bothLocked ? `${(potBAG).toFixed(6)} BAG total` : (myLocked||theirLocked) ? `Locked: ${(oneSideBag).toFixed(6)} BAG (waiting opponent)` : '— (waiting)';
-      escrowInfo.textContent = `Pot: ${potTxt}`;
-    }
-
-    lockStakeBtn?.addEventListener('click', ()=>{
-      const cur = currentCurrency();
-      const amt = currentBetQty();
-      const bag = toBag(amt, cur);
-      if(!(bag>0)) { escrowInfo.textContent='Pot: price unavailable'; return; }
-
-      const sess = (window.__bagSession && window.__bagSession.get && window.__bagSession.get()) ? window.__bagSession : null;
-      if(!sess || !sess.spend){ escrowInfo.textContent='Pot: session unavailable'; return; }
-
-      const ok = sess.spend(bag);
-      if(!ok){ escrowInfo.textContent='Pot: insufficient balance'; return; }
-
-      escrowBAG = bag;
-      myLocked = true;
-      updateEscrowUI();
-      send(JSON.stringify({t:'LOCK'}));
-    });
-
-    function handleIncomingResult(v){
-      const myVote = window.__MY_RESULT__ || null;
-      if(v==='WIN' && myVote==='LOSE'){
-        finalizeResult('LOSE');
-      }else if(v==='LOSE' && myVote==='WIN'){
-        finalizeResult('WIN');
-      }else{
-        resultInfo.textContent = 'Waiting opponent confirmation…';
-      }
-    }
-
-    function finalizeResult(outcome){
-      if(!bothLocked) { resultInfo.textContent='Match not locked'; return; }
-      const sess = (window.__bagSession && window.__bagSession.credit) ? window.__bagSession : null;
-      if(!sess){ resultInfo.textContent='Session unavailable'; return; }
-
-      if(outcome==='WIN'){
-        sess.credit(potBAG);
-        resultInfo.textContent = `You WON +${potBAG.toFixed(6)} BAG`;
-      }else if(outcome==='LOSE'){
-        resultInfo.textContent = `You LOST -${escrowBAG.toFixed(6)} BAG`;
-      }else{
-        resultInfo.textContent = 'Result unclear';
-      }
-      bothLocked=false; myLocked=false; theirLocked=false; escrowBAG=0; potBAG=0; updateEscrowUI();
-    }
-
-    document.getElementById('iWonBtn')?.addEventListener('click', ()=>{
-      window.__MY_RESULT__='WIN';
-      send(JSON.stringify({t:'RESULT', v:'LOSE'}));
-      finalizeResult('WIN');
-    });
-    document.getElementById('iLostBtn')?.addEventListener('click', ()=>{
-      window.__MY_RESULT__='LOSE';
-      send(JSON.stringify({t:'RESULT', v:'WIN'}));
-      finalizeResult('LOSE');
-    });
-
-    addEventListener('ah:gameOver', (ev)=>{
-      const d=ev.detail||{}; document.getElementById('resultInfo').textContent = `Game Over ${d.score} — confirm result.`;
-    });
-  })();
-  </script>
+  // init default
+  setMode('practice');
+})();
+</script>
 </body>
 </html>
