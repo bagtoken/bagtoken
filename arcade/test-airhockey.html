@@ -1,517 +1,701 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<meta name="format-detection" content="telephone=no"/>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <title>$BAG Air Hockey — Arcade P2E</title>
+
+<link rel="preconnect" href="https://api.coingecko.com" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+
+<!-- Preload audio to cut first-tap latency -->
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
+<link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
+
+<!-- Dice shared UI logic -->
+<script src="/js/bag-overlay.js"></script>
+<script src="/js/bag-session.js"></script>
+<script src="/js/bag-quick-amounts.js"></script>
+
 <style>
-  *{box-sizing:border-box}
-  :root{
-    --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
-    --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
-  }
-  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.55}
-  body{touch-action:manipulation}
-  img{display:block;max-width:100%;height:auto}
-  button,input{font-size:16px}
+:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
+.btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
+.divider{height:1px;background:#123221;margin:14px 0}
+.marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
+a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
+a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
+img{display:block;max-width:100%;height:auto}
+canvas{display:block;margin:auto}
+#gameShell{position:relative;max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
+#gameShell canvas{touch-action:none;-ms-touch-action:none}
 
-  .wrap{max-width:1120px;margin:0 auto;padding:16px}
-  .back-casino{
-    position:fixed;top:16px;left:16px;z-index:1000;background:linear-gradient(180deg,#ffe175,#f5c94c);
-    color:#08130d;text-decoration:none;font-weight:800;padding:8px 14px;border-radius:10px;box-shadow:0 4px 0 #b08a19
-  }
+/* Start overlay + countdown */
+.start-overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.38);backdrop-filter:blur(2px);z-index:5}
+.start-box{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.45);max-width:min(92vw,520px)}
+.countdown{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#0e2a1c;border:1px solid #2b6a48;border-radius:999px;padding:6px 12px;font-weight:900;z-index:6;display:none}
 
-  .hero{text-align:center;padding:64px 10px 16px}
-  .hero h2{font-size:clamp(1.6rem,5vw,2.2rem);margin:8px 0 0}
-  .micro{font-size:.92rem;color:#cfe1d6}
+/* Hero image sizing (mobile-first) */
+.hero-wrap{padding:68px 12px 6px}
+.hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+@media (min-width:900px){ .hero-img{max-width:720px}}
 
-  .panel{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow)}
-  .pad{padding:16px}
-  .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:20px}
-  @media (max-width:900px){.grid{grid-template-columns:1fr}}
-
-  .section-title{font-weight:800;font-size:1.1rem;margin:6px 0 10px}
-  .divider{height:1px;background:#123221;margin:12px 0}
-
-  .hudbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 0}
-  .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
-  .pill b{font-weight:800}
-  .mono{font-variant-numeric:tabular-nums}
-
-  .preset-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
-  .preset-chip{
-    appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;
-    padding:10px 14px;font-weight:900;letter-spacing:.2px;cursor:pointer;
-    box-shadow:0 4px 10px rgba(47,191,107,.18), inset 0 1px 0 rgba(255,255,255,.12)
-  }
-  .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset, 0 8px 22px rgba(47,191,107,.25)}
-
-  .board-card{position:relative;border-radius:16px;overflow:hidden}
-  .board-top{padding:8px 12px;border-bottom:1px solid #123221;background:linear-gradient(180deg,#0e2419,#0a1b13)}
-  .board-top .title{font-weight:900;letter-spacing:.08em;color:#ffe9a6;text-align:center}
-  .board-wrap{position:relative;background:#07140e}
-  canvas#air{display:block;width:100%;height:auto;touch-action:none}
-
-  .start-overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.38);z-index:5;backdrop-filter:blur(2px)}
-  .start-box{
-    background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
-    border:1px solid var(--line);border-radius:14px;padding:14px 16px;text-align:center;
-    box-shadow:0 20px 50px rgba(0,0,0,.45);max-width:min(92vw,520px)
-  }
-  .btn{min-width:140px;padding:12px 14px;border:0;border-radius:12px;font-weight:900;cursor:pointer;color:#08130d;background:linear-gradient(180deg,#ffe175,#f5c94c)}
-  .btn.alt{color:#e9efe9;background:#15261c;border:1px solid #2b6a48}
-
-  .countdown{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#0e2a1c;border:1px solid #2b6a48;border-radius:999px;padding:6px 12px;font-weight:900;z-index:4}
+/* Stake/HUD (Dice parity) */
+.stack{display:grid;gap:10px}
+.choice{display:flex;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
+.chip input{accent-color:#2fbf6b}
+.mono{font-variant-numeric:tabular-nums}
+.micro{font-size:.85rem;color:#aeb7af}
+.preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.preset-chip{appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+.preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
+.hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
+.pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
+.pill b{font-weight:800}
+.pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
+.ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 </style>
 </head>
 <body>
 
-<a href="/casino/" class="back-casino">⬅️ Back to Casino</a>
+<a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
 
-<main class="wrap">
-  <!-- HERO -->
-  <section class="hero">
-    <picture>
-      <source type="image/webp" srcset="/arcade/assets/img/bag-airhockey-1024.webp 1024w, /arcade/assets/img/bag-airhockey-960.webp 960w" sizes="(min-width:900px) 560px, 90vw">
-      <img src="/arcade/assets/img/bag-airhockey-960.png" alt="$BAG Air Hockey" width="1024" height="576" loading="eager" decoding="async" style="margin:0 auto 10px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))">
-    </picture>
-    <h2>🏒 $BAG AIR HOCKEY</h2>
-    <p class="micro" style="margin-top:4px;opacity:.9;">All payouts settle in $BAG. $XRP wagers auto-convert at the live rate.</p>
-  </section>
+<!-- HERO IMAGE (your files) -->
+<section class="hero-wrap" aria-label="$BAG Air Hockey">
+  <picture>
+    <source type="image/webp"
+            srcset="/arcade/assets/img/bag-airhockey-960.webp 960w, /arcade/assets/img/bag-airhockey-1024.webp 1024w"
+            sizes="100vw">
+    <img class="hero-img"
+         src="/arcade/assets/img/bag-airhockey-1024.png"
+         srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
+         sizes="100vw"
+         width="1024" height="576"
+         alt="$BAG Air Hockey — hero">
+  </picture>
+</section>
 
-  <section class="grid">
-    <!-- LEFT: Controls / Practice / Prices -->
-    <div class="panel pad">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice</span></div>
-        <div style="display:flex;gap:8px">
-          <button id="startSessionBtn" class="btn">Start Session</button>
-          <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
-          <button id="endSessionBtn" class="btn" style="display:none">End</button>
-        </div>
-      </div>
+<!-- HEADER -->
+<section style="text-align:center;padding:0 12px 10px">
+  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
+  <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
+</section>
 
-      <!-- Practice readout -->
-      <div id="practiceReadout" class="hudbar" style="margin-top:10px">
-        <span class="pill"><b>BAG</b>: <span id="pracBag" class="mono">—</span></span>
-        <span class="pill"><b>XRP</b>: <span id="pracXrp" class="mono">—</span></span>
-        <span class="pill"><b>USD</b>: <span id="pracUsd" class="mono">—</span></span>
-      </div>
-
-      <!-- Live prices BELOW practice -->
-      <div class="divider"></div>
-      <div class="micro">Live prices</div>
-      <div class="hudbar">
-        <span class="pill">Source: <b id="priceSrc">—</b></span>
-        <span class="pill">BAG: <b id="bagUsd" class="mono">—</b> USD</span>
-        <span class="pill">XRP: <b id="xrpUsd" class="mono">—</b> USD</span>
-        <span class="pill">1 XRP ≈ <b id="bagPerXrp" class="mono">—</b> BAG</span>
-      </div>
-
-      <div class="divider"></div>
-      <div class="section-title">Match Setup</div>
-      <div class="micro">Series</div>
-      <div class="hudbar" role="group" aria-label="Best-of series">
-        <label class="pill"><input type="radio" name="series" value="3" checked> Best of 3</label>
-        <label class="pill"><input type="radio" name="series" value="5"> Best of 5</label>
-        <label class="pill"><input type="radio" name="series" value="7"> Best of 7</label>
-      </div>
-
-      <div class="micro" style="margin-top:8px">Target score (per game)</div>
-      <div class="hudbar" role="group" aria-label="Target score">
-        <label class="pill"><input type="radio" name="target" value="5" checked> 5</label>
-        <label class="pill"><input type="radio" name="target" value="7"> 7</label>
-        <label class="pill"><input type="radio" name="target" value="10"> 10</label>
-      </div>
-
-      <div class="divider"></div>
-      <div class="section-title">Head-to-Head</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-        <button id="createMatchBtn" class="btn">Create Match</button>
-        <input id="matchCodeInput" class="mono" placeholder="Enter code"
-               style="width:160px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f5f7f4;padding:10px">
-        <button id="joinMatchBtn" class="btn">Join Match</button>
-        <span id="matchStatus" class="micro" style="opacity:.9;margin-left:6px">Not connected</span>
-      </div>
-
-      <div class="divider"></div>
-      <div class="section-title">Wager</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-        <div style="display:flex;gap:6px;align-items:center">
-          <input id="wagerQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
-                 style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f5f7f4;padding:12px">
-          <span class="micro">XRP</span>
-        </div>
-        <button id="proposeWagerBtn" class="btn">Propose</button>
-        <button id="lockStakeBtn" class="btn">Lock Stake</button>
-        <span id="wagerStatus" class="micro" style="opacity:.9;margin-left:6px">No wager</span>
-      </div>
-
-      <div class="preset-chips" id="wagerPresets" style="margin-top:8px">
-        <button type="button" class="preset-chip" data-xrp="1">1 XRP</button>
-        <button type="button" class="preset-chip" data-xrp="2">2 XRP</button>
-        <button type="button" class="preset-chip" data-xrp="5">5 XRP</button>
-        <button type="button" class="preset-chip" data-xrp="10">10 XRP</button>
-        <button type="button" class="preset-chip" data-xrp="25">25 XRP</button>
+<!-- CONTROL + PRICES + SESSION -->
+<section style="padding:0 16px 20px;">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
+      <div style="display:flex;gap:8px">
+        <button id="startSessionBtn" class="btn">Start Session</button>
+        <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
+        <button id="endSessionBtn" class="btn" style="display:none">End</button>
       </div>
     </div>
 
-    <!-- RIGHT: Board -->
-    <div class="panel board-card">
-      <div class="board-top"><div class="title">$BAG AIR HOCKEY</div></div>
-      <div class="board-wrap" id="boardWrap">
-        <div class="countdown" id="countdown" style="display:none">3</div>
-        <div class="start-overlay" id="startOverlay">
-          <div class="start-box">
-            <div style="font-weight:900;margin-bottom:6px">Ready to play</div>
-            <div class="micro" style="margin-bottom:12px">
-              Pick series & target, set wager, then start.
-              <br>Head-to-Head requires both players to lock stakes.
-            </div>
-            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-              <button id="startBtn" class="btn">Start Game</button>
-              <button id="practiceBtn" class="btn alt">Practice (solo)</button>
-            </div>
+    <div class="divider"></div>
+
+    <!-- Stake (Dice-style) -->
+    <div class="stack">
+      <div>
+        <div class="micro">Amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="micro unit">USD</span>
           </div>
         </div>
-        <canvas id="air" width="900" height="560" aria-label="Air Hockey table"></canvas>
+        <div class="preset-chips" id="usdPresets" data-quick-amounts data-target-usd="#usdBet" data-target-qty="#betQty"
+             data-currency-toggle="#curToggle" data-min-usd="1" data-max-usd="2000" data-active-class="active" data-sync-on-price="1">
+          <button type="button" class="preset-chip" data-usd="1">$1</button>
+          <button type="button" class="preset-chip" data-usd="2">$2</button>
+          <button type="button" class="preset-chip" data-usd="5">$5</button>
+          <button type="button" class="preset-chip" data-usd="10">$10</button>
+          <button type="button" class="preset-chip" data-usd="20">$20</button>
+          <button type="button" class="preset-chip" data-usd="50">$50</button>
+          <button type="button" class="preset-chip" data-usd="100">$100</button>
+          <button type="button" class="preset-chip" data-usd="max">Max</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Bet currency</div>
+        <div class="choice" id="curToggle">
+          <label class="chip"><input type="radio" name="betCur" value="XRP" checked> XRP</label>
+          <label class="chip"><input type="radio" name="betCur" value="BAG"> BAG</label>
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Bet amount</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>
+            <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
+                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <span class="unit">XRP</span>
+          </div>
+        </div>
+        <div class="micro" id="betLimits" style="margin-top:6px"></div>
       </div>
     </div>
-  </section>
-</main>
 
-<!-- AUDIO (paddle hit only) + countdown + buzzer -->
-<script>
-(function(){
-  const AC = new (window.AudioContext||window.webkitAudioContext)();
-  let primed=false; function prime(){ if(primed) return; primed=true; AC.resume().catch(()=>{}); }
-  ['pointerdown','touchstart','keydown','wheel','mousedown'].forEach(e=>addEventListener(e,prime,{once:true,passive:true}));
+    <div class="divider"></div>
 
-  function hit(){
-    const t=AC.currentTime;
-    const o=AC.createOscillator(); o.type='square';
-    const g=AC.createGain();
-    o.frequency.setValueAtTime(1700,t); o.frequency.exponentialRampToValueAtTime(650,t+.06);
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.22,t+.008); g.gain.exponentialRampToValueAtTime(.0001,t+.12);
-    o.connect(g).connect(AC.destination); o.start(t); o.stop(t+.14);
-  }
-  function beeps(n=3,interval=.6){
-    const start=AC.currentTime;
-    for(let i=0;i<n;i++){
-      const t=start+i*interval;
-      const o=AC.createOscillator(); o.type='sine';
-      const g=AC.createGain();
-      o.frequency.setValueAtTime(800+i*80,t);
-      g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.25,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.24);
-      o.connect(g).connect(AC.destination); o.start(t); o.stop(t+.24);
-    }
-  }
-  function buzzer(){
-    const t=AC.currentTime;
-    const src=AC.createBufferSource(), buf=AC.createBuffer(1, AC.sampleRate*0.35|0, AC.sampleRate);
-    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*((1-i/d.length)**2)*.45;
-    const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=360;
-    const g=AC.createGain(); g.gain.setValueAtTime(.2,t); g.gain.exponentialRampToValueAtTime(.0001,t+.35);
-    src.buffer=buf; src.connect(lp).connect(g).connect(AC.destination); src.start(t); src.stop(t+.36);
-  }
-  window.__AH_AUDIO__ = { hit, beeps, buzzer, resume:()=>AC.resume().catch(()=>{}) };
-})();
-</script>
+    <!-- Live Prices -->
+    <div class="marquee">Live Prices</div>
+    <div style="text-align:center;font-family:monospace;">
+      <span id="liveDot" class="warn">●</span>
+      BAG $<span id="liveBAG">—</span> · XRP $<span id="liveXRP">—</span><span id="liveNote"></span>
+      <div id="liveConv" style="font-size:.85rem;opacity:.85;margin-top:4px;">1 BAG ≈ — XRP · 1 XRP ≈ — BAG</div>
+    </div>
+  </div>
+</section>
 
-<!-- PRICES: XRP (Coingecko), BAG (XRPL AMM) with cached fallback -->
-<script>
-(function(){
-  const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, VIEW_TTL=6*60*60*1000, LIVE_TTL=24*60*60*1000;
-  const VIEW_KEY='bag_prices_v8', LAST_LIVE='bag_last_live_v1', XRP_KEY='xrp_usd';
-  const PRICES=(window.__PRICES__={ bagUsd:0, xrpUsd:0, source:'—' });
+<!-- GAME PANEL -->
+<section style="padding:0 16px 80px;">
+  <div class="panel">
+    <div class="marquee">$BAG AIR HOCKEY</div>
 
-  const elSrc=document.getElementById('priceSrc'), elB=document.getElementById('bagUsd'), elX=document.getElementById('xrpUsd'), elC=document.getElementById('bagPerXrp');
-  const fmt=(n,d=6)=>Number(n||0).toLocaleString(undefined,{maximumFractionDigits:d});
-  const cacheSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify({t:Date.now(),v}))}catch{}};
-  const cacheGet=(k,ttl)=>{try{const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-o.t)<=ttl?o.v:null;}catch{return null;}};
-  const timedFetch=(u,opts={},to=FETCH_TIMEOUT_MS)=>{const c=new AbortController(), id=setTimeout(()=>c.abort(),to); return fetch(u,{...opts,signal:c.signal,cache:'no-store'}).finally(()=>clearTimeout(id));};
+    <!-- Shell with overlay -->
+    <div id="gameShell">
+      <div class="countdown" id="countdown">3</div>
+      <div class="start-overlay" id="startOverlay">
+        <div class="start-box">
+          <div style="font-weight:900;margin-bottom:6px">Ready to play</div>
+          <div class="micro" style="margin-bottom:12px">
+            Tap Start. Audio unlocks on your first touch. You’ll get a quick 3-2-1 and we drop the puck.
+          </div>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            <button id="startBtn" class="btn">Start Game</button>
+          </div>
+        </div>
+      </div>
+      <div id="gameContainer"></div>
+    </div>
 
-  function paint(){
-    elSrc.textContent = PRICES.source==='live-amm'?'AMM Live':(PRICES.source==='last-live'?'Last Live':'—');
-    elB.textContent   = fmt(PRICES.bagUsd,6);
-    elX.textContent   = Number(PRICES.xrpUsd||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-    elC.textContent   = (PRICES.bagUsd>0 && PRICES.xrpUsd>0) ? (PRICES.xrpUsd/PRICES.bagUsd).toLocaleString(undefined,{maximumFractionDigits:6}) : '—';
-    dispatchEvent(new Event('bag:pricesUpdated'));
-  }
+    <div class="divider"></div>
 
-  async function xrpUsd(){
-    try{
-      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
-      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=Number(v); cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
-    }catch{} return false;
-  }
-  async function bagViaAMM(){
-    const ISS='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', CODE='BAG';
-    const req={id:1,command:'amm_info',asset:{currency:CODE,issuer:ISS},asset2:{currency:'XRP'}};
-    const price = await new Promise(res=>{
-      const ws=new WebSocket('wss://s1.ripple.com'); const t=setTimeout(()=>{try{ws.close();}catch{};res(null)},7000);
-      ws.onopen=()=>ws.send(JSON.stringify(req));
-      ws.onerror=()=>{clearTimeout(t);try{ws.close();}catch{};res(null);}
-      ws.onmessage=e=>{try{const m=JSON.parse(e.data); if(m.id!==1||!m.result?.amm) return;
-        clearTimeout(t);try{ws.close();}catch{};
-        const bag=Number(m.result.amm.amount?.value||0), xrp=Number(m.result.amm.amount2?.value||0);
-        res(bag>0&&xrp>0? xrp/bag : null);
-      }catch{res(null)}};
-    });
-    if(!(price>0) || !(PRICES.xrpUsd>0)) return false;
-    PRICES.bagUsd = PRICES.xrpUsd * price; PRICES.source='live-amm';
-    cacheSet(LAST_LIVE,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
-    cacheSet(VIEW_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
-    return true;
-  }
-  function lastLive(){ const v=cacheGet(LAST_LIVE,LIVE_TTL); if(v&&Number(v.bagUsd)>0){ PRICES.bagUsd=Number(v.bagUsd); if(Number(v.xrpUsd)>0) PRICES.xrpUsd=Number(v.xrpUsd); PRICES.source='last-live'; return true;} return false; }
-  function view(){ const v=cacheGet(VIEW_KEY,VIEW_TTL), x=cacheGet(XRP_KEY,VIEW_TTL); let ok=false;
-    if(v&&Number(v.bagUsd)>0){ PRICES.bagUsd=Number(v.bagUsd); if(Number(v.xrpUsd)>0) PRICES.xrpUsd=Number(v.xrpUsd); ok=true; }
-    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=Number(x); ok=true; }
-    if(ok && PRICES.source==='—') PRICES.source='last-live';
-    return ok;
-  }
+    <!-- HUD pills (Dice-style) -->
+    <div class="hudbar" id="ahHud" aria-live="polite">
+      <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
+      <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
+      <span class="pill">Bet: <b id="betLbl">1</b></span>
+      <span class="pill">Last: <b id="lastLbl">—</b></span>
+    </div>
+  </div>
+</section>
 
-  async function refresh(){ const a=await xrpUsd(), b=await bagViaAMM(); if(!(a&&b)){ if(!lastLive()) view(); } paint(); }
-  refresh(); setInterval(refresh, PRICE_REFRESH_MS);
-})();
-</script>
-
-<!-- DEMO SESSION (Practice $2,000 seeding) -->
-<script>
-(function(){
-  const START_USD=2000, DEMO_BAL='__bag_demo_bag_v2', DEMO_INIT='__bag_demo_init_v2';
-  const sEl=document.getElementById('sessionStatus'), bEl=document.getElementById('pracBag'), xEl=document.getElementById('pracXrp'), uEl=document.getElementById('pracUsd');
-  const startBtn=document.getElementById('startSessionBtn'), topBtn=document.getElementById('topUpBtn'), endBtn=document.getElementById('endSessionBtn');
-
-  const PR=()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const get=()=>{try{const n=Number(localStorage.getItem(DEMO_BAL)); return Number.isFinite(n)&&n>0?n:0;}catch{return 0}};
-  const set=v=>{try{localStorage.setItem(DEMO_BAL,String(Math.max(0,Number(v)||0)));}catch{}};
-  const nf=(n,d=6)=>Number(n||0).toLocaleString(undefined,{maximumFractionDigits:d});
-  const usd=(n)=> (Number(n)||0).toLocaleString(undefined,{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
-
-  function ensureSeed(){
-    if(localStorage.getItem(DEMO_INIT)) return true;
-    const {bagUsd}=PR(); if(!(bagUsd>0)) return false;
-    set(START_USD/bagUsd); localStorage.setItem(DEMO_INIT,'1'); return true;
-  }
-  function render(){
-    const {bagUsd,xrpUsd}=PR(); const bag=get();
-    const valUSD = bagUsd>0? bag*bagUsd : START_USD;
-    const valXRP = (bagUsd>0 && xrpUsd>0)? (bag*(bagUsd/xrpUsd)) : 0;
-    sEl.innerHTML='Session: <span style="color:#2fbf6b">Practice</span>';
-    bEl.textContent=nf(bag); xEl.textContent=nf(valXRP); uEl.textContent=usd(valUSD);
-    startBtn.style.display='inline-block'; topBtn.style.display='none'; endBtn.style.display='none';
-  }
-
-  window.__bagSession={
-    active:()=>true,
-    get:()=>({addr:'demo',bag:get(),ts:Date.now()}),
-    spend:(bag)=>{ const b=get(); if(!(bag>0)||b<bag) return false; set(b-bag); render(); dispatchEvent(new Event('bag:hudRefresh')); return true; },
-    credit:(bag)=>{ if(!(bag>0)) return false; set(get()+bag); render(); dispatchEvent(new Event('bag:hudRefresh')); return true; }
-  };
-
-  function boot(){ if(!localStorage.getItem(DEMO_INIT)){ if(ensureSeed()) render(); } else render(); }
-  addEventListener('bag:pricesUpdated', boot);
-  boot();
-  topBtn?.addEventListener('click', ()=>{ const {bagUsd}=PR(); if(bagUsd>0){ set(START_USD/bagUsd); render(); } });
-})();
-</script>
-
-<!-- H2H state + wager (demo escrow) -->
-<script>
-(function(){
-  const S=(window.__AH_MATCH__={role:null,code:null,connected:false,peerReady:false,youReady:false,wagerXrp:0, stakeYouLocked:0, stakePeerLocked:0});
-  const $=s=>document.querySelector(s); const info=t=>{ const el=$('#matchStatus'); if(el) el.textContent=t; };
-  const code=()=>{const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let o=''; for(let i=0;i<6;i++) o+=A[(Math.random()*A.length)|0]; return o; };
-
-  $('#createMatchBtn')?.addEventListener('click',()=>{ if(S.connected) return; S.role='host'; S.code=code(); S.connected=true; S.youReady=true; info(`Hosting ${S.code} — waiting for opponent`); });
-  $('#joinMatchBtn')?.addEventListener('click',()=>{ if(S.connected) return; const c=($('#matchCodeInput')?.value||'').trim().toUpperCase(); if(!c) return alert('Enter a match code');
-    S.role='guest'; S.code=c; S.connected=true; S.youReady=true; info(`Joined ${S.code} — waiting for host`); });
-
-  window.AH_MARK_PEER_READY=()=>{ S.peerReady=true; info(`Connected: ${S.code}`); };
-  window.AH_CAN_START=()=> !S.connected || (S.connected && S.peerReady && S.stakeYouLocked>0 && S.stakePeerLocked>0);
-})();
-</script>
-
-<script>
-(function(){
-  const S=window.__AH_MATCH__; const $=s=>document.querySelector(s);
-  const PR=()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const xrp2bag=(x)=>{ const {bagUsd,xrpUsd}=PR(); return (bagUsd>0&&xrpUsd>0)? (x*xrpUsd)/bagUsd : 0; };
-  const spend=(b)=>window.__bagSession?.spend?.(b); const credit=(b)=>window.__bagSession?.credit?.(b);
-  const stat=t=>{ const el=$('#wagerStatus'); if(el) el.textContent=t; };
-  const nf=(n,d=6)=>Number(n||0).toLocaleString(undefined,{maximumFractionDigits:d});
-
-  // quick chips
-  (function(){ const root=document.getElementById('wagerPresets'); if(!root) return;
-    root.querySelectorAll('button[data-xrp]').forEach(btn=>btn.addEventListener('click',()=>{ const v=parseFloat(btn.getAttribute('data-xrp')||'0')||0;
-      const inp=document.getElementById('wagerQty'); if(inp) inp.value=String(v);
-      root.querySelectorAll('button').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
-    }));
-  })();
-
-  document.getElementById('proposeWagerBtn')?.addEventListener('click',()=>{ const amt=parseFloat(document.getElementById('wagerQty')?.value||'0')||0;
-    if(!(amt>0)) return alert('Enter a wager'); S.wagerXrp=amt; S.stakeYouLocked=0; S.stakePeerLocked=0; stat(`Proposed ${nf(amt)} XRP — waiting peer`); });
-
-  window.AH_ON_PEER_WAGER=(xrp)=>{ S.wagerXrp=Number(xrp)||0; S.stakeYouLocked=0; S.stakePeerLocked=0; stat(`Peer proposed ${nf(S.wagerXrp)} XRP — lock to accept`); };
-
-  document.getElementById('lockStakeBtn')?.addEventListener('click',()=>{
-    if(!(S.wagerXrp>0)) return alert('No wager set');
-    const need=xrp2bag(S.wagerXrp); if(!(need>0)) return alert('Live price unavailable');
-    if(!spend(need)) return alert('Insufficient Practice balance');
-    S.stakeYouLocked=need; stat(`You locked ${nf(S.wagerXrp)} XRP (${nf(need)} BAG). Waiting peer.`); dispatchEvent(new Event('bag:hudRefresh'));
-  });
-
-  window.AH_ON_PEER_LOCK=()=>{ S.stakePeerLocked=xrp2bag(S.wagerXrp||0); stat('Both locked'); dispatchEvent(new Event('bag:hudRefresh')); };
-
-  window.AH_PAYOUT_SERIES=(result)=>{ const total=(S.stakeYouLocked||0)+(S.stakePeerLocked||0); if(!total) return;
-    if(result==='win') credit(total); S.stakeYouLocked=0; S.stakePeerLocked=0; stat('No wager'); dispatchEvent(new Event('bag:hudRefresh')); };
-})();
-</script>
-
-<!-- GAME CORE -->
-<script>
-(function(){
-  const canvas=document.getElementById('air'), ctx=canvas.getContext('2d');
-  function fit(){ const wrap=document.getElementById('boardWrap'); if(!wrap) return; const w=Math.min(wrap.clientWidth,1024), r=canvas.height/canvas.width;
-    canvas.style.width=w+'px'; canvas.style.height=Math.round(w*r)+'px'; } addEventListener('resize',fit); fit();
-
-  const W=canvas.width,H=canvas.height, GOAL=160, RINK={x:20,y:20,w:W-40,h:H-40,r:22}, MID=H/2;
-
-  const puck={x:W/2,y:H/2,r:14,vx:0,vy:0,max:12,damp:0.995};
-  const p1={x:W/2,y:H-90,r:26,isDown:false,ox:0,oy:0,lastX:null,lastY:null};
-  const cpu={x:W/2,y:90,r:26,speed:7};
-
-  let running=false, counting=false, bestOf=3, target=5, gameNo=1, g1=0,g2=0, s1=0,s2=0;
-  const cd=document.getElementById('countdown'), ov=document.getElementById('startOverlay');
-  const startBtn=document.getElementById('startBtn'), pracBtn=document.getElementById('practiceBtn');
-
-  function clamp(v,a,b){return v<a?a:(v>b?b:v);}
-  function resetPuck(dir=(Math.random()<0.5?1:-1)){
-    puck.x=W/2;puck.y=H/2;
-    const a=(Math.random()*Math.PI/3)+(Math.PI/6), s=6.5;
-    puck.vx=s*Math.cos(a)*dir; puck.vy=s*Math.sin(a)*(Math.random()<0.5?-1:1);
-  }
-  function resetGame(){ g1=0; g2=0; resetPuck(); }
-  function readOpts(){
-    bestOf=parseInt(document.querySelector('input[name="series"]:checked')?.value||'3',10);
-    target=parseInt(document.querySelector('input[name="target"]:checked')?.value||'5',10);
-  }
-  function canStart(){ return (typeof window.AH_CAN_START==='function')? window.AH_CAN_START() : true; }
-
-  startBtn.onclick=()=>{ if(!canStart()) return alert('Both players must connect and lock stakes'); readOpts(); ov.style.display='none'; countdown(()=>{ gameNo=1;s1=0;s2=0; resetGame(); running=true; }); };
-  pracBtn.onclick =()=>{ readOpts(); ov.style.display='none'; countdown(()=>{ gameNo=1;s1=0;s2=0; resetGame(); running=true; }); };
-
-  async function countdown(cb){
-    counting=true; cd.style.display='block'; window.__AH_AUDIO__?.beeps(3,.6);
-    for(let i=3;i>0;i--){ cd.textContent=String(i); await new Promise(r=>setTimeout(r,600)); }
-    cd.textContent='GO'; await new Promise(r=>setTimeout(r,300)); cd.style.display='none'; counting=false; cb&&cb();
-  }
-
-  // Pointer — smooth slide (no hop)
-  let pid=null;
-  function xy(e){ const r=canvas.getBoundingClientRect(); return {x:(e.clientX-r.left)*(canvas.width/r.width),y:(e.clientY-r.top)*(canvas.height/r.height)}; }
-  canvas.addEventListener('pointerdown',e=>{
-    if(pid!==null) return; pid=e.pointerId||0; const {x,y}=xy(e);
-    const dx=x-p1.x,dy=y-p1.y; if(dx*dx+dy*dy<= (p1.r*1.6)**2){ p1.isDown=true; p1.ox=x-p1.x; p1.oy=y-p1.y; p1.lastX=x; p1.lastY=y; }
-    canvas.setPointerCapture && canvas.setPointerCapture(pid); e.preventDefault();
-  },{passive:false});
-  canvas.addEventListener('pointermove',e=>{
-    if(pid!==(e.pointerId||0)||!p1.isDown) return; const {x,y}=xy(e);
-    const nx=clamp(x-p1.ox, RINK.x+p1.r, RINK.x+RINK.w-p1.r);
-    const ny=clamp(y-p1.oy, MID+p1.r, RINK.y+RINK.h-p1.r);
-    const a=0.7; p1.x = p1.lastX? p1.x*(1-a)+nx*a : nx; p1.y = p1.lastY? p1.y*(1-a)+ny*a : ny;
-    p1.lastX=nx; p1.lastY=ny; e.preventDefault();
-  },{passive:false});
-  addEventListener('pointerup',e=>{ if(pid!==(e.pointerId||0)) return; p1.isDown=false; pid=null; canvas.releasePointerCapture && canvas.releasePointerCapture(e.pointerId||0); },{passive:false});
-  addEventListener('pointercancel',e=>{ if(pid!==(e.pointerId||0)) return; p1.isDown=false; pid=null; },{passive:false});
-
-  function cpuAI(){
-    const ty = (puck.y < MID || puck.vy < 0) ? clamp(puck.y, cpu.r, MID-cpu.r) : cpu.y;
-    const tx = clamp(puck.x, RINK.x+cpu.r, RINK.x+RINK.w-cpu.r);
-    const dx=tx-cpu.x, dy=ty-cpu.y, d=Math.hypot(dx,dy)||1, step=Math.min(cpu.speed,d);
-    cpu.x+=dx/d*step; cpu.y+=dy/d*step;
-  }
-
-  function collide(a,b){
-    const dx=b.x-a.x, dy=b.y-a.y, dist=Math.hypot(dx,dy), min=a.r+b.r;
-    if(dist<min){
-      const nx=dx/(dist||1), ny=dy/(dist||1), pen=min-dist;
-      b.x+=nx*pen*0.6; b.y+=ny*pen*0.6;
-      const dot=puck.vx*nx+puck.vy*ny;
-      puck.vx=puck.vx-2*dot*nx; puck.vy=puck.vy-2*dot*ny;
-      const sp=Math.hypot(puck.vx,puck.vy), m=puck.max; if(sp>m){ puck.vx=puck.vx/sp*m; puck.vy=puck.vy/sp*m; }
-      if(a===p1) window.__AH_AUDIO__?.hit(); // sound ONLY on paddle hit
-    }
-  }
-
-  function walls(){
-    if(puck.x-puck.r<RINK.x){ puck.x=RINK.x+puck.r; puck.vx=-puck.vx; }
-    if(puck.x+puck.r>RINK.x+RINK.w){ puck.x=RINK.x+RINK.w-puck.r; puck.vx=-puck.vx; }
-    const L=W/2-GOAL/2, R=W/2+GOAL/2;
-    if(puck.y-puck.r<RINK.y){
-      if(puck.x>L && puck.x<R) score(1); else { puck.y=RINK.y+puck.r; puck.vy=-puck.vy; }
-    }
-    if(puck.y+puck.r>RINK.y+RINK.h){
-      if(puck.x>L && puck.x<R) score(2); else { puck.y=RINK.y+RINK.h-puck.r; puck.vy=-puck.vy; }
-    }
-  }
-
-  function score(who){
-    p1.x=W/2; p1.y=H-90; cpu.x=W/2; cpu.y=90;
-    if(who===1) g1++; else g2++;
-    if(g1>=target || g2>=target){
-      if(g1>g2) s1++; else s2++;
-      window.__AH_AUDIO__?.buzzer();
-      if(s1>bestOf/2 || s2>bestOf/2){
-        // series end -> payout demo & reset
-        window.AH_PAYOUT_SERIES && window.AH_PAYOUT_SERIES(s1>s2?'win':'loss');
-        running=false; ov.style.display='grid'; return;
-      } else { gameNo++; g1=0; g2=0; }
-    }
-    resetPuck(who===2?1:-1);
-  }
-
-  function step(){
-    if(running && !counting){
-      cpuAI();
-      puck.x+=puck.vx; puck.y+=puck.vy; puck.vx*=puck.damp; puck.vy*=puck.damp;
-      collide(p1,puck); collide(cpu,puck); walls();
-    }
-    draw(); requestAnimationFrame(step);
-  }
-
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    // table
-    ctx.fillStyle='#0b2016'; ctx.strokeStyle='#1b4a2f'; ctx.lineWidth=2; roundRect(RINK.x,RINK.y,RINK.w,RINK.h,RINK.r); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle='#1f5a3a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(RINK.x,MID); ctx.lineTo(RINK.x+RINK.w,MID); ctx.stroke();
-    ctx.strokeStyle='#2b6a48'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(W/2-GOAL/2,RINK.y); ctx.lineTo(W/2+GOAL/2,RINK.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(W/2-GOAL/2,RINK.y+RINK.h); ctx.lineTo(W/2+GOAL/2,RINK.y+RINK.h); ctx.stroke();
-    // hud
-    ctx.fillStyle='#ffe175'; ctx.font='700 20px Inter, system-ui, sans-serif';
-    ctx.textAlign='left'; ctx.fillText(`You ${g1}`, RINK.x+8, MID+44);
-    ctx.textAlign='right'; ctx.fillText(`CPU ${g2}`, RINK.x+RINK.w-8, MID-12);
-    ctx.fillStyle='#cfe1d6'; ctx.font='700 14px Inter, system-ui, sans-serif'; ctx.textAlign='center';
-    ctx.fillText(`Game ${gameNo} / Best of ${bestOf} · First to ${target}`, W/2, 34);
-    ctx.fillText(`Series: You ${s1} — ${s2} CPU`, W/2, 54);
-    // actors
-    ctx.fillStyle='#e0f2ea'; circ(puck.x,puck.y,puck.r); ctx.fill();
-    ctx.fillStyle='#36c77a'; circ(p1.x,p1.y,p1.r); ctx.fill();
-    ctx.fillStyle='#5aa0ff'; circ(cpu.x,cpu.y,cpu.r); ctx.fill();
-  }
-  function circ(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); }
-  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-
-  resetGame(); draw(); step();
-})();
-</script>
-
-<footer class="wrap" style="text-align:center;padding:14px 0;color:#a9b9af">
-  © 2025 $BAG Protocol — getthebag.io · Powered by $XRP
+<footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
+  © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
 </footer>
 
+<!-- ===== LIVE PRICING (Dice engine with cache + AMM) ===== -->
+<script>
+(function(){
+  const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
+  const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
+  const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
+  const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
+
+  const fmt=n=>Number.isFinite(n)? n.toFixed(6):'—';
+  const cacheSet=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
+  const cacheGet=(k,ttl)=>{ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } };
+
+  function timedFetch(url,opts={},timeout=FETCH_TIMEOUT_MS){
+    const ctrl=new AbortController(); const id=setTimeout(()=>ctrl.abort(new Error('timeout')),timeout);
+    try{ return fetch(url,{...opts,headers:{Accept:'application/json',...(opts.headers||{})},mode:'cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ctrl.signal}); }
+    finally{ setTimeout(()=>clearTimeout(id),0); }
+  }
+
+  function paint(){
+    const d=document; d.getElementById('liveBAG').textContent=fmt(PRICES.bagUsd);
+    d.getElementById('liveXRP').textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
+    const dot=d.getElementById('liveDot'), note=d.getElementById('liveNote');
+    if(dot) dot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
+    if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
+      const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
+      d.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
+    }
+    document.dispatchEvent(new Event('bag:pricesUpdated'));
+  }
+
+  async function fetchXrpUsd(){
+    try{
+      const r=await timedFetch('https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd');
+      const v=(await r.json())?.ripple?.usd; if(Number(v)>0){ PRICES.xrpUsd=+v; cacheSet(XRP_KEY,PRICES.xrpUsd); return true; }
+    }catch{} return false;
+  }
+  const parseXRP=a=> (typeof a==='string')? Number(a)/1_000_000 : (a&&a.currency==='XRP'? Number(a.value):null);
+  const parseIOU=a=> (a&&typeof a==='object')? Number(a.value):null;
+
+  async function fetchBAGViaAMM(){
+    const req={id:1,command:'amm_info',asset:{currency:BAG_CODE,issuer:BAG_ISSUER},asset2:{currency:'XRP'}};
+    const price=await new Promise(resolve=>{
+      let ws; const t=setTimeout(()=>{ try{ws&&ws.close();}catch{} resolve(null); },8000);
+      try{
+        ws=new WebSocket('wss://s1.ripple.com');
+        ws.onopen=()=>ws.send(JSON.stringify(req));
+        ws.onerror=()=>{ clearTimeout(t); try{ws.close();}catch{} resolve(null); };
+        ws.onmessage=e=>{
+          try{
+            const m=JSON.parse(e.data); if(m.id!==1||!m.result||!m.result.amm) return;
+            clearTimeout(t); try{ws.close();}catch{};
+            const amm=m.result.amm; const bag=parseIOU(amm.amount), xrp=parseXRP(amm.amount2);
+            if(!(bag>0)&&!(xrp>0)) return resolve(null);
+            const px=xrp/bag; resolve(isFinite(px)&&px>0?px:null);
+          }catch{ resolve(null); }
+        };
+      }catch{ clearTimeout(t); resolve(null); }
+    });
+    if(!(price>0)) return false;
+    if(!(PRICES.xrpUsd>0)) return false;
+    PRICES.bagUsd=PRICES.xrpUsd*price; PRICES.source='live-amm';
+    cacheSet(LAST_LIVE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    cacheSet(VIEW_CACHE_KEY,{bagUsd:PRICES.bagUsd,xrpUsd:PRICES.xrpUsd});
+    return true;
+  }
+
+  function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
+  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
+    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
+    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
+    if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok;
+  }
+
+  async function refresh(){ const gotX=await fetchXrpUsd(); const gotB=await fetchBAGViaAMM(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } paint(); }
+  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
+  document.addEventListener('DOMContentLoaded', paint);
+  addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); paint(); } });
+})();
+</script>
+
+<!-- ===== Stake Wire (Dice) ===== -->
+<script>
+(function(global){
+  const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
+  const getCur=root=>{ const el=root?.querySelector('input[name="betCur"]:checked'); return el? String(el.value).toUpperCase():'XRP'; };
+  const priceFor=cur=>{ const {bagUsd,xrpUsd}=PR(); return cur==='BAG'? bagUsd:xrpUsd; };
+  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function computeSessionMaxUsd(cur,minUsd,maxUsd){
+    const sess=(global.__bagSession&&global.__bagSession.get&&global.__bagSession.get())||{};
+    const bagBal=Number(sess.bag)||0; let unitsAvail;
+    if(cur==='BAG'){ unitsAvail=bagBal; } else { const {bagUsd,xrpUsd}=PR(); unitsAvail=(bagUsd>0&&xrpUsd>0)? (bagBal*(bagUsd/xrpUsd)):0; }
+    const px=priceFor(cur); const usdAvail=(px>0&&unitsAvail>0)? unitsAvail*px : maxUsd;
+    return Math.max(minUsd, Math.min(maxUsd, usdAvail));
+  }
+
+  function init(opts){
+    const cfg=Object.assign({usdInput:'#usdBet', qtyInput:'#betQty', currencyToggle:'#curToggle', unitLabels:'.unit', limitsLabel:'#betLimits',
+      presetsRoot:'#usdPresets', minUsd:1, maxUsd:2000, activeClass:'active', syncOnPrice:true}, opts||{});
+    const usdEl=document.querySelector(cfg.usdInput), qtyEl=document.querySelector(cfg.qtyInput), curToggle=document.querySelector(cfg.currencyToggle),
+          unitEls=document.querySelectorAll(cfg.unitLabels), limitsEl=document.querySelector(cfg.limitsLabel), presets=document.querySelector(cfg.presetsRoot);
+    const STATE={lastEdited:'qty', lastCur:null, syncing:false};
+    const rUsd=()=>{ const v=parseFloat(usdEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const rQty=()=>{ const v=parseFloat(qtyEl?.value||''); return Number.isFinite(v)&&v>0?v:0; };
+    const wUsd=u=>{ if(!usdEl)return; usdEl.value = u? (Math.round(u*100)/100).toFixed(2):''; };
+    const wQty=q=>{ if(!qtyEl)return; const d=6; qtyEl.value = q? Number(q).toFixed(Math.min(6,d)).replace(/\.?0+$/,''):''; };
+    const paintUnits=()=>{ const cur=getCur(curToggle); unitEls.forEach(s=>s.textContent=cur); };
+    const renderLimits=()=>{ if(!limitsEl) return; const cur=getCur(curToggle), px=priceFor(cur), u=rUsd()||(rQty()*(px>0?px:0))||0;
+      const warn=(u>0&&u<cfg.minUsd)?` · <span style="color:#e8a85c">Min ${fmtUsd(cfg.minUsd)}</span>`:(u>cfg.maxUsd)?` · <span style="color:#e8a85c">Max ${fmtUsd(cfg.maxUsd)}</span>`:''; 
+      limitsEl.innerHTML=`Limits: ${fmtUsd(cfg.minUsd)}–${fmtUsd(cfg.maxUsd)} · Your stake ≈ ${fmtUsd(u||0)}${warn}`; };
+
+    function syncFromUSD(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), usd=rUsd();
+      if(usd && px>0) wQty(usd/px); else if(!usd) wQty(''); renderLimits(); STATE.syncing=false; }
+    function syncFromQty(){ if(STATE.syncing) return; STATE.syncing=true; const cur=getCur(curToggle), px=priceFor(cur), qty=rQty();
+      if(qty && px>0) wUsd(qty*px); else if(!qty) wUsd(''); renderLimits(); STATE.syncing=false; }
+    function convert(prev,next){ const pxPrev=priceFor(prev), pxNext=priceFor(next); let usd=rUsd(); const qPrev=rQty();
+      if(!(usd>0)) usd=(qPrev>0&&pxPrev>0)? qPrev*pxPrev:0; if(usd>0&&pxNext>0){ wUsd(usd); wQty(usd/pxNext); } renderLimits(); }
+
+    usdEl?.addEventListener('input', ()=>{ STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new Event('bag:hudRefresh')); });
+    qtyEl?.addEventListener('input', ()=>{ STATE.lastEdited='qty'; syncFromQty(); window.dispatchEvent(new Event('bag:hudRefresh')); });
+
+    STATE.lastCur=getCur(curToggle);
+    curToggle?.addEventListener('change', ()=>{ const prev=STATE.lastCur, next=getCur(curToggle); STATE.lastCur=next; paintUnits(); convert(prev,next); window.dispatchEvent(new Event('bag:hudRefresh')); });
+
+    if(cfg.syncOnPrice){ addEventListener('bag:pricesUpdated', ()=>{ if(STATE.lastEdited==='usd') syncFromUSD(); else syncFromQty(); }); }
+
+    if(presets){
+      const setActive=btn=>{ presets.querySelectorAll('.preset-chip').forEach(b=>b.classList.remove(cfg.activeClass)); btn&&btn.classList.add(cfg.activeClass); };
+      const applyUsd=usd=>{ wUsd(usd); STATE.lastEdited='usd'; syncFromUSD(); window.dispatchEvent(new Event('bag:hudRefresh')); };
+      const clamp=u=>Math.max(cfg.minUsd, Math.min(cfg.maxUsd, u||0));
+      presets.querySelectorAll('button[data-usd]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{ const v=btn.getAttribute('data-usd'); let usd=0;
+          usd = (v==='max') ? computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd) : (parseFloat(v)||0);
+          usd=clamp(usd); setActive(btn); applyUsd(usd);
+        });
+      });
+      const resync=()=>{ const btn=presets.querySelector('.'+cfg.activeClass); if(!btn) return; const v=btn.getAttribute('data-usd');
+        if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
+      addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
+    }
+    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+  }
+  global.BAGStakeWire={ init };
+})(window);
+
+// simple HUD wire-up
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ window.BAGStakeWire.init(); }catch{}
+  const betQty=document.getElementById('betQty');
+  const modeLbl=document.getElementById('modeLbl');
+  const betLbl=document.getElementById('betLbl');
+  const ccyLbl=document.getElementById('ccyLbl');
+  const lastLbl=document.getElementById('lastLbl');
+
+  const paintHUD=()=>{
+    betLbl.textContent = betQty.value || '1';
+    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
+    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
+    ccyLbl.textContent = cur;
+    modeLbl.textContent = 'Demo';
+    lastLbl.textContent = window.__AH_LAST__ || '—';
+  };
+  paintHUD();
+  document.addEventListener('bag:hudRefresh', paintHUD);
+  ['input','change'].forEach(evt=>{
+    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
+  });
+});
+</script>
+
+<!-- ===== Air Hockey Game (audio only on paddle hits + goal) ===== -->
+<script>
+const config = {
+  type: Phaser.AUTO,
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1024, height: 1536, parent: 'gameContainer' },
+  backgroundColor: '#021107',
+  physics: { default: 'arcade', arcade: { debug: false, fps: 120, step: 1/240 } },
+  input: { activePointers: 5 }
+};
+
+// --- size + UX tuning ---
+const PADDLE_SCALE = 0.20;
+const PUCK_SCALE   = 0.09;
+const GOAL_HALF    = 140;
+const POINTER_OFFSET_Y = -56;
+const WALL_MARGIN  = 100;
+
+// --- anti-trap tuning ---
+const CORNER_BAND     = 150;
+const STUCK_SPEED     = 60;
+const STUCK_TIME_MS   = 600;
+const STUCK_COOLDOWN  = 800;
+const CPU_RETREAT_Y   = 280;
+
+let puck, player, cpu, scoreText, ring;
+let goalTop, goalBottom;
+let scorePlayer = 0, scoreCPU = 0;
+let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
+let goalLock = false;
+
+// stuck tracking
+let stuckStart = 0;
+let lastKickAt = 0;
+
+// sfx throttle (for paddle collisions)
+let lastHitAt = 0;
+
+// start/overlay
+let gameReady = false;   // true after countdown completes
+const cdEl = document.getElementById('countdown');
+const overlayEl = document.getElementById('startOverlay');
+document.getElementById('startBtn')?.addEventListener('click', ()=> runCountdown());
+
+new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
+
+function preload(){
+  this.load.image('table','/arcade/assets/img/airhockey-table-skin-1024.webp');
+  this.load.image('puck','/arcade/assets/img/puck-1024.webp');
+  this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
+  this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
+
+  // uploaded audio files
+  this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
+  this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
+}
+
+function create(){
+  this.sound.pauseOnBlur = false;
+
+  // Explicit audio unlock on first gesture
+  const unlockAudio = ()=>{
+    try{ if (this.sound.locked) this.sound.unlock(); }catch{}
+    try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
+    this.input.off('pointerdown', unlockAudio);
+  };
+  this.input.on('pointerdown', unlockAudio);
+
+  const w=this.scale.width, h=this.scale.height, cx=w/2;
+
+  this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
+  this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
+
+  // puck
+  puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
+  puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
+  puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
+  puck.setVelocity(0,0); // no auto-serve
+
+  // paddles
+  player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
+  cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
+  [player,cpu].forEach(p=>{
+    p.setImmovable(true);
+    p.setCollideWorldBounds(true);
+    p.body.setCircle(p.displayWidth/2);
+    centerBodyOnTexture(p);
+  });
+
+  // --- invisible goal sensors ---
+  goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
+  goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
+  this.physics.add.existing(goalTop, true);
+  this.physics.add.existing(goalBottom, true);
+
+  this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
+  this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
+
+  // sfx handles
+  this.sfx = {hit:null,goal:null};
+  try{
+    this.sfx.hit  = this.sound.add('hit',{volume:.35});
+    this.sfx.goal = this.sound.add('goal',{volume:.55});
+  }catch(e){}
+
+  // touch ring so finger doesn't hide the aim point
+  ring = this.add.graphics({ x: 0, y: 0 });
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
+  ring.setAlpha(0);
+
+  // input
+  const clamp = Phaser.Math.Clamp;
+  const moveTo=(gx,gy)=>{
+    const ww=this.scale.width, hh=this.scale.height;
+    const half = player.displayWidth*0.5;
+    const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
+    const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
+    player.x = targetX; player.y = targetY;
+    ring.x = gx; ring.y = gy;
+  };
+
+  const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
+  lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
+  lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
+  lowerZone.on('pointerout', ()=> ring.setAlpha(0));
+  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
+
+  const r = player.displayWidth*0.5;
+  player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
+  this.input.setDraggable(player);
+  this.input.dragDistanceThreshold=0;
+  player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
+  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
+  this.input.on('pointerup', ()=> ring.setAlpha(0));
+
+  scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
+
+  // DO NOT auto-serve; wait for overlay -> countdown
+  overlayEl.style.display = 'grid';
+}
+
+function runCountdown(){
+  overlayEl.style.display = 'none';
+  cdEl.style.display = 'block';
+  let n = 3;
+  cdEl.textContent = String(n);
+  const tick = setInterval(()=>{
+    n--;
+    if(n>0){ cdEl.textContent = String(n); }
+    else{
+      cdEl.textContent = 'GO';
+      setTimeout(()=>{ cdEl.style.display='none'; clearInterval(tick); gameReady = true; serve(Phaser.Scene.prototype.scene || window.__activeScene || null); }, 280);
+    }
+  }, 600);
+}
+
+function onGoal(side){
+  if(goalLock || !puck || !puck.body || !puck.body.enable) return;
+  try{ this.sfx?.goal?.play(); }catch{}
+  if(side==='top') scorePlayer++; else scoreCPU++;
+  startGoalSink.call(this, side);
+}
+
+function centerBodyOnTexture(img){
+  const bw=img.body.width, bh=img.body.height;
+  img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
+}
+
+function resolvePaddle(paddle, prev, scene){
+  if(goalLock || !puck.body || !puck.body.enable) return;
+  const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
+  const rSum=puck.displayWidth/2+paddle.displayWidth/2;
+  if(dist<rSum){
+    const nx=dx/dist, ny=dy/dist, pen=rSum-dist;
+    puck.x+=nx*pen; puck.y+=ny*pen;
+
+    const pvx=(paddle.x-prev.x)*60, pvy=(paddle.y-prev.y)*60;
+    const tx=-ny, ty=nx, vN=pvx*nx+pvy*ny, vT=pvx*tx+pvy*ty;
+
+    const base=500, gainN=8.5, gainT=4.7, maxV=2000;
+    const vx=nx*(base+gainN*Math.abs(vN)) + tx*(vT*gainT);
+    const vy=ny*(base+gainN*Math.abs(vN)) + ty*(vT*gainT);
+    puck.setVelocity(Phaser.Math.Clamp(vx,-maxV,maxV), Phaser.Math.Clamp(vy,-maxV,maxV));
+
+    const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
+    puck.setAngularVelocity(spin);
+
+    // HIT SFX — only on paddle contact
+    try{
+      const now=performance.now();
+      if(now - lastHitAt > 70){
+        scene.sfx?.hit?.setDetune?.(Phaser.Math.Between(-60,50));
+        scene.sfx?.hit?.play({ volume:.38 });
+        lastHitAt = now;
+      }
+    }catch{}
+  }
+}
+
+function update(){
+  // stash scene once so serve() can access if needed after countdown
+  if(!window.__activeScene) window.__activeScene = this;
+
+  if(goalLock || !gameReady) return;
+
+  const w=this.scale.width, h=this.scale.height;
+
+  // --------- CPU AI: bias away from corners ----------
+  const cx = w/2;
+  const rCpu = cpu.displayWidth * 0.5;
+  const rPuck = puck.displayWidth * 0.5;
+
+  const nearTop = puck.y < h*0.45;
+  const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
+  const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
+
+  const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(
+                    Phaser.Math.Linear(puck.x, cx, pullToCenter),
+                    WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
+                  ), 0.10);
+
+  const cpuChaseDepth = Math.min(puck.y, h*0.38);
+  const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
+
+  cpu.x = targetX;
+  cpu.y = targetY;
+
+  const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
+                   (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
+                   (puck.y < WALL_MARGIN + rPuck + 8);
+
+  const dxPC = puck.x - cpu.x, dyPC = puck.y - cpu.y, dPC = Math.hypot(dxPC, dyPC) || 1;
+  const minGap = (rCpu + rPuck) * 0.95;
+  if(nearWall && dPC < minGap){
+    const push = (minGap - dPC) * 0.6;
+    cpu.x -= (dxPC / dPC) * push;
+    cpu.y -= (dyPC / dPC) * push;
+    cpu.x = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu));
+    cpu.y = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + rCpu, h*0.45);
+  }
+
+  // --------- Corner-escape kick (CPU side) ----------
+  const now = performance.now();
+  const v = puck.body ? puck.body.velocity : {x:0,y:0};
+  const speed = Math.hypot(v.x, v.y);
+
+  const inCpuHalf = puck.y < h * 0.5;
+  const inCornerish = inCpuHalf &&
+    (puck.y < WALL_MARGIN + CORNER_BAND) &&
+    ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
+
+  if(inCornerish && speed < STUCK_SPEED){
+    if(!stuckStart) stuckStart = now;
+    const longEnough = (now - stuckStart) > STUCK_TIME_MS;
+    const cooled = (now - lastKickAt) > STUCK_COOLDOWN;
+    if(longEnough && cooled){
+      const toCenter = new Phaser.Math.Vector2(cx - puck.x, (h*0.35) - puck.y).normalize();
+      puck.setVelocity(toCenter.x * 900, toCenter.y * 900);
+      cpu.y = Math.min(cpu.y + 40, CPU_RETREAT_Y);
+      lastKickAt = now;
+      stuckStart = 0;
+    }
+  }else{
+    stuckStart = 0;
+  }
+
+  const curPlayer={x:player.x,y:player.y};
+  const curCPU={x:cpu.x,y:cpu.y};
+
+  resolvePaddle(player, prevPlayer, this);
+  resolvePaddle(cpu,    prevCPU,  this);
+
+  prevPlayer=curPlayer; prevCPU=curCPU;
+
+  if(puck.body && puck.body.enable){
+    const v2=puck.body.velocity, vmax=2000, keep=0.999;
+    v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
+    v2.y = Phaser.Math.Clamp(v2.y*keep,-vmax,vmax);
+  }
+
+  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+}
+
+function startGoalSink(side){
+  if(goalLock || !puck) return;
+  const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
+  goalLock = true;
+
+  puck.setVelocity(0,0);
+  puck.setAngularVelocity(0);
+  if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
+  puck.setCollideWorldBounds(false);
+
+  const targetY = (side==='top') ? -40 : (h+40);
+
+  scene.tweens.add({
+    targets: puck,
+    x: cx,
+    y: targetY,
+    scaleX: puck.scaleX*0.55,
+    scaleY: puck.scaleY*0.55,
+    alpha: 0,
+    duration: 230,
+    ease: 'Quad.easeIn',
+    onComplete: ()=>{ serve(scene, side==='top' ? 'player' : 'cpu'); goalLock=false; }
+  });
+}
+
+function serve(sceneRef, scoredBy){
+  const scene = sceneRef && sceneRef.sys && sceneRef.sys.isActive() ? sceneRef : window.__activeScene;
+  if(!scene) return;
+
+  const w=scene.scale.width, h=scene.scale.height;
+  puck.setPosition(w/2, h/2).setAlpha(1).setScale(PUCK_SCALE);
+  if(!puck.body){ scene.physics.add.existing(puck); }
+  puck.body.enable = true; puck.body.checkCollision.none = false;
+  puck.setCollideWorldBounds(true);
+  puck.body.setCircle(puck.displayWidth/2);
+  centerBodyOnTexture(puck);
+
+  const angle=Phaser.Math.Between(20,160)*(Phaser.Math.Between(0,1)?1:-1);
+  const speed=Phaser.Math.Between(650,800);
+  const vx=Math.cos(angle*Math.PI/180)*speed;
+  const vy=(scoredBy==='player'?-1:1)*Math.abs(Math.sin(angle*Math.PI/180)*speed);
+  puck.setVelocity(vx,vy);
+  puck.setAngularVelocity(Phaser.Math.Between(-120,120));
+
+  window.__AH_LAST__ = scoredBy==='player' ? 'You scored' : (scoredBy==='cpu' ? 'CPU scored' : 'Serve');
+  window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
+}
+</script>
 </body>
 </html>
