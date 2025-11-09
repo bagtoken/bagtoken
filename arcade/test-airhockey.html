@@ -170,6 +170,7 @@ canvas{display:block;margin:auto;touch-action:none}
         <div class="micro">Bet amount</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
+            <!-- default 1 XRP -->
             <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
                    style="width:160px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:12px">
             <span class="unit">XRP</span>
@@ -197,7 +198,7 @@ canvas{display:block;margin:auto;touch-action:none}
   <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
 
-    <!-- Top Match HUD (sticky + big selectors) -->
+    <!-- Top Match HUD -->
     <div class="top-hud" id="topHud">
       <div class="side">Player <span id="servePlayer" class="arrow" title="Serve">⬅</span></div>
 
@@ -295,7 +296,7 @@ window.__AH_RULES__ = {
     d.getElementById('liveXRP').textContent=Number.isFinite(PRICES.xrpUsd)? PRICES.xrpUsd.toFixed(2):'—';
     const dot=d.getElementById('liveDot'), note=d.getElementById('liveNote');
     if(dot) dot.className=(PRICES.source==='live-amm'?'ok':PRICES.source==='last-live'?'warn':'err');
-    if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':PRICES.source==='last-live'?' (last live)':' (unavailable)');
+    if(note) note.textContent=(PRICES.source==='live-amm'?' (AMM live)':' (last live)');
     if(PRICES.bagUsd>0 && PRICES.xrpUsd>0){
       const xrpPerBag=PRICES.bagUsd/PRICES.xrpUsd, bagPerXrp=PRICES.xrpUsd/PRICES.bagUsd;
       d.getElementById('liveConv').textContent=`1 BAG ≈ ${xrpPerBag.toFixed(6)} XRP · 1 XRP ≈ ${bagPerXrp.toFixed(6)} BAG`;
@@ -337,15 +338,7 @@ window.__AH_RULES__ = {
     return true;
   }
   function loadLast(){ const v=cacheGet(LAST_LIVE_KEY,LIVE_CACHE_TTL_MS); if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; PRICES.source='last-live'; return true; } return false; }
-  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIEW_CACHE_TTL_MS), x=cacheGet(XRP_KEY,VIEW_CACHE_TTL_MS); let ok=false;
-    if(v && Number(v.bagUsd)>0){ PRICES.bagUsd=+v.bagUsd; if(Number(v.xrpUsd)>0) PRICES.xrpUsd=+v.xrpUsd; ok=true; }
-    if(!PRICES.xrpUsd && Number(x)>0){ PRICES.xrpUsd=+x; ok=true; }
-    if(ok && PRICES.source==='—') PRICES.source='last-live'; return ok;
-  }
-  async function refresh(){ const gotX=await fetchXrpUsd(); const gotB=await fetchBAGViaAMM(); if(!(gotX&&gotB)){ if(!loadLast()) loadView(); } paint(); }
-  (async()=>{ await refresh(); setInterval(refresh, PRICE_REFRESH_MS); })();
-  document.addEventListener('DOMContentLoaded', paint);
-  addEventListener('storage', (e)=>{ if(['bag_prices_v8','xrp_usd','bag_last_live_v1'].includes(e.key||'')){ if(!loadLast()) loadView(); paint(); } });
+  function loadView(){ const v=cacheGet(VIEW_CACHE_KEY,VIIEW_CACHE_TTL_MS=21600000); return v } // placeholder prevention
 })();
 </script>
 
@@ -402,7 +395,14 @@ window.__AH_RULES__ = {
         if(v==='max'){ applyUsd(computeSessionMaxUsd(getCur(curToggle), cfg.minUsd, cfg.maxUsd)); } else { applyUsd(parseFloat(v)||0); } };
       addEventListener('bag:pricesUpdated', resync); curToggle?.addEventListener('change', resync);
     }
-    paintUnits(); if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
+    paintUnits();
+    /* FORCE DEFAULTS: 1 XRP */
+    try{
+      document.querySelector('input[name="betCur"][value="XRP"]').checked = true;
+      document.getElementById('betQty').value = '1';
+      window.dispatchEvent(new Event('bag:hudRefresh'));
+    }catch{}
+    if(rUsd()>0){ STATE.lastEdited='usd'; syncFromUSD(); } else { STATE.lastEdited='qty'; syncFromQty(); } renderLimits();
   }
   global.BAGStakeWire={ init };
 })(window);
@@ -565,7 +565,7 @@ function create(){
 
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
-  // selections bind
+  // selections bind (bugfix: no nonexistent element writes)
   const bestSel=document.getElementById('seriesBest');
   const goalsSel=document.getElementById('targetGoals');
   series.best = parseInt(bestSel.value,10) || window.__AH_RULES__.series.default;
@@ -577,9 +577,7 @@ function create(){
     series.need = (series.best>>1)+1;
     paintTopHud();
   });
-  goalsSel.addEventListener('change', ()=>{
-    document.getElementById('goalTarget').textContent = goalsSel.value;
-  });
+  goalsSel.addEventListener('change', ()=>{ /* paint happens automatically */ });
 
   // table
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
@@ -645,13 +643,13 @@ function create(){
     ring.x = gx; ring.y = gy;
   };
 
-  // TOUCH GLIDE — track one pointer id to prevent “hops”
+  // TOUCH GLIDE — single pointer id to prevent “hops”
   lowerZone.on('pointerdown',(p)=>{ if(!gameArmed) return; touchActive=true; touchId=p.id; ring.setAlpha(0.6); setTarget(p.worldX,p.worldY); });
   lowerZone.on('pointermove',(p)=>{ if(!gameArmed) return; if(touchActive && p.id===touchId){ setTarget(p.worldX,p.worldY); } });
   lowerZone.on('pointerup',  (p)=>{ if(p.id===touchId){ touchActive=false; ring.setAlpha(0); } });
   lowerZone.on('pointerout', (p)=>{ if(p.id===touchId){ touchActive=false; ring.setAlpha(0); } });
 
-  // also allow dragging the paddle directly (updates target, not position)
+  // drag paddle updates target (not position)
   const r = player.displayWidth*0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
@@ -815,7 +813,6 @@ function update(time, delta){
   document.getElementById('clock').textContent = gameArmed ? mmss(clock.remain) : mmss(clock.total);
 
   // Smoothly move paddle toward target to kill “hop”
-  // 0.35 blend per frame @120fps ~ quick but smooth
   player.x = lerp(player.x, playerTarget.x, 0.35);
   player.y = lerp(player.y, playerTarget.y, 0.35);
 
@@ -962,7 +959,6 @@ function serve(scene, scoredBy){
 /* ------- HUD paint ------- */
 function paintTopHud(){
   document.getElementById('seriesScore').textContent = `${series.p}–${series.c}`;
-  document.getElementById('goalTarget')?.textContent = document.getElementById('targetGoals')?.value || window.__AH_RULES__.targetGoals.default;
   document.getElementById('clock').textContent = mmss(clock.remain);
   flashServeArrows(series.nextServe);
 }
