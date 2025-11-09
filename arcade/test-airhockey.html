@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
-<!-- Preload audio to cut first-tap latency -->
+<!-- Preload SFX to cut first-tap latency -->
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
@@ -22,7 +22,7 @@
 :root{
   --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
   --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
-  --vh:100vh; /* will be patched by JS for mobile */
+  --vh:100vh;
 }
 html,body{
   margin:0;padding:0;background:var(--bg);color:var(--fg);
@@ -42,21 +42,19 @@ a.back:hover,a.back:focus,a.back:active{text-decoration:none}
 img{display:block;max-width:100%;height:auto}
 canvas{display:block;margin:auto;touch-action:none}
 
-/* Game wrap sticks to viewport height on mobile so it stays on screen */
+/* Keep match HUD visible; game area fits remaining viewport height */
 .game-stick{
-  position:relative;
-  max-width:1080px;margin:0 auto;border-radius:16px;overflow:hidden;
-  height:calc(var(--vh) - 160px); /* leaves room for top HUD + pills; adjusted by JS on resize */
-  min-height:420px;
+  position:relative; max-width:1080px; margin:0 auto; border-radius:16px; overflow:hidden;
+  height:clamp(420px, min(calc(var(--vh) - 240px), 78vh), 920px);
+  background:#021107;
+}
+@media (max-width:480px){
+  .game-stick{ height:clamp(420px, min(calc(var(--vh) - 260px), 74vh), 800px); }
 }
 
-/* Container that Phaser mounts into */
-#gameContainer{
-  width:100%;height:100%;
-  border-radius:12px;overflow:hidden;background:#021107;
-}
+#gameContainer{width:100%;height:100%;border-radius:12px;overflow:hidden}
 
-/* Hero image sizing */
+/* Hero */
 .hero-wrap{padding:68px 12px 6px}
 .hero-img{margin:0 auto 8px;width:100%;max-width:960px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
 @media (min-width:900px){ .hero-img{max-width:720px}}
@@ -71,9 +69,7 @@ canvas{display:block;margin:auto;touch-action:none}
 .preset-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
 .preset-chip{
   appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;
-  padding:12px 16px; /* bigger */
-  font-size:1rem;   /* bigger */
-  font-weight:900;cursor:pointer
+  padding:12px 16px;font-size:1rem;font-weight:900;cursor:pointer
 }
 .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
 .hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
@@ -83,7 +79,7 @@ canvas{display:block;margin:auto;touch-action:none}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 
 /* Top match HUD */
-.top-hud{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;margin:8px 0;border:1px solid #224631;background:linear-gradient(180deg,#10331f,#0b2418);border-radius:12px}
+.top-hud{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;margin:8px 0;border:1px solid #224631;background:linear-gradient(180deg,#10331f,#0b2418);border-radius:12px;flex-wrap:wrap}
 .top-hud .side{display:flex;align-items:center;gap:8px;font-weight:800}
 .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:999px;padding:6px 10px;font-weight:800}
 .small{font-size:.85rem}
@@ -123,7 +119,7 @@ canvas{display:block;margin:auto;touch-action:none}
   <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <div id="sessionStatus" style="font-size:.9rem">Session: <span id="sessionModeLbl" style="color:#2fb6a9">Demo</span></div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button id="toggleDemoBtn" class="btn" title="Toggle Demo/Live">Demo Mode</button>
         <button id="startSessionBtn" class="btn">Start Session</button>
         <button id="endSessionBtn" class="btn" style="display:none">End</button>
@@ -222,7 +218,7 @@ canvas{display:block;margin:auto;touch-action:none}
   <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
 
-    <!-- Top Match HUD -->
+    <!-- Top Match HUD (always on-screen) -->
     <div class="top-hud" id="topHud">
       <div class="side">Player <span id="servePlayer" class="arrow" title="Serve">⬅</span></div>
       <div class="badge" title="Series Score">
@@ -237,7 +233,7 @@ canvas{display:block;margin:auto;touch-action:none}
     <!-- Sticky, viewport-fitted game area -->
     <div class="game-stick">
       <div id="gameContainer"></div>
-      <!-- Start gate overlay (blocks gameplay until chosen + started) -->
+      <!-- Start gate overlay -->
       <div id="startGate" class="start-overlay">
         <h3>Choose your series & stake, then start</h3>
         <button id="gateStartBtn" class="btn">Start Game</button>
@@ -264,32 +260,26 @@ canvas{display:block;margin:auto;touch-action:none}
 <!-- ===== RULES ===== -->
 <script>
 window.__AH_RULES__ = {
-  series: { options:[3,5,7], default:5 },         // best-of-N
+  series: { options:[3,5,7], default:5 },
   targetGoals: { options:[5,7,9], default:7 },
-  gameClockSec: 180,                               // 3:00
+  gameClockSec: 180,
   suddenDeathOT: true,
   overtimeCapSec: 60,
   mercyLead: 5,
-  serve: { first:'player', alternateByGame:true, concedeSideServesAfterGoal:true, dropCountdownMs:900 },
-  antiStall: { trapMs:2000 },
-  disconnect: { graceMs:10000, forfeitGame:true }
+  serve: { first:'player', alternateByGame:true, dropCountdownMs:900 },
+  antiStall: { trapMs:2000 }
 };
 </script>
 
-<!-- ===== MOBILE VH FIX (keeps game on-screen) ===== -->
+<!-- ===== MOBILE VH FIX ===== -->
 <script>
 (function(){
-  function setVH(){
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh*100}px`);
-  }
-  setVH();
-  addEventListener('resize', setVH);
-  addEventListener('orientationchange', setVH);
+  function setVH(){ const vh = window.innerHeight * 0.01; document.documentElement.style.setProperty('--vh', `${vh*100}px`); }
+  setVH(); addEventListener('resize', setVH); addEventListener('orientationchange', setVH);
 })();
 </script>
 
-<!-- ===== LIVE PRICING (AMM + cache, same engine as Dice) ===== -->
+<!-- ===== LIVE PRICING (AMM + cache) ===== -->
 <script>
 (function(){
   const PRICE_REFRESH_MS=15000, FETCH_TIMEOUT_MS=8000, LIVE_CACHE_TTL_MS=86400000, VIEW_CACHE_TTL_MS=21600000;
@@ -363,7 +353,7 @@ window.__AH_RULES__ = {
 })();
 </script>
 
-<!-- ===== Stake Wire (sync with pricing) ===== -->
+<!-- ===== Stake Wire ===== -->
 <script>
 (function(global){
   const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
@@ -472,7 +462,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- ===== Air Hockey Game + Series Controller (gated start) ===== -->
+<!-- ===== Air Hockey Game + Series Controller ===== -->
 <script>
 /* ------- Phaser config ------- */
 const config = {
@@ -483,7 +473,7 @@ const config = {
   input: { activePointers: 5 }
 };
 
-/* ------- Game tuning ------- */
+/* ------- Tuning ------- */
 const PADDLE_SCALE = 0.20;
 const PUCK_SCALE   = 0.09;
 const GOAL_HALF    = 140;
@@ -497,7 +487,7 @@ const STUCK_COOLDOWN  = 800;
 const CPU_RETREAT_Y   = 280;
 
 /* ------- State ------- */
-let puck, player, cpu, scoreText, ring;
+let puck, player, cpu, scoreText, ring, lowerZone;
 let goalTop, goalBottom;
 let scorePlayer = 0, scoreCPU = 0;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
@@ -507,7 +497,7 @@ let series = { best:5, need:3, p:0, c:0, gameIndex:1, nextServe:'player' };
 let clock = { total:180000, remain:180000, running:false, sudden:false, otCap:60000, otStart:0 };
 let dropText = null;
 
-let gameArmed = false; // GATE: no gameplay until user starts
+let gameArmed = false; // gate
 
 // stuck tracking
 let stuckStart = 0;
@@ -515,6 +505,35 @@ let lastKickAt = 0;
 
 // sfx throttle
 let lastHitAt = 0;
+
+/* ------- WebAudio helper (countdown + buzzer) ------- */
+const AudioFX = {
+  ctx:null,
+  init(scene){ try{ this.ctx = scene.sound.context; }catch{} },
+  beep(freq=800, ms=140, vol=0.07){
+    if(!this.ctx) return;
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type='square'; o.frequency.value=freq;
+    g.gain.value=0; o.connect(g); g.connect(this.ctx.destination);
+    const t=this.ctx.currentTime;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ms/1000);
+    o.start(t); o.stop(t + ms/1000 + 0.02);
+  },
+  buzzer(ms=900, vol=0.08){
+    if(!this.ctx) return;
+    const o=this.ctx.createOscillator(), n=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type='sawtooth'; n.type='square';
+    o.frequency.value=120; n.frequency.value=60;
+    g.gain.value=0; o.connect(g); n.connect(g); g.connect(this.ctx.destination);
+    const t=this.ctx.currentTime;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ms/1000);
+    o.start(t); n.start(t); o.stop(t + ms/1000 + 0.05); n.stop(t + ms/1000 + 0.05);
+  }
+};
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -542,9 +561,11 @@ function create(){
   };
   this.input.on('pointerdown', unlockAudio);
 
+  AudioFX.init(this);
+
   const w=this.scale.width, h=this.scale.height, cx=w/2;
 
-  // RULES selections bind
+  // selections bind
   const bestSel=document.getElementById('seriesBest');
   const goalsSel=document.getElementById('targetGoals');
   series.best = parseInt(bestSel.value,10) || window.__AH_RULES__.series.default;
@@ -560,7 +581,7 @@ function create(){
     document.getElementById('goalTarget').textContent = goalsSel.value;
   });
 
-  // BG
+  // table
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
   this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
@@ -594,49 +615,54 @@ function create(){
     this.sfx.goal = this.sound.add('goal',{volume:.55});
   }catch(e){}
 
-  // touch ring
+  // touch helper ring
   ring = this.add.graphics({ x: 0, y: 0 });
   ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
   ring.setAlpha(0);
 
-  // input
+  // BIGGER control zone for finger slide (lower 45% of table)
+  const controlTop = h*0.55;
+  lowerZone = this.add.zone(w/2, controlTop + (h - controlTop)/2, w, h - controlTop)
+                 .setInteractive({useHandCursor:false});
+
   const clamp = Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
-    if(!gameArmed) return; // block movement until start
+    if(!gameArmed) return; // gate
     const ww=this.scale.width, hh=this.scale.height;
     const half = player.displayWidth*0.5;
     const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
-    const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
+    const targetY = clamp(gy + POINTER_OFFSET_Y, Math.max(controlTop, hh*0.5) + half, hh - WALL_MARGIN);
     player.x = targetX; player.y = targetY;
     ring.x = gx; ring.y = gy;
   };
-  const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
+
+  // continuous slide (press anywhere in lowerZone and drag)
   lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
+  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
   lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
   lowerZone.on('pointerout', ()=> ring.setAlpha(0));
-  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
+
+  // also allow dragging the paddle directly
   const r = player.displayWidth*0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
   this.input.dragDistanceThreshold=0;
   player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
-  this.input.on('pointermove',(p)=>{ if(p.isDown && p.worldY>=this.scale.height*0.5){ moveTo(p.worldX,p.worldY); } });
   this.input.on('pointerup', ()=> ring.setAlpha(0));
 
-  // Score text (per game)
+  // score text
   scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  // Drop countdown text
+  // drop countdown
   dropText = this.add.text(cx, h/2, '', {fontFamily:'Orbitron',fontSize:'120px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:8}).setOrigin(0.5,0.5);
   dropText.setAlpha(0);
 
-  // GATE: require Start Match + Start Game
+  // GATE
   const gate = document.getElementById('startGate');
   const startMatchBtn = document.getElementById('startMatchBtn');
   const gateStartBtn  = document.getElementById('gateStartBtn');
 
   startMatchBtn.addEventListener('click', ()=>{
-    // Prepare series config; do NOT start yet. Show overlay gate.
     series.best = parseInt(document.getElementById('seriesBest').value,10);
     series.need = (series.best>>1)+1;
     document.getElementById('seriesLen').textContent = `Bo${series.best}`;
@@ -655,41 +681,44 @@ function create(){
     startNewMatch(this);
   });
 
-  // Initial HUD paint, but DO NOT start anything
   paintTopHud();
 }
 
 /* ------- Match / Game Flow ------- */
 function startNewMatch(scene){
-  series.p=0; series.c=0; series.gameIndex=1;
+  series.p=0; series.c=0; series.gameIndex=1; series.nextServe='player';
   series.need = (series.best>>1)+1;
   paintTopHud();
   window.dispatchEvent(new CustomEvent('bag:matchStart',{detail:{game:'Air Hockey', best:series.best}}));
-  startNewGame(scene, /*alternate?*/ false);
+  startNewGame(scene,false);
 }
 function startNewGame(scene, alternate=true){
-  if(!gameArmed) return; // safety
+  if(!gameArmed) return;
   if(alternate && window.__AH_RULES__.serve.alternateByGame){
     series.nextServe = (series.nextServe==='player')?'cpu':'player';
   }
   scorePlayer=0; scoreCPU=0; goalLock=false;
-  clock.remain = clock.total;
-  clock.running = false;
-  clock.sudden = false;
+  clock.remain = clock.total; clock.running=false; clock.sudden=false;
   dropText.setText('').setAlpha(0);
   scoreText.setText('0 - 0');
   paintTopHud();
   serveCountdown(scene, series.nextServe, ()=>{ if(gameArmed) clock.running=true; });
 }
+
+/* ------- Countdown beeps ------- */
 function serveCountdown(scene, who, onDone){
   if(!gameArmed) return;
   const seq=['3','2','1'];
+  const freqs=[880,700,560]; // descending beeps
   let i=0;
   dropText.setAlpha(1);
   const tick=()=>{
     if(!gameArmed){ dropText.setAlpha(0).setText(''); return; }
-    if(i<seq.length){ dropText.setText(seq[i++]); scene.time.delayedCall(320,tick); }
-    else{
+    if(i<seq.length){
+      dropText.setText(seq[i]);
+      try{ AudioFX.beep(freqs[i], 140, 0.07); }catch{}
+      i++; scene.time.delayedCall(320,tick);
+    } else {
       dropText.setAlpha(0).setText('');
       serve(scene, who==='player'?'cpu':'player');
       if(typeof onDone==='function') onDone();
@@ -706,8 +735,7 @@ function flashServeArrows(serving){
 
 /* ------- Goals / Win logic ------- */
 function onGoal(side){
-  if(!gameArmed) return;
-  if(goalLock || !puck || !puck.body || !puck.body.enable) return;
+  if(!gameArmed || goalLock || !puck?.body?.enable) return;
   try{ this.sfx?.goal?.play(); }catch{}
   if(side==='top') scorePlayer++; else scoreCPU++;
   startGoalSink.call(this, side);
@@ -725,6 +753,7 @@ function onGoal(side){
 /* ------- Finish / Next ------- */
 function finishGame(scene, winner, reason){
   clock.running=false;
+  try{ AudioFX.buzzer(900, 0.08); }catch{}
   window.__AH_LAST__ = `${winner==='player'?'You':'CPU'} won (${reason})`;
   window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
 
@@ -735,7 +764,7 @@ function finishGame(scene, winner, reason){
     const matchWinner = (series.p>series.c)?'player':'cpu';
     window.dispatchEvent(new CustomEvent('bag:matchEnd',{detail:{game:'Air Hockey', winner:matchWinner, series:{p:series.p,c:series.c,best:series.best}}}));
     alert(`Match over — ${matchWinner==='player'?'You':'CPU'} win ${series.p}–${series.c} (Bo${series.best})`);
-    // Reset and re-arm gate to keep control
+    // Re-arm gate
     series.gameIndex=1; series.p=0; series.c=0;
     series.nextServe = (series.nextServe==='player')?'cpu':'player';
     document.getElementById('startGate').style.display='flex';
@@ -785,15 +814,14 @@ function resolvePaddle(paddle, prev, scene){
 
 /* ------- Update (AI + Clock) ------- */
 function update(time, delta){
-  if(!gameArmed){
-    // keep HUD time static at 3:00 until armed
-    document.getElementById('clock').textContent = mmss(clock.total);
-    return;
-  }
+  // clock display even when gated
+  document.getElementById('clock').textContent = gameArmed ? mmss(clock.remain) : mmss(clock.total);
+
+  if(!gameArmed) return;
 
   const w=this.scale.width, h=this.scale.height;
   if(!goalLock){
-    // CPU AI (corner-aware)
+    // CPU AI
     const cx = w/2;
     const rCpu = cpu.displayWidth * 0.5;
     const rPuck = puck.displayWidth * 0.5;
@@ -806,8 +834,7 @@ function update(time, delta){
     const cpuChaseDepth = Math.min(puck.y, h*0.38);
     const targetY = lerp(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
 
-    cpu.x = targetX;
-    cpu.y = targetY;
+    cpu.x = targetX; cpu.y = targetY;
 
     const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
                      (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
@@ -822,7 +849,7 @@ function update(time, delta){
       cpu.y = Phaser.Math.Clamp(cpu.y, WALL_MARGIN + rCpu, h*0.45);
     }
 
-    // Corner escape kick
+    // Corner escape
     const v = puck.body ? puck.body.velocity : {x:0,y:0};
     const speed = Math.hypot(v.x, v.y);
     const inCpuHalf = puck.y < h * 0.5;
@@ -855,7 +882,7 @@ function update(time, delta){
     }
   }
 
-  // Clock
+  // game clock
   if(clock.running && !goalLock){
     clock.remain -= delta;
     if(!clock.sudden && clock.remain<=0){
@@ -870,7 +897,7 @@ function update(time, delta){
       }
     }
   }
-  paintTopHudFast();
+
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 
@@ -930,16 +957,13 @@ function serve(scene, scoredBy){
   window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
 }
 
-/* ------- HUD painting ------- */
+/* ------- HUD paint ------- */
 function paintTopHud(){
   document.getElementById('seriesScore').textContent = `${series.p}–${series.c}`;
   document.getElementById('seriesLen').textContent = `Bo${series.best}`;
   document.getElementById('goalTarget').textContent = document.getElementById('targetGoals').value;
   document.getElementById('clock').textContent = mmss(clock.remain);
   flashServeArrows(series.nextServe);
-}
-function paintTopHudFast(){
-  document.getElementById('clock').textContent = mmss(clock.remain);
 }
 </script>
 </body>
