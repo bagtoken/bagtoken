@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
 
-<!-- Preload SFX to cut first-tap latency -->
+<!-- Preload SFX -->
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
@@ -66,10 +66,10 @@ canvas{display:block;margin:auto;touch-action:none}
 .chip input{accent-color:#2fbf6b}
 .mono{font-variant-numeric:tabular-nums}
 .micro{font-size:.85rem;color:#aeb7af}
-.preset-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.preset-chips{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
 .preset-chip{
   appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;
-  padding:12px 16px;font-size:1rem;font-weight:900;cursor:pointer
+  padding:14px 18px;font-size:1.02rem;font-weight:900;cursor:pointer
 }
 .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
 .hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
@@ -78,17 +78,23 @@ canvas{display:block;margin:auto;touch-action:none}
 .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 
-/* Top match HUD */
-.top-hud{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;margin:8px 0;border:1px solid #224631;background:linear-gradient(180deg,#10331f,#0b2418);border-radius:12px;flex-wrap:wrap}
+/* Top match HUD (fat, obvious selectors) */
+.top-hud{position:sticky;top:0;z-index:1050;display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:10px 10px;margin:8px 0;border:1px solid #224631;background:linear-gradient(180deg,#10331f,#0b2418);border-radius:12px;flex-wrap:wrap}
 .top-hud .side{display:flex;align-items:center;gap:8px;font-weight:800}
-.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:999px;padding:6px 10px;font-weight:800}
-.small{font-size:.85rem}
+.badge{display:inline-flex;align-items:center;gap:8px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:12px;padding:8px 12px;font-weight:800}
+.small{font-size:.95rem}
 .arrow{font-size:14px}
+.select-big{
+  appearance:none;background:#0b2217;border:2px solid #37c777;color:#f5fff7;border-radius:12px;
+  padding:10px 12px;font-weight:900;letter-spacing:.02em
+}
 .rule-pill{position:fixed;right:12px;bottom:12px;z-index:1200}
 .start-overlay{
   position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,17,7,.92),rgba(2,17,7,.92));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:1000
 }
 .start-overlay h3{margin:0;font-size:1.2rem}
+.highlight{box-shadow:0 0 0 3px rgba(55,199,119,.35)}
 </style>
 </head>
 <body>
@@ -123,33 +129,6 @@ canvas{display:block;margin:auto;touch-action:none}
         <button id="toggleDemoBtn" class="btn" title="Toggle Demo/Live">Demo Mode</button>
         <button id="startSessionBtn" class="btn">Start Session</button>
         <button id="endSessionBtn" class="btn" style="display:none">End</button>
-      </div>
-    </div>
-
-    <div class="divider"></div>
-
-    <!-- Match setup -->
-    <div class="stack" id="matchSetup">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-        <div class="badge small">Series:
-          <select id="seriesBest" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:8px 10px">
-            <option value="3">Best of 3</option>
-            <option value="5" selected>Best of 5</option>
-            <option value="7">Best of 7</option>
-          </select>
-        </div>
-        <div class="badge small">Target:
-          <select id="targetGoals" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:8px 10px">
-            <option value="5">First to 5</option>
-            <option value="7" selected>First to 7</option>
-            <option value="9">First to 9</option>
-          </select>
-        </div>
-        <div class="badge small">Clock: <span class="mono" style="margin-left:8px">3:00</span></div>
-        <div class="badge small">OT: <b style="margin-left:8px">Sudden Death</b></div>
-      </div>
-      <div>
-        <button id="startMatchBtn" class="btn">Start Match</button>
       </div>
     </div>
 
@@ -218,15 +197,32 @@ canvas{display:block;margin:auto;touch-action:none}
   <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
 
-    <!-- Top Match HUD (always on-screen) -->
+    <!-- Top Match HUD (sticky + big selectors) -->
     <div class="top-hud" id="topHud">
       <div class="side">Player <span id="servePlayer" class="arrow" title="Serve">⬅</span></div>
-      <div class="badge" title="Series Score">
-        Series <span id="seriesScore" class="mono" style="margin-left:8px">0–0</span>
-        <span id="seriesLen" class="small" style="margin-left:10px">Bo5</span>
+
+      <div class="badge highlight">
+        Series
+        <select id="seriesBest" class="select-big" title="Best-of">
+          <option value="3">Best of 3</option>
+          <option value="5" selected>Best of 5</option>
+          <option value="7">Best of 7</option>
+        </select>
+        <span id="seriesScore" class="mono small" style="margin-left:6px">0–0</span>
       </div>
+
+      <div class="badge highlight">
+        Target
+        <select id="targetGoals" class="select-big" title="First to">
+          <option value="5">First to 5</option>
+          <option value="7" selected>First to 7</option>
+          <option value="9">First to 9</option>
+        </select>
+      </div>
+
       <div class="badge" title="Game Clock">⏱ <span id="clock" class="mono" style="margin-left:6px">3:00</span></div>
-      <div class="badge small" title="Target Goals">🎯 First to <b id="goalTarget" class="mono" style="margin-left:6px">7</b></div>
+      <div class="badge small" title="OT">OT: <b style="margin-left:6px">Sudden Death</b></div>
+
       <div class="side">CPU <span id="serveCPU" class="arrow" title="Serve" style="opacity:.25">⬅</span></div>
     </div>
 
@@ -235,7 +231,7 @@ canvas{display:block;margin:auto;touch-action:none}
       <div id="gameContainer"></div>
       <!-- Start gate overlay -->
       <div id="startGate" class="start-overlay">
-        <h3>Choose your series & stake, then start</h3>
+        <h3>Select Series + Target, then Start</h3>
         <button id="gateStartBtn" class="btn">Start Game</button>
       </div>
     </div>
@@ -449,15 +445,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const best=parseInt(document.getElementById('seriesBest').value,10);
     const goals=parseInt(document.getElementById('targetGoals').value,10);
     const slip={ game:'Air Hockey', best, goals, cur, qty, demo:DEMO };
-    window.dispatchEvent(new CustomEvent('bag:challenge', { detail: slip }));
+    window.dispatchEvent(new CustomEvent('bag:challenge', { detail: slip })); // hook for The Cage / matchmaker
     document.getElementById('challengeBtn').textContent='Challenge Sent';
     setTimeout(()=>document.getElementById('challengeBtn').textContent='Issue Challenge',1200);
   });
 
   document.getElementById('rulesBtn').addEventListener('click', ()=>{
-    const copy = `Air Hockey Rules — Best-of-3/5/7. Each game is first to ${document.getElementById('goalTarget').textContent} or 3:00 on the clock. If time expires, sudden-death. Mercy at +${window.__AH_RULES__.mercyLead}. Serve alternates each game; after goals, conceding side serves after a 3-2-1 drop. Own goals count. No trapping > 2s — whistle + center drop. Puck out → center drop.`;
+    const copy = `Air Hockey Rules — Best-of-3/5/7. Each game is first to ${document.getElementById('targetGoals').value} or 3:00 on the clock. If time expires, sudden-death. Mercy at +${window.__AH_RULES__.mercyLead}. Serve alternates each game; after goals, conceding side serves after a 3-2-1 drop. Own goals count. No trapping > 2s — whistle + center drop. Puck out → center drop.`;
     window.dispatchEvent(new CustomEvent('bag:rules', { detail: { title:'Air Hockey Rules', body:copy } }));
-    alert(copy); // fallback
+    alert(copy); // quick fallback
   });
 });
 </script>
@@ -497,7 +493,11 @@ let series = { best:5, need:3, p:0, c:0, gameIndex:1, nextServe:'player' };
 let clock = { total:180000, remain:180000, running:false, sudden:false, otCap:60000, otStart:0 };
 let dropText = null;
 
-let gameArmed = false; // gate
+let gameArmed = false; // start gate
+
+// TOUCH GLIDE STATE
+let touchActive=false, touchId=null;
+let playerTarget={x:0,y:0};
 
 // stuck tracking
 let stuckStart = 0;
@@ -600,6 +600,9 @@ function create(){
     centerBodyOnTexture(p);
   });
 
+  // init glide target
+  playerTarget.x = player.x; playerTarget.y = player.y;
+
   // goal sensors
   goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
   goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
@@ -620,34 +623,40 @@ function create(){
   ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
   ring.setAlpha(0);
 
-  // BIGGER control zone for finger slide (lower 45% of table)
-  const controlTop = h*0.55;
+  // BIGGER control zone for finger slide (lower portion)
+  const controlTop = Math.max(h*0.52, h*0.5);
   lowerZone = this.add.zone(w/2, controlTop + (h - controlTop)/2, w, h - controlTop)
                  .setInteractive({useHandCursor:false});
 
   const clamp = Phaser.Math.Clamp;
-  const moveTo=(gx,gy)=>{
-    if(!gameArmed) return; // gate
+  const clampToPlayerField=(gx,gy)=>{
     const ww=this.scale.width, hh=this.scale.height;
     const half = player.displayWidth*0.5;
-    const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
-    const targetY = clamp(gy + POINTER_OFFSET_Y, Math.max(controlTop, hh*0.5) + half, hh - WALL_MARGIN);
-    player.x = targetX; player.y = targetY;
+    const x = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
+    const y = clamp(gy + POINTER_OFFSET_Y, Math.max(controlTop, hh*0.5) + half, hh - WALL_MARGIN);
+    return {x,y};
+  };
+
+  // Smooth target setter (don’t snap)
+  const setTarget=(gx,gy)=>{
+    if(!gameArmed) return;
+    const t = clampToPlayerField(gx,gy);
+    playerTarget.x = t.x; playerTarget.y = t.y;
     ring.x = gx; ring.y = gy;
   };
 
-  // continuous slide (press anywhere in lowerZone and drag)
-  lowerZone.on('pointerdown',(p)=>{ ring.setAlpha(0.6); moveTo(p.worldX,p.worldY); });
-  lowerZone.on('pointermove',(p)=>{ if(p.isDown) moveTo(p.worldX,p.worldY); });
-  lowerZone.on('pointerup',  ()=> ring.setAlpha(0));
-  lowerZone.on('pointerout', ()=> ring.setAlpha(0));
+  // TOUCH GLIDE — track one pointer id to prevent “hops”
+  lowerZone.on('pointerdown',(p)=>{ if(!gameArmed) return; touchActive=true; touchId=p.id; ring.setAlpha(0.6); setTarget(p.worldX,p.worldY); });
+  lowerZone.on('pointermove',(p)=>{ if(!gameArmed) return; if(touchActive && p.id===touchId){ setTarget(p.worldX,p.worldY); } });
+  lowerZone.on('pointerup',  (p)=>{ if(p.id===touchId){ touchActive=false; ring.setAlpha(0); } });
+  lowerZone.on('pointerout', (p)=>{ if(p.id===touchId){ touchActive=false; ring.setAlpha(0); } });
 
-  // also allow dragging the paddle directly
+  // also allow dragging the paddle directly (updates target, not position)
   const r = player.displayWidth*0.5;
   player.setInteractive(new Phaser.Geom.Circle(0,0,r), Phaser.Geom.Circle.Contains);
   this.input.setDraggable(player);
   this.input.dragDistanceThreshold=0;
-  player.on('drag',(pointer,dragX,dragY)=>{ ring.setAlpha(0.6); moveTo(dragX,dragY); });
+  player.on('drag',(pointer,dragX,dragY)=>{ if(!gameArmed) return; ring.setAlpha(0.6); setTarget(dragX,dragY); });
   this.input.on('pointerup', ()=> ring.setAlpha(0));
 
   // score text
@@ -659,21 +668,9 @@ function create(){
 
   // GATE
   const gate = document.getElementById('startGate');
-  const startMatchBtn = document.getElementById('startMatchBtn');
   const gateStartBtn  = document.getElementById('gateStartBtn');
-
-  startMatchBtn.addEventListener('click', ()=>{
-    series.best = parseInt(document.getElementById('seriesBest').value,10);
-    series.need = (series.best>>1)+1;
-    document.getElementById('seriesLen').textContent = `Bo${series.best}`;
-    document.getElementById('goalTarget').textContent = document.getElementById('targetGoals').value;
-    gate.style.display='flex';
-    gameArmed = false;
-    clock.running=false;
-    paintTopHud();
-    window.__AH_LAST__ = 'Ready';
-    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-  });
+  gate.style.display='flex'; // force choose before play
+  gameArmed=false;
 
   gateStartBtn.addEventListener('click', ()=>{
     gate.style.display='none';
@@ -709,7 +706,7 @@ function startNewGame(scene, alternate=true){
 function serveCountdown(scene, who, onDone){
   if(!gameArmed) return;
   const seq=['3','2','1'];
-  const freqs=[880,700,560]; // descending beeps
+  const freqs=[880,700,560];
   let i=0;
   dropText.setAlpha(1);
   const tick=()=>{
@@ -764,7 +761,7 @@ function finishGame(scene, winner, reason){
     const matchWinner = (series.p>series.c)?'player':'cpu';
     window.dispatchEvent(new CustomEvent('bag:matchEnd',{detail:{game:'Air Hockey', winner:matchWinner, series:{p:series.p,c:series.c,best:series.best}}}));
     alert(`Match over — ${matchWinner==='player'?'You':'CPU'} win ${series.p}–${series.c} (Bo${series.best})`);
-    // Re-arm gate
+    // Re-arm gate for new match
     series.gameIndex=1; series.p=0; series.c=0;
     series.nextServe = (series.nextServe==='player')?'cpu':'player';
     document.getElementById('startGate').style.display='flex';
@@ -812,10 +809,15 @@ function resolvePaddle(paddle, prev, scene){
   }
 }
 
-/* ------- Update (AI + Clock) ------- */
+/* ------- Update (AI + Clock + TOUCH GLIDE) ------- */
 function update(time, delta){
   // clock display even when gated
   document.getElementById('clock').textContent = gameArmed ? mmss(clock.remain) : mmss(clock.total);
+
+  // Smoothly move paddle toward target to kill “hop”
+  // 0.35 blend per frame @120fps ~ quick but smooth
+  player.x = lerp(player.x, playerTarget.x, 0.35);
+  player.y = lerp(player.y, playerTarget.y, 0.35);
 
   if(!gameArmed) return;
 
@@ -960,8 +962,7 @@ function serve(scene, scoredBy){
 /* ------- HUD paint ------- */
 function paintTopHud(){
   document.getElementById('seriesScore').textContent = `${series.p}–${series.c}`;
-  document.getElementById('seriesLen').textContent = `Bo${series.best}`;
-  document.getElementById('goalTarget').textContent = document.getElementById('targetGoals').value;
+  document.getElementById('goalTarget')?.textContent = document.getElementById('targetGoals')?.value || window.__AH_RULES__.targetGoals.default;
   document.getElementById('clock').textContent = mmss(clock.remain);
   flashServeArrows(series.nextServe);
 }
