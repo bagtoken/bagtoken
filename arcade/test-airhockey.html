@@ -1,18 +1,20 @@
 <!-- =========================================================
   $BAG Air Hockey — Arcade P2E (FULL PAGE, NO PLACEHOLDERS)
+  Update: Gameplay options reorganized (same size, cleaner grid)
+          P2P made easier via one-tap Share Link + QR (no manual copy)
   Sections:
-   1) <head> — libs, preload, base CSS (unchanged), + tiny Practice CSS
-   2) HERO + HEADER (unchanged)
-   3) CONTROL PANEL — Session row + Stake + Practice balances + Live Prices
-   4) GAMEPLAY OPTIONS + P2P VERSUS (+ NEW: Match Type + Series Length)
-   5) GAME PANEL — Phaser canvas + HUD + Start Overlay (physics gated until Start)
+   1) <head> — libs, preload, base CSS (+ options grid + modal)
+   2) HERO + HEADER
+   3) CONTROL PANEL — Practice + Stake + Live Prices
+   4) GAMEPLAY OPTIONS — Mode · Win Type · Series  |  P2P: Share Link + QR
+   5) GAME PANEL — Phaser canvas + HUD + Start Overlay (gated until Start)
    6) FOOTER
-   7) PRICES MODULE (AMM + cache with XRP key)  [kept from your working build]
-   8) STAKE WIRE (keeps your betQty / curToggle wiring)
-   9) HUD GLUE (reads demo balance; targets #ahHud + __AH_LAST__)
-  10) PRACTICE/DEMO CORE (seeds $2,000 USD equiv BAG; forces 1 XRP once)
-  11) AIR HOCKEY GAME (your original game, intact; freeze hook after serve)
-  12) GAMEPLAY OPTIONS + P2P + START GATE + NEW TIMED/ SERIES LOGIC
+   7) PRICES MODULE
+   8) STAKE WIRE
+   9) HUD GLUE
+  10) PRACTICE/DEMO CORE
+  11) AIR HOCKEY GAME (intact; start gate honored)
+  12) GAMEPLAY OPTIONS + P2P (Share Link/QR) + TIMED/SERIES
 ========================================================= -->
 <!DOCTYPE html>
 <html lang="en">
@@ -24,39 +26,36 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script src="https://xaman.app/assets/cdn/xumm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 
-<!-- Preload audio to cut first-tap latency -->
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
-<!-- Shared UI logic -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
 
 <style>
 :root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;-webkit-tap-highlight-color:transparent}
 .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
-.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19}
 .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 .btn.ghost{background:#0f2118;color:#eaf3ee;border:1px solid #2a5b3f;box-shadow:none}
 .btn.alt{background:linear-gradient(180deg,#c6d4cc,#a9bbb1);color:#072014;box-shadow:0 4px 0 #6c7c73}
 .divider{height:1px;background:#123221;margin:14px 0}
 .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
 a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
-a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
 img{display:block;max-width:100%;height:auto}
 canvas{display:block;margin:auto}
 #gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
-#gameContainer canvas{touch-action:none;-ms-touch-action:none}
 
-/* Hero image sizing (mobile-first) */
+/* Hero */
 .hero-wrap{padding:68px 12px 6px}
-.hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+.hero-img{margin:0 auto 8px;width:100%;max-width:960px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
 @media (min-width:900px){ .hero-img{max-width:720px}}
 
-/* Stake/HUD (Dice parity) */
+/* Stake/HUD */
 .stack{display:grid;gap:10px}
 .choice{display:flex;gap:10px;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
@@ -72,17 +71,33 @@ canvas{display:block;margin:auto}
 .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 
-/* Practice balances (pulled out of inline) */
+/* Practice balances */
 .practiceBlock{user-select:none;-webkit-touch-callout:none}
 .practiceBlock .title{font-weight:800;margin-bottom:4px}
 .practiceBlock .line b{font-weight:800}
 
-/* Start overlay over gameboard */
+/* Start overlay */
 .start-overlay-wrap{position:relative;max-width:1024px;margin:0 auto}
-.start-overlay-btn{
-  position:absolute; inset:auto 0 40% 0; margin:auto; width:max-content;
-  z-index:50; padding:14px 18px; font-size:1rem; border-radius:14px; display:none;
-}
+.start-overlay-btn{position:absolute;inset:auto 0 40% 0;margin:auto;width:max-content;z-index:50;padding:14px 18px;font-size:1rem;border-radius:14px;display:none}
+
+/* Gameplay options grid — same control size, cleaner org */
+.opt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:8px}
+.opt-card{border:1px solid #244330;background:#0a1e15;border-radius:12px;padding:10px}
+.opt-head{font-size:.8rem;font-weight:900;letter-spacing:.06em;color:#e5f4ea;opacity:.9;margin-bottom:6px}
+.opt-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.opt-note{font-size:.8rem;opacity:.9;margin-top:6px}
+
+/* P2P simplified: link + QR modal */
+.p2p-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.p2p-inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.p2p-field{flex:1 1 280px;min-width:260px}
+.input{width:100%;background:#07150f;border:1px solid #244330;border-radius:10px;color:#e8f2ec;padding:10px;font-family:ui-monospace,Consolas,monospace}
+
+/* Modal for QR */
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:9999}
+.modal .box{background:#0b1b13;border:1px solid #244330;border-radius:16px;padding:16px;max-width:92vw}
+.modal .box h3{margin:0 0 10px}
+.modal .box .qr{width:256px;height:256px;margin:auto}
 </style>
 </head>
 <body>
@@ -105,18 +120,16 @@ canvas{display:block;margin:auto}
 </section>
 
 <section style="text-align:center;padding:0 12px 10px">
-  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
-  <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
+  <h2 style="margin:0;font-size:1.6rem;">$BAG Air Hockey — Arcade P2E</h2>
+  <p style="font-size:.95rem;opacity:.9;">$XRP stakes auto-convert · $BAG payouts</p>
 </section>
 
-<!-- 3) CONTROL PANEL — Session row + Stake + Practice + Live Prices -->
+<!-- 3) CONTROL PANEL — Practice + Stake + Live Prices -->
 <section style="padding:0 16px 20px;">
   <div class="panel">
     <!-- Session row -->
     <div id="sessionRow" style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px 0%;">
-      <div id="sessionStatus" class="micro" style="opacity:.9">
-        Session: <span style="color:#2fbf6b">Practice:</span>
-      </div>
+      <div id="sessionStatus" class="micro" style="opacity:.9">Session: <span style="color:#2fbf6b">Practice:</span></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="startSessionBtn" class="btn" style="min-width:auto;padding:8px 12px;">Start Session</button>
         <button id="topUpBtn" class="btn" style="min-width:auto;padding:8px 12px;display:none;">Top Up</button>
@@ -126,14 +139,13 @@ canvas{display:block;margin:auto}
 
     <div class="divider"></div>
 
-    <!-- Stake (keeps your IDs) -->
+    <!-- Stake -->
     <div class="stack">
       <div>
         <div class="micro">Amount</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
-            <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
-                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <input id="usdBet" class="mono input" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00" style="width:180px">
             <span class="micro unit">USD</span>
           </div>
         </div>
@@ -162,8 +174,7 @@ canvas{display:block;margin:auto}
         <div class="micro">Bet amount</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
-            <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
-                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+            <input id="betQty" class="mono input" type="number" inputmode="decimal" min="0" step="any" value="1" style="width:180px">
             <span class="unit">XRP</span>
           </div>
         </div>
@@ -173,9 +184,9 @@ canvas{display:block;margin:auto}
 
     <div class="divider"></div>
 
-    <!-- Practice balances render here via JS (statusEl -> innerHTML) -->
+    <!-- Practice balances render via JS -->
 
-    <!-- Live Prices (under Practice) -->
+    <!-- Live Prices -->
     <div class="marquee">Live Prices</div>
     <div style="text-align:center;font-family:monospace;">
       <span id="liveDot" class="warn">●</span>
@@ -185,99 +196,138 @@ canvas{display:block;margin:auto}
   </div>
 </section>
 
-<!-- 4) GAMEPLAY OPTIONS + P2P (add-on) -->
+<!-- 4) GAMEPLAY OPTIONS — cleaned grid + simpler P2P -->
 <section style="padding:0 16px 20px;">
   <div class="panel" id="gpPanel">
     <div class="marquee">Gameplay Options</div>
 
-    <!-- Mode select -->
-    <div class="opt-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <span style="display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800">Mode</span>
-      <label class="chip"><input type="radio" name="gpMode" value="practice" checked> Solo Practice (CPU)</label>
-      <label class="chip"><input type="radio" name="gpMode" value="p2p"> Versus P2P</label>
-      <button id="gpStartBtn" class="btn ghost" title="Start with current stake">Start Match</button>
-      <span id="gpModeStatus" class="micro" style="opacity:.9;margin-left:8px">CPU match.</span>
-    </div>
-
-    <!-- NEW: Win Type -->
-    <div class="opt-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
-      <span style="display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800">Win Type</span>
-      <label class="chip"><input type="radio" name="gpWinMode" value="score" checked> First to 7</label>
-      <label class="chip"><input type="radio" name="gpWinMode" value="timed"> 3-Minute Timed</label>
-      <span id="gpWinStatus" class="micro" style="opacity:.9">Select win condition.</span>
-    </div>
-
-    <!-- NEW: Series Length -->
-    <div class="opt-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">
-      <span style="display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800">Series</span>
-      <label class="chip"><input type="radio" name="gpSeries" value="1" checked> Single</label>
-      <label class="chip"><input type="radio" name="gpSeries" value="3"> Best of 3</label>
-      <label class="chip"><input type="radio" name="gpSeries" value="5"> Best of 5</label>
-      <label class="chip"><input type="radio" name="gpSeries" value="7"> Best of 7</label>
-      <span id="gpSeriesStatus" class="micro" style="opacity:.9">Series winner takes pot.</span>
-    </div>
-
-    <!-- P2P area -->
-    <div id="gpP2PBox" style="display:none;margin-top:10px">
-      <div class="divider"></div>
-
-      <div class="opt-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <span style="display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800">P2P</span>
-        <button id="p2pCreate" class="btn">Create Match</button>
-        <button id="p2pJoin" class="btn alt">Join Match</button>
-        <span id="p2pState" class="micro" style="opacity:.95">Not connected</span>
+    <div class="opt-grid">
+      <!-- Mode -->
+      <div class="opt-card">
+        <div class="opt-head">MODE</div>
+        <div class="opt-row">
+          <label class="chip"><input type="radio" name="gpMode" value="practice" checked> Solo Practice</label>
+          <label class="chip"><input type="radio" name="gpMode" value="p2p"> Versus P2P</label>
+          <button id="gpStartBtn" class="btn ghost" title="Start with current stake">Start Match</button>
+        </div>
+        <div id="gpModeStatus" class="opt-note">CPU match.</div>
       </div>
 
-      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
-        <div style="flex:1 1 280px;min-width:260px">
-          <div class="micro">Your Offer / Answer</div>
-          <textarea id="p2pLocal" style="width:100%;min-height:76px;background:#07150f;border:1px solid #244330;border-radius:10px;color:#e8f2ec;padding:10px;font-family:ui-monospace,Consolas,monospace"></textarea>
-          <button id="p2pCopy" class="btn ghost" style="margin-top:8px">Copy</button>
+      <!-- Win Type -->
+      <div class="opt-card">
+        <div class="opt-head">WIN TYPE</div>
+        <div class="opt-row">
+          <label class="chip"><input type="radio" name="gpWinMode" value="score" checked> First to 7</label>
+          <label class="chip"><input type="radio" name="gpWinMode" value="timed"> 3-Minute Timed</label>
         </div>
-        <div style="flex:1 1 280px;min-width:260px">
-          <div class="micro">Paste Opponent Offer/Answer</div>
-          <textarea id="p2pRemote" style="width:100%;min-height:76px;background:#07150f;border:1px solid #244330;border-radius:10px;color:#e8f2ec;padding:10px;font-family:ui-monospace,Consolas,monospace" placeholder="Paste here… then click Apply"></textarea>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-            <button id="p2pApply" class="btn">Apply</button>
-            <span id="p2pHint" class="micro" style="opacity:.85">Create → copy Offer → opponent Apply → they send Answer → you Apply.</span>
+        <div id="gpWinStatus" class="opt-note">Select win condition.</div>
+      </div>
+
+      <!-- Series -->
+      <div class="opt-card">
+        <div class="opt-head">SERIES</div>
+        <div class="opt-row">
+          <label class="chip"><input type="radio" name="gpSeries" value="1" checked> Single</label>
+          <label class="chip"><input type="radio" name="gpSeries" value="3"> Best of 3</label>
+          <label class="chip"><input type="radio" name="gpSeries" value="5"> Best of 5</label>
+          <label class="chip"><input type="radio" name="gpSeries" value="7"> Best of 7</label>
+        </div>
+        <div id="gpSeriesStatus" class="opt-note">Series winner takes pot.</div>
+      </div>
+
+      <!-- P2P simplified -->
+      <div class="opt-card" id="gpP2PBox" style="display:none">
+        <div class="opt-head">P2P — EASY CONNECT</div>
+        <div class="p2p-row">
+          <div class="p2p-inline">
+            <button id="p2pCreate" class="btn">Create Link</button>
+            <button id="p2pJoin" class="btn alt">Join via Link</button>
+            <button id="p2pQR" class="btn ghost" title="Show QR for the link">QR</button>
+          </div>
+          <span id="p2pState" class="micro" style="opacity:.95">Not connected</span>
+        </div>
+
+        <div class="opt-note" style="margin-top:6px">
+          Share the link or QR with your opponent. No manual code paste. Fallback “Advanced” is below if needed.
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Share link output -->
+        <div class="p2p-row">
+          <div class="p2p-field">
+            <div class="micro">Shareable Link</div>
+            <input id="p2pLinkOut" class="input" readonly value="">
+          </div>
+          <div class="p2p-inline">
+            <button id="p2pCopyLink" class="btn ghost">Copy Link</button>
           </div>
         </div>
-      </div>
 
-      <div class="divider"></div>
+        <div class="divider"></div>
 
-      <div class="opt-row" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <span style="display:inline-block;border:1px solid #305943;background:#0d2419;color:#e8f2ec;border-radius:999px;padding:4px 8px;font-size:.75rem;font-weight:800">Wager</span>
-        <button id="gpLock" class="btn">Lock Wager (escrow)</button>
-        <span id="gpEscrowStatus" class="micro" style="opacity:.95">Both sides must lock before Start.</span>
+        <!-- Advanced (paste fallback) -->
+        <details>
+          <summary class="micro" style="cursor:pointer">Advanced (manual offer/answer)</summary>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
+            <div class="p2p-field">
+              <div class="micro">Your Offer / Answer</div>
+              <textarea id="p2pLocal" class="input" style="min-height:76px"></textarea>
+              <button id="p2pCopy" class="btn ghost" style="margin-top:8px">Copy</button>
+            </div>
+            <div class="p2p-field">
+              <div class="micro">Paste Opponent Offer/Answer</div>
+              <textarea id="p2pRemote" class="input" style="min-height:76px" placeholder="Paste here… then Apply"></textarea>
+              <div class="p2p-inline" style="margin-top:8px">
+                <button id="p2pApply" class="btn">Apply</button>
+                <span id="p2pHint" class="micro" style="opacity:.85">Create → Link/QR, or paste if needed.</span>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="divider"></div>
+
+        <div class="opt-row">
+          <span class="chip">Wager Escrow</span>
+          <button id="gpLock" class="btn">Lock Wager</button>
+          <span id="gpEscrowStatus" class="micro" style="opacity:.95">Both sides must lock before Start.</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- 5) GAME PANEL — Phaser canvas + HUD + Start Overlay -->
+<!-- QR Modal -->
+<div id="qrModal" class="modal" role="dialog" aria-modal="true" aria-label="QR share">
+  <div class="box">
+    <h3 style="margin:0 0 6px">Scan to Join</h3>
+    <div id="qrBox" class="qr"></div>
+    <div style="text-align:center;margin-top:10px">
+      <button id="qrClose" class="btn alt">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- 5) GAME PANEL -->
 <section style="padding:0 16px 80px;">
   <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
-
     <div class="start-overlay-wrap">
       <div id="gameContainer"></div>
       <button id="startOverlayBtn" class="btn start-overlay-btn">Start</button>
     </div>
-
     <div class="divider"></div>
-
     <div class="hudbar" id="ahHud" aria-live="polite">
       <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
       <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
       <span class="pill">Bet: <b id="betLbl">1</b></span>
-      <span class="pill">Clock: <b id="clockLbl">—</b></span><!-- NEW: match clock -->
+      <span class="pill">Clock: <b id="clockLbl">—</b></span>
       <span class="pill">Last: <b id="lastLbl">—</b></span>
     </div>
   </div>
 </section>
 
-<!-- 6) FOOTER -->
 <footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
 </footer>
@@ -289,7 +339,6 @@ canvas{display:block;margin:auto}
   const BAG_ISSUER='rNeYbfb9EDV8c7mNfUuooEEYYzMcEuDFbr', BAG_CODE='BAG';
   const VIEW_CACHE_KEY='bag_prices_v8', LAST_LIVE_KEY='bag_last_live_v1', XRP_KEY='xrp_usd';
   const PRICES=(window.__PRICES__={bagUsd:0,xrpUsd:0,source:'—',ts:0});
-
   const fmt=n=>Number.isFinite(n)? n.toFixed(6):'—';
   const cacheSet=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), v})); }catch{} };
   const cacheGet=(k,ttl)=>{ try{ const o=JSON.parse(localStorage.getItem(k)||'null'); if(!o) return null; return (Date.now()-(o.t||0))<=ttl?o.v:null; }catch{ return null; } };
@@ -428,30 +477,7 @@ canvas{display:block;margin:auto}
   global.BAGStakeWire={ init };
 })(window);
 
-// simple HUD wire-up
-document.addEventListener('DOMContentLoaded', ()=>{
-  try{ window.BAGStakeWire.init(); }catch{}
-  const betQty=document.getElementById('betQty');
-  const modeLbl=document.getElementById('modeLbl');
-  const betLbl=document.getElementById('betLbl');
-  const ccyLbl=document.getElementById('ccyLbl');
-  const lastLbl=document.getElementById('lastLbl');
-
-  const paintHUD=()=>{
-    betLbl.textContent = betQty.value || '1';
-    const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
-    document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
-    ccyLbl.textContent = cur;
-    modeLbl.textContent = (window.__BAG_FORCE_DEMO===true)?'Demo':'Live';
-    lastLbl.textContent = window.__AH_LAST__ || '—';
-  };
-  paintHUD();
-  document.addEventListener('bag:hudRefresh', paintHUD);
-  ['input','change'].forEach(evt=>{
-    betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
-    document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
-  });
-});
+document.addEventListener('DOMContentLoaded', ()=>{ try{ window.BAGStakeWire.init(); }catch{} });
 </script>
 
 <!-- 9) HUD GLUE -->
@@ -462,7 +488,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   function fmt(n, max=6){ const x = Number(n); if (!Number.isFinite(x)) return '—'; return x.toLocaleString(undefined, { maximumFractionDigits: max }); }
   function els(){ 
     return { 
-      hud: document.getElementById('ahHud'),
       balLbl: document.getElementById('balLbl'),
       ccyLbl: document.getElementById('ccyLbl'),
       betLbl: document.getElementById('betLbl'),
@@ -528,23 +553,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const startBtn  = $('#startSessionBtn');
   const topUpBtn  = $('#topUpBtn');
   const endBtn    = $('#endSessionBtn');
-  const connectEl = $('#connectBtn');
 
-  const DEMO_BAL_KEY   = '__bag_demo_bag_v2';
-  const DEMO_INIT_KEY  = '__bag_demo_init_v2';
-  const START_USD      = 2000;
+  const DEMO_BAL_KEY='__bag_demo_bag_v2', DEMO_INIT_KEY='__bag_demo_init_v2', START_USD=2000;
 
   function PR(){ return window.__PRICES__ || { bagUsd:0, xrpUsd:0 }; }
-  function fmt(n){
-    if(!Number.isFinite(n)) return '—';
-    if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4});
-    if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6});
-    if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8});
-    return n.toLocaleString(undefined,{maximumFractionDigits:10});
-  }
+  function fmt(n){ if(!Number.isFinite(n)) return '—'; if(Math.abs(n)>=1) return n.toLocaleString(undefined,{maximumFractionDigits:4}); if(Math.abs(n)>=1e-2) return n.toLocaleString(undefined,{maximumFractionDigits:6}); if(Math.abs(n)>=1e-4) return n.toLocaleString(undefined,{maximumFractionDigits:8}); return n.toLocaleString(undefined,{maximumFractionDigits:10}); }
   function fmtUsd(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function getBag(){ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } }
-  function setBag(v){ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} }
+  const getBag=()=>{ try{ const n=Number(localStorage.getItem(DEMO_BAL_KEY)); return Number.isFinite(n)&&n>0?n:0; }catch{ return 0; } };
+  const setBag=v=>{ try{ localStorage.setItem(DEMO_BAL_KEY, String(Math.max(0, Number(v)||0))); }catch{} };
 
   function getCachedBagUsd(){
     try{
@@ -558,8 +574,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   function ensureSeedNowOrWhenReady(){
     if (localStorage.getItem(DEMO_INIT_KEY)) return true;
-    const live = Number((PR().bagUsd)||0);
-    const cached = getCachedBagUsd();
+    const live = Number((PR().bagUsd)||0), cached = getCachedBagUsd();
     const bagUsd = live>0 ? live : (cached>0 ? cached : 0);
     if (bagUsd>0){
       const startBag = START_USD / bagUsd;
@@ -585,10 +600,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
           <div class="line">USD: <b>${fmtUsd(usd)}</b></div>
         </div>`;
     }
-
-    if(startBtn) startBtn.style.display='inline-block';
-    if(topUpBtn) topUpBtn.style.display='none';
-    if(endBtn)   endBtn.style.display='none';
   }
 
   const demoSession={
@@ -614,33 +625,27 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 
   function enableDemo(){
-    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }
-    catch{ window.__BAG_FORCE_DEMO=true; }
+    try{ Object.defineProperty(window,'__BAG_FORCE_DEMO',{value:true, configurable:true}); }catch{ window.__BAG_FORCE_DEMO=true; }
     window.__bagSession = demoSession;
     ensureSeedNowOrWhenReady();
     renderDemo();
     addEventListener('bag:pricesUpdated', ()=>{ if (!localStorage.getItem(DEMO_INIT_KEY)){ if(ensureSeedNowOrWhenReady()) renderDemo(); } else { renderDemo(); } });
     forceBetXRP1Once();
-    if (connectEl) connectEl.style.opacity='0.9';
   }
-
   function enableLive(){
     window.__BAG_FORCE_DEMO=false;
     window.dispatchEvent(new CustomEvent('bag:pricesUpdated'));
-    (function(){
-      const bet  = document.getElementById('betQty');
-      const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
-      if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
-      if (bet && (!bet.value || Number(bet.value) <= 0)){
-        bet.value = '1';
-        bet.dispatchEvent(new Event('input',{bubbles:true}));
-        bet.dispatchEvent(new Event('change',{bubbles:true}));
-      }
-      window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
-    })();
+    const bet  = document.getElementById('betQty');
+    const xrpRadio = document.querySelector('#curToggle input[value="XRP"]');
+    if (xrpRadio && !xrpRadio.checked){ xrpRadio.checked = true; xrpRadio.dispatchEvent(new Event('change',{bubbles:true})); }
+    if (bet && (!bet.value || Number(bet.value) <= 0)){
+      bet.value = '1';
+      bet.dispatchEvent(new Event('input',{bubbles:true}));
+      bet.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   }
-
-  if (forceLive) enableLive(); else enableDemo();
+  const qsLive = forceLive; if (qsLive) enableLive(); else enableDemo();
   addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
   document.getElementById('topUpBtn')?.addEventListener('click', ()=>{
@@ -654,7 +659,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 })();
 </script>
 
-<!-- 11) AIR HOCKEY GAME (original + freeze gate) -->
+<!-- 11) AIR HOCKEY GAME (intact; start overlay gate) -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -664,28 +669,14 @@ const config = {
   input: { activePointers: 5 }
 };
 
-const PADDLE_SCALE = 0.20;
-const PUCK_SCALE   = 0.09;
-const GOAL_HALF    = 140;
-const POINTER_OFFSET_Y = -56;
-const WALL_MARGIN  = 100;
+const PADDLE_SCALE = 0.20, PUCK_SCALE = 0.09, GOAL_HALF = 140;
+const POINTER_OFFSET_Y = -56, WALL_MARGIN = 100;
+const CORNER_BAND=150, STUCK_SPEED=60, STUCK_TIME_MS=600, STUCK_COOLDOWN=800, CPU_RETREAT_Y=280;
 
-const CORNER_BAND     = 150;
-const STUCK_SPEED     = 60;
-const STUCK_TIME_MS   = 600;
-const STUCK_COOLDOWN  = 800;
-const CPU_RETREAT_Y   = 280;
-
-let puck, player, cpu, scoreText, ring;
-let goalTop, goalBottom;
-let scorePlayer = 0, scoreCPU = 0;
+let puck, player, cpu, scoreText, ring, goalTop, goalBottom;
+let scorePlayer = 0, scoreCPU = 0, goalLock = false;
 let prevPlayer = {x:0,y:0}, prevCPU = {x:0,y:0};
-let goalLock = false;
-
-let stuckStart = 0;
-let lastKickAt = 0;
-
-let lastHitAt = 0;
+let stuckStart = 0, lastKickAt = 0, lastHitAt = 0;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -694,19 +685,16 @@ function preload(){
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
-
   this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
   this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
 }
 
 function create(){
   this.sound.pauseOnBlur = false;
-
   const unlockAudio = ()=>{ try{ if (this.sound.locked) this.sound.unlock(); }catch{} try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{} this.input.off('pointerdown', unlockAudio); };
   this.input.on('pointerdown', unlockAudio);
 
   const w=this.scale.width, h=this.scale.height, cx=w/2;
-
   this.add.image(cx, h/2, 'table').setDisplaySize(w, h);
   this.physics.world.setBounds(WALL_MARGIN, WALL_MARGIN, w - WALL_MARGIN*2, h - WALL_MARGIN*2);
 
@@ -716,39 +704,26 @@ function create(){
 
   player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
   cpu    = this.physics.add.image(cx, h*0.15, 'paddle_green').setScale(PADDLE_SCALE);
-  [player,cpu].forEach(p=>{
-    p.setImmovable(true);
-    p.setCollideWorldBounds(true);
-    p.body.setCircle(p.displayWidth/2);
-    centerBodyOnTexture(p);
-  });
+  [player,cpu].forEach(p=>{ p.setImmovable(true); p.setCollideWorldBounds(true); p.body.setCircle(p.displayWidth/2); centerBodyOnTexture(p); });
 
   goalTop = this.add.rectangle(cx, WALL_MARGIN - 8, GOAL_HALF*2, 28, 0xffffff, 0);
   goalBottom = this.add.rectangle(cx, h - (WALL_MARGIN - 8), GOAL_HALF*2, 28, 0xffffff, 0);
-  this.physics.add.existing(goalTop, true);
-  this.physics.add.existing(goalBottom, true);
-
+  this.physics.add.existing(goalTop, true); this.physics.add.existing(goalBottom, true);
   this.physics.add.overlap(puck, goalTop, ()=>onGoal.call(this,'top'), null, this);
   this.physics.add.overlap(puck, goalBottom, ()=>onGoal.call(this,'bottom'), null, this);
 
   this.sfx = {hit:null,goal:null};
-  try{
-    this.sfx.hit  = this.sound.add('hit',{volume:.35});
-    this.sfx.goal = this.sound.add('goal',{volume:.55});
-  }catch(e){}
+  try{ this.sfx.hit=this.sound.add('hit',{volume:.35}); this.sfx.goal=this.sound.add('goal',{volume:.55}); }catch(e){}
 
   ring = this.add.graphics({ x: 0, y: 0 });
-  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
-  ring.setAlpha(0);
+  ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35)); ring.setAlpha(0);
 
   const clamp = Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
-    const ww=this.scale.width, hh=this.scale.height;
-    const half = player.displayWidth*0.5;
+    const ww=this.scale.width, hh=this.scale.height, half = player.displayWidth*0.5;
     const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
     const targetY = clamp(gy + POINTER_OFFSET_Y, hh*0.5 + half, hh - WALL_MARGIN);
-    player.x = targetX; player.y = targetY;
-    ring.x = gx; ring.y = gy;
+    player.x = targetX; player.y = targetY; ring.x = gx; ring.y = gy;
   };
 
   const lowerZone=this.add.zone(w/2, h*0.72, w, h*0.56).setInteractive({useHandCursor:false});
@@ -834,21 +809,13 @@ function update(){
   const nearSide = (puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND));
   const pullToCenter = (nearTop && nearSide) ? 0.35 : 0.0;
 
-  const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(
-                    Phaser.Math.Linear(puck.x, cx, pullToCenter),
-                    WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)
-                  ), 0.10);
-
+  const targetX = Phaser.Math.Linear(cpu.x, Phaser.Math.Clamp(Phaser.Math.Linear(puck.x, cx, pullToCenter), WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu)), 0.10);
   const cpuChaseDepth = Math.min(puck.y, h*0.38);
   const targetY = Phaser.Math.Linear(cpu.y, Phaser.Math.Clamp(cpuChaseDepth, WALL_MARGIN + rCpu, h*0.45), 0.06);
 
-  cpu.x = targetX;
-  cpu.y = targetY;
+  cpu.x = targetX; cpu.y = targetY;
 
-  const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) ||
-                   (puck.x > w - (WALL_MARGIN + rPuck + 8)) ||
-                   (puck.y < WALL_MARGIN + rPuck + 8);
-
+  const nearWall = (puck.x < WALL_MARGIN + rPuck + 8) || (puck.x > w - (WALL_MARGIN + rPuck + 8)) || (puck.y < WALL_MARGIN + rPuck + 8);
   const dxPC = puck.x - cpu.x, dyPC = puck.y - cpu.y, dPC = Math.hypot(dxPC, dyPC) || 1;
   const minGap = (rCpu + rPuck) * 0.95;
   if(nearWall && dPC < minGap){
@@ -864,9 +831,7 @@ function update(){
   const speed = Math.hypot(v.x, v.y);
 
   const inCpuHalf = puck.y < h * 0.5;
-  const inCornerish = inCpuHalf &&
-    (puck.y < WALL_MARGIN + CORNER_BAND) &&
-    ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
+  const inCornerish = inCpuHalf && (puck.y < WALL_MARGIN + CORNER_BAND) && ((puck.x < WALL_MARGIN + CORNER_BAND) || (puck.x > w - (WALL_MARGIN + CORNER_BAND)));
 
   if(inCornerish && speed < STUCK_SPEED){
     if(!stuckStart) stuckStart = now;
@@ -883,12 +848,9 @@ function update(){
     stuckStart = 0;
   }
 
-  const curPlayer={x:player.x,y:player.y};
-  const curCPU={x:cpu.x,y:cpu.y};
-
+  const curPlayer={x:player.x,y:player.y}, curCPU={x:cpu.x,y:cpu.y};
   resolvePaddle(player, prevPlayer, this);
   resolvePaddle(cpu,    prevCPU,  this);
-
   prevPlayer=curPlayer; prevCPU=curCPU;
 
   if(puck.body && puck.body.enable){
@@ -896,7 +858,6 @@ function update(){
     v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
     v2.y = Phaser.Math.Clamp(v2.y*keep,-vmax,vmax);
   }
-
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
 
@@ -905,8 +866,7 @@ function startGoalSink(side){
   const scene=this, w=scene.scale.width, h=scene.scale.height, cx=w/2;
   goalLock = true;
 
-  puck.setVelocity(0,0);
-  puck.setAngularVelocity(0);
+  puck.setVelocity(0,0); puck.setAngularVelocity(0);
   if(puck.body){ puck.body.checkCollision.none = true; puck.body.enable = false; }
   puck.setCollideWorldBounds(false);
 
@@ -914,13 +874,8 @@ function startGoalSink(side){
 
   scene.tweens.add({
     targets: puck,
-    x: cx,
-    y: targetY,
-    scaleX: puck.scaleX*0.55,
-    scaleY: puck.scaleY*0.55,
-    alpha: 0,
-    duration: 230,
-    ease: 'Quad.easeIn',
+    x: cx, y: targetY, scaleX: puck.scaleX*0.55, scaleY: puck.scaleY*0.55, alpha: 0,
+    duration: 230, ease: 'Quad.easeIn',
     onComplete: ()=>{ serve(scene, side==='top' ? 'player' : 'cpu'); goalLock=false; }
   });
 }
@@ -947,31 +902,36 @@ function serve(scene, scoredBy){
 }
 </script>
 
-<!-- 12) GAMEPLAY OPTIONS + P2P + START GATE + TIMED & SERIES -->
+<!-- 12) GAMEPLAY OPTIONS + P2P (Share Link/QR) + TIMED/SERIES -->
 <script>
 (function(){
-  // Mode + UI
+  // UI
   const modeRadios = Array.from(document.querySelectorAll('input[name="gpMode"]'));
   const modeStatus = document.getElementById('gpModeStatus');
   const p2pBox     = document.getElementById('gpP2PBox');
   const gpStartBtn = document.getElementById('gpStartBtn');
   const startOverlayBtn = document.getElementById('startOverlayBtn');
 
-  // Win mode + series UI
   const winRadios  = Array.from(document.querySelectorAll('input[name="gpWinMode"]'));
   const winStatus  = document.getElementById('gpWinStatus');
   const seriesRadios = Array.from(document.querySelectorAll('input[name="gpSeries"]'));
   const seriesStatus = document.getElementById('gpSeriesStatus');
 
-  // P2P
+  // P2P quick
   const p2pCreate  = document.getElementById('p2pCreate');
   const p2pJoin    = document.getElementById('p2pJoin');
+  const p2pLinkOut = document.getElementById('p2pLinkOut');
+  const p2pCopyLink= document.getElementById('p2pCopyLink');
   const p2pState   = document.getElementById('p2pState');
   const p2pLocal   = document.getElementById('p2pLocal');
   const p2pRemote  = document.getElementById('p2pRemote');
   const p2pApply   = document.getElementById('p2pApply');
   const p2pCopy    = document.getElementById('p2pCopy');
   const p2pHint    = document.getElementById('p2pHint');
+  const qrBtn      = document.getElementById('p2pQR');
+  const qrModal    = document.getElementById('qrModal');
+  const qrBox      = document.getElementById('qrBox');
+  const qrClose    = document.getElementById('qrClose');
 
   const lockBtn    = document.getElementById('gpLock');
   const escrowLbl  = document.getElementById('gpEscrowStatus');
@@ -983,24 +943,15 @@ function serve(scene, scoredBy){
   const selWin  = ()=> (document.querySelector('input[name="gpWinMode"]:checked')?.value || 'score'); // 'score' | 'timed'
   const selSeries = ()=> Number(document.querySelector('input[name="gpSeries"]:checked')?.value || '1');
 
-  function setMode(v){
-    if(v==='p2p'){ p2pBox.style.display='block'; modeStatus.textContent='P2P. Copy-paste handshake. Winner takes pot.'; }
-    else { p2pBox.style.display='none'; modeStatus.textContent='CPU match.'; }
-  }
+  function setMode(v){ if(v==='p2p'){ p2pBox.style.display='block'; modeStatus.textContent='P2P ready. Share Link or QR.'; } else { p2pBox.style.display='none'; modeStatus.textContent='CPU match.'; } }
   modeRadios.forEach(r=>r.addEventListener('change',()=> setMode(r.value)));
   setMode(selMode());
 
-  function setWin(v){
-    winStatus.textContent = (v==='timed') ? '3:00 countdown. Most goals wins. Tie → Sudden Death.' : 'First to 7 wins.';
-    clockLbl.textContent  = (v==='timed') ? '03:00' : '—';
-  }
+  function setWin(v){ winStatus.textContent = (v==='timed') ? '3:00 countdown. Tie → Sudden Death.' : 'First to 7 wins.'; clockLbl.textContent  = (v==='timed') ? '03:00' : '—'; }
   winRadios.forEach(r=>r.addEventListener('change',()=> setWin(r.value)));
   setWin(selWin());
 
-  function setSeries(){
-    const s = selSeries();
-    seriesStatus.textContent = (s===1) ? 'Single match.' : `Best of ${s}. First to ${Math.floor(s/2)+1}.`;
-  }
+  function setSeries(){ const s = selSeries(); seriesStatus.textContent = (s===1) ? 'Single match.' : `Best of ${s}. First to ${Math.floor(s/2)+1}.`; }
   seriesRadios.forEach(r=>r.addEventListener('change', setSeries));
   setSeries();
 
@@ -1010,26 +961,38 @@ function serve(scene, scoredBy){
     window.__AH_READY_TO_START = true;
     try{
       const sc = window.__AH_SCENE;
-      if(sc){
-        sc.physics.resume();
-        if(typeof serve==='function'){ serve(sc); }
-      }
+      if(sc){ sc.physics.resume(); if(typeof serve==='function'){ serve(sc); } }
       startOverlayBtn.style.display='none';
       window.__AH_LAST__='Match start';
       window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
     }catch{}
   }
 
-  // P2P plumbing
-  let pc=null, dc=null, p2pConnected=false;
+  // --- P2P (no server): WebRTC with shareable link in URL hash ---
+  // Helpers: base64url for SDP
+  const b64 = {
+    enc: (str)=> btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),
+    dec: (s)=> decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))))
+  };
+  function buildLink(kind, sdpObj){
+    const hash = `${kind}=${b64.enc(JSON.stringify(sdpObj))}`;
+    const u = new URL(location.href);
+    u.hash = hash;
+    return u.toString();
+  }
+  function parseHash(){
+    const h = (location.hash||'').replace(/^#/,'');
+    if(!h) return null;
+    const [k,v] = h.split('=');
+    if(!k||!v) return null;
+    try{ return { kind:k, obj: JSON.parse(b64.dec(v)) }; }catch{ return null; }
+  }
+
+  // RTC
+  let pc=null, dc=null, p2pConnected=false, myRole=null; // 'creator' or 'joiner'
   function newPC(){
     if(pc){ try{pc.close();}catch{} }
     pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-    pc.onicecandidate = e=>{
-      if(!e.candidate && pc.localDescription){
-        p2pLocal.value = btoa(JSON.stringify(pc.localDescription));
-      }
-    };
     pc.onconnectionstatechange = ()=>{
       const s=pc.connectionState;
       p2pConnected = s==='connected';
@@ -1046,22 +1009,73 @@ function serve(scene, scoredBy){
   }
   function send(obj){ if(dc && dc.readyState==='open'){ dc.send(JSON.stringify(obj)); } }
 
-  async function createMatch(){
+  async function createLink(){
+    myRole='creator';
     newPC();
     dc = pc.createDataChannel('bag-p2p',{ordered:true});
     wireDC();
     const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
-    p2pState.textContent='Offer created. Send to opponent.';
+    // Wait for ICE gathering to complete
+    await waitIceComplete(pc);
+    const link = buildLink('offer', pc.localDescription);
+    p2pLinkOut.value = link;
+    // Also fill Advanced box
+    p2pLocal.value = b64.enc(JSON.stringify(pc.localDescription));
+    p2pState.textContent='Share the link/QR. Opponent opens it to auto-answer.';
   }
-  async function applyPaste(){
+
+  async function joinFromLink(){
+    myRole='joiner';
+    const parsed = parseHash();
+    if(!parsed || parsed.kind!=='offer'){ p2pState.textContent='No offer in link'; p2pState.style.color='#e25b5b'; return; }
+    newPC();
+    await pc.setRemoteDescription(parsed.obj);
+    const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+    await waitIceComplete(pc);
+    const link = buildLink('answer', pc.localDescription);
+    p2pLinkOut.value = link;
+    // Advanced box fill as fallback
+    p2pLocal.value = b64.enc(JSON.stringify(pc.localDescription));
+    p2pState.textContent='Send this link back to creator to complete connect.';
+  }
+
+  async function applyHashIfAnyOnLoad(){
+    const parsed = parseHash();
+    if(!parsed) return;
+    // If page opened with #answer by joiner, creator can apply automatically
+    if(parsed.kind==='answer' && myRole==='creator' && pc){
+      try{ await pc.setRemoteDescription(parsed.obj); p2pState.textContent='Answer applied. Connecting…'; }catch{}
+    }
+  }
+  window.addEventListener('hashchange', applyHashIfAnyOnLoad);
+
+  function waitIceComplete(pc){
+    return new Promise(res=>{
+      if(pc.iceGatheringState==='complete') return res();
+      const chk=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange', chk); res(); } };
+      pc.addEventListener('icegatheringstatechange', chk);
+      setTimeout(()=>res(), 3000); // safety
+    });
+  }
+
+  // Buttons
+  p2pCreate?.addEventListener('click', async()=>{ await createLink(); history.replaceState(null,'',location.pathname+location.search); });
+  p2pJoin?.addEventListener('click', async()=>{ await joinFromLink(); });
+  p2pCopyLink?.addEventListener('click', ()=>{ try{ p2pLinkOut.select(); document.execCommand('copy'); p2pCopyLink.textContent='Copied'; setTimeout(()=>p2pCopyLink.textContent='Copy Link',900); }catch{} });
+
+  // Advanced fallback
+  p2pCopy?.addEventListener('click', ()=>{ try{ p2pLocal.select(); document.execCommand('copy'); p2pCopy.textContent='Copied'; setTimeout(()=>p2pCopy.textContent='Copy',900); }catch{} });
+  p2pApply?.addEventListener('click', async()=>{
     try{
       const raw=(p2pRemote.value||'').trim(); if(!raw) return;
-      const sdp = JSON.parse(atob(raw));
+      const sdp = JSON.parse(b64.dec(raw));
       if(sdp.type==='offer'){
+        myRole='joiner';
         newPC();
         await pc.setRemoteDescription(sdp);
-        const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
-        p2pState.textContent='Answer created. Send back to creator.';
+        const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); await waitIceComplete(pc);
+        p2pLocal.value = b64.enc(JSON.stringify(pc.localDescription));
+        p2pState.textContent='Answer created. Send back.';
       }else if(sdp.type==='answer'){
         await pc.setRemoteDescription(sdp);
         p2pState.textContent='Answer applied. Connecting…';
@@ -1069,14 +1083,28 @@ function serve(scene, scoredBy){
         p2pState.textContent='Invalid SDP';
       }
     }catch{ p2pState.textContent='Bad paste'; }
+  });
+
+  // QR modal
+  function showQR(){
+    try{
+      const link = p2pLinkOut.value || '';
+      if(!link) return;
+      qrModal.style.display='flex';
+      qrBox.innerHTML='';
+      if(window.QRCode){
+        new QRCode(qrBox, { text: link, width:256, height:256 });
+      }else{
+        const p=document.createElement('p'); p.style.textAlign='center'; p.textContent=link; qrBox.appendChild(p);
+      }
+    }catch{}
   }
+  function hideQR(){ qrModal.style.display='none'; }
+  qrBtn?.addEventListener('click', showQR);
+  qrClose?.addEventListener('click', hideQR);
+  qrModal?.addEventListener('click', (e)=>{ if(e.target===qrModal) hideQR(); });
 
-  document.getElementById('p2pCreate')?.addEventListener('click', createMatch);
-  document.getElementById('p2pJoin')?.addEventListener('click', ()=>{ p2pLocal.value=''; p2pRemote.value=''; p2pHint.textContent='Paste creator Offer → Apply → copy your Answer back.'; });
-  document.getElementById('p2pApply')?.addEventListener('click', applyPaste);
-  document.getElementById('p2pCopy')?.addEventListener('click', ()=>{ try{ p2pLocal.select(); document.execCommand('copy'); p2pCopy.textContent='Copied'; setTimeout(()=>p2pCopy.textContent='Copy',900); }catch{} });
-
-  // Escrow + stake helpers
+  // Escrow in BAG (from XRP stake if needed)
   let meLocked=0, themLocked=0;
   function stakeToBag(){
     const betQty = Number(document.getElementById('betQty')?.value||'0') || 1;
@@ -1102,52 +1130,19 @@ function serve(scene, scoredBy){
   lockBtn?.addEventListener('click', lockWager);
   function escrowBothLocked(){ escrowLbl.textContent='Both locked. Ready to start.'; escrowLbl.style.color='#2fbf6b'; }
 
-  // SERIES & TIMED MATCH STATE
-  const GOAL_DEFAULT = 7;
-  const TIMED_MS     = 180000; // 3 minutes
-  let neededWins = 1;
-  let myWins = 0, theirWins = 0;
-  let watchIv=null, clockIv=null;
-  let suddenDeath = false;
-  let lastScoreSum = 0;
+  // Series & timed
+  const GOAL_DEFAULT = 7, TIMED_MS=180000;
+  let neededWins = 1, myWins = 0, theirWins = 0;
+  let watchIv=null, clockIv=null, suddenDeath=false, lastScoreSum=0;
 
-  function formatClock(ms){
-    if(ms==null) return '—';
-    const s = Math.max(0, Math.ceil(ms/1000));
-    const m = Math.floor(s/60), r = s%60;
-    return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
-  }
-
-  function setSeriesTargets(){
-    const s = selSeries();
-    neededWins = (s===1)?1:(Math.floor(s/2)+1);
-    myWins = 0; theirWins = 0;
-    updateSeriesStatus();
-  }
-  function updateSeriesStatus(){
-    const s = selSeries();
-    seriesStatus.textContent = (s===1)
-      ? 'Single match.'
-      : `Best of ${s}. First to ${neededWins}. Score ${myWins}-${theirWins}.`;
-  }
-
-  function resetBoardScores(){
-    window.scorePlayer = (typeof scorePlayer!=='undefined') ? 0 : 0;
-    window.scoreCPU    = (typeof scoreCPU!=='undefined') ? 0 : 0;
-    try{ if(window.__AH_SCENE && window.__AH_SCENE.sys && window.__AH_SCENE.sys.game){ /* scoreText updates in update() */ } }catch{}
-    lastScoreSum = 0;
-  }
-
+  function formatClock(ms){ if(ms==null) return '—'; const s=Math.max(0, Math.ceil(ms/1000)); const m=Math.floor(s/60), r=s%60; return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`; }
+  function setSeriesTargets(){ const s = selSeries(); neededWins = (s===1)?1:(Math.floor(s/2)+1); myWins = 0; theirWins = 0; updateSeriesStatus(); }
+  function updateSeriesStatus(){ const s = selSeries(); seriesStatus.textContent = (s===1)?'Single match.':`Best of ${s}. First to ${neededWins}. Score ${myWins}-${theirWins}.`; }
+  function resetBoardScores(){ window.scorePlayer = 0; window.scoreCPU = 0; lastScoreSum = 0; }
   function beginClockIfTimed(){
-    clearInterval(clockIv);
-    clockIv = null;
-    if(selWin() !== 'timed'){
-      clockLbl.textContent = '—';
-      return {running:false};
-    }
-    let left = TIMED_MS;
-    suddenDeath = false;
-    clockLbl.textContent = formatClock(left);
+    clearInterval(clockIv); clockIv = null;
+    if(selWin() !== 'timed'){ clockLbl.textContent='—'; return {running:false}; }
+    let left = TIMED_MS; suddenDeath = false; clockLbl.textContent = formatClock(left);
     const t0 = performance.now();
     clockIv = setInterval(()=>{
       const elapsed = performance.now()-t0;
@@ -1155,112 +1150,62 @@ function serve(scene, scoredBy){
       clockLbl.textContent = suddenDeath ? 'SD' : formatClock(left);
       if(left<=0){
         clearInterval(clockIv); clockIv=null;
-        // time up — decide or sudden death
-        if((window.scorePlayer||0) === (window.scoreCPU||0)){
-          suddenDeath = true; modeStatus.textContent='Sudden Death — next goal wins.';
-        }else{
-          endOneGame((window.scorePlayer||0) > (window.scoreCPU||0));
-        }
+        if((window.scorePlayer||0) === (window.scoreCPU||0)){ suddenDeath = true; modeStatus.textContent='Sudden Death — next goal wins.'; }
+        else{ endOneGame((window.scorePlayer||0) > (window.scoreCPU||0)); }
       }
     }, 250);
     return {running:true};
   }
-
   function startMatchWatch(){
-    clearInterval(watchIv); watchIv=null;
-    watchIv=setInterval(()=>{
-      const p=Number(window.scorePlayer||0);
-      const c=Number(window.scoreCPU||0);
-      const sum = p+c;
-
+    clearInterval(watchIv); watchIv=setInterval(()=>{
+      const p=Number(window.scorePlayer||0), c=Number(window.scoreCPU||0), sum=p+c;
       if(selWin()==='score'){
-        if(p>=GOAL_DEFAULT || c>=GOAL_DEFAULT){
-          clearInterval(watchIv); watchIv=null;
-          endOneGame(p>=GOAL_DEFAULT);
-          return;
-        }
-      }else{ // timed
-        if(suddenDeath && sum!==lastScoreSum){
-          clearInterval(watchIv); watchIv=null;
-          endOneGame(p>c);
-          return;
-        }
+        if(p>=GOAL_DEFAULT || c>=GOAL_DEFAULT){ clearInterval(watchIv); endOneGame(p>=GOAL_DEFAULT); return; }
+      }else{
+        if(suddenDeath && sum!==lastScoreSum){ clearInterval(watchIv); endOneGame(p>c); return; }
       }
       lastScoreSum = sum;
     }, 200);
   }
-
-  function seriesFinished(){
-    return (myWins>=neededWins || theirWins>=neededWins);
-  }
-
+  function seriesFinished(){ return (myWins>=neededWins || theirWins>=neededWins); }
   function payoutSeriesIfAny(){
     if(!(meLocked>0 && themLocked>0)) return;
     const pot = meLocked + themLocked;
-    if(myWins>theirWins){
-      window.__bagSession?.credit?.(pot);
-      escrowLbl.textContent=`Series won: +${pot.toFixed(6)} BAG`;
-      escrowLbl.style.color='#2fbf6b';
-    }else{
-      escrowLbl.textContent=`Series lost: −${meLocked.toFixed(6)} BAG`;
-      escrowLbl.style.color='#e25b5b';
-    }
+    if(myWins>theirWins){ window.__bagSession?.credit?.(pot); escrowLbl.textContent=`Series won: +${pot.toFixed(6)} BAG`; escrowLbl.style.color='#2fbf6b'; }
+    else{ escrowLbl.textContent=`Series lost: −${meLocked.toFixed(6)} BAG`; escrowLbl.style.color='#e25b5b'; }
     meLocked=0; themLocked=0;
   }
-
   function endOneGame(iWon){
     if(iWon) myWins++; else theirWins++;
     updateSeriesStatus();
-
-    // Notify peer if P2P
     if(selMode()==='p2p'){ send({type:'game_end', iwon:iWon}); }
-
     if(seriesFinished()){
-      // Series complete
       payoutSeriesIfAny();
       modeStatus.textContent = (myWins>theirWins) ? 'Series complete — You win.' : 'Series complete — You lose.';
-      // Reset clock UI
       clearInterval(clockIv); clockIv=null; suddenDeath=false; clockLbl.textContent = (selWin()==='timed')?'03:00':'—';
       return;
     }
-
-    // Next game in series: reset board, brief delay, auto-serve
     resetBoardScores();
     clearInterval(clockIv); clockIv=null; suddenDeath=false; clockLbl.textContent = (selWin()==='timed')?'03:00':'—';
     setTimeout(()=>{
-      // Resume physics if paused
-      try{
-        const sc = window.__AH_SCENE;
-        if(sc && sc.physics && sc.physics.world.isPaused){ sc.physics.resume(); }
-        if(typeof serve==='function'){ serve(sc); }
-      }catch{}
+      try{ const sc = window.__AH_SCENE; if(sc && sc.physics && sc.physics.world.isPaused){ sc.physics.resume(); } if(typeof serve==='function'){ serve(sc); } }catch{}
       beginClockIfTimed();
       startMatchWatch();
     }, 600);
   }
 
   function startFlow(){
-    // Require P2P readiness
     if(selMode()==='p2p'){
       if(!p2pConnected){ modeStatus.textContent='Not connected.'; return; }
       if(!(meLocked>0 && themLocked>0)){ modeStatus.textContent='Both must lock the wager.'; return; }
-      // Sync config to peer
       send({type:'config', win:selWin(), series:selSeries()});
       send({type:'start'});
     }
-
-    // Series init
-    setSeriesTargets();
-    resetBoardScores();
-
-    // Unfreeze + serve
+    setSeriesTargets(); resetBoardScores();
     unfreezeAndServe();
-
-    // Timed or score watch
     beginClockIfTimed();
     startMatchWatch();
   }
-
   gpStartBtn?.addEventListener('click', startFlow);
   startOverlayBtn?.addEventListener('click', startFlow);
 
@@ -1269,19 +1214,15 @@ function serve(scene, scoredBy){
     if(msg.type==='lock'){
       themLocked = Number(msg.bag)||0;
       if(meLocked>0 && themLocked>0) escrowBothLocked();
-      else { escrowLbl.textContent=`Opponent locked ${themLocked.toFixed(6)} BAG. Lock yours.`; escrowLbl.style.color='#e8a85c'; }
+      else { escrowLbl.textContent=`Opponent locked ${themLocked.toFixed(6)} BAG.`; escrowLbl.style.color='#e8a85c'; }
     }
-    if(msg.type==='config'){
-      // optional: verify settings match (not enforced for now)
-    }
-    if(msg.type==='start'){
-      startFlow();
-    }
-    if(msg.type==='game_end'){
-      // mirror series tally if needed — the watch loop handles local end
-    }
+    if(msg.type==='config'){ /* optional verify */ }
+    if(msg.type==='start'){ startFlow(); }
+    if(msg.type==='game_end'){ /* mirror if needed */ }
   }
 
+  // Auto-apply #answer for creators returning link
+  applyHashIfAnyOnLoad();
 })();
 </script>
 </body>
