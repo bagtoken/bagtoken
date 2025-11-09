@@ -19,19 +19,42 @@
 <script src="/js/bag-quick-amounts.js"></script>
 
 <style>
-:root{--gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;--green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35)}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2fbf6b #0b1b13;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none}
-.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
-.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
+:root{
+  --gold:#ffe175;--bg:#020703;--panel:#0b1b13;--panel2:#0d2217;--muted:#aeb7af;--fg:#f5f7f4;
+  --green:#2fbf6b;--green-600:#249a55;--line:#173524;--shadow:rgba(0,0,0,.35);
+  --vh:100vh; /* will be patched by JS for mobile */
+}
+html,body{
+  margin:0;padding:0;background:var(--bg);color:var(--fg);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  line-height:1.5;overflow-x:hidden;overscroll-behavior:none;
+  -webkit-tap-highlight-color:transparent;touch-action:pan-y;user-select:none;-webkit-user-select:none
+}
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+  border-radius:16px;box-shadow:0 8px 24px var(--shadow);padding:16px;margin:0 auto;max-width:1080px}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:12px 16px;font-weight:900;
+  background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
 .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 .divider{height:1px;background:#123221;margin:14px 0}
 .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
-a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
-a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
+a.back{position:fixed;top:18px;left:18px;z-index:1100;text-decoration:none}
+a.back:hover,a.back:focus,a.back:active{text-decoration:none}
 img{display:block;max-width:100%;height:auto}
-canvas{display:block;margin:auto}
-#gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
-#gameContainer canvas{touch-action:none;-ms-touch-action:none}
+canvas{display:block;margin:auto;touch-action:none}
+
+/* Game wrap sticks to viewport height on mobile so it stays on screen */
+.game-stick{
+  position:relative;
+  max-width:1080px;margin:0 auto;border-radius:16px;overflow:hidden;
+  height:calc(var(--vh) - 160px); /* leaves room for top HUD + pills; adjusted by JS on resize */
+  min-height:420px;
+}
+
+/* Container that Phaser mounts into */
+#gameContainer{
+  width:100%;height:100%;
+  border-radius:12px;overflow:hidden;background:#021107;
+}
 
 /* Hero image sizing */
 .hero-wrap{padding:68px 12px 6px}
@@ -45,8 +68,13 @@ canvas{display:block;margin:auto}
 .chip input{accent-color:#2fbf6b}
 .mono{font-variant-numeric:tabular-nums}
 .micro{font-size:.85rem;color:#aeb7af}
-.preset-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.preset-chip{appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+.preset-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.preset-chip{
+  appearance:none;border:1px solid var(--green-600);background:var(--green);color:#fff;border-radius:999px;
+  padding:12px 16px; /* bigger */
+  font-size:1rem;   /* bigger */
+  font-weight:900;cursor:pointer
+}
 .preset-chip.active{box-shadow:0 0 0 2px rgba(255,255,255,.25) inset,0 8px 22px rgba(47,191,107,.25)}
 .hudbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;align-items:center;margin:6px 2px 0}
 .pill{background:#0a1e15;border:1px solid #244330;border-radius:999px;padding:6px 10px;font-size:12px;color:#cfe6d8}
@@ -60,15 +88,18 @@ canvas{display:block;margin:auto}
 .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;border-radius:999px;padding:6px 10px;font-weight:800}
 .small{font-size:.85rem}
 .arrow{font-size:14px}
-.countdown{font-weight:900;letter-spacing:.08em}
-.rule-pill{position:fixed;right:12px;bottom:12px;z-index:1100}
+.rule-pill{position:fixed;right:12px;bottom:12px;z-index:1200}
+.start-overlay{
+  position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,17,7,.92),rgba(2,17,7,.92));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:1000
+}
+.start-overlay h3{margin:0;font-size:1.2rem}
 </style>
 </head>
 <body>
 
-<a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
+<a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back</a>
 
-<!-- HERO IMAGE -->
+<!-- HERO -->
 <section class="hero-wrap" aria-label="$BAG Air Hockey">
   <picture>
     <source type="image/webp"
@@ -77,26 +108,24 @@ canvas{display:block;margin:auto}
     <img class="hero-img"
          src="/arcade/assets/img/bag-airhockey-1024.png"
          srcset="/arcade/assets/img/bag-airhockey-960.png 960w, /arcade/assets/img/bag-airhockey-1024.png 1024w"
-         sizes="100vw"
-         width="1024" height="576"
-         alt="$BAG Air Hockey — hero">
+         sizes="100vw" width="1024" height="576" alt="$BAG Air Hockey — hero">
   </picture>
 </section>
 
 <!-- HEADER -->
 <section style="text-align:center;padding:0 12px 10px">
   <h2 style="margin:0;font-size:1.6rem;">🎯 $BAG Air Hockey — Head-to-Head</h2>
-  <p style="font-size:.95rem;opacity:.9;margin:.4rem 0 0">Bet your friend. Set the series. First to glory.</p>
+  <p style="font-size:.95rem;opacity:.9;margin:.4rem 0 0">Pick your format. Place your stake. Start the fight.</p>
 </section>
 
 <!-- CONTROL + PRICES + SESSION -->
 <section style="padding:0 16px 20px;">
   <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div id="sessionStatus" style="font-size:.9rem">Session: <span style="color:#2fbf6b">Practice</span></div>
+      <div id="sessionStatus" style="font-size:.9rem">Session: <span id="sessionModeLbl" style="color:#2fb6a9">Demo</span></div>
       <div style="display:flex;gap:8px">
+        <button id="toggleDemoBtn" class="btn" title="Toggle Demo/Live">Demo Mode</button>
         <button id="startSessionBtn" class="btn">Start Session</button>
-        <button id="topUpBtn" class="btn" style="display:none">Top Up</button>
         <button id="endSessionBtn" class="btn" style="display:none">End</button>
       </div>
     </div>
@@ -107,34 +136,37 @@ canvas{display:block;margin:auto}
     <div class="stack" id="matchSetup">
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
         <div class="badge small">Series:
-          <select id="seriesBest" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:6px 8px">
+          <select id="seriesBest" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:8px 10px">
             <option value="3">Best of 3</option>
             <option value="5" selected>Best of 5</option>
             <option value="7">Best of 7</option>
           </select>
         </div>
         <div class="badge small">Target:
-          <select id="targetGoals" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:6px 8px">
+          <select id="targetGoals" class="mono" style="margin-left:8px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:8px 10px">
             <option value="5">First to 5</option>
             <option value="7" selected>First to 7</option>
             <option value="9">First to 9</option>
           </select>
         </div>
         <div class="badge small">Clock: <span class="mono" style="margin-left:8px">3:00</span></div>
-        <div class="badge small">Mode: <b style="margin-left:8px">Sudden-Death OT</b></div>
+        <div class="badge small">OT: <b style="margin-left:8px">Sudden Death</b></div>
+      </div>
+      <div>
+        <button id="startMatchBtn" class="btn">Start Match</button>
       </div>
     </div>
 
     <div class="divider"></div>
 
-    <!-- Stake (Dice-style) -->
+    <!-- Stake -->
     <div class="stack">
       <div>
         <div class="micro">Amount</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
             <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
-                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                   style="width:160px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:12px">
             <span class="micro unit">USD</span>
           </div>
         </div>
@@ -164,7 +196,7 @@ canvas{display:block;margin:auto}
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
             <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
-                   style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+                   style="width:160px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:12px">
             <span class="unit">XRP</span>
           </div>
           <button id="challengeBtn" class="btn">Issue Challenge</button>
@@ -202,7 +234,15 @@ canvas{display:block;margin:auto}
       <div class="side">CPU <span id="serveCPU" class="arrow" title="Serve" style="opacity:.25">⬅</span></div>
     </div>
 
-    <div id="gameContainer"></div>
+    <!-- Sticky, viewport-fitted game area -->
+    <div class="game-stick">
+      <div id="gameContainer"></div>
+      <!-- Start gate overlay (blocks gameplay until chosen + started) -->
+      <div id="startGate" class="start-overlay">
+        <h3>Choose your series & stake, then start</h3>
+        <button id="gateStartBtn" class="btn">Start Game</button>
+      </div>
+    </div>
 
     <div class="divider"></div>
 
@@ -234,6 +274,19 @@ window.__AH_RULES__ = {
   antiStall: { trapMs:2000 },
   disconnect: { graceMs:10000, forfeitGame:true }
 };
+</script>
+
+<!-- ===== MOBILE VH FIX (keeps game on-screen) ===== -->
+<script>
+(function(){
+  function setVH(){
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh*100}px`);
+  }
+  setVH();
+  addEventListener('resize', setVH);
+  addEventListener('orientationchange', setVH);
+})();
 </script>
 
 <!-- ===== LIVE PRICING (AMM + cache, same engine as Dice) ===== -->
@@ -368,7 +421,7 @@ window.__AH_RULES__ = {
   global.BAGStakeWire={ init };
 })(window);
 
-// HUD wire-up + challenge
+// HUD wire-up + session/demo + challenge
 document.addEventListener('DOMContentLoaded', ()=>{
   try{ window.BAGStakeWire.init(); }catch{}
   const betQty=document.getElementById('betQty');
@@ -376,31 +429,41 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const betLbl=document.getElementById('betLbl');
   const ccyLbl=document.getElementById('ccyLbl');
   const lastLbl=document.getElementById('lastLbl');
+  const sessionModeLbl=document.getElementById('sessionModeLbl');
+  const toggleDemoBtn=document.getElementById('toggleDemoBtn');
+  let DEMO=true;
+
   const paintHUD=()=>{
     betLbl.textContent = betQty.value || '1';
     const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
     document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
     ccyLbl.textContent = cur;
-    modeLbl.textContent = 'Demo';
+    modeLbl.textContent = DEMO?'Demo':'Live';
+    sessionModeLbl.textContent = DEMO?'Demo':'Live';
+    sessionModeLbl.style.color = DEMO ? '#2fb6a9' : '#ffe175';
     lastLbl.textContent = window.__AH_LAST__ || '—';
   };
   paintHUD();
   document.addEventListener('bag:hudRefresh', paintHUD);
+
+  toggleDemoBtn.addEventListener('click', ()=>{
+    DEMO=!DEMO;
+    toggleDemoBtn.textContent = DEMO ? 'Demo Mode' : 'Live Mode';
+    window.__BAG_FORCE_DEMO = DEMO;
+    paintHUD();
+  });
 
   document.getElementById('challengeBtn').addEventListener('click', ()=>{
     const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
     const qty=parseFloat(document.getElementById('betQty').value||'0')||1;
     const best=parseInt(document.getElementById('seriesBest').value,10);
     const goals=parseInt(document.getElementById('targetGoals').value,10);
-    const slip={ game:'Air Hockey', best, goals, cur, qty };
-    // Broadcast to overlay / cage
+    const slip={ game:'Air Hockey', best, goals, cur, qty, demo:DEMO };
     window.dispatchEvent(new CustomEvent('bag:challenge', { detail: slip }));
-    // UX flash
     document.getElementById('challengeBtn').textContent='Challenge Sent';
     setTimeout(()=>document.getElementById('challengeBtn').textContent='Issue Challenge',1200);
   });
 
-  // Rules modal via overlay (if present)
   document.getElementById('rulesBtn').addEventListener('click', ()=>{
     const copy = `Air Hockey Rules — Best-of-3/5/7. Each game is first to ${document.getElementById('goalTarget').textContent} or 3:00 on the clock. If time expires, sudden-death. Mercy at +${window.__AH_RULES__.mercyLead}. Serve alternates each game; after goals, conceding side serves after a 3-2-1 drop. Own goals count. No trapping > 2s — whistle + center drop. Puck out → center drop.`;
     window.dispatchEvent(new CustomEvent('bag:rules', { detail: { title:'Air Hockey Rules', body:copy } }));
@@ -409,7 +472,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- ===== Air Hockey Game + Series Controller ===== -->
+<!-- ===== Air Hockey Game + Series Controller (gated start) ===== -->
 <script>
 /* ------- Phaser config ------- */
 const config = {
@@ -444,6 +507,8 @@ let series = { best:5, need:3, p:0, c:0, gameIndex:1, nextServe:'player' };
 let clock = { total:180000, remain:180000, running:false, sudden:false, otCap:60000, otStart:0 };
 let dropText = null;
 
+let gameArmed = false; // GATE: no gameplay until user starts
+
 // stuck tracking
 let stuckStart = 0;
 let lastKickAt = 0;
@@ -454,11 +519,7 @@ let lastHitAt = 0;
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
 /* ------- Helpers ------- */
-function mmss(ms){
-  ms=Math.max(0,ms|0);
-  const s=(ms/1000)|0; const m=(s/60)|0; const r=(s%60)|0;
-  return `${m}:${r<10?'0':''}${r}`;
-}
+function mmss(ms){ ms=Math.max(0,ms|0); const s=(ms/1000)|0; const m=(s/60)|0; const r=(s%60)|0; return `${m}:${r<10?'0':''}${r}`; }
 function lerp(a,b,t){ return a+(b-a)*t; }
 
 /* ------- Scene ------- */
@@ -541,6 +602,7 @@ function create(){
   // input
   const clamp = Phaser.Math.Clamp;
   const moveTo=(gx,gy)=>{
+    if(!gameArmed) return; // block movement until start
     const ww=this.scale.width, hh=this.scale.height;
     const half = player.displayWidth*0.5;
     const targetX = clamp(gx, WALL_MARGIN + half, ww - (WALL_MARGIN + half));
@@ -568,9 +630,33 @@ function create(){
   dropText = this.add.text(cx, h/2, '', {fontFamily:'Orbitron',fontSize:'120px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:8}).setOrigin(0.5,0.5);
   dropText.setAlpha(0);
 
-  // First serve
-  series.nextServe = (window.__AH_RULES__.serve.first==='player')?'player':'cpu';
-  startNewMatch(this);
+  // GATE: require Start Match + Start Game
+  const gate = document.getElementById('startGate');
+  const startMatchBtn = document.getElementById('startMatchBtn');
+  const gateStartBtn  = document.getElementById('gateStartBtn');
+
+  startMatchBtn.addEventListener('click', ()=>{
+    // Prepare series config; do NOT start yet. Show overlay gate.
+    series.best = parseInt(document.getElementById('seriesBest').value,10);
+    series.need = (series.best>>1)+1;
+    document.getElementById('seriesLen').textContent = `Bo${series.best}`;
+    document.getElementById('goalTarget').textContent = document.getElementById('targetGoals').value;
+    gate.style.display='flex';
+    gameArmed = false;
+    clock.running=false;
+    paintTopHud();
+    window.__AH_LAST__ = 'Ready';
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+  });
+
+  gateStartBtn.addEventListener('click', ()=>{
+    gate.style.display='none';
+    gameArmed = true;
+    startNewMatch(this);
+  });
+
+  // Initial HUD paint, but DO NOT start anything
+  paintTopHud();
 }
 
 /* ------- Match / Game Flow ------- */
@@ -582,11 +668,10 @@ function startNewMatch(scene){
   startNewGame(scene, /*alternate?*/ false);
 }
 function startNewGame(scene, alternate=true){
-  // alternate serve between games
+  if(!gameArmed) return; // safety
   if(alternate && window.__AH_RULES__.serve.alternateByGame){
     series.nextServe = (series.nextServe==='player')?'cpu':'player';
   }
-  // reset per-game
   scorePlayer=0; scoreCPU=0; goalLock=false;
   clock.remain = clock.total;
   clock.running = false;
@@ -594,19 +679,19 @@ function startNewGame(scene, alternate=true){
   dropText.setText('').setAlpha(0);
   scoreText.setText('0 - 0');
   paintTopHud();
-
-  // 3-2-1 drop then serve
-  serveCountdown(scene, series.nextServe, ()=>{ clock.running=true; });
+  serveCountdown(scene, series.nextServe, ()=>{ if(gameArmed) clock.running=true; });
 }
 function serveCountdown(scene, who, onDone){
+  if(!gameArmed) return;
   const seq=['3','2','1'];
   let i=0;
   dropText.setAlpha(1);
   const tick=()=>{
+    if(!gameArmed){ dropText.setAlpha(0).setText(''); return; }
     if(i<seq.length){ dropText.setText(seq[i++]); scene.time.delayedCall(320,tick); }
     else{
       dropText.setAlpha(0).setText('');
-      serve(scene, who==='player'?'cpu':'player'); // drop from conceding side rule, for opening: opposite of server to push toward receiver
+      serve(scene, who==='player'?'cpu':'player');
       if(typeof onDone==='function') onDone();
       flashServeArrows(who);
     }
@@ -621,28 +706,20 @@ function flashServeArrows(serving){
 
 /* ------- Goals / Win logic ------- */
 function onGoal(side){
+  if(!gameArmed) return;
   if(goalLock || !puck || !puck.body || !puck.body.enable) return;
   try{ this.sfx?.goal?.play(); }catch{}
   if(side==='top') scorePlayer++; else scoreCPU++;
   startGoalSink.call(this, side);
 
   const target = parseInt(document.getElementById('targetGoals').value,10) || window.__AH_RULES__.targetGoals.default;
-
-  // Mercy rule
   if(Math.abs(scorePlayer - scoreCPU) >= (window.__AH_RULES__.mercyLead||5)){
-    finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Mercy');
-    return;
+    finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Mercy'); return;
   }
-  // Target reached
   if(scorePlayer>=target || scoreCPU>=target){
-    finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Target');
-    return;
+    finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Target'); return;
   }
-  // Sudden death active: any goal ends
-  if(clock.sudden){
-    finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Sudden Death');
-    return;
-  }
+  if(clock.sudden){ finishGame(this, scorePlayer>scoreCPU?'player':'cpu', 'Sudden Death'); }
 }
 
 /* ------- Finish / Next ------- */
@@ -654,21 +731,17 @@ function finishGame(scene, winner, reason){
   if(winner==='player') series.p++; else series.c++;
   paintTopHud();
 
-  // Series finished?
   if(series.p>=series.need || series.c>=series.need){
     const matchWinner = (series.p>series.c)?'player':'cpu';
     window.dispatchEvent(new CustomEvent('bag:matchEnd',{detail:{game:'Air Hockey', winner:matchWinner, series:{p:series.p,c:series.c,best:series.best}}}));
-    // Quick banner
     alert(`Match over — ${matchWinner==='player'?'You':'CPU'} win ${series.p}–${series.c} (Bo${series.best})`);
-    // Reset for replay: keep same settings and alternate first serve
-    series.gameIndex=1;
-    series.p=0; series.c=0;
+    // Reset and re-arm gate to keep control
+    series.gameIndex=1; series.p=0; series.c=0;
     series.nextServe = (series.nextServe==='player')?'cpu':'player';
-    startNewGame(scene,false);
+    document.getElementById('startGate').style.display='flex';
+    gameArmed=false;
     return;
   }
-
-  // Next game: alternate serve for next game
   series.gameIndex++;
   startNewGame(scene,true);
 }
@@ -679,6 +752,7 @@ function centerBodyOnTexture(img){
   img.body.setOffset(img.width/2-bw/2, img.height/2-bh/2);
 }
 function resolvePaddle(paddle, prev, scene){
+  if(!gameArmed) return;
   if(goalLock || !puck.body || !puck.body.enable) return;
   const dx=puck.x-paddle.x, dy=puck.y-paddle.y, dist=Math.hypot(dx,dy)||0.0001;
   const rSum=puck.displayWidth/2+paddle.displayWidth/2;
@@ -711,6 +785,12 @@ function resolvePaddle(paddle, prev, scene){
 
 /* ------- Update (AI + Clock) ------- */
 function update(time, delta){
+  if(!gameArmed){
+    // keep HUD time static at 3:00 until armed
+    document.getElementById('clock').textContent = mmss(clock.total);
+    return;
+  }
+
   const w=this.scale.width, h=this.scale.height;
   if(!goalLock){
     // CPU AI (corner-aware)
@@ -762,14 +842,12 @@ function update(time, delta){
       }
     } else { stuckStart = 0; }
 
-    // Player / CPU resolve
     const curPlayer={x:player.x,y:player.y};
     const curCPU={x:cpu.x,y:cpu.y};
     resolvePaddle(player, prevPlayer, this);
     resolvePaddle(cpu,    prevCPU,  this);
     prevPlayer=curPlayer; prevCPU=curCPU;
 
-    // Velocity clamp
     if(puck.body && puck.body.enable){
       const v2=puck.body.velocity, vmax=2000, keep=0.999;
       v2.x = Phaser.Math.Clamp(v2.x*keep,-vmax,vmax);
@@ -781,14 +859,12 @@ function update(time, delta){
   if(clock.running && !goalLock){
     clock.remain -= delta;
     if(!clock.sudden && clock.remain<=0){
-      // Sudden death trigger
       clock.sudden = true;
       clock.remain = 0;
       document.getElementById('clock').parentElement.style.boxShadow='0 0 0 2px rgba(255,225,117,.25) inset';
       clock.otStart = performance.now();
     } else if(clock.sudden){
       if(performance.now() - clock.otStart > (window.__AH_RULES__.overtimeCapSec||60)*1000){
-        // force whistle + drop if OT drags
         whistleCenterDrop(this);
         clock.otStart = performance.now();
       }
@@ -805,7 +881,7 @@ function whistleCenterDrop(scene){
   puck.setPosition(scene.scale.width/2, scene.scale.height/2);
   scene.time.delayedCall(250, ()=>{
     goalLock=false;
-    serveCountdown(scene, series.nextServe, ()=>{ clock.running=true; });
+    serveCountdown(scene, series.nextServe, ()=>{ if(gameArmed) clock.running=true; });
   });
 }
 function startGoalSink(side){
@@ -823,14 +899,12 @@ function startGoalSink(side){
     targets: puck, x: cx, y: targetY, scaleX: puck.scaleX*0.55, scaleY: puck.scaleY*0.55, alpha: 0,
     duration: 230, ease: 'Quad.easeIn',
     onComplete: ()=>{
-      // Next serve: conceding side serves
       series.nextServe = (side==='top') ? 'cpu' : 'player';
-      serve(scene, series.nextServe==='player'?'cpu':'player'); // push toward receiver
-      // 3-2-1 drop after goals too (shorter)
+      serve(scene, series.nextServe==='player'?'cpu':'player');
       scene.time.delayedCall(window.__AH_RULES__.serve.dropCountdownMs||900, ()=>{
         if(puck){ puck.setAlpha(1).setScale(PUCK_SCALE); if(puck.body){ puck.body.enable=true; puck.body.checkCollision.none=false; } }
         goalLock=false;
-        clock.running=true;
+        if(gameArmed) clock.running=true;
         flashServeArrows(series.nextServe);
       });
     }
