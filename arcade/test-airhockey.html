@@ -13,7 +13,7 @@
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
-<!-- Dice shared UI logic -->
+<!-- Shared UI logic (keep) -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
@@ -30,15 +30,15 @@ a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
 a.back:hover,a.back:focus,a.back:active{outline:none;text-decoration:none}
 img{display:block;max-width:100%;height:auto}
 canvas{display:block;margin:auto}
-#gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden}
+#gameContainer{max-width:1024px;margin:auto;border-radius:12px;overflow:hidden;position:relative}
 #gameContainer canvas{touch-action:none;-ms-touch-action:none}
 
 /* Hero image sizing (mobile-first) */
 .hero-wrap{padding:68px 12px 6px}
-.hero-img{margin:0 auto 8px; width:100%; max-width:960px; filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
+.hero-img{margin:0 auto 8px;width:100%;max-width:960px;filter:drop-shadow(0 10px 24px rgba(46,191,107,.18))}
 @media (min-width:900px){ .hero-img{max-width:720px}}
 
-/* Stake/HUD (Dice parity) */
+/* Stake/HUD */
 .stack{display:grid;gap:10px}
 .choice{display:flex;gap:10px;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #2b6a48;background:#0e2a1c;color:#e9efe9;font-weight:800}
@@ -53,13 +53,18 @@ canvas{display:block;margin:auto}
 .pill b{font-weight:800}
 .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
+
+/* Start overlay + countdown */
+.start-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);z-index:5}
+#startBtn{font-size:1.1rem;padding:14px 18px}
+#countdown{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:Orbitron,system-ui,Arial,sans-serif;font-size:96px;color:#ffe175;text-shadow:0 0 18px rgba(47,191,107,.35);z-index:6;display:none}
 </style>
 </head>
 <body>
 
 <a href="/arcade/index.html" class="btn back" aria-label="Back to Arcade">Back to Arcade</a>
 
-<!-- HERO IMAGE (your files) -->
+<!-- HERO IMAGE -->
 <section class="hero-wrap" aria-label="$BAG Air Hockey">
   <picture>
     <source type="image/webp"
@@ -76,62 +81,26 @@ canvas{display:block;margin:auto}
 
 <!-- HEADER -->
 <section style="text-align:center;padding:0 12px 10px">
-  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey - Arcade P2E</h2>
+  <h2 style="margin:0;font-size:1.6rem;">🚧 $BAG Air Hockey — Arcade P2E</h2>
   <p style="font-size:.95rem;opacity:.9;">All payouts in $BAG · $XRP bets convert automatically.</p>
 </section>
 
-<!-- PRACTICE (below hero; uses your existing classes) -->
+<!-- GAMEPLAY OPTIONS (Practice / CPU / PvP) -->
 <section style="padding:0 16px 12px;">
-  <div class="panel">
-    <div style="font-weight:900;margin-bottom:8px">Practice</div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
-      <div>
-        <div class="micro">BAG</div>
-        <input id="p_bag" class="mono" type="number" inputmode="decimal" step="any" min="0" placeholder="0.000000" style="width:100%">
-      </div>
-      <div>
-        <div class="micro">XRP</div>
-        <input id="p_xrp" class="mono" type="number" inputmode="decimal" step="any" min="0" placeholder="0.000000" style="width:100%">
-      </div>
-      <div>
-        <div class="micro">USD</div>
-        <input id="p_usd" class="mono" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" style="width:100%">
-      </div>
+  <div class="panel" id="gameplayPanel">
+    <div style="font-weight:900;margin-bottom:8px">Gameplay</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" id="optPractice">Practice</button>
+      <button class="btn" id="optCPU">Solo vs CPU</button>
+      <button class="btn" id="optPVP">PvP Online (Beta)</button>
     </div>
-
-    <div class="preset-chips" id="p_usdPresets" style="margin-top:8px">
-      <button class="preset-chip" data-usd="1">$1</button>
-      <button class="preset-chip" data-usd="2">$2</button>
-      <button class="preset-chip" data-usd="5">$5</button>
-      <button class="preset-chip" data-usd="10">$10</button>
-      <button class="preset-chip" data-usd="20">$20</button>
-      <button class="preset-chip" data-usd="50">$50</button>
-      <button class="preset-chip" data-usd="100">$100</button>
-    </div>
-
-    <div class="divider"></div>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-      <label style="display:flex;gap:8px;align-items:center">
-        <span class="micro" style="min-width:90px">Bet in</span>
-        <select id="p_currency">
-          <option value="XRP">XRP</option>
-          <option value="BAG">BAG</option>
-        </select>
-      </label>
-
-      <label style="display:flex;gap:8px;align-items:center">
-        <span class="micro" style="min-width:90px">Bet amount</span>
-        <input id="p_qty" class="mono" type="number" inputmode="decimal" step="any" min="0" value="1" style="width:140px">
-        <span class="micro" id="p_unit">XRP</span>
-      </label>
-
-      <div class="micro" id="p_limits">Limits: $1.00–$2,000.00 · Your stake ≈ $—</div>
+    <div class="micro" id="gameModeNote" style="margin-top:6px;opacity:.9">
+      Choose a mode. PvP lets you create or join a room, agree on stakes, escrow, and play.
     </div>
   </div>
 </section>
 
-<!-- CONTROL + PRICES + SESSION (unchanged) -->
+<!-- CONTROL + PRICES + SESSION (Practice section preserved) -->
 <section style="padding:0 16px 20px;">
   <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -145,7 +114,7 @@ canvas{display:block;margin:auto}
 
     <div class="divider"></div>
 
-    <!-- Amount (kept exactly) -->
+    <!-- Practice Stake -->
     <div class="stack">
       <div>
         <div class="micro">Amount</div>
@@ -192,7 +161,7 @@ canvas{display:block;margin:auto}
 
     <div class="divider"></div>
 
-    <!-- Live Prices (unchanged) -->
+    <!-- Live Prices -->
     <div class="marquee">Live Prices</div>
     <div style="text-align:center;font-family:monospace;">
       <span id="liveDot" class="warn">●</span>
@@ -204,20 +173,20 @@ canvas{display:block;margin:auto}
 
 <!-- GAME PANEL -->
 <section style="padding:0 16px 80px;">
-  <div class="panel" id="gamePanel" style="position:relative">
+  <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
 
-    <!-- Floating Start + Countdown (minimal inline styles only) -->
-    <div id="countdown" style="position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#0e2a1c;border:1px solid #2b6a48;border-radius:999px;padding:6px 12px;font-weight:900;z-index:6;display:none">3</div>
-    <div id="startOverlay" style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.0);z-index:5">
-      <button id="startBtn" class="btn">Start Game</button>
+    <div id="gameContainer">
+      <!-- Start overlay on top of canvas -->
+      <div class="start-overlay" id="startOverlay">
+        <button class="btn" id="startBtn">Start Game</button>
+      </div>
+      <div id="countdown">3</div>
     </div>
-
-    <div id="gameContainer"></div>
 
     <div class="divider"></div>
 
-    <!-- HUD pills (unchanged) -->
+    <!-- HUD pills -->
     <div class="hudbar" id="ahHud" aria-live="polite">
       <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
       <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
@@ -230,6 +199,48 @@ canvas{display:block;margin:auto}
 <footer style="text-align:center;padding:14px 0;font-size:.9rem;color:#b9c1b5;">
   © 2025 $BAG Protocol | getthebag.io | Powered by $XRP
 </footer>
+
+<!-- PvP Modal -->
+<div id="pvpModal" style="position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;z-index:9999">
+  <div class="panel" style="max-width:680px;margin:60px auto">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>PvP Matchmaking</b>
+      <button class="btn" id="pvpClose">Close</button>
+    </div>
+    <div class="divider"></div>
+
+    <div class="stack">
+      <div>
+        <div class="micro">Mode</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="roomCreate">Create Room</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="roomCode" placeholder="Enter room code" style="padding:10px;border-radius:10px;border:1px solid #1b4a2f;background:#0b2217;color:#f3f5f0">
+            <button class="btn" id="roomJoin">Join</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Stake</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <label class="chip"><input type="radio" name="pvpCur" value="XRP" checked> XRP</label>
+          <label class="chip"><input type="radio" name="pvpCur" value="BAG"> BAG</label>
+          <input id="pvpAmt" class="mono" type="number" inputmode="decimal" min="0" step="any" placeholder="1.00"
+                 style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
+        </div>
+      </div>
+
+      <div>
+        <div class="micro">Actions</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="pvpReady">Ready</button>
+          <span class="micro" id="pvpStatus">Not ready</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ===== LIVE PRICING (Dice engine with cache + AMM) ===== -->
 <script>
@@ -312,7 +323,7 @@ canvas{display:block;margin:auto}
 })();
 </script>
 
-<!-- ===== Stake Wire (Dice) (unchanged) ===== -->
+<!-- ===== Stake Wire (Dice parity) ===== -->
 <script>
 (function(global){
   const PR=()=>global.__PRICES__||{bagUsd:0,xrpUsd:0};
@@ -391,7 +402,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
     document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
     ccyLbl.textContent = cur;
-    modeLbl.textContent = 'Demo';
+    modeLbl.textContent = (window.__AH_MODE__ || 'Demo');
     lastLbl.textContent = window.__AH_LAST__ || '—';
   };
   paintHUD();
@@ -403,55 +414,86 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 </script>
 
-<!-- ===== Practice panel sync (uses your classes) ===== -->
+<!-- ===== Gameplay options + PvP modal wire ===== -->
 <script>
 (function(){
   const $=s=>document.querySelector(s);
-  const p_bag=$('#p_bag'), p_xrp=$('#p_xrp'), p_usd=$('#p_usd');
-  const p_qty=$('#p_qty'), p_cur=$('#p_currency'), p_unit=$('#p_unit'), p_limits=$('#p_limits');
-  const chips=[...document.querySelectorAll('#p_usdPresets .preset-chip')];
+  const $$=s=>document.querySelectorAll(s);
+  const startOverlay=$("#startOverlay");
+  const startBtn=$("#startBtn");
+  const countdown=$("#countdown");
 
-  const PR=()=>window.__PRICES__||{bagUsd:0,xrpUsd:0};
-  const toFixedTrim=(n,d=6)=>Number.isFinite(n)? Number(n).toFixed(d).replace(/\.?0+$/,''):'';
-  const fmtUsd=n=>'$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  // Mode buttons
+  $("#optPractice").addEventListener('click',()=>{ window.__AH_MODE__='Practice'; $("#gameModeNote").textContent='Practice with CPU keeper. No ledger stakes.'; document.dispatchEvent(new Event('bag:hudRefresh')); });
+  $("#optCPU").addEventListener('click',()=>{ window.__AH_MODE__='Solo vs CPU'; $("#gameModeNote").textContent='Play against CPU. Stakes apply only when session is Live.'; document.dispatchEvent(new Event('bag:hudRefresh')); });
+  $("#optPVP").addEventListener('click',()=>{ window.__AH_MODE__='PvP Online'; openPvP(); document.dispatchEvent(new Event('bag:hudRefresh')); });
 
-  function paintLimits(){
-    const cur=p_cur.value, {bagUsd,xrpUsd}=PR();
-    const px=(cur==='BAG')?bagUsd:xrpUsd;
-    const qty=parseFloat(p_qty.value)||0;
-    const usd=qty*(px>0?px:0);
-    p_unit.textContent=cur;
-    p_limits.innerHTML=`Limits: $1.00–$2,000.00 · Your stake ≈ ${fmtUsd(usd||0)}`;
-  }
-  function fromUSD(){
-    const usd=parseFloat(p_usd.value)||0, {bagUsd,xrpUsd}=PR();
-    if(bagUsd>0) p_bag.value = usd? toFixedTrim(usd/bagUsd):'';
-    if(xrpUsd>0) p_xrp.value = usd? toFixedTrim(usd/xrpUsd):'';
-  }
-  function fromBAG(){
-    const bag=parseFloat(p_bag.value)||0, {bagUsd,xrpUsd}=PR();
-    p_usd.value = bagUsd>0? (bag*bagUsd).toFixed(2):'';
-    p_xrp.value = (bagUsd>0&&xrpUsd>0)? toFixedTrim((bag*bagUsd)/xrpUsd):'';
-  }
-  function fromXRP(){
-    const xrp=parseFloat(p_xrp.value)||0, {bagUsd,xrpUsd}=PR();
-    p_usd.value = xrpUsd>0? (xrp*xrpUsd).toFixed(2):'';
-    p_bag.value = (bagUsd>0&&xrpUsd>0)? toFixedTrim((xrp*xrpUsd)/bagUsd):'';
-  }
+  // Session buttons (visual only for now)
+  $("#startSessionBtn").addEventListener('click',()=>{ $("#sessionStatus").innerHTML='Session: <span style="color:#2fbf6b">Live</span>'; document.getElementById('topUpBtn').style.display='inline-block'; document.getElementById('endSessionBtn').style.display='inline-block'; });
+  $("#endSessionBtn").addEventListener('click',()=>{ $("#sessionStatus").innerHTML='Session: <span style="color:#e8a85c">Ended</span>'; });
+  $("#topUpBtn").addEventListener('click',()=>{ alert('Top up flow (Xaman) WIP'); });
 
-  p_usd.addEventListener('input', fromUSD);
-  p_bag.addEventListener('input', fromBAG);
-  p_xrp.addEventListener('input', fromXRP);
-  p_cur.addEventListener('change', paintLimits);
-  p_qty.addEventListener('input', paintLimits);
-  chips.forEach(b=>b.addEventListener('click',()=>{ chips.forEach(x=>x.classList.remove('active')); b.classList.add('active'); p_usd.value=(+b.dataset.usd).toFixed(2); fromUSD(); }));
+  // Start overlay + countdown -> game start
+  function doCountdownThenStart(){
+    let n=3;
+    countdown.style.display='block';
+    countdown.textContent=n;
+    const timer=setInterval(()=>{
+      n--; countdown.textContent=n>0?n:'GO';
+      if(n<=0){
+        clearInterval(timer);
+        setTimeout(()=>{
+          countdown.style.display='none';
+          startOverlay.style.display='none';
+          if(window.__ahStartGame) window.__ahStartGame();
+        },300);
+      }
+    },700);
+  }
+  startBtn.addEventListener('click', doCountdownThenStart);
 
-  addEventListener('bag:pricesUpdated', ()=>{ fromUSD(); paintLimits(); });
-  paintLimits();
+  // PvP modal (BroadcastChannel demo so 2 tabs can test)
+  const modal=$("#pvpModal"), status=$("#pvpStatus"), codeInput=$("#roomCode");
+  const bc = ('BroadcastChannel' in window)? new BroadcastChannel('bag-ah-pvp') : null;
+  let myRoom=null, amHost=false, ready=false;
+
+  function openPvP(){ modal.style.display='block'; }
+  $("#pvpClose").addEventListener('click',()=>{ modal.style.display='none'; });
+
+  $("#roomCreate").addEventListener('click',()=>{
+    myRoom = Math.random().toString(36).slice(2,8).toUpperCase();
+    codeInput.value=myRoom; amHost=true; status.textContent='Room created. Waiting...';
+    bc && bc.postMessage({t:'create', room:myRoom});
+  });
+  $("#roomJoin").addEventListener('click',()=>{
+    myRoom = (codeInput.value||'').trim().toUpperCase(); amHost=false;
+    status.textContent = myRoom ? ('Joined '+myRoom+'. Click Ready.') : 'Enter code';
+    bc && bc.postMessage({t:'join', room:myRoom});
+  });
+  $("#pvpReady").addEventListener('click',()=>{
+    if(!myRoom){ status.textContent='Create or join a room first'; return; }
+    ready=!ready;
+    status.textContent = ready ? 'Ready' : 'Not ready';
+    bc && bc.postMessage({t:'ready', room:myRoom, who: amHost?'host':'guest', ready});
+  });
+
+  let hostReady=false, guestReady=false;
+  bc && (bc.onmessage=(e)=>{
+    const m=e.data||{};
+    if(!myRoom || m.room!==myRoom) return;
+    if(m.t==='ready'){
+      if(m.who==='host') hostReady=m.ready; else guestReady=m.ready;
+      if(hostReady && guestReady){
+        modal.style.display='none';
+        startOverlay.style.display='flex';
+        // optional auto-start for PvP
+      }
+    }
+  });
 })();
 </script>
 
-<!-- ===== Air Hockey Game (unchanged physics; only removed auto-serve) ===== -->
+<!-- ===== Air Hockey Game (keep gameplay intact) ===== -->
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -488,8 +530,8 @@ let lastKickAt = 0;
 // sfx throttle (for paddle collisions)
 let lastHitAt = 0;
 
-// start control
-let gameReady=false;
+// start gate
+let gameActive = false;
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
 
@@ -508,7 +550,11 @@ function create(){
   this.sound.pauseOnBlur = false;
 
   // Explicit audio unlock on first gesture
-  const unlockAudio = ()=>{ try{ if (this.sound.locked) this.sound.unlock(); this.sound.context?.resume?.(); }catch{} this.input.off('pointerdown', unlockAudio); };
+  const unlockAudio = ()=>{
+    try{ if (this.sound.locked) this.sound.unlock(); }catch{}
+    try{ this.sound.context && this.sound.context.resume && this.sound.context.resume(); }catch{}
+    this.input.off('pointerdown', unlockAudio);
+  };
   this.input.on('pointerdown', unlockAudio);
 
   const w=this.scale.width, h=this.scale.height, cx=w/2;
@@ -520,7 +566,6 @@ function create(){
   puck = this.physics.add.image(cx, h/2, 'puck').setScale(PUCK_SCALE);
   puck.setCollideWorldBounds(true).setBounce(0.995).setDamping(true).setDrag(0.995,0.995).setMaxVelocity(2000);
   puck.body.setCircle(puck.displayWidth/2); centerBodyOnTexture(puck);
-  puck.setVelocity(0,0); // no auto-serve
 
   // paddles
   player = this.physics.add.image(cx, h*0.85, 'paddle_gold').setScale(PADDLE_SCALE);
@@ -580,9 +625,8 @@ function create(){
 
   scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  // hook start button now that scene exists
-  const startBtn=document.getElementById('startBtn');
-  startBtn?.addEventListener('click', ()=> runCountdown(this));
+  // don't start yet; wait for overlay "Start Game"
+  window.__ahStartGame = ()=>{ gameActive=true; serve(this); };
 }
 
 function onGoal(side){
@@ -616,7 +660,7 @@ function resolvePaddle(paddle, prev, scene){
     const spin=Phaser.Math.Clamp(vT*1.5,-450,450);
     puck.setAngularVelocity(spin);
 
-    // HIT SFX — only on paddle contact (no wall sounds)
+    // HIT SFX — only on paddle contact
     try{
       const now=performance.now();
       if(now - lastHitAt > 70){
@@ -629,9 +673,10 @@ function resolvePaddle(paddle, prev, scene){
 }
 
 function update(){
-  if(goalLock || !gameReady) return;
+  if(!gameActive) return;
 
   const w=this.scale.width, h=this.scale.height;
+  if(goalLock) return;
 
   // --------- CPU AI: bias away from corners ----------
   const cx = w/2;
@@ -754,29 +799,6 @@ function serve(scene, scoredBy){
   window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
   scoreText.setText(`${scorePlayer} - ${scoreCPU}`);
 }
-</script>
-
-<!-- ===== Start overlay logic (inline; no style changes) ===== -->
-<script>
-(function(){
-  const startBtn=document.getElementById('startBtn');
-  const overlay=document.getElementById('startOverlay');
-  const cd=document.getElementById('countdown');
-
-  window.runCountdown=function(scene){
-    overlay.style.display='none';
-    cd.style.display='block';
-    let n=3; cd.textContent=String(n);
-    const t=setInterval(()=>{
-      n--;
-      if(n>0){ cd.textContent=String(n); }
-      else{
-        cd.textContent='GO';
-        setTimeout(()=>{ cd.style.display='none'; clearInterval(t); window.gameReady = true; serve(scene); }, 260);
-      }
-    }, 600);
-  };
-})();
 </script>
 </body>
 </html>
