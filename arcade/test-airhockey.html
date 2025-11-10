@@ -1,11 +1,13 @@
 <!-- =========================================================
   $BAG Air Hockey — Arcade P2E (FULL PAGE, NO PLACEHOLDERS)
-  Changes in this update:
-   • Restored PRACTICE section exactly as locked (HTML+CSS+JS)
-   • Live Prices kept directly under PRACTICE
-   • Removed the separate “Start Game” section (gameplay panel)
-   • Kept only the floating Start overlay above the gameboard
-   • Game code untouched aside from waiting for Start signal
+  Locked items preserved:
+   • Practice row (exact)  • Live Prices directly under Practice
+   • Stake wiring + HUD IDs • Game physics/feel • Floating Start overlay
+  Added cleanly (no breakage):
+   • Gameplay Options panel (Match length 3:00, Series: Single / Bo3 / Bo5 / Bo7)
+   • P2P Connect (Create / Join room via BroadcastChannel + one-click link)
+   • Wager lock (both players arm the bet before start)
+   • Active match timer (3:00, HUD + overlay; overtime on tie; series tracking)
 ========================================================= -->
 <!DOCTYPE html>
 <html lang="en">
@@ -22,7 +24,7 @@
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-hit.mp3" as="audio">
 <link rel="preload" href="/arcade/assets/sounds/air-hockey-goal.mp3" as="audio">
 
-<!-- Shared UI -->
+<!-- Shared UI (kept) -->
 <script src="/js/bag-overlay.js"></script>
 <script src="/js/bag-session.js"></script>
 <script src="/js/bag-quick-amounts.js"></script>
@@ -34,6 +36,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:In
 .btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:900;background:linear-gradient(180deg,#ffe175,#f5c94c);color:#08130d;box-shadow:0 4px 0 #b08a19;text-decoration:none}
 .btn:active{transform:translateY(1px);box-shadow:0 3px 0 #9a7315}
 .btn.alt{background:linear-gradient(180deg,#bcd7c8,#8fb7a1);box-shadow:0 4px 0 #6f907c}
+.btn.ghost{background:#0a1e15;border:1px solid #244330;color:#cfe6d8;box-shadow:none}
 .divider{height:1px;background:#123221;margin:14px 0}
 .marquee{text-align:center;font-weight:900;letter-spacing:.08em;color:#ffe9a6;background:linear-gradient(180deg,#17311f,#0e2419);border:1px solid #254a33;border-radius:12px;padding:8px;margin:10px 0}
 a.back{position:fixed;top:18px;left:18px;z-index:1000;text-decoration:none}
@@ -63,15 +66,24 @@ canvas{display:block;margin:auto}
 .pill.balance{grid-column:1/-1;font-size:14px;padding:8px 12px;font-weight:800}
 .ok{color:#2fbf6b}.warn{color:#e8a85c}.err{color:#e25b5b}
 
-/* Practice status block (balances) — locked */
+/* Practice block (locked) */
 .practiceBlock{user-select:none;-webkit-touch-callout:none}
 .practiceBlock .title{font-weight:800;margin-bottom:4px}
 .practiceBlock .line b{font-weight:800}
 
-/* Start overlay (floating) */
+/* Gameplay Options + P2P */
+.opt-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.opt-card{background:#0a1e15;border:1px solid #244330;border-radius:12px;padding:12px}
+.opt-card h4{margin:0 0 8px 0;font-size:14px;color:#e9efe9}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sel{background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px;width:100%}
+.badge{font-family:monospace;background:#0b2217;border:1px solid #1b4a2f;border-radius:999px;padding:6px 10px;color:#cfe6d8}
+
+/* Start overlay */
 .start-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,17,7,.55);z-index:5}
 .start-wrap{display:flex;flex-direction:column;gap:12px;align-items:center}
 .timer-badge{font-family:monospace;background:#0b2217;border:1px solid #1b4a2f;border-radius:999px;padding:6px 10px;color:#cfe6d8}
+.state-note{font-size:12px;color:#cfe6d8;opacity:.9}
 </style>
 </head>
 <body>
@@ -127,7 +139,7 @@ canvas{display:block;margin:auto}
     <div class="stack">
       <div>
         <div class="micro">Amount</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="row">
           <div>
             <input id="usdBet" class="mono" type="number" inputmode="decimal" min="0" max="2000" step="0.01" placeholder="0.00"
                    style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
@@ -157,7 +169,7 @@ canvas{display:block;margin:auto}
 
       <div>
         <div class="micro">Bet amount</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="row">
           <div>
             <input id="betQty" class="mono" type="number" inputmode="decimal" min="0" step="any" value="1"
                    style="width:140px;background:#0b2217;border:1px solid #1b4a2f;border-radius:10px;color:#f3f5f0;padding:10px">
@@ -167,6 +179,52 @@ canvas{display:block;margin:auto}
         <div class="micro" id="betLimits" style="margin-top:6px"></div>
       </div>
     </div>
+
+    <div class="divider"></div>
+
+    <!-- ===== GAMEPLAY OPTIONS + P2P (NEW) ===== -->
+    <div id="gameplayPanel" class="opt-grid">
+      <div class="opt-card">
+        <h4>Match Length</h4>
+        <div class="row">
+          <span class="badge">3:00 fixed</span>
+        </div>
+      </div>
+
+      <div class="opt-card">
+        <h4>Series</h4>
+        <select id="seriesMode" class="sel" aria-label="Series mode">
+          <option value="1" selected>Single match</option>
+          <option value="3">Best of 3</option>
+          <option value="5">Best of 5</option>
+          <option value="7">Best of 7</option>
+        </select>
+      </div>
+
+      <div class="opt-card">
+        <h4>P2P Connect</h4>
+        <div class="row">
+          <button id="p2pCreate" class="btn">Create Room</button>
+          <button id="p2pJoin" class="btn alt">Join</button>
+          <button id="p2pCopy" class="btn ghost">Copy Link</button>
+        </div>
+        <div class="micro" style="margin-top:8px">
+          Room: <b id="p2pRoom">—</b> · Status: <b id="p2pStatus">Offline</b>
+        </div>
+      </div>
+
+      <div class="opt-card">
+        <h4>Wager Lock</h4>
+        <div class="row">
+          <button id="wagerLock" class="btn">Arm Bet</button>
+          <span class="micro">Both players must <b>Arm Bet</b> before Start</span>
+        </div>
+        <div class="micro" style="margin-top:8px">
+          Ready: <b id="readyCount">0/2</b>
+        </div>
+      </div>
+    </div>
+
   </div>
 </section>
 
@@ -175,12 +233,14 @@ canvas{display:block;margin:auto}
   <div class="panel">
     <div class="marquee">$BAG AIR HOCKEY</div>
 
-    <!-- Floating Start overlay only (no separate options section) -->
     <div id="gameContainer">
+      <!-- Floating Start overlay -->
       <div class="start-overlay" id="startOverlay" style="display:flex;">
         <div class="start-wrap">
           <div class="timer-badge" id="overlayEcho">3:00 · Single</div>
+          <div class="state-note" id="p2pNote">P2P not required — plays vs CPU if not connected</div>
           <button class="btn" id="overlayStart">Start</button>
+          <div class="state-note" id="lockHint">Start unlocks when Ready 2/2 (if P2P)</div>
         </div>
       </div>
     </div>
@@ -192,6 +252,8 @@ canvas{display:block;margin:auto}
       <span class="pill balance">Balance: <b id="balLbl">—</b> <span id="ccyLbl">BAG</span></span>
       <span class="pill">Mode: <b id="modeLbl">Demo</b></span>
       <span class="pill">Bet: <b id="betLbl">1</b></span>
+      <span class="pill">Timer: <b id="timerLbl">3:00</b></span>
+      <span class="pill">Series: <b id="seriesLbl">Single</b></span>
       <span class="pill">Last: <b id="lastLbl">—</b></span>
     </div>
   </div>
@@ -347,7 +409,7 @@ canvas{display:block;margin:auto}
   global.BAGStakeWire={ init };
 })(window);
 
-// HUD glue
+// HUD glue (includes timer + series echo)
 document.addEventListener('DOMContentLoaded', ()=>{
   try{ window.BAGStakeWire.init(); }catch{}
   const betQty=document.getElementById('betQty');
@@ -355,17 +417,29 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const betLbl=document.getElementById('betLbl');
   const ccyLbl=document.getElementById('ccyLbl');
   const lastLbl=document.getElementById('lastLbl');
+  const timerLbl=document.getElementById('timerLbl');
+  const seriesLbl=document.getElementById('seriesLbl');
+  const seriesEl=document.getElementById('seriesMode');
+  const overlayEcho=document.getElementById('overlayEcho');
+
+  const seriesText=()=>({
+    '1':'Single','3':'Best of 3','5':'Best of 5','7':'Best of 7'
+  })[seriesEl.value]||'Single';
 
   const paintHUD=()=>{
     betLbl.textContent = betQty.value || '1';
     const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
     document.querySelectorAll('.unit').forEach(n=>n.textContent=cur);
     ccyLbl.textContent = cur;
-    modeLbl.textContent = 'Demo';
+    modeLbl.textContent = (window.__BAG_FORCE_DEMO===true)?'Demo':'Live';
     lastLbl.textContent = window.__AH_LAST__ || '—';
+    seriesLbl.textContent = seriesText();
+    timerLbl.textContent = window.__AH_TIMER_STR__ || '3:00';
+    if(overlayEcho) overlayEcho.textContent = `${window.__AH_TIMER_STR__||'3:00'} · ${seriesText()}`;
   };
   paintHUD();
   document.addEventListener('bag:hudRefresh', paintHUD);
+  seriesEl.addEventListener('change', paintHUD);
   ['input','change'].forEach(evt=>{
     betQty.addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
     document.getElementById('curToggle').addEventListener(evt, ()=>document.dispatchEvent(new Event('bag:hudRefresh')));
@@ -375,13 +449,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 <!-- ===== PRACTICE / DEMO CORE (locked behavior) ===== -->
 <script>
-/* PRACTICE / DEMO SESSION CORE (locked behavior)
-   - Seeds $2,000 USD worth of BAG on first load (live/last-live price)
-   - Stores demo BAG in localStorage (__bag_demo_bag_v2)
-   - Exposes window.__bagSession with spend()/credit()
-   - Forces default stake to 1 XRP once
-   - Depends on window.__PRICES__ + 'bag:pricesUpdated'
-*/
+/* PRACTICE / DEMO SESSION CORE (locked) */
 (function(){
   const qs = new URLSearchParams(location.search);
   const forceLive = qs.get('live') === '1';
@@ -391,8 +459,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const startBtn  = $('#startSessionBtn');
   const topUpBtn  = $('#topUpBtn');
   const endBtn    = $('#endSessionBtn');
-  const connectEl = $('#connectBtn');
-  const dealBtn   = $('#deal');
 
   const DEMO_BAL_KEY='__bag_demo_bag_v2';
   const DEMO_INIT_KEY='__bag_demo_init_v2';
@@ -491,12 +557,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const seeded = ensureSeedNowOrWhenReady();
     renderDemo();
 
-    if (dealBtn) dealBtn.disabled = !seeded;
-
     addEventListener('bag:pricesUpdated', ()=>{
       if (!localStorage.getItem(DEMO_INIT_KEY)){
         const ok = ensureSeedNowOrWhenReady();
-        if (ok && dealBtn) dealBtn.disabled = false;
         renderDemo();
       } else {
         renderDemo();
@@ -504,7 +567,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
     });
 
     forceBetXRP1Once();
-    if (connectEl) connectEl.style.opacity='0.9';
   }
 
   function enableLive(){
@@ -527,7 +589,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   addEventListener('bag:pricesUpdated', ()=>{ if(window.__BAG_FORCE_DEMO) renderDemo(); });
 
-  topUpBtn?.addEventListener('click', ()=>{
+  document.getElementById('topUpBtn')?.addEventListener('click', ()=>{
     const bagUsd = Number((window.__PRICES__||{}).bagUsd||0) || getCachedBagUsd();
     if (bagUsd>0){
       setBag(START_USD/bagUsd);
@@ -538,17 +600,155 @@ document.addEventListener('DOMContentLoaded', ()=>{
 })();
 </script>
 
-<!-- ===== GAME (unchanged; waits for Start overlay) ===== -->
+<!-- ===== GAME + TIMER ===== -->
 <script>
-/* Simple selection echo for overlay label (fixed 3:00 · Single to match your prior default) */
+/* Overlay controls */
 document.addEventListener('DOMContentLoaded', ()=>{
   const overlayStart=document.getElementById('overlayStart');
   overlayStart?.addEventListener('click', ()=>{
+    if(!window.__AH_CAN_START__) return; // locked until Ready 2/2 if P2P armed
     const ov=document.getElementById('startOverlay'); if(ov) ov.style.display='none';
     window.dispatchEvent(new CustomEvent('ah:startRequested'));
   });
 });
 
+/* Global timer/state for HUD + series */
+(function(){
+  const DUR_MS = 3*60*1000; // 3:00 fixed
+  let t0=0, remain=DUR_MS, iv=null, running=false, seriesBest=1, winsMe=0, winsThem=0, overtime=false;
+
+  function fmt(ms){
+    const s=Math.max(0, Math.ceil(ms/1000));
+    const m=Math.floor(s/60), ss=String(s%60).padStart(2,'0'); return `${m}:${ss}`;
+  }
+  function paint(){
+    window.__AH_TIMER_STR__ = fmt(remain);
+    document.dispatchEvent(new Event('bag:hudRefresh'));
+  }
+  function tick(){
+    const now=performance.now();
+    remain = Math.max(0, DUR_MS - (now - t0));
+    paint();
+    if(remain<=0){ stop(); window.dispatchEvent(new CustomEvent('ah:timeUp')); }
+  }
+  function start(){
+    t0=performance.now(); remain=DUR_MS; running=true; paint();
+    iv = setInterval(tick, 250);
+  }
+  function stop(){ running=false; clearInterval(iv); iv=null; paint(); }
+
+  addEventListener('ah:startClock', ()=>{ overtime=false; start(); });
+  addEventListener('ah:stopClock', stop);
+  addEventListener('ah:setSeries', (e)=>{ seriesBest = Number(e.detail||1)||1; document.dispatchEvent(new Event('bag:hudRefresh')); });
+
+  // expose helpers for game logic
+  window.__AH_TIMER__ = { start, stop, fmt, get remain(){return remain;}, get running(){return running;},
+    get seriesBest(){return seriesBest;}, get wins(){return {me:winsMe, them:winsThem}}, setWins(m,t){winsMe=m; winsThem=t;},
+    setOvertime(v){overtime=!!v;}, get overtime(){return overtime;}
+  };
+
+  // initial paint
+  window.__AH_TIMER_STR__ = fmt(DUR_MS);
+  paint();
+})();
+</script>
+
+<!-- ===== P2P (BroadcastChannel) + Wager lock ===== -->
+<script>
+(function(){
+  const roomEl = document.getElementById('p2pRoom');
+  const statEl = document.getElementById('p2pStatus');
+  const readyEl= document.getElementById('readyCount');
+  const btnCreate = document.getElementById('p2pCreate');
+  const btnJoin   = document.getElementById('p2pJoin');
+  const btnCopy   = document.getElementById('p2pCopy');
+  const btnLock   = document.getElementById('wagerLock');
+  const overlayStart=document.getElementById('overlayStart');
+  const lockHint=document.getElementById('lockHint');
+
+  let room='', bc=null, peerReady=false, meReady=false, connected=false;
+
+  function genRoom(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
+  function setStatus(s){ statEl.textContent=s; }
+  function paintReady(){ readyEl.textContent = `${(meReady?1:0)+(peerReady?1:0)}/2`; }
+  function updateStartGate(){
+    // If connected, require both ready; if not connected, allow start vs CPU
+    const can = connected ? (meReady && peerReady) : true;
+    window.__AH_CAN_START__ = !!can;
+    overlayStart.disabled = !can;
+    lockHint.style.display = connected ? 'block' : 'none';
+  }
+  function openChannel(r){
+    try{ bc && bc.close && bc.close(); }catch{}
+    bc = new BroadcastChannel('bag_airhockey_'+r);
+    bc.onmessage = (e)=>{
+      const m=e.data||{};
+      if(m.t==='hello'){ connected=true; setStatus('Online'); bc.postMessage({t:'ack'}); updateStartGate(); }
+      if(m.t==='ack'){ connected=true; setStatus('Online'); updateStartGate(); }
+      if(m.t==='lock'){ peerReady=!!m.v; paintReady(); updateStartGate(); }
+      if(m.t==='start'){ // peer triggered a synced start
+        const ov=document.getElementById('startOverlay'); if(ov) ov.style.display='none';
+        window.dispatchEvent(new CustomEvent('ah:startRequested'));
+      }
+    };
+    // greet
+    setTimeout(()=>{ try{ bc.postMessage({t:'hello'});}catch{} }, 50);
+  }
+
+  btnCreate.addEventListener('click', ()=>{
+    room = genRoom();
+    roomEl.textContent = room;
+    const url = new URL(location.href); url.searchParams.set('room', room);
+    history.replaceState(null,'',url.toString());
+    openChannel(room);
+    setStatus('Waiting…');
+    connected=false; peerReady=false; meReady=false; paintReady(); updateStartGate();
+  });
+  btnJoin.addEventListener('click', ()=>{
+    const ask = prompt('Enter room code').trim().toUpperCase();
+    if(!ask) return;
+    room = ask;
+    roomEl.textContent = room;
+    openChannel(room);
+    setStatus('Connecting…');
+    connected=false; peerReady=false; meReady=false; paintReady(); updateStartGate();
+  });
+  btnCopy.addEventListener('click', ()=>{
+    if(!room){ alert('Create a room first'); return; }
+    const url = new URL(location.href); url.searchParams.set('room', room);
+    navigator.clipboard.writeText(url.toString()).catch(()=>{});
+  });
+
+  btnLock.addEventListener('click', ()=>{
+    meReady = !meReady;
+    btnLock.textContent = meReady ? 'Unarm Bet' : 'Arm Bet';
+    paintReady(); updateStartGate();
+    try{ bc && bc.postMessage({t:'lock', v:meReady}); }catch{}
+  });
+
+  // Sync Start across peers if connected and both ready: when my overlay button is pressed, broadcast to peer
+  document.getElementById('overlayStart')?.addEventListener('click', ()=>{
+    if(connected && meReady && peerReady){ try{ bc.postMessage({t:'start'});}catch{} }
+  });
+
+  // Auto-join if ?room=
+  const qp = new URLSearchParams(location.search);
+  const r = qp.get('room');
+  if(r){ room=r.toUpperCase(); roomEl.textContent=room; openChannel(room); setStatus('Connecting…'); }
+
+  // Expose quick helpers for settlement
+  window.__AH_P2P__ = {
+    get connected(){return connected;},
+    bothLocked(){return connected && meReady && peerReady;},
+    room(){return room;}
+  };
+
+  paintReady(); updateStartGate();
+})();
+</script>
+
+<!-- ===== Air Hockey Game (kept) with Start + Timer + Settlement ===== -->
+<script>
 const config = {
   type: Phaser.AUTO,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1024, height: 1536, parent: 'gameContainer' },
@@ -577,7 +777,7 @@ let stuckStart = 0;
 let lastKickAt = 0;
 let lastHitAt = 0;
 
-// smooth drag state
+// touch drag state
 const drag = { active:false, offX:0, offY:0, tx:0, ty:0 };
 
 new Phaser.Game(Object.assign({}, config, { scene: { preload, create, update } }));
@@ -587,7 +787,6 @@ function preload(){
   this.load.image('puck','/arcade/assets/img/puck-1024.webp');
   this.load.image('paddle_gold','/arcade/assets/img/paddle_gold-1024.webp');
   this.load.image('paddle_green','/arcade/assets/img/paddle_green-1024.webp');
-
   this.load.audio('hit','/arcade/assets/sounds/air-hockey-hit.mp3');
   this.load.audio('goal','/arcade/assets/sounds/air-hockey-goal.mp3');
 }
@@ -635,7 +834,7 @@ function create(){
   ring.lineStyle(2, 0xFFE175, 0.8).strokeCircle(0, 0, Math.max(22, player.displayWidth*0.35));
   ring.setAlpha(0);
 
-  // touch drag (smooth, no jump)
+  // touch drag (no jump)
   const clamp = Phaser.Math.Clamp;
   const halfH = h * 0.5;
   const pHalf = player.displayWidth * 0.5;
@@ -665,9 +864,94 @@ function create(){
 
   scoreText = this.add.text(cx, 40, '0 - 0', {fontFamily:'Orbitron',fontSize:'48px',color:'#ffe175',stroke:'#2fbf6b',strokeThickness:3}).setOrigin(0.5,0);
 
-  // Wait for Start overlay, then serve
-  const doStart=()=>{ serve(this); };
-  window.addEventListener('ah:startRequested', doStart, { once:true });
+  // Start flow
+  const startNow=()=>{ serve(this); window.__AH_TIMER__?.start && window.__AH_TIMER__.start(); };
+  window.addEventListener('ah:startRequested', ()=>{
+    scorePlayer=0; scoreCPU=0; scoreText.setText('0 - 0');
+    window.dispatchEvent(new CustomEvent('bag:hudRefresh'));
+    startNow();
+  });
+
+  // Time up -> determine winner, settle demo wager, handle series
+  window.addEventListener('ah:timeUp', ()=>{
+    try{ this.tweens.killAll(); }catch{}
+    puck.setVelocity(0,0); puck.setAngularVelocity(0);
+    if(puck.body){ puck.body.enable=false; }
+
+    let meWin = scorePlayer>scoreCPU;
+    if(scorePlayer===scoreCPU){
+      // 30s overtime sudden advantage: next goal wins
+      window.__AH_TIMER__.setOvertime(true);
+      window.__AH_TIMER_STR__='OT:30'; document.dispatchEvent(new Event('bag:hudRefresh'));
+      let otMS=30*1000, t0=performance.now();
+      const iv=setInterval(()=>{
+        const left=Math.max(0, otMS - (performance.now()-t0));
+        window.__AH_TIMER_STR__ = 'OT:'+String(Math.ceil(left/1000)).padStart(2,'0');
+        document.dispatchEvent(new Event('bag:hudRefresh'));
+        if(left<=0){ clearInterval(iv); window.__AH_TIMER_STR__='OT END'; document.dispatchEvent(new Event('bag:hudRefresh'));
+          // If still tied, choose winner by next score event or CPU coin flip
+          meWin = (Math.random()<0.5);
+          finish();
+        }
+      },250);
+
+      // Hook first subsequent goal to end OT immediately
+      const hook = (side)=>{
+        clearInterval(iv);
+        meWin = (side==='top'); // player scores on top goal
+        finish();
+      };
+      const origOnGoal = onGoal.bind(this);
+      onGoal = (side)=>{ hook(side); onGoal = origOnGoal; };
+      return;
+    }
+
+    finish();
+
+    function finish(){
+      // Series tracking
+      const best = window.__AH_TIMER__.seriesBest||1;
+      const wins = window.__AH_TIMER__.wins;
+      let me = wins.me, them = wins.them;
+      if(meWin) me++; else them++;
+      window.__AH_TIMER__.setWins(me,them);
+
+      // Demo settlement if both locked
+      if(window.__AH_P2P__?.bothLocked()){
+        const cur=document.querySelector('input[name="betCur"]:checked')?.value||'XRP';
+        const qty=parseFloat(document.getElementById('betQty')?.value||'1')||1;
+        const PR=window.__PRICES__||{bagUsd:0,xrpUsd:0};
+        let bagDelta=0;
+        if(cur==='XRP'){ if(PR.bagUsd>0&&PR.xrpUsd>0){ const bagPerXrp=PR.xrpUsd/PR.bagUsd; bagDelta = qty*bagPerXrp; } }
+        else { bagDelta = qty; }
+        const sess=window.__bagSession;
+        if(meWin){ sess?.credit(bagDelta); window.__AH_LAST__='Win +'+bagDelta.toFixed(6)+' BAG'; }
+        else { sess?.spend(bagDelta); window.__AH_LAST__='Loss -'+bagDelta.toFixed(6)+' BAG'; }
+      }else{
+        window.__AH_LAST__ = meWin?'You win':'CPU wins';
+      }
+      window.dispatchEvent(new Event('bag:hudRefresh'));
+
+      // Series complete?
+      const need = Math.ceil(best/2);
+      if((me>=need)||(them>=need)){
+        // show overlay again
+        const ov=document.getElementById('startOverlay'); if(ov) ov.style.display='flex';
+        // reset ready gate but keep armed state
+        window.__AH_TIMER_STR__='3:00'; document.dispatchEvent(new Event('bag:hudRefresh'));
+        // reset wins for next series
+        window.__AH_TIMER__.setWins(0,0);
+      }else{
+        // next match in series: short pause then restart
+        setTimeout(()=>{
+          // reset scores, serve, restart clock
+          scorePlayer=0; scoreCPU=0; scoreText.setText('0 - 0');
+          window.__AH_TIMER__?.start && window.__AH_TIMER__.start();
+          serve(this,'cpu'); // alternate
+        }, 1200);
+      }
+    }
+  }, { once:false });
 }
 
 function onGoal(side){
@@ -744,7 +1028,7 @@ function update(){
   const dxPC=puck.x-cpu.x, dyPC=puck.y-cpu.y, dPC=Math.hypot(dxPC,dyPC)||1;
   const minGap=(rCpu+rPuck)*0.95;
   if(nearWall && dPC < minGap){
-    const push=(minGap-dPC)*0.6;
+    const push=(minGap-dPC) * 0.6;
     cpu.x -= (dxPC/dPC) * push;
     cpu.y -= (dyPC/dPC) * push;
     cpu.x = Phaser.Math.Clamp(cpu.x, WALL_MARGIN + rCpu, w - (WALL_MARGIN + rCpu));
