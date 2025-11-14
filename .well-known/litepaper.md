@@ -1,153 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>$BAG Lite Paper — XRPL’s Heaviest Meme</title>
+<style>
+  body {
+    margin:0;
+    background:#ffffff;
+    color:#0f172a;
+    font-family:Arial,system-ui,sans-serif;
+    line-height:1.55;
+    padding:20px;
+  }
+  img { display:block; margin:0 auto; }
+  h1,h2,h3,h4 { color:#0f172a; font-weight:700; }
+  code,pre { white-space:pre-wrap; }
+  table {
+    width:100%;
+    border-collapse:collapse;
+    margin:20px 0;
+    font-size:.95rem;
+  }
+  table th, table td {
+    border:1px solid #d0d7e2;
+    padding:8px 10px;
+    text-align:center;
+  }
+  table th { background:#f1f5f9; font-weight:700; }
+</style>
+</head>
+
+<body>
+
 <p align="center">
   <img src="https://getthebag.io/logo.png" alt="$BAG Logo" width="160"/>
 </p>
 
-# $BAG — XRPL’s Heaviest Meme
+<h1 align="center">$BAG — XRPL’s Heaviest Meme</h1>
+<p align="center">
+  <em>Utility on Chain. Culture on Brand.<br>Built to flex. Powered by $XRP.</em>
+</p>
 
-> Utility on Chain. Culture on Brand.  
-> Built to flex. Powered by $XRP.
+<hr>
 
----
+<h2>Overview</h2>
+<p>
+$BAG inherits XRPL’s speed, low fees, and instant settlement.
+This is a <strong>culture token</strong> with <strong>real on-chain utility</strong>: a full Casino and P2E Arcade ecosystem backed by XRP.
+A <strong>100 reseed strategy</strong> ensures lasting depth, rising floors, and long-term resilience.
+</p>
 
-## Overview
-$BAG inherits XRPL’s speed, low fees, and instant settlement.  
-This is a **culture token** — signal first, memes with momentum, and a brand that moves.  
-An innovative **100 reseed strategy** ensures lasting depth and ever-rising floors.  
+<ul>
+  <li><strong>Name:</strong> BAG</li>
+  <li><strong>Ticker:</strong> $BAG</li>
+  <li><strong>Chain:</strong> XRP Ledger (XRPL)</li>
+  <li><strong>Supply:</strong> 1,000,000,000,000 (1 T)</li>
+  <li><strong>Decimals:</strong> 6</li>
+  <li><strong>Status:</strong> Live</li>
+</ul>
 
-- **Name:** BAG  
-- **Ticker:** $BAG  
-- **Chain:** XRP Ledger (XRPL)  
-- **Supply:** 1,000,000,000,000 (1 T)  
-- **Decimals:** 6  
-- **Status:** Live  
+<hr>
 
----
+<h2>Ecosystem</h2>
 
-## Purpose
-Everyone’s after the $BAG.  
-Own the narrative, move with conviction, and make the culture obvious.  
-The reseed design turns $BAG into a **long-game meme asset** — built for both utility and culture.  
+<h3>🎰 $BAG Casino</h3>
+<p>
+A fast, on-chain casino powered by XRP + $BAG.
+All wagers, returns, and mechanical outcomes are backed by the XRPL.
+</p>
+<ul>
+  <li>Multiple house-edge casino games</li>
+  <li>Provably-fair logic across the ecosystem</li>
+  <li>Progressive jackpots and reward pools</li>
+  <li>XRPL-based wagering with instant settlement</li>
+  <li>Expanding library of casino experiences</li>
+</ul>
 
----
+<h3>🕹️ $BAG Arcade (P2E Hub)</h3>
+<p>
+A physics-based, skill-driven P2E Arcade built for on-ledger earning.
+Powered by the Recycled Supply.
+</p>
+<ul>
+  <li>Multiple P2E skill games</li>
+  <li>Proof-of-play reward system</li>
+  <li>Leaderboard competitions</li>
+  <li>Duels and head-to-head formats</li>
+  <li>Continuous expansion of the Arcade catalog</li>
+</ul>
 
-## Distribution
-- **Treasury — 70 %**  
-  Operations, growth, listings, partnerships, creative, legal, infrastructure  
+<h3>🎭 BAGMAN</h3>
+<p>
+The official identity and cultural backbone of the $BAG ecosystem.
+Integrated across all Casino, Arcade, and brand visuals.
+</p>
 
-- **Reserve — 20 %**  
-  Principal holdings for long-term strategy and future incentives  
+<hr>
 
-- **Liquidity — 10 %**  
-  Dedicated to pool depth and price stability  
+<h2>Purpose</h2>
+<p>
+Everyone’s after the bag.
+$BAG merges culture with a functioning XRPL gaming ecosystem — a meme backed by real utility, real mechanics, and real value movement.
+</p>
 
----
+<hr>
 
-## Reseed Strategy
-$BAG introduces a **100-cycle reseeding mechanism**:  
+<h2>Distribution</h2>
+<ul>
+  <li><strong>Treasury — 70%</strong><br>Growth, ops, listings, partnerships, creative, infra</li>
+  <li><strong>Reserve — 20%</strong><br>Long-term strategic vaults + rotations</li>
+  <li><strong>Liquidity — 10%</strong><br>AMM depth + price stability</li>
+</ul>
 
-1. Liquidity is seeded with $BAG + XRP  
-2. Market activity drives price discovery  
-3. Profits retained for strength  
-4. Fresh liquidity added in the next reseed  
-5. Cycle repeats — **100 times in total**  
+<hr>
 
-**Impact:**  
-- Creates stair-step price floors  
-- Extends liquidity across long-term growth  
-- Prevents short-term drain, builds lasting resilience  
+<h2>Reseed Strategy</h2>
+<p>100-cycle reseeding system:</p>
 
----
+<ol>
+  <li>Liquidity seeded → $BAG + XRP</li>
+  <li>Market sets price</li>
+  <li>Profits retained</li>
+  <li>Fresh liquidity injected</li>
+  <li>Repeat 100 times</li>
+</ol>
 
-### 💧 Tiered Reseed Framework  
-$BAG operates on a **tiered-down reseeding model** — each cycle group releases smaller tranches as supply tightens and value compounds.  
+<p><strong>Impact:</strong></p>
+<ul>
+  <li>Rising price floors</li>
+  <li>Strengthened liquidity</li>
+  <li>No short-term drains</li>
+  <li>Long-term stability</li>
+</ul>
 
-| Tier | Cycle Range | Reseed Size | Total Released | Supply % |
-|:----:|:-------------|:------------|:----------------|:----------|
-| **Tier 1 — Genesis** | 1 | 10 B | 10 B | 1 % |
-| **Tier 2 — Early Growth** | 2–10 | 1 B each | 9 B | 0.9 % |
-| **Tier 3 — Expansion** | 11–20 | 500 M each | 5 B | 0.5 % |
-| **Tier 4 — Velocity** | 21–40 | 250 M each | 5 B | 0.5 % |
-| **Tier 5 — Precision** | 41–70 | 100 M each | 3 B | 0.3 % |
-| **Tier 6 — Legacy** | 71–90 | 50 M each | 1 B | 0.1 % |
-| **Tier 7 — Final Phase** | 91–100 | 25 M each | 250 M | 0.025 % |
+<h3>💧 Tiered Reseed Framework</h3>
 
-→ **Total = 100 cycles = ~33.25 B $BAG reseeded (≈ 3.3 % of total supply).**  
-**The remaining ≈ 96.7 % stays in vaults, burns, or reserve control — fueling future rotations, Arcade Hub rewards, Duels, and Bag Drop mechanics.**
+<table>
+  <tr>
+    <th>Tier</th>
+    <th>Cycle Range</th>
+    <th>Reseed Size</th>
+    <th>Total Released</th>
+    <th>Supply %</th>
+  </tr>
+  <tr><td>Tier 1 — Genesis</td><td>1</td><td>10 B</td><td>10 B</td><td>1%</td></tr>
+  <tr><td>Tier 2 — Early Growth</td><td>2–10</td><td>1 B each</td><td>9 B</td><td>0.9%</td></tr>
+  <tr><td>Tier 3 — Expansion</td><td>11–20</td><td>500 M each</td><td>5 B</td><td>0.5%</td></tr>
+  <tr><td>Tier 4 — Velocity</td><td>21–40</td><td>250 M each</td><td>5 B</td><td>0.5%</td></tr>
+  <tr><td>Tier 5 — Precision</td><td>41–70</td><td>100 M each</td><td>3 B</td><td>0.3%</td></tr>
+  <tr><td>Tier 6 — Legacy</td><td>71–90</td><td>50 M each</td><td>1 B</td><td>0.1%</td></tr>
+  <tr><td>Tier 7 — Final Phase</td><td>91–100</td><td>25 M each</td><td>250 M</td><td>0.025%</td></tr>
+</table>
 
----
+<p>
+<strong>Total reseeded:</strong> ~33.25B (≈3.3%)<br>
+<strong>Total locked:</strong> ≈96.7% (vaulted + burned + recycled)
+</p>
 
-### 🏦 Post-Cycle Supply & Future Rotations  
-After Cycle 100, $BAG transitions into the **Vault Era** — the remaining 96.7 % of supply becomes the backbone of long-term sustainability.  
+<hr>
 
-#### 1️⃣ Vaulted Supply — *The Engine Room*  
-**Initially allocated:** ≈ 700 B $BAG (70 %)  
+<h2>🏦 Post-Cycle Supply & Future Rotations</h2>
 
-- Fuels future **Rotations 2 – 10** and ecosystem growth  
-- Serves as the main source for reseeds, giveaways, partnerships, and operational funding  
-- **Dynamic balance:** decreases over time as tokens are used for Bag Drops, community rewards, and verified burns  
+<h3>1️⃣ Vaulted Supply — Engine Room (~700B)</h3>
+<ul>
+  <li>Fuels Rotations 2–10</li>
+  <li>Supports Casino + Arcade expansions</li>
+  <li>Funds partnerships, events, Bag Drops</li>
+  <li>Shrinks each rotation (reduced % unlocks)</li>
+</ul>
 
-*Unlock Logic:*  
-Each new rotation deploys a smaller % of the remaining vault balance.  
-Example: Rotation 2 → 1.5 % of current vault; Rotation 3 → 1 %, etc.  
-All movements remain publicly trackable and hash-verified.  
+<h3>2️⃣ Burned Supply — Scarcity Driver (200B)</h3>
+<ul>
+  <li>Game burns</li>
+  <li>Jackpot burns</li>
+  <li>Milestone burns</li>
+  <li>Permanent float compression</li>
+</ul>
 
----
+<h3>3️⃣ Recycled Supply — P2E Fuel (66.75B)</h3>
+<ul>
+  <li>Arcade rewards</li>
+  <li>Duels + utility earning</li>
+  <li>Proof-of-play payouts</li>
+  <li>Excess routed to burns</li>
+</ul>
 
-#### 2️⃣ Burned Supply — *The Scarcity Driver*  
-**≈ 200 B $BAG (20 %)**  
-- Permanent deflationary pressure  
-- Used for game burns, jackpot events, and milestone rewards  
-- Offsets any new reseed liquidity to keep net-neutral supply  
+<hr>
 
-*Triggers:*  
-Automatic burns on game fees, NFT sales, and milestone completions (e.g., every 10 reseeds = scheduled burn).  
+<h2>🚀 Future Cycles</h2>
+<ol>
+  <li>Rotation 2 begins from the Vault</li>
+  <li>Recycled supply powers P2E earning</li>
+  <li>Burns continue tightening float</li>
+</ol>
+<p>Each rotation strengthens scarcity and pushes $BAG toward deflationary status.</p>
 
----
+<hr>
 
-#### 3️⃣ Recycled Supply — *The Flow Loop*  
-**≈ 66.75 B $BAG (6.7 %)**  
-- Acts as ecosystem fuel for Arcade Hub, Duels, and staking rewards  
-- Distributed only via **proof-of-play** or **on-chain earning**  
-- Excess volume routed back into burn vaults for deflation balance  
+<h2>Principles</h2>
+<ul>
+  <li>No promises</li>
+  <li>No shortcuts</li>
+  <li>No apologies</li>
+  <li><strong>Get the bag.</strong></li>
+</ul>
 
----
+<hr>
 
-#### 📊 Supply Summary  
+<h2>Links</h2>
+<ul>
+  <li>🌐 Website — <a href="https://getthebag.io" target="_blank">getthebag.io</a></li>
+  <li>𝕏 — <a href="https://x.com/getthebag_io" target="_blank">x.com/getthebag_io</a></li>
+  <li>Telegram — <a href="https://t.me/getthebag_io" target="_blank">t.me/getthebag_io</a></li>
+</ul>
 
-| Category | Allocation | Function | Release Trigger |
-|-----------|-------------|-----------|------------------|
-| **Vaulted** | ≈ 700 B (starting) | Future rotations, OTC, partnerships | Rotation unlocks |
-| **Burned** | 200 B (20 %) | Scarcity, deflation, trust | Milestone burns |
-| **Recycled** | 66.75 B (6.7 %) | Ecosystem earning fuel | Game/Arcade payouts |
-| **Total Locked** | **≈ 966.75 B (96.7 %)** | — | — |
+<hr>
 
----
+<h2>Disclaimer</h2>
+<p>
+$BAG is a community-driven meme token with real XRPL utility.<br>
+Nothing herein is financial, legal, or tax advice. Do your own research.
+</p>
 
-#### 🚀 Future Cycles  
-After the first 100 reseeds:  
-1. **Rotation 2** begins, drawing from the remaining Vaulted balance.  
-2. **Recycled supply** powers utility-based earning.  
-3. **Burned supply** continues compressing float and raising floors.  
-
-Each rotation tightens supply, strengthens value, and pushes $BAG closer to deflationary status.  
-
----
-
-## Principles
-- No promises  
-- No shortcuts  
-- No apologies  
-- Just **get the bag**
-
----
-
-## Links
-- 🌐 Website — [getthebag.io](https://getthebag.io)  
-- 𝕏 — [x.com/getthebag_io](https://x.com/getthebag_io)  
-- Telegram — [t.me/getthebag_io](https://t.me/getthebag_io)  
-
----
-
-## Disclaimer
-$BAG is a community-driven meme token with XRPL utility.  
-Nothing herein is financial, legal, or tax advice. Always do your own research.
+</body>
+</html>
