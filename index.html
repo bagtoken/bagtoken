@@ -34,7 +34,7 @@
 <link rel="preconnect" href="https://api.coingecko.com" crossorigin>
 
 <!-- Preload audio to reduce first-tap latency -->
-<link rel="preload" href="/assets/sounds/casinomusic.mp3" as="audio" />
+<link rel="preload" href="/assets/sounds/bag_christmas_jazz.mp3" as="audio" />
 
 <style>
   *{box-sizing:border-box}
@@ -69,6 +69,25 @@
   .utility{text-align:center;padding:2vh 5vw 6vh}
   .utility h2{font-size:clamp(1.5rem,5vw,2.2rem);margin:0 0 15px}
   .utility p{margin:6px 0;color:#cfd6cf;font-size:clamp(1rem,4vw,1.15rem)}
+
+  /* 🎄 Holiday banner under utility section (smaller) */
+  .bag-holidays{
+    max-width:140px;
+    width:55%;
+    margin:0 auto 22px;
+  }
+  .bag-holidays img{
+    width:100%;
+    height:auto;
+    display:block;
+  }
+  @media (min-width:768px){
+    .bag-holidays{
+      max-width:150px;
+      width:150px;
+      margin-bottom:26px;
+    }
+  }
 
   /* Buy section */
   .buy-section{background:#0b0b0c;color:#fff;padding:56px 20px;text-align:center;border-top:1px solid #141414;border-bottom:1px solid #141414}
@@ -329,9 +348,9 @@
   </picture>
 </a>
 
-<!-- 🔊 Floating speaker (same ID/text behavior as hub) -->
+<!-- 🔊 Floating speaker -->
 <button id="soundToggle" title="Toggle casino ambiance" aria-pressed="false">🔇</button>
-<audio id="casinoAmbience" src="/assets/sounds/casinomusic.mp3" loop preload="auto" playsinline></audio>
+<audio id="casinoAmbience" src="/assets/sounds/bag_christmas_jazz.mp3" loop preload="auto" playsinline></audio>
 
 <header class="hero">
   <picture>
@@ -373,6 +392,12 @@
   <p>$BAG inherits the utility of $XRP through XRPL.</p>
   <p>Fast, cheap, and peer-to-peer. It just works.</p>
 </section>
+
+<!-- 🎄 Holiday image directly under Utility section -->
+<picture class="bag-holidays">
+  <source srcset="/assets/bag_holidays.webp" type="image/webp">
+  <img src="/assets/bag_holidays.png" alt="Happy Holidays from $BAG">
+</picture>
 
 <section class="buy-section">
   <div class="inner">
@@ -493,36 +518,71 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- 🔊 Begin only when #bag-casino-img is visible AND user has unlocked -->
+<!-- 🔊 Simple first-touch audio logic -->
 <script>
 (function(){
-  const PREF_KEY='bag_sound_pref',UNLOCK_KEY='bag_audio_unlocked_v1';
-  const btn=document.getElementById('soundToggle'),audio=document.getElementById('casinoAmbience'),target=document.getElementById('bag-casino-img');
-  if(!btn||!audio||!target)return;
-  let ctx;
-  function ensureCtx(){if(ctx)return ctx;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;ctx=new AC();return ctx;}
-  async function unlockWebAudio(){try{const c=ensureCtx();if(c&&c.state!=='running')await c.resume();localStorage.setItem(UNLOCK_KEY,'1');window.__BAG_AUDIO_UNLOCKED__=true;}catch{}}
-  window.__BAG_AUDIO__={unlocked:()=>localStorage.getItem(UNLOCK_KEY)==='1',context:()=>ensureCtx(),resume:()=>unlockWebAudio()};
-  audio.preload='auto';audio.loop=true;audio.playsInline=true;audio.volume=0.08;
-  let unlocked=false,started=false,playing=false,inView=false;
-  function setIcon(){btn.textContent=playing?'🔊':'🔇';btn.setAttribute('aria-pressed',String(playing));}
-  async function primeAudioOnce(){try{audio.muted=true;await audio.play();audio.pause();audio.currentTime=0;audio.muted=false;}catch{}}
-  async function playIfAllowed(){if(localStorage.getItem(PREF_KEY)==='off')return;if(!unlocked)return;try{await audio.play();playing=true;started=true;setIcon();}catch{}}
-  function pauseNow(){try{audio.pause();}catch{}playing=false;setIcon();}
-  btn.addEventListener('pointerdown',async(e)=>{e.preventDefault();if(playing){localStorage.setItem(PREF_KEY,'off');pauseNow();}else{localStorage.setItem(PREF_KEY,'on');unlocked=true;await unlockWebAudio();await primeAudioOnce();if(inView||document.visibilityState==='visible')playIfAllowed();else setIcon();}}, {passive:false});
-  const UNLOCK_EVENTS=['pointerdown','touchstart','mousedown','keydown','wheel','scroll'];
-  function onFirstUserGesture(){if(unlocked)return;unlocked=true;unlockWebAudio();primeAudioOnce();if(inView)playIfAllowed();}
-  UNLOCK_EVENTS.forEach(t=>window.addEventListener(t,onFirstUserGesture,{once:true,passive:true,capture:true}));
-  const io=new IntersectionObserver((entries)=>{for(const e of entries){if(e.target!==target)continue;inView=e.isIntersecting&&e.intersectionRatio>=0.5;if(inView&&!started)playIfAllowed();}}, {threshold:[0,0.5,1],rootMargin:'100px'});
-  io.observe(target);
-  function softResume(){if(localStorage.getItem(PREF_KEY)!=='off'&&unlocked&&!playing&&(inView||started)){playIfAllowed();}}
-  window.addEventListener('focus',softResume);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)softResume();});
-  playing=false;setIcon();if(localStorage.getItem(UNLOCK_KEY)==='1'){unlocked=true;}
+  const PREF_KEY = 'bag_sound_pref';
+  const btn = document.getElementById('soundToggle');
+  const audio = document.getElementById('casinoAmbience');
+  if (!btn || !audio) return;
+
+  let playing = false;
+
+  function setIcon(){
+    btn.textContent = playing ? '🔊' : '🔇';
+    btn.setAttribute('aria-pressed', String(playing));
+  }
+
+  async function playAudio(){
+    try{
+      await audio.play();
+      playing = true;
+      setIcon();
+    }catch(e){
+      // swallow
+    }
+  }
+
+  function pauseAudio(){
+    try{ audio.pause(); }catch(e){}
+    playing = false;
+    setIcon();
+  }
+
+  // Toggle button
+  btn.addEventListener('pointerdown', async (e)=>{
+    e.preventDefault();
+    if (playing){
+      localStorage.setItem(PREF_KEY,'off');
+      pauseAudio();
+    }else{
+      localStorage.setItem(PREF_KEY,'on');
+      await playAudio();
+    }
+  }, {passive:false});
+
+  // First touch anywhere on the page (except the button) starts audio if not explicitly turned off
+  window.addEventListener('pointerdown', async (e)=>{
+    if (e.target === btn) return;
+    if (playing) return;
+    if (localStorage.getItem(PREF_KEY) === 'off') return;
+    await playAudio();
+  }, {once:true, passive:true, capture:true});
+
+  // Resume when tab becomes visible again if user preference is on
+  document.addEventListener('visibilitychange', ()=>{
+    if (!document.hidden &&
+        localStorage.getItem(PREF_KEY) !== 'off' &&
+        !playing){
+      playAudio();
+    }
+  });
+
+  setIcon();
 })();
 </script>
 
-<!-- ✅ Disable zoom (100% safe for audio unlock + intersection observer) -->
+<!-- ✅ Disable zoom (100% safe for audio + layout) -->
 <script>
 (function(){
   // Disable browser zoom shortcuts, but do NOT block normal touches
