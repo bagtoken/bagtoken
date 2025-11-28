@@ -70,15 +70,22 @@
   .utility h2{font-size:clamp(1.5rem,5vw,2.2rem);margin:0 0 15px}
   .utility p{margin:6px 0;color:#cfd6cf;font-size:clamp(1rem,4vw,1.15rem)}
 
-  /* 🎄 Holiday banner under utility section */
+  /* 🎄 Holiday banner under utility section (resized) */
   .bag-holidays{
-    max-width:420px;
-    margin:0 auto 32px;
+    max-width:320px;
+    width:80%;
+    margin:0 auto 28px;
   }
   .bag-holidays img{
     width:100%;
     height:auto;
     display:block;
+  }
+  @media (min-width:1024px){
+    .bag-holidays{
+      max-width:280px;
+      width:100%;
+    }
   }
 
   /* Buy section */
@@ -510,32 +517,127 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- 🔊 Begin only when #bag-casino-img is visible AND user has unlocked -->
+<!-- 🔊 Begin after first user gesture, plus visibility logic -->
 <script>
 (function(){
   const PREF_KEY='bag_sound_pref',UNLOCK_KEY='bag_audio_unlocked_v1';
-  const btn=document.getElementById('soundToggle'),audio=document.getElementById('casinoAmbience'),target=document.getElementById('bag-casino-img');
+  const btn=document.getElementById('soundToggle'),
+        audio=document.getElementById('casinoAmbience'),
+        target=document.getElementById('bag-casino-img');
   if(!btn||!audio||!target)return;
   let ctx;
-  function ensureCtx(){if(ctx)return ctx;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;ctx=new AC();return ctx;}
-  async function unlockWebAudio(){try{const c=ensureCtx();if(c&&c.state!=='running')await c.resume();localStorage.setItem(UNLOCK_KEY,'1');window.__BAG_AUDIO_UNLOCKED__=true;}catch{}}
-  window.__BAG_AUDIO__={unlocked:()=>localStorage.getItem(UNLOCK_KEY)==='1',context:()=>ensureCtx(),resume:()=>unlockWebAudio()};
-  audio.preload='auto';audio.loop=true;audio.playsInline=true;audio.volume=0.08;
+  function ensureCtx(){
+    if(ctx)return ctx;
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return null;
+    ctx=new AC();
+    return ctx;
+  }
+  async function unlockWebAudio(){
+    try{
+      const c=ensureCtx();
+      if(c&&c.state!=='running')await c.resume();
+      localStorage.setItem(UNLOCK_KEY,'1');
+      window.__BAG_AUDIO_UNLOCKED__=true;
+    }catch{}
+  }
+  window.__BAG_AUDIO__={
+    unlocked:()=>localStorage.getItem(UNLOCK_KEY)==='1',
+    context:()=>ensureCtx(),
+    resume:()=>unlockWebAudio()
+  };
+  audio.preload='auto';
+  audio.loop=true;
+  audio.playsInline=true;
+  audio.volume=0.08;
+
   let unlocked=false,started=false,playing=false,inView=false;
-  function setIcon(){btn.textContent=playing?'🔊':'🔇';btn.setAttribute('aria-pressed',String(playing));}
-  async function primeAudioOnce(){try{audio.muted=true;await audio.play();audio.pause();audio.currentTime=0;audio.muted=false;}catch{}}
-  async function playIfAllowed(){if(localStorage.getItem(PREF_KEY)==='off')return;if(!unlocked)return;try{await audio.play();playing=true;started=true;setIcon();}catch{}}
-  function pauseNow(){try{audio.pause();}catch{}playing=false;setIcon();}
-  btn.addEventListener('pointerdown',async(e)=>{e.preventDefault();if(playing){localStorage.setItem(PREF_KEY,'off');pauseNow();}else{localStorage.setItem(PREF_KEY,'on');unlocked=true;await unlockWebAudio();await primeAudioOnce();if(inView||document.visibilityState==='visible')playIfAllowed();else setIcon();}}, {passive:false});
+
+  function setIcon(){
+    btn.textContent=playing?'🔊':'🔇';
+    btn.setAttribute('aria-pressed',String(playing));
+  }
+
+  async function primeAudioOnce(){
+    try{
+      audio.muted=true;
+      await audio.play();
+      audio.pause();
+      audio.currentTime=0;
+      audio.muted=false;
+    }catch{}
+  }
+
+  async function playIfAllowed(){
+    if(localStorage.getItem(PREF_KEY)==='off')return;
+    if(!unlocked)return;
+    try{
+      await audio.play();
+      playing=true;
+      started=true;
+      setIcon();
+    }catch{}
+  }
+
+  function pauseNow(){
+    try{audio.pause();}catch{}
+    playing=false;
+    setIcon();
+  }
+
+  // Toggle button
+  btn.addEventListener('pointerdown',async(e)=>{
+    e.preventDefault();
+    if(playing){
+      localStorage.setItem(PREF_KEY,'off');
+      pauseNow();
+    }else{
+      localStorage.setItem(PREF_KEY,'on');
+      unlocked=true;
+      await unlockWebAudio();
+      await primeAudioOnce();
+      await playIfAllowed();
+    }
+  }, {passive:false});
+
+  // First user gesture anywhere on screen: unlock + start audio
   const UNLOCK_EVENTS=['pointerdown','touchstart','mousedown','keydown','wheel','scroll'];
-  function onFirstUserGesture(){if(unlocked)return;unlocked=true;unlockWebAudio();primeAudioOnce();if(inView)playIfAllowed();}
-  UNLOCK_EVENTS.forEach(t=>window.addEventListener(t,onFirstUserGesture,{once:true,passive:true,capture:true}));
-  const io=new IntersectionObserver((entries)=>{for(const e of entries){if(e.target!==target)continue;inView=e.isIntersecting&&e.intersectionRatio>=0.5;if(inView&&!started)playIfAllowed();}}, {threshold:[0,0.5,1],rootMargin:'100px'});
+  async function onFirstUserGesture(){
+    if(unlocked)return;
+    unlocked=true;
+    await unlockWebAudio();
+    await primeAudioOnce();
+    await playIfAllowed();
+  }
+  UNLOCK_EVENTS.forEach(t=>{
+    window.addEventListener(t,onFirstUserGesture,{once:true,passive:true,capture:true});
+  });
+
+  // Intersection observer still used, but audio no longer waits on it for first play
+  const io=new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.target!==target)continue;
+      inView=e.isIntersecting&&e.intersectionRatio>=0.5;
+      if(inView && !started) playIfAllowed();
+    }
+  }, {threshold:[0,0.5,1],rootMargin:'100px'});
   io.observe(target);
-  function softResume(){if(localStorage.getItem(PREF_KEY)!=='off'&&unlocked&&!playing&&(inView||started)){playIfAllowed();}}
+
+  function softResume(){
+    if(localStorage.getItem(PREF_KEY)!=='off'&&unlocked&&!playing&&(inView||started)){
+      playIfAllowed();
+    }
+  }
   window.addEventListener('focus',softResume);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)softResume();});
-  playing=false;setIcon();if(localStorage.getItem(UNLOCK_KEY)==='1'){unlocked=true;}
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden)softResume();
+  });
+
+  playing=false;
+  setIcon();
+  if(localStorage.getItem(UNLOCK_KEY)==='1'){
+    unlocked=true;
+  }
 })();
 </script>
 
